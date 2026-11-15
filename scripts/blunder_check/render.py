@@ -11,10 +11,11 @@ import math
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Literal, get_args
 
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
+    FACEPALM_DRILL_LAMBDA,
     FACEPALM_SCORE_MIN,
     FOREIGN_BLUNDER_SHARE,
     FOREIGN_RATING_BAND,
@@ -31,6 +32,7 @@ from scripts.blunder_check.metrics import (
     MAX_MISS_SHARE,
     WINDOW_LENGTHS,
     EloBucket,
+    MaterialType,
     MissCase,
     Provenance,
     SupplyRates,
@@ -40,6 +42,7 @@ from scripts.blunder_check.metrics import (
     estimated_user_windows,
     herring_flags,
     in_band,
+    material_type,
     weighted_fit_share,
 )
 from scripts.blunder_check.metrics import quartiles
@@ -94,6 +97,7 @@ NULL_REASON_LABELS: dict[NullReason, str] = {
 FOREIGN_LEVEL_MIN: int = 600
 FOREIGN_LEVEL_MAX: int = 2600
 FOREIGN_LEVEL_STEP: int = 200
+MATERIAL_TYPES: tuple[MaterialType, ...] = get_args(MaterialType)
 # Table rows: every bucket, then None for the pooled "all" row.
 ROW_BUCKETS: tuple[EloBucket | None, ...] = (*ELO_BUCKETS, None)
 
@@ -182,12 +186,16 @@ def section_how_to_read(collection: Collection, params: ReportParams) -> str:
             "least `ES_ref` minus the inaccuracy drop: the user only gave back what the opponent "
             "gifted. *Mixed* = a miss that lost more than the gift. *Unclassified* = a miss "
             "without usable ES.",
-            "- **Facepalm score (250 D-01):** a ranking of how careless a blunder is at the "
-            "mover's level, fitted on the owner's labels and stored on `game_flaws` from the "
-            "played move's Maia probability, the opponent's reply spread and the material the "
-            "stored engine line wins. It is not a probability and not a share of peers; a "
-            "blunder qualifies when its score is at least the chosen threshold. A blunder "
-            "without a score never qualifies; the Facepalm score section tells why.",
+            "- **Facepalm score (250 D-01, 254 D-01):** a ranking of how careless a blunder is at "
+            "the mover's level, fitted on the owner's labels. The report reads the stored FACTS "
+            "of each blunder (the played move's Maia probability, the opponent's reply spread, "
+            "the depth-3 material of the played and best lines, both mate plies, the best "
+            "move's probability and the pre-blunder spread) and scores them with the Python "
+            f"twin at the drill lambda ({FACEPALM_DRILL_LAMBDA}) and the constants and model of "
+            "this checkout, never the stored score column, so a candidate refit is judged here "
+            "before it ships. It is not a probability and not a share of peers; a blunder "
+            "qualifies when its score is at least the chosen threshold. A blunder without a "
+            "score never qualifies; the Facepalm score section tells why.",
             f"- **Window mix (250 D-12):** every slot independently draws a herring "
             f"({HERRING_SHARE:.0%}), an own blunder ({OWN_BLUNDER_SHARE:.0%}) or a foreign blunder "
             f"({FOREIGN_BLUNDER_SHARE:.0%}); window length is uniform over "
@@ -298,7 +306,7 @@ def _in_bucket[T: (BlunderRecord, GameRecord)](
 
 
 def is_scored(b: BlunderRecord) -> bool:
-    """True when the blunder has a stored facepalm score (a NULL score is unscored, never a fail)."""
+    """True when the blunder's stored facts give a facepalm score (an unscored one is never a fail)."""
     return b.facepalm_score is not None
 
 
@@ -928,7 +936,8 @@ def _median_cell(values: Sequence[float], digits: int = 3) -> str:
 def _loses_material(b: BlunderRecord) -> bool:
     """The punishment is clear: mate within LINE_DEPTH plies or at least FAIR_LOSS_MIN points down."""
     mated = b.line_mate_ply is not None and b.line_mate_ply <= LINE_DEPTH
-    return mated or (b.line_loss_3 is not None and b.line_loss_3 >= FAIR_LOSS_MIN)
+    # played_3 is the signed material (positive = the blunderer is up), so a loss is its negation.
+    return mated or (b.played_3 is not None and -b.played_3 >= FAIR_LOSS_MIN)
 
 
 def _proxy_row(
@@ -1016,6 +1025,180 @@ def section_recommended_constants(collection: Collection, params: ReportParams) 
     return "\n".join(lines)
 
 
+def blunder_material_type(b: BlunderRecord) -> MaterialType:
+    """What the blunder does to the material balance: loses, misses, both, neither, unknown (D-13)."""
+    return material_type(b.played_3, b.line_mate_ply, b.best_3, b.best_mate_ply)
+
+
+def _material_row(
+    label_cells: list[str],
+    subset: Sequence[BlunderRecord],
+    params: ReportParams,
+    total: int,
+) -> list[str]:
+    """Counts, scored share and the share of the scored blunders passing each cut."""
+    scores = [b.facepalm_score for b in subset if b.facepalm_score is not None]
+    passes = [
+        fmt_share(sum(1 for s in scores if s >= threshold), len(scores))
+        for threshold in pass_thresholds(params)
+    ]
+    return [
+        *label_cells,
+        str(len(subset)),
+        fmt_share(len(scores), len(subset)),
+        *passes,
+        fmt_share(len(subset), total),
+    ]
+
+
+def section_material_types(collection: Collection, params: ReportParams) -> str:
+    """D-13: per material type, per Elo bucket, the share of scored user blunders passing each cut.
+
+    The owner's label study (250 D-01) showed the cut works differently for blunders that lose
+    material, miss a gain, do both or neither, so the cut has to be read per type.
+    """
+    blunders = analysis_blunders(collection)
+    by_type: dict[MaterialType, list[BlunderRecord]] = {t: [] for t in MATERIAL_TYPES}
+    for b in blunders:
+        by_type[blunder_material_type(b)].append(b)
+    cut_headers = [f"pass >= {t:.2f}" for t in pass_thresholds(params)]
+    pooled = [
+        _material_row([material], by_type[material], params, len(blunders))
+        for material in MATERIAL_TYPES
+    ]
+    per_bucket = [
+        _material_row(
+            [bucket, material],
+            [b for b in by_type[material] if b.bucket == bucket],
+            params,
+            sum(1 for b in blunders if b.bucket == bucket),
+        )
+        for bucket in ELO_BUCKETS
+        if any(b.bucket == bucket for b in blunders)
+        for material in MATERIAL_TYPES
+    ]
+    share_header = "share of blunders"
+    return "\n".join(
+        [
+            "## Pass shares by material type",
+            "",
+            "User-side blunders of rated, non-guest games by what they do to the material "
+            f"balance over {LINE_DEPTH} plies (D-13): *loses* = mated or ending behind on the "
+            "played line, *misses* = the best line gains material the played line did not keep "
+            "(or mates), *loses and misses* = both, *neither*, and *unknown* = the played line "
+            "is too short to tell and holds no mate. Scores use the drill lambda "
+            f"({FACEPALM_DRILL_LAMBDA}) and the model in this checkout, computed from the stored "
+            "facts. `scored` is the share of the type with a score; each `pass` column is the "
+            "share of those scored blunders at or above the cut; the last column is the type's "
+            "share of all user blunders in the row group.",
+            "",
+            md_table(
+                ["material type", "user blunders", "scored", *cut_headers, share_header], pooled
+            ),
+            "",
+            "### By Elo bucket",
+            "",
+            md_table(
+                [
+                    "Elo bucket",
+                    "material type",
+                    "user blunders",
+                    "scored",
+                    *cut_headers,
+                    share_header,
+                ],
+                per_bucket,
+            ),
+        ]
+    )
+
+
+def _p25_median_cell(values: Sequence[float]) -> str:
+    p25, median = percentile(values, 25), percentile(values, 50)
+    return "n/a" if p25 is None or median is None else f"{p25:.1f} / {median:.1f}"
+
+
+def own_windows_by_bucket(
+    collection: Collection, params: ReportParams
+) -> dict[EloBucket, list[float]]:
+    """Usable blunder windows per user inside each Elo bucket (exact counts x rates at the cut)."""
+    rates = bucket_rates(analysis_blunders(collection), params)
+    counts: Counter[tuple[int, EloBucket]] = Counter()
+    for group in collection.user_groups:
+        counts[(group.user_id, group_elo_bucket(group))] += group.user_blunders
+    windows: dict[EloBucket, list[float]] = {bucket: [] for bucket in ELO_BUCKETS}
+    for (_user_id, bucket), count in sorted(counts.items()):
+        windows[bucket].append(estimated_user_windows(Counter({bucket: count}), rates))
+    return windows
+
+
+def section_pool_by_cut(collection: Collection, params: ReportParams) -> str:
+    """D-13: the own and foreign drill pool per rating band at every cut of the threshold grid.
+
+    Own: usable blunder windows per user (p25 / median), all users and per Elo bucket. Foreign:
+    qualifying blunders of other users per pinned-Elo level. A higher cut never grows the
+    foreign pool; the own pool is an estimate that follows it closely.
+    """
+    cuts = pass_thresholds(params)
+    permille = max(collection.meta.permille, 1)
+    scale = PERMILLE_BASE / permille
+    own_rows = []
+    foreign_by_cut: list[list[ForeignSupply]] = []
+    for cut in cuts:
+        at = replace(params, facepalm_threshold=cut)
+        everyone = [windows for windows, _ in user_supply(collection, at, None)]
+        per_bucket = own_windows_by_bucket(collection, at)
+        own_rows.append(
+            [
+                f"{cut:.2f}",
+                _p25_median_cell(everyone),
+                *[_p25_median_cell(per_bucket[bucket]) for bucket in ELO_BUCKETS],
+            ]
+        )
+        foreign_by_cut.append(foreign_supply(collection, at))
+    foreign_rows = [
+        [
+            str(level),
+            level_note(level),
+            *[str(round(supply[i].qualifying * scale)) for supply in foreign_by_cut],
+        ]
+        for i, level in enumerate(foreign_levels())
+    ]
+    own_headers = ["cut", "all users", *ELO_BUCKETS]
+    foreign_headers = [
+        "level (pinned Elo)",
+        "note",
+        *[f"qualifying >= {cut:.2f}" for cut in cuts],
+    ]
+    return "\n".join(
+        [
+            "## Drill pool by cut",
+            "",
+            "What the drill can draw from at each candidate cut (D-13), so the cut can be chosen "
+            f"before it ships. Scores use the drill lambda ({FACEPALM_DRILL_LAMBDA}) and the model "
+            "in this checkout. The report prints the pool at every cut and recommends none.",
+            "",
+            "### Own pool per user",
+            "",
+            "**Estimate** (D-23): usable blunder windows per non-guest user, as p25 / median, from "
+            "exact per-user counts times per-bucket rates at the cut (after the "
+            f"{MAX_MISS_SHARE:.0%} cap on pure misses); the Elo bucket columns count only a "
+            "user's games in that bucket. A user under "
+            f"{params.min_user_windows} windows falls back to foreign slots (250 D-15).",
+            "",
+            md_table(own_headers, own_rows),
+            "",
+            "### Foreign pool per rating level",
+            "",
+            f"Qualifying blunders of other users whose mover's pinned Elo is within "
+            f"+-{FOREIGN_RATING_BAND} of the level (250 D-13), population estimates: the sample "
+            f"count times {PERMILLE_BASE} / {permille} sample permille.",
+            "",
+            md_table(foreign_headers, foreign_rows),
+        ]
+    )
+
+
 def render_report(collection: Collection, params: ReportParams) -> str:
     """Assemble the whole dated report."""
     sections = [
@@ -1025,6 +1208,8 @@ def render_report(collection: Collection, params: ReportParams) -> str:
         section_control(collection),
         section_cases(collection),
         section_facepalm_score(collection, params),
+        section_material_types(collection, params),
+        section_pool_by_cut(collection, params),
         section_eval_band(collection, params),
         section_window_fit(collection, params),
         section_herring_supply(collection, params),

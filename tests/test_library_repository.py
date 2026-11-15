@@ -32,11 +32,14 @@ from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 from app.repositories.library_repository import (
     TacticOrientation,
     count_filtered_and_analyzed,
+    fetch_page_facepalm_scores,
     fetch_page_game_flaws,
     query_filtered_games,
     query_flaws,
 )
 from app.repositories.query_utils import apply_game_filters
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from tests.facepalm_seed import SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
 
 # Distinct user ID for TestDecidedLostSuppression tests so parallel -n auto runs
 # cannot cross-contaminate with the 99999/99998 fixtures.
@@ -142,10 +145,13 @@ async def _seed_game_flaw(
     missed_tactic_motif: int | None = None,
     missed_tactic_confidence: int | None = None,
     missed_tactic_depth: int | None = None,
-    facepalm_score: float | None = None,
+    facepalm_target: float | None = None,
     is_reversed: bool = False,
 ) -> None:
     """Insert a game_flaws row directly (bypasses classifier).
+
+    `facepalm_target` seeds facts whose library-lambda expression equals it (D-01); readers
+    compute the score at query time, so the stored score column is never seeded.
 
     The EXISTS filter reads game_flaws rows, not positions.
 
@@ -169,7 +175,7 @@ async def _seed_game_flaw(
                 "is_reversed": is_reversed,
                 "is_squandered": False,
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
-                "facepalm_score": facepalm_score,
+                **facepalm_fact_columns(facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA),
                 "allowed_tactic_motif": allowed_tactic_motif,
                 "allowed_tactic_confidence": allowed_tactic_confidence,
                 "allowed_tactic_depth": allowed_tactic_depth,
@@ -2708,7 +2714,11 @@ def _compile_facepalm_clauses(
 
 
 class TestFacepalmBuildFlawFilterClauses:
-    """build_flaw_filter_clauses facepalm range: neutral states and band shapes (D-04, D-10)."""
+    """build_flaw_filter_clauses facepalm range: neutral states and band shapes (D-04, D-10).
+
+    The clause reads the query-time expression over the stored facts (D-01), so the compiled
+    SQL names the fact columns and never the stored `facepalm_score` column.
+    """
 
     @pytest.mark.parametrize(
         ("min_pct", "max_pct"),
@@ -2716,39 +2726,47 @@ class TestFacepalmBuildFlawFilterClauses:
     )
     def test_neutral_states_add_no_clause(self, min_pct: int | None, max_pct: int | None) -> None:
         """None and the full 0..100 range (in any mix) add no facepalm clause (D-04)."""
-        assert "facepalm_score" not in _compile_facepalm_clauses(min_pct, max_pct)
+        assert _compile_facepalm_clauses(min_pct, max_pct) == ""
+
+    @pytest.mark.parametrize("band", [(0, 29), (70, 100), (30, 69)])
+    def test_narrowed_clause_references_the_fact_columns(self, band: tuple[int, int]) -> None:
+        """A narrowed range reads the facts, never the stored score column (D-01)."""
+        sql = _compile_facepalm_clauses(*band)
+        assert "played_line_material" in sql, sql
+        assert "maia_played_prob" in sql, sql
+        assert "game_flaws.facepalm_score" not in sql, sql
 
     def test_low_band_has_not_null_and_upper_bound_only(self) -> None:
         """(0, 29): IS NOT NULL plus an upper '<' bound, no '>=' lower bound."""
         sql = _compile_facepalm_clauses(0, 29)
-        assert "facepalm_score IS NOT NULL" in sql, sql
-        assert "facepalm_score <" in sql, sql
-        assert "facepalm_score >=" not in sql, sql
+        assert "IS NOT NULL" in sql, sql
+        assert "AS FLOAT) <" in sql, sql
+        assert "AS FLOAT) >=" not in sql, sql
 
     def test_high_band_has_not_null_and_lower_bound_only(self) -> None:
         """(70, 100): IS NOT NULL plus a '>=' lower bound, no upper bound."""
         sql = _compile_facepalm_clauses(70, 100)
-        assert "facepalm_score IS NOT NULL" in sql, sql
-        assert "facepalm_score >=" in sql, sql
-        assert "facepalm_score <" not in sql, sql
+        assert "IS NOT NULL" in sql, sql
+        assert "AS FLOAT) >=" in sql, sql
+        assert "AS FLOAT) <" not in sql, sql
 
     def test_mid_band_has_both_bounds(self) -> None:
         """(30, 69): both bounds present."""
         sql = _compile_facepalm_clauses(30, 69)
-        assert "facepalm_score >=" in sql, sql
-        assert "facepalm_score <" in sql, sql
+        assert "AS FLOAT) >=" in sql, sql
+        assert "AS FLOAT) <" in sql, sql
 
     def test_asyncpg_binds_double_thresholds_with_no_sql_floor(self) -> None:
-        """Thresholds bind as ::FLOAT (double), never REAL, and the column is never floored.
+        """The band thresholds bind as ::FLOAT (double), never REAL, and nothing is floored.
 
         Float4 arithmetic in Postgres would disagree with the floored whole percent the
-        frontend shows (RESEARCH Pitfall 3), so the clause compares the REAL column
+        frontend shows (RESEARCH Pitfall 3), so the double-precision expression is compared
         against double thresholds with no SQL floor().
         """
         sql = _compile_facepalm_clauses(30, 69, asyncpg_dialect=True)
-        assert sql.count("::FLOAT") == 2, sql
         assert "::REAL" not in sql, sql
         assert "floor" not in sql.lower(), sql
+        assert "::FLOAT" in sql, sql
 
 
 # ---------------------------------------------------------------------------
@@ -2806,12 +2824,12 @@ class TestFacepalmGamesFilter:
 
         await ensure_test_user(db_session, _FP_GAMES_USER_ID)
         g1 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=g1, ply=2, facepalm_score=_FP_HIGH_SCORE)
+        await _seed_game_flaw(db_session, game=g1, ply=2, facepalm_target=_FP_HIGH_SCORE)
         await _seed_game_flaw(
-            db_session, game=g1, ply=4, facepalm_score=_FP_LOW_SCORE, is_reversed=True
+            db_session, game=g1, ply=4, facepalm_target=_FP_LOW_SCORE, is_reversed=True
         )
         g2 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=g2, ply=2, facepalm_score=0.90, is_reversed=True)
+        await _seed_game_flaw(db_session, game=g2, ply=2, facepalm_target=0.90, is_reversed=True)
 
         ids = await _facepalm_game_ids(
             db_session,
@@ -2832,9 +2850,9 @@ class TestFacepalmGamesFilter:
 
         await ensure_test_user(db_session, _FP_GAMES_USER_ID)
         scored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=scored, ply=2, facepalm_score=_FP_HIGH_SCORE)
+        await _seed_game_flaw(db_session, game=scored, ply=2, facepalm_target=_FP_HIGH_SCORE)
         unscored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=unscored, ply=2, facepalm_score=None)
+        await _seed_game_flaw(db_session, game=unscored, ply=2, facepalm_target=None)
 
         ids = await _facepalm_game_ids(
             db_session,
@@ -2844,3 +2862,62 @@ class TestFacepalmGamesFilter:
         )
         assert scored.id in ids
         assert unscored.id not in ids
+
+
+# ---------------------------------------------------------------------------
+# fetch_page_facepalm_scores: eval-chart / move-list marker scores (254 D-01, D-04)
+# ---------------------------------------------------------------------------
+
+_FP_MARKER_USER_ID = 25418
+_FP_MARKER_OTHER_USER_ID = 25419
+_FP_MARKER_USER_PLY = 2
+_FP_MARKER_OPPONENT_PLY = 3
+_FP_MARKER_UNSCORED_PLY = 4
+
+
+class TestFetchPageFacepalmScores:
+    """The marker scores come from the library-lambda expression, user-scoped (T-254-22)."""
+
+    @pytest.mark.asyncio
+    async def test_empty_game_ids_returns_empty(self, db_session: AsyncSession) -> None:
+        assert await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, []) == {}
+
+    @pytest.mark.asyncio
+    async def test_scored_rows_of_both_movers_unscored_skipped(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Both colors' scored rows come back by ply; an unscored row is absent."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_MARKER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID)
+        await _seed_game_flaw(db_session, game=game, ply=_FP_MARKER_USER_PLY, facepalm_target=0.87)
+        await _seed_game_flaw(
+            db_session, game=game, ply=_FP_MARKER_OPPONENT_PLY, facepalm_target=0.33
+        )
+        await _seed_game_flaw(db_session, game=game, ply=_FP_MARKER_UNSCORED_PLY)
+
+        scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
+
+        assert set(scores) == {game.id}
+        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY, _FP_MARKER_OPPONENT_PLY}
+        assert scores[game.id][_FP_MARKER_USER_PLY] == pytest.approx(
+            0.87, abs=SEED_FACEPALM_TOLERANCE
+        )
+        assert scores[game.id][_FP_MARKER_OPPONENT_PLY] == pytest.approx(
+            0.33, abs=SEED_FACEPALM_TOLERANCE
+        )
+
+    @pytest.mark.asyncio
+    async def test_other_users_rows_are_never_returned(self, db_session: AsyncSession) -> None:
+        """IDOR guard (T-254-22): asking with another user's id yields nothing for this game."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_MARKER_USER_ID)
+        await ensure_test_user(db_session, _FP_MARKER_OTHER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID)
+        await _seed_game_flaw(db_session, game=game, ply=_FP_MARKER_USER_PLY, facepalm_target=0.87)
+
+        scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_OTHER_USER_ID, [game.id])
+
+        assert scores == {}

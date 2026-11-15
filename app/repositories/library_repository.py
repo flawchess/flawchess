@@ -33,6 +33,8 @@ from app.repositories.game_flaws_repository import (
     _TEMPO_INT,
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.facepalm_score import facepalm_expr
 from app.schemas.library import (
     TEMPO_PHASE_PHASES,
     TEMPO_PHASE_TEMPOS,
@@ -333,22 +335,32 @@ def facepalm_range_active(min_pct: int | None, max_pct: int | None) -> bool:
     return min_active or max_active
 
 
-def _facepalm_clause(min_pct: int | None, max_pct: int | None) -> ColumnElement[bool] | None:
+def _facepalm_clause(
+    min_pct: int | None,
+    max_pct: int | None,
+    score: ColumnElement[float] | None = None,
+) -> ColumnElement[bool] | None:
     """Score clause: floor(100 * score) in [min_pct, max_pct], NULL scores excluded (D-04, D-10).
 
-    Written as two float comparisons with no floor() or multiplication on the column: the
-    stored REAL is compared against plain Python float thresholds, which asyncpg binds as
-    double precision. Float4 arithmetic in Postgres (real * integer) would disagree with the
-    floored whole percent the frontend shows, e.g. a stored 0.69999999 could round to 70.0.
+    `score` is the query-time expression `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01). A
+    caller that also selects the chip passes its own bound object so the chip and the filter
+    read one expression and cannot disagree at a band edge; None builds a fresh one.
+
+    Written as two float comparisons with no floor() or multiplication on the expression: it is
+    double precision (PostgreSQL exp() over float inputs) and is compared against plain Python
+    float thresholds, which asyncpg binds as double precision, so the chip value and the bound
+    are compared in the same precision and match the floored whole percent the frontend shows.
     An inverted range (min > max) is not validated and simply matches nothing.
     """
     if not facepalm_range_active(min_pct, max_pct):
         return None
-    bounds: list[ColumnElement[bool]] = [GameFlaw.facepalm_score.isnot(None)]
+    if score is None:
+        score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    bounds: list[ColumnElement[bool]] = [score.isnot(None)]
     if min_pct is not None and min_pct > FACEPALM_PCT_MIN:
-        bounds.append(GameFlaw.facepalm_score >= min_pct / _FACEPALM_PCT_SCALE)
+        bounds.append(score >= min_pct / _FACEPALM_PCT_SCALE)
     if max_pct is not None and max_pct < FACEPALM_PCT_MAX:
-        bounds.append(GameFlaw.facepalm_score < (max_pct + 1) / _FACEPALM_PCT_SCALE)
+        bounds.append(score < (max_pct + 1) / _FACEPALM_PCT_SCALE)
     return and_(*bounds)
 
 
@@ -630,6 +642,7 @@ def build_flaw_filter_clauses(
     decided_lost: ColumnElement[bool] | None = None,
     min_facepalm_pct: int | None = None,
     max_facepalm_pct: int | None = None,
+    facepalm_score: ColumnElement[float] | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (family-aware logic).
 
@@ -675,6 +688,9 @@ def build_flaw_filter_clauses(
                   floored facepalm score (0..100). None, or the full 0..100 range, =
                   no facepalm clause. A narrowed range keeps only rows with a non-NULL
                   score inside it. NOT gated by decided_lost (that gate is tactic-only).
+        facepalm_score: Optional bound `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` the caller also
+                  selects as the chip, so the chip and the range filter share one object
+                  (D-01). None = a fresh expression is built when a range is active.
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -733,7 +749,7 @@ def build_flaw_filter_clauses(
         clauses.append(tactic_clause)
 
     # Facepalm score range: rides the same single flaw row as every other family (D-06).
-    facepalm_clause = _facepalm_clause(min_facepalm_pct, max_facepalm_pct)
+    facepalm_clause = _facepalm_clause(min_facepalm_pct, max_facepalm_pct, facepalm_score)
     if facepalm_clause is not None:
         clauses.append(facepalm_clause)
 
@@ -968,6 +984,7 @@ def _build_flaw_item(
     pos_before: GamePosition | None,
     pos_two_before: GamePosition | None,
     *,
+    facepalm_score: float | None,
     tactic_families: Sequence[str],
     orientation: TacticOrientation,
     min_tactic_depth: int | None,
@@ -985,6 +1002,9 @@ def _build_flaw_item(
     for player flaws, since all rows are player-gated). When True the tactic tag
     + depth are suppressed (slot returns None) while severity and all other fields
     are unaffected — the flaw still exists and counts.
+
+    `facepalm_score` is the chip value the query computed with the library-lambda expression
+    (D-01): never read from the stored column, never recomputed in Python.
     """
     row_decided_lost = is_decided_lost(
         pos_before.eval_cp if pos_before else None,
@@ -1067,7 +1087,7 @@ def _build_flaw_item(
         ),
         missed_tactic_confidence=(flaw.missed_tactic_confidence if missed_visible else None),
         missed_tactic_depth=(flaw.missed_tactic_depth if missed_visible else None),
-        facepalm_score=flaw.facepalm_score,
+        facepalm_score=facepalm_score,
     )
 
 
@@ -1167,6 +1187,10 @@ async def query_flaws(
     PositionTwoBefore = _flaw_position_lateral("pos_two_before", GameFlaw.ply - 2)  # noqa: N806
     dl_sql = decided_lost_sql(PositionBefore.eval_cp, PositionBefore.eval_mate, Game.user_color)
 
+    # One bound expression for the chip (SELECT) and the range filter (WHERE), so a card can
+    # never show a score outside the range that selected it (D-01, D-04).
+    facepalm_chip = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+
     flaw_clauses = build_flaw_filter_clauses(
         severity,
         tags,
@@ -1177,6 +1201,7 @@ async def query_flaws(
         decided_lost=dl_sql,
         min_facepalm_pct=min_facepalm_pct,
         max_facepalm_pct=max_facepalm_pct,
+        facepalm_score=facepalm_chip,
     )
 
     # Three aliases for game_positions:
@@ -1251,8 +1276,10 @@ async def query_flaws(
         return [], 0
 
     # Paginate, ordered recent-first.
+    # The chip column is added only here, not to base_stmt: the count above does not need it.
     paged_stmt = (
-        base_stmt.order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
+        base_stmt.add_columns(facepalm_chip.label("facepalm_chip"))
+        .order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
         .offset(offset)
         .limit(limit)
     )
@@ -1265,12 +1292,13 @@ async def query_flaws(
             pos_at,
             pos_before,
             pos_two_before,
+            facepalm_score=chip,
             tactic_families=tactic_families or (),
             orientation=orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
         )
-        for flaw, game, pos_at, pos_before, pos_two_before in rows
+        for flaw, game, pos_at, pos_before, pos_two_before, chip in rows
     ]
     return items, matched_count
 
@@ -1338,6 +1366,34 @@ async def fetch_page_game_flaws_both_colors(
     result: dict[int, list[GameFlaw]] = {gid: [] for gid in game_ids}
     for row in rows:
         result[row.game_id].append(row)
+    return result
+
+
+async def fetch_page_facepalm_scores(
+    session: AsyncSession,
+    user_id: int,
+    game_ids: Sequence[int],
+) -> dict[int, dict[int, float]]:
+    """Batch-compute the facepalm score of every scored flaw row for a page of games.
+
+    Returns game_id -> {ply: score}; games without a scored row are absent. The score is the
+    query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01, D-04: the eval-chart tooltip and
+    the analysis move-list markers use the library lambda, never a Python computation). Rows
+    whose expression is NULL (unscored) are skipped. Both movers' rows are returned, like
+    fetch_page_game_flaws_both_colors, because the chart marks opponent plies too; callers gate
+    on severity. User-scoped via GameFlaw.user_id == user_id (IDOR).
+    """
+    if not game_ids:
+        return {}
+    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    stmt = select(GameFlaw.game_id, GameFlaw.ply, score).where(
+        GameFlaw.user_id == user_id,
+        GameFlaw.game_id.in_(game_ids),
+        score.isnot(None),
+    )
+    result: dict[int, dict[int, float]] = {}
+    for game_id, ply, value in (await session.execute(stmt)).all():
+        result.setdefault(game_id, {})[ply] = float(value)
     return result
 
 

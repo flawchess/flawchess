@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 8/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 11/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -491,13 +491,13 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion; R2 cycle opened by the orchestrator)*
 - [ ] 254-07-PLAN.md — Prod pre pass with 8 shards beside Phase 252 (D-20) from the prod-run worktree, and the owner's miss labels (orchestrator-inline)
-- [ ] 254-08-PLAN.md — R2 drill readers on the expression: own / foreign predicates and the loader
+- [x] 254-08-PLAN.md — R2 drill readers on the expression: own / foreign predicates and the loader
 
 **Wave 8** *(blocked on 254-08)*
-- [ ] 254-18-PLAN.md — R2 library readers on the expression: filter and chip, chart and move-list markers
+- [x] 254-18-PLAN.md — R2 library readers on the expression: filter and chip, chart and move-list markers
 
 **Wave 9** *(blocked on 254-18)*
-- [ ] 254-09-PLAN.md — R2 script readers: calibration from facts with D-13 sections, backfill counts
+- [x] 254-09-PLAN.md — R2 script readers: calibration from facts with D-13 sections, backfill counts
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)

@@ -35,7 +35,8 @@ from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS, apply_game_filters
-from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
+from app.services.facepalm_score import facepalm_expr
 
 # The partial unique index that makes the one-open-session invariant a DB guarantee.
 _OPEN_SESSION_INDEX: Final = "uq_blunder_check_sessions_user_open"
@@ -193,7 +194,11 @@ async def insert_session(
 def _unserved_qualifying_blunder_exists(
     game_id_col: SQLColumnExpression[int], user_id: int, *, flaw_owner_id: int | None = None
 ) -> ColumnElement[bool]:
-    """EXISTS a qualifying blunder (facepalm_score >= FACEPALM_SCORE_MIN) this user was not served yet.
+    """EXISTS a qualifying blunder (drill facepalm score >= FACEPALM_SCORE_MIN) this user was not served yet.
+
+    The score is the query-time expression over the stored facts with the drill lambda
+    (`facepalm_expr(FACEPALM_DRILL_LAMBDA)`, 254 D-01 / D-03), not a stored column. NULL scores
+    (unscored rows, opponent rows without facts) drop out by SQL semantics.
 
     "Served" is a window of this user on the same game whose blunder_ply is the blunder's ply
     (250 D-17). The probe uses ix_game_flaws_game_id for the flaw rows and
@@ -217,7 +222,7 @@ def _unserved_qualifying_blunder_exists(
     )
     conditions: list[ColumnElement[bool]] = [
         GameFlaw.game_id == game_id_col,
-        GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+        facepalm_expr(FACEPALM_DRILL_LAMBDA) >= FACEPALM_SCORE_MIN,
         not_(already_served),
     ]
     if flaw_owner_id is not None:
@@ -391,27 +396,31 @@ class BlunderFlawRow:
 async def load_blunder_flaws(
     session: AsyncSession, game_ids: Sequence[int]
 ) -> dict[int, list[BlunderFlawRow]]:
-    """Qualifying stored blunders per game: severity blunder with facepalm_score >= FACEPALM_SCORE_MIN.
+    """Qualifying stored blunders per game: severity blunder with drill facepalm score >= FACEPALM_SCORE_MIN.
 
-    The threshold is a plain SQL filter on game_flaws (250 D-05 / D-09); NULL scores drop out by
-    SQL semantics. Opponent rows carry a NULL score (the fit scores user blunders only) and drop
-    out too, but parity is still re-checked in the pure layer.
+    The score is `facepalm_expr(FACEPALM_DRILL_LAMBDA)` over the stored facts (254 D-01 / D-03),
+    bound once and used both as the selected `facepalm_score` column and in the filter. The
+    threshold is a plain SQL filter (250 D-05 / D-09); NULL scores drop out by SQL semantics.
+    Opponent rows carry no facts, so their expression is NULL and they drop out too, but parity
+    is still re-checked in the pure layer.
     """
     by_game: dict[int, list[BlunderFlawRow]] = defaultdict(list)
     if not game_ids:
         return by_game
+    # One bound expression: the selected value and the filter are the same object.
+    score = facepalm_expr(FACEPALM_DRILL_LAMBDA)
     stmt = (
         select(
             GameFlaw.game_id,
             GameFlaw.ply,
             GameFlaw.severity,
             GameFlaw.is_miss,
-            GameFlaw.facepalm_score,
+            score.label("facepalm_score"),
         )
         .where(
             GameFlaw.game_id.in_(game_ids),
             GameFlaw.severity == _SEVERITY_INT["blunder"],
-            GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+            score >= FACEPALM_SCORE_MIN,
         )
         .order_by(GameFlaw.game_id, GameFlaw.ply)
     )

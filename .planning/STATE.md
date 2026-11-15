@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 254
 current_phase_name: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
 status: executing
-stopped_at: Phase 254 context gathered
-last_updated: "2026-11-14T21:02:48.985Z"
+stopped_at: Completed 254-09-PLAN.md
+last_updated: "2026-11-15T00:43:48.927Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 254 execution started
-state_head: 570fe693e14edac6e0d29e484121386b11a7ad68
+state_head: a16c273cf1ef0c3fee0a160617d867188f128528
 progress:
   total_phases: 8
   completed_phases: 63
   total_plans: 65
-  completed_plans: 42
+  completed_plans: 54
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,9 +22,9 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 ## Current Position
 
 Phase: 254 (Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)) — EXECUTING
-Plan: 1 of 18
+Plan: 4 of 18
 
-Status: Executing Phase 254
+Status: Ready to execute
 
 Last activity: 2026-11-14 — Phase 254 execution started
 
@@ -935,6 +935,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 250]: 250-08: calibration NULL reasons are checked in a fixed order (no spread, no line, no played prob, line too short) so scored share plus the four reason columns sum to all user blunders
 - [Phase 250]: 250-08: D-03 fair-share proxies in the report are median played prob, median reply spread and share with mate or >= 2 material points down per threshold, plus the owner's label-measured fair share (80/89/92% at 0.5/0.7/0.8) as a named constant
 - [Phase 250]: 250-08: hazard_position_weights deleted; the report weights window positions with blunder_position_marginals (conditional weights marginalised over the uniform length draw)
+- [Phase 254]: Plan 08: drill selection reads facepalm_expr(FACEPALM_DRILL_LAMBDA); flaw_owner_id pin kept; loader labels the expression facepalm_score in the same column position
+- [Phase 254]: 254-18: library chip and range filter share one facepalm_expr(FACEPALM_LIBRARY_LAMBDA) object per query_flaws statement (chip on the paged statement only); eval-chart markers come from fetch_page_facepalm_scores, never computed in Python
+- [Phase 254]: 254-09: BlunderRecord.facepalm_score is a cached property over the Python twin at FACEPALM_DRILL_LAMBDA and the checkout's model; calibration cache version 3 stores facts only
+- [Phase 254]: 254-09: scripts/copy_line_material.py keeps its stored-column read: it is the read-only parity check plan 10 needs, so the 'no script reads the stored score' grep prints 1
 
 ### Pending Todos
 
@@ -1177,9 +1181,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-14T18:36:19.370Z
-**Stopped at:** Phase 254 context gathered
-**Resume file:** .planning/phases/254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611/254-CONTEXT.md
+**Last session:** 2026-11-15T00:43:48.308Z
+**Stopped at:** Completed 254-09-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1451,6 +1455,9 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 250 P06 | 9 min | 2 tasks | 8 files |
 | Phase 250 P07 | 13 min | 2 tasks | 4 files |
 | Phase 250 P08 | 37 min | 3 tasks | 13 files |
+| Phase 254 P08 | 30 min | 2 tasks | 4 files |
+| Phase 254 P18 | 35 min | 2 tasks | 6 files |
+| Phase 254 P09 | 11 min | 3 tasks | 6 files |
 
 ## Performance Metrics
 

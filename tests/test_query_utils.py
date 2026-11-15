@@ -522,18 +522,21 @@ class TestFacepalmGate:
         """
         sql = self._stmt_sql(70, 100)
         assert "EXISTS" in sql, f"facepalm-only range must build the flaw EXISTS; got: {sql}"
-        assert "facepalm_score" in sql, f"EXISTS must reference facepalm_score; got: {sql}"
+        # D-01: the clause reads the query-time expression over the stored facts, not the column.
+        assert "played_line_material" in sql, f"EXISTS must read the fact columns; got: {sql}"
+        assert "maia_played_prob" in sql, f"EXISTS must read the fact columns; got: {sql}"
+        assert "game_flaws.facepalm_score" not in sql, f"stored score must not be read; got: {sql}"
 
     def test_full_range_adds_no_clause(self) -> None:
         """0..100 is the neutral full range: no facepalm clause, no flaw EXISTS."""
         sql = self._stmt_sql(0, 100)
-        assert "facepalm_score" not in sql, f"full range must add no clause; got: {sql}"
+        assert "played_line_material" not in sql, f"full range must add no clause; got: {sql}"
         assert "game_flaws" not in sql, f"full range must not build the EXISTS; got: {sql}"
 
     def test_none_range_adds_no_clause(self) -> None:
         """Both bounds omitted: every non-library caller is unchanged."""
         sql = self._stmt_sql(None, None)
-        assert "facepalm_score" not in sql, f"None range must add no clause; got: {sql}"
+        assert "played_line_material" not in sql, f"None range must add no clause; got: {sql}"
         assert "game_flaws" not in sql, f"None range must not build the EXISTS; got: {sql}"
 
     def test_narrowed_range_requires_user_id(self) -> None:

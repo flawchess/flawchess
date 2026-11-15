@@ -30,6 +30,9 @@ from app.repositories.library_repository import (
     tactic_slot_visible,
 )
 
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from tests.facepalm_seed import SEED_FACEPALM_MARGIN, SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
+
 # TacticMotifInt values used in tests (must match FAMILY_TO_MOTIF_INTS).
 # FORK = 1, DISCOVERED_ATTACK = 6
 _FORK_INT = 1
@@ -248,9 +251,13 @@ async def _seed_tactic_flaw(
     allowed_conf: int | None = None,
     allowed_depth: int | None = None,
     severity: int = 2,
-    facepalm_score: float | None = None,
+    facepalm_target: float | None = None,
 ) -> None:
-    """Insert a GameFlaw row with tactic fields for testing."""
+    """Insert a GameFlaw row with tactic fields for testing.
+
+    `facepalm_target` seeds FACTS whose library-lambda expression equals it (D-01): readers
+    compute the score at query time, so a stored score would never be read.
+    """
     from app.models.game_flaw import GameFlaw
 
     flaw = GameFlaw(
@@ -270,7 +277,7 @@ async def _seed_tactic_flaw(
         allowed_tactic_motif=allowed_motif,
         allowed_tactic_confidence=allowed_conf,
         allowed_tactic_depth=allowed_depth,
-        facepalm_score=facepalm_score,
+        **facepalm_fact_columns(facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA),
     )
     session.add(flaw)
     await session.flush()
@@ -283,9 +290,9 @@ async def _seed_non_tactic_flaw(
     game_id: int,
     ply: int,
     severity: int = 2,
-    facepalm_score: float | None = None,
+    facepalm_target: float | None = None,
 ) -> None:
-    """Insert a plain (non-tactic) GameFlaw row."""
+    """Insert a plain (non-tactic) GameFlaw row (facts seeded from `facepalm_target`, D-01)."""
     from app.models.game_flaw import GameFlaw
 
     flaw = GameFlaw(
@@ -305,7 +312,7 @@ async def _seed_non_tactic_flaw(
         allowed_tactic_motif=None,
         allowed_tactic_confidence=None,
         allowed_tactic_depth=None,
-        facepalm_score=facepalm_score,
+        **facepalm_fact_columns(facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA),
     )
     session.add(flaw)
     await session.flush()
@@ -740,6 +747,7 @@ class TestBuildFlawItemClockSuppression:
             pos_at,
             pos_before,
             pos_two_before,
+            facepalm_score=None,
             tactic_families=[],
             orientation="either",
             min_tactic_depth=None,
@@ -769,6 +777,7 @@ class TestBuildFlawItemClockSuppression:
             pos_at,
             pos_before,
             pos_two_before,
+            facepalm_score=None,
             tactic_families=[],
             orientation="either",
             min_tactic_depth=None,
@@ -789,25 +798,46 @@ _FP_USER_ID = 25301
 _FP_SEVERITY_MISTAKE = 1
 _FP_OPPONENT_SCORE = 0.95
 _FP_PCT_SCALE = 100
-# Seeded user blunder scores straddling the 30 / 70 band cuts. Stored as float4, so
-# 0.70 reads back as 0.6999999881 and floors to 69 (Mid), exactly as the badge shows it.
-_FP_BAND_SCORES: tuple[float, ...] = (0.27, 0.2999, 0.30, 0.699, 0.70, 0.7001, 1.0)
-_FP_SCORE_DECIMALS = 4
+# Seeded user blunder TARGET scores straddling the 30 / 70 band cuts, each edge seeded at
+# plus and minus SEED_FACEPALM_MARGIN (REAL inputs cannot hit an exact decimal, so a target
+# exactly on a cut would be a coin flip). A target of exactly 1.0 is unreachable by facts.
+_FP_BAND_TARGETS: tuple[float, ...] = (
+    0.27,
+    0.30 - SEED_FACEPALM_MARGIN,
+    0.30 + SEED_FACEPALM_MARGIN,
+    0.70 - SEED_FACEPALM_MARGIN,
+    0.70 + SEED_FACEPALM_MARGIN,
+    0.99,
+)
 # Scored-row count plus one unscored blunder and one unscored mistake.
-_FP_ALL_ROWS = len(_FP_BAND_SCORES) + 2
+_FP_ALL_ROWS = len(_FP_BAND_TARGETS) + 2
+_FP_GRID_LIMIT = 1000
+# Facts grid for the chip/filter agreement property: every whole percent from 10 to 90, each
+# seeded just below and just above the percent boundary.
+_FP_GRID_PCT_FIRST = 10
+_FP_GRID_PCT_LAST = 90
+_FP_GRID_TARGETS: tuple[float, ...] = tuple(
+    pct / _FP_PCT_SCALE + offset
+    for pct in range(_FP_GRID_PCT_FIRST, _FP_GRID_PCT_LAST + 1)
+    for offset in (-SEED_FACEPALM_MARGIN, SEED_FACEPALM_MARGIN)
+)
+# Bands the agreement property sweeps: Low, Mid, High and two 5% slider bands.
+_FP_GRID_BANDS: tuple[tuple[int, int], ...] = ((0, 29), (30, 69), (70, 100), (35, 39), (85, 89))
 
 
-async def _seed_facepalm_band_game(session: AsyncSession, *, user_id: int) -> int:
-    """Seed one white-user game with the band-straddling scored blunders.
+async def _seed_facepalm_band_game(
+    session: AsyncSession, *, user_id: int, targets: tuple[float, ...] = _FP_BAND_TARGETS
+) -> int:
+    """Seed one white-user game with the band-straddling scored blunders (facts, D-01).
 
     ply is 0-based with White on even plies: even plies are the user's moves. The odd-ply
     row is a scored OPPONENT blunder that must never match a narrowed range (D-05).
     """
     game = await _seed_game_with_flaw(session, user_id=user_id)
     ply = 2
-    for score in _FP_BAND_SCORES:
+    for target in targets:
         await _seed_non_tactic_flaw(
-            session, user_id=user_id, game_id=game.id, ply=ply, facepalm_score=score
+            session, user_id=user_id, game_id=game.id, ply=ply, facepalm_target=target
         )
         ply += 2
     await _seed_non_tactic_flaw(session, user_id=user_id, game_id=game.id, ply=ply)
@@ -823,7 +853,7 @@ async def _seed_facepalm_band_game(session: AsyncSession, *, user_id: int) -> in
         user_id=user_id,
         game_id=game.id,
         ply=3,
-        facepalm_score=_FP_OPPONENT_SCORE,
+        facepalm_target=_FP_OPPONENT_SCORE,
     )
     return game.id
 
@@ -835,6 +865,7 @@ async def _query_facepalm_flaws(
     min_facepalm_pct: int | None,
     max_facepalm_pct: int | None,
     severity: list[Literal["mistake", "blunder"]] | None = None,
+    limit: int = 100,
 ) -> tuple[list[FlawListItem], int]:
     """Run query_flaws with only the facepalm range (and optional severity) active."""
     return await query_flaws(
@@ -851,7 +882,7 @@ async def _query_facepalm_flaws(
         color=None,
         min_facepalm_pct=min_facepalm_pct,
         max_facepalm_pct=max_facepalm_pct,
-        limit=100,
+        limit=limit,
     )
 
 
@@ -859,23 +890,23 @@ class TestFacepalmRangeQueryFlaws:
     """query_flaws facepalm range over band boundaries, NULLs, mistakes and the opponent."""
 
     @pytest.mark.parametrize(
-        ("min_pct", "max_pct", "expected_scores"),
+        ("min_pct", "max_pct", "expected_targets"),
         [
-            (0, 29, {0.27, 0.2999}),
-            (30, 69, {0.30, 0.699, 0.70}),
-            (70, 100, {0.7001, 1.0}),
-            (40, 44, set()),
+            (0, 29, (0.27, 0.30 - SEED_FACEPALM_MARGIN)),
+            (30, 69, (0.30 + SEED_FACEPALM_MARGIN, 0.70 - SEED_FACEPALM_MARGIN)),
+            (70, 100, (0.70 + SEED_FACEPALM_MARGIN, 0.99)),
+            (40, 44, ()),
         ],
     )
     @pytest.mark.asyncio
-    async def test_band_returns_expected_scores(
+    async def test_band_edges_with_margins(
         self,
         db_session: object,
         min_pct: int,
         max_pct: int,
-        expected_scores: set[float],
+        expected_targets: tuple[float, ...],
     ) -> None:
-        """Each band returns exactly its scored user blunders and obeys the floor invariant."""
+        """Each band returns exactly its scored user blunders, seeds at an edge +- margin."""
         from tests.conftest import ensure_test_user
 
         session = cast(AsyncSession, db_session)
@@ -886,17 +917,64 @@ class TestFacepalmRangeQueryFlaws:
             session, user_id=_FP_USER_ID, min_facepalm_pct=min_pct, max_facepalm_pct=max_pct
         )
 
-        returned = {round(cast(float, i.facepalm_score), _FP_SCORE_DECIMALS) for i in items}
-        assert returned == expected_scores
-        assert count == len(expected_scores)
+        returned = sorted(cast(float, i.facepalm_score) for i in items)
+        assert returned == pytest.approx(sorted(expected_targets), abs=SEED_FACEPALM_TOLERANCE)
+        assert count == len(expected_targets)
         for item in items:
-            # The returned float is the stored float4, so this floors exactly like the badge.
+            # The returned float is the same expression the filter used, so it floors exactly
+            # like the badge.
             assert item.facepalm_score is not None
             assert min_pct <= math.floor(item.facepalm_score * _FP_PCT_SCALE) <= max_pct
 
     @pytest.mark.asyncio
+    async def test_chip_and_filter_agree_on_facts_grid(self, db_session: object) -> None:
+        """D-01 / D-04 property: the chip and the range filter read one expression.
+
+        For a facts grid straddling every whole-percent boundary and every band, each returned
+        flaw floors inside the band and each scored user blunder left out floors outside it, so
+        the filtered set equals the set derived from the chips of the unfiltered query.
+        """
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, _FP_USER_ID)
+        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID, targets=_FP_GRID_TARGETS)
+
+        all_items, _ = await _query_facepalm_flaws(
+            session,
+            user_id=_FP_USER_ID,
+            min_facepalm_pct=None,
+            max_facepalm_pct=None,
+            limit=_FP_GRID_LIMIT,
+        )
+        # Scored user blunders only: the odd-ply opponent row and the unscored rows are out.
+        scored = {
+            (i.game_id, i.ply): math.floor(i.facepalm_score * _FP_PCT_SCALE)
+            for i in all_items
+            if i.facepalm_score is not None and i.ply % 2 == 0
+        }
+        assert len(scored) == len(_FP_GRID_TARGETS)
+
+        for min_pct, max_pct in _FP_GRID_BANDS:
+            items, count = await _query_facepalm_flaws(
+                session,
+                user_id=_FP_USER_ID,
+                min_facepalm_pct=min_pct,
+                max_facepalm_pct=max_pct,
+                limit=_FP_GRID_LIMIT,
+            )
+            returned = {(i.game_id, i.ply) for i in items}
+            expected = {key for key, pct in scored.items() if min_pct <= pct <= max_pct}
+            excluded = set(scored) - returned
+            assert expected, "the grid must put rows inside every swept band"
+            assert excluded, "the grid must leave rows outside every swept band"
+            assert returned == expected
+            assert count == len(expected)
+            assert all(not min_pct <= scored[key] <= max_pct for key in excluded)
+
+    @pytest.mark.asyncio
     async def test_no_facepalm_params_returns_all_user_rows(self, db_session: object) -> None:
-        """No params and the full 0..100 range return every user row (9), opponent excluded."""
+        """No params and the full 0..100 range return every user row (8), opponent excluded."""
         from tests.conftest import ensure_test_user
 
         session = cast(AsyncSession, db_session)
@@ -922,8 +1000,23 @@ class TestFacepalmRangeQueryFlaws:
         items, _ = await _query_facepalm_flaws(
             session, user_id=_FP_USER_ID, min_facepalm_pct=70, max_facepalm_pct=100
         )
-        assert items, "High must still return the user's own 0.7001 and 1.0 blunders"
+        assert items, "High must still return the user's own 0.7001 and 0.99 blunders"
         assert all(i.ply % 2 == 0 for i in items), "only the user's (even-ply) moves may match"
+
+    @pytest.mark.asyncio
+    async def test_unscored_blunder_never_matches_narrowed_range(self, db_session: object) -> None:
+        """An unscored blunder (no facts) is excluded by every narrowed range, Low included."""
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, _FP_USER_ID)
+        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
+
+        for min_pct, max_pct in ((0, 29), (30, 69), (70, 100), (0, 99)):
+            items, _ = await _query_facepalm_flaws(
+                session, user_id=_FP_USER_ID, min_facepalm_pct=min_pct, max_facepalm_pct=max_pct
+            )
+            assert all(i.facepalm_score is not None for i in items)
 
     @pytest.mark.asyncio
     async def test_mistake_severity_with_range_returns_nothing(self, db_session: object) -> None:
@@ -945,8 +1038,8 @@ class TestFacepalmRangeQueryFlaws:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_item_carries_stored_score_or_none(self, db_session: object) -> None:
-        """FlawListItem.facepalm_score is the stored value for scored rows, None for unscored."""
+    async def test_item_carries_expression_score_or_none(self, db_session: object) -> None:
+        """FlawListItem.facepalm_score is the expression value for scored rows, None otherwise."""
         from tests.conftest import ensure_test_user
 
         session = cast(AsyncSession, db_session)
@@ -956,10 +1049,6 @@ class TestFacepalmRangeQueryFlaws:
         items, _ = await _query_facepalm_flaws(
             session, user_id=_FP_USER_ID, min_facepalm_pct=None, max_facepalm_pct=None
         )
-        scored = {
-            round(i.facepalm_score, _FP_SCORE_DECIMALS)
-            for i in items
-            if i.facepalm_score is not None
-        }
-        assert scored == set(_FP_BAND_SCORES)
+        scored = sorted(i.facepalm_score for i in items if i.facepalm_score is not None)
+        assert scored == pytest.approx(sorted(_FP_BAND_TARGETS), abs=SEED_FACEPALM_TOLERANCE)
         assert sum(1 for i in items if i.facepalm_score is None) == 2

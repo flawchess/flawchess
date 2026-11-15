@@ -33,9 +33,15 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import blunder_check_repository as repo
 from app.repositories.blunder_check_repository import NewWindow
-from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
 from app.services.blunder_check_candidates import judge_game
+from app.services.facepalm_score import facepalm_expr
 from app.services.blunder_check_selection import legal_key_plies
+from tests.facepalm_seed import (
+    SEED_FACEPALM_MARGIN,
+    SEED_FACEPALM_TOLERANCE,
+    facepalm_fact_columns,
+)
 from tests.blunder_check_seed import (
     SEED_FACEPALM_SCORE,
     SEED_PGN,
@@ -441,13 +447,15 @@ async def test_pick_own_require_facepalm_skips_games_without_unserved_qualifying
         test_engine,
         user_id=user_id,
         evals_cp=evals,
-        blunders=[SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2)],
+        blunders=[
+            SeedBlunder(ply=low_ply, facepalm_target=FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN)
+        ],
     )
     unscored = await seed_judged_game(
         test_engine,
         user_id=user_id,
         evals_cp=evals,
-        blunders=[SeedBlunder(ply=low_ply, facepalm_score=None)],
+        blunders=[SeedBlunder(ply=low_ply, facepalm_target=None)],
     )
     served = await seed_judged_game(
         test_engine,
@@ -494,7 +502,9 @@ async def test_pick_foreign_require_facepalm_skips_games_without_unserved_qualif
         test_engine,
         user_id=owner_id,
         evals_cp=evals,
-        blunders=[SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2)],
+        blunders=[
+            SeedBlunder(ply=low_ply, facepalm_target=FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN)
+        ],
     )
     served_to_caller = await seed_judged_game(
         test_engine,
@@ -599,13 +609,109 @@ async def test_load_blunder_flaws_only_qualifying_blunders(test_engine) -> None:
                         is_reversed=False,
                         is_squandered=False,
                         fen="8/8/8/8/8/8/8/8",
-                        facepalm_score=SEED_FACEPALM_SCORE,
+                        **facepalm_fact_columns(SEED_FACEPALM_SCORE, lam=FACEPALM_DRILL_LAMBDA),
                     )
                 )
         async with maker() as session:
             flaws = await repo.load_blunder_flaws(session, [game_id])
         assert [(f.ply, f.severity) for f in flaws[game_id]] == [(_BLUNDER_PLY, 2)]
         assert flaws[game_id][0].facepalm_score == pytest.approx(SEED_FACEPALM_SCORE)
+    finally:
+        await delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_own_pick_uses_drill_expression(test_engine) -> None:
+    """254 D-01: the own pick qualifies a blunder through the drill expression, band-edge on both sides."""
+    ply = _TRACER_PLIES[1]
+    user_id, _ = await register_user("bc-own-expr", beta=True, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    seeds = {
+        "above": FACEPALM_SCORE_MIN + SEED_FACEPALM_MARGIN,
+        "below": FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN,
+        "unscored": None,
+    }
+    games = {
+        name: await seed_judged_game(
+            test_engine,
+            user_id=user_id,
+            evals_cp=evals,
+            blunders=[SeedBlunder(ply=ply, facepalm_target=target)],
+        )
+        for name, target in seeds.items()
+    }
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            required = await repo.pick_own_game_ids(
+                session, user_id=user_id, limit=10, exclude_ids=[], require_facepalm=True
+            )
+        assert set(required) == {games["above"]}
+    finally:
+        await delete_games(test_engine, list(games.values()))
+
+
+@pytest.mark.asyncio
+async def test_foreign_pick_uses_drill_expression(test_engine) -> None:
+    """254 D-01 / T-254-42: the foreign pick uses the expression and still returns game ids only."""
+    ply = _TRACER_PLIES[1]
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-fpx-caller")
+    owner_id, _ = await register_user("bc-fpx-owner", beta=False, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    seeds = {
+        "above": FACEPALM_SCORE_MIN + SEED_FACEPALM_MARGIN,
+        "below": FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN,
+        "unscored": None,
+    }
+    games = {
+        name: await seed_judged_game(
+            test_engine,
+            user_id=owner_id,
+            evals_cp=evals,
+            blunders=[SeedBlunder(ply=ply, facepalm_target=target)],
+        )
+        for name, target in seeds.items()
+    }
+    seeded = [caller_game, *games.values()]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            picked = await repo.pick_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                raw_low=1400,
+                raw_high=1600,
+                limit=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+                require_facepalm=True,
+            )
+        assert all(type(game_id) is int for game_id in picked)
+        # Other tests' leaked games may exist; only the seeded ids are asserted on.
+        assert set(picked) & set(seeded) == {games["above"]}
+    finally:
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_load_blunder_flaws_returns_expression_score(test_engine) -> None:
+    """254 D-12: the loader's facepalm_score is facepalm_expr(FACEPALM_DRILL_LAMBDA) of the row."""
+    user_id, game_id = await _user_and_game(test_engine, "bc-load-expr")
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            flaws = await repo.load_blunder_flaws(session, [game_id])
+            expected = (
+                await session.execute(
+                    select(facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
+                        GameFlaw.game_id == game_id, GameFlaw.ply == _BLUNDER_PLY
+                    )
+                )
+            ).scalar_one()
+        assert [f.ply for f in flaws[game_id]] == [_BLUNDER_PLY]
+        score = flaws[game_id][0].facepalm_score
+        assert score == pytest.approx(expected)
+        assert score == pytest.approx(SEED_FACEPALM_SCORE, abs=SEED_FACEPALM_TOLERANCE)
     finally:
         await delete_games(test_engine, [game_id])
 
@@ -629,9 +735,9 @@ async def test_facepalm_loader_and_judge_keep_only_qualifying(test_engine) -> No
         user_id=user_id,
         evals_cp=_three_blunder_evals(),
         blunders=[
-            SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2),
-            SeedBlunder(ply=qualifying_ply, facepalm_score=SEED_FACEPALM_SCORE),
-            SeedBlunder(ply=null_ply, facepalm_score=None),
+            SeedBlunder(ply=low_ply, facepalm_target=FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN),
+            SeedBlunder(ply=qualifying_ply, facepalm_target=SEED_FACEPALM_SCORE),
+            SeedBlunder(ply=null_ply, facepalm_target=None),
         ],
     )
     maker = async_sessionmaker(test_engine, expire_on_commit=False)

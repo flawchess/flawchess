@@ -36,9 +36,10 @@ from app.repositories.game_flaws_repository import (
     MAIA_FLAW_COLUMNS,
 )
 from app.services import maia_engine, maia_flaw_scoring
-from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
 from app.services.line_material import best_line_facts, line_facts
 from scripts import backfill_maia_flaws as backfill
+from tests.facepalm_seed import facepalm_fact_columns
 from tests.services.maia_fakes import fake_full_policy
 
 # Unique to this module (grep tests/ before changing).
@@ -547,9 +548,34 @@ def test_cli_mode_choices() -> None:
 # ---------------------------------------------------------------------------
 
 _USER_BLUNDER_PLIES: tuple[int, ...] = (2, 8)
-# facepalm_score is a REAL column: a value equal to the bar round-trips just below it, so the
-# status test sets a clearly qualifying score instead.
+# Facts cannot hit the bar exactly (REAL inputs), so the status test seeds a clearly
+# qualifying score instead.
 _ABOVE_THE_BAR = 0.1
+_BLUNDER_SEVERITY = 2
+
+
+async def _stored_score_counts(maker: async_sessionmaker[AsyncSession]) -> tuple[int, int]:
+    """(scored, qualifying) user-side blunders read from the STORED column, for the D-12 parity."""
+    async with maker() as session:
+        scored = (
+            await session.execute(
+                select(func.count()).where(
+                    GameFlaw.user_id == _TEST_USER_ID,
+                    GameFlaw.severity == _BLUNDER_SEVERITY,
+                    GameFlaw.facepalm_score.is_not(None),
+                )
+            )
+        ).scalar_one()
+        qualifying = (
+            await session.execute(
+                select(func.count()).where(
+                    GameFlaw.user_id == _TEST_USER_ID,
+                    GameFlaw.severity == _BLUNDER_SEVERITY,
+                    GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+                )
+            )
+        ).scalar_one()
+    return int(scored), int(qualifying)
 
 
 def _boards_by_ply(pgn: str) -> dict[int, tuple[chess.Board, str]]:
@@ -782,12 +808,24 @@ async def test_spread_status_counts(
     await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
     await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
     await _run(session_factory, tmp_path, limit=1, mode="spread")
-    # Make the scored game's ply-2 score exceed the bar so the qualifying count is exercised.
+    # D-12: with the pre-refit constants the expression counts equal the stored-column counts.
+    stored_counts = await _stored_score_counts(session_factory)
+    expression_counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "spread")
+    assert (
+        expression_counts["user_blunders_with_score"],
+        expression_counts["user_blunders_qualifying"],
+    ) == stored_counts
+    # Make the scored game's ply-2 facts score above the bar so the qualifying count is exercised
+    # (the counts read the expression over the facts, never the stored column, 254 D-01).
     async with session_factory() as session:
         await session.execute(
             update(GameFlaw)
-            .where(GameFlaw.user_id == _TEST_USER_ID, GameFlaw.facepalm_score.is_not(None))
-            .values(facepalm_score=FACEPALM_SCORE_MIN + _ABOVE_THE_BAR)
+            .where(GameFlaw.user_id == _TEST_USER_ID, GameFlaw.played_line_material.is_not(None))
+            .values(
+                **facepalm_fact_columns(
+                    FACEPALM_SCORE_MIN + _ABOVE_THE_BAR, lam=FACEPALM_DRILL_LAMBDA
+                )
+            )
         )
         await session.commit()
 
