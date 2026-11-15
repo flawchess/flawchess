@@ -116,6 +116,13 @@ rating-dependent line depth, the facepalm rate in stats (SEED-261114-iuv).
   passers at several cuts, split by loss-type and miss-type, and the drill pool size per rating band, own and
   foreign.
 
+- **D-21 (owner, 2026-11-15, during execution; amends D-11 and D-12): do not wait for Phase 252.** After the prod
+  pre pass and the miss labels, plan 11 runs without the 252 precondition: the prod line pass, the refit and the
+  `FACEPALM_SCORE_MIN` decision go ahead on the lines as they are. Where a Stockfish line is too short, the
+  material gain / loss is skipped (NULL slot, D-18 behaviour), not guessed. Once 252's prod repair is done, one
+  more line pass fills only the remaining gaps. Known cost, accepted by the owner: about a third of prod blunders
+  have short lines today, so the refit sees a subset and the gap fill changes inputs under the fitted constants.
+
 ### Miss labels
 - **D-14: About 50 new rows, mostly pure misses, stratified.** About 40 pure misses (loss 0) spread over missed size
   (1, 3, 5, 9+) and over best-move probability, so the fit sees easy and hard misses; about 10 mixed rows (loses and
