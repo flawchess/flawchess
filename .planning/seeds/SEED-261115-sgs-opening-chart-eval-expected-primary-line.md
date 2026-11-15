@@ -4,7 +4,7 @@ status: dormant
 planted: 2026-11-15
 planted_during: v2.29, Phase 254 executing; /gsd-explore session with the owner
 trigger_when: when the next Openings stats page or opening-insights phase is planned, or when a user reports misreading a slump in the "Score over time" chart
-scope: small. One extra per-game series in the opening timeline payload, a window constant change, and a second line in ScoreChart
+scope: small. One extra per-game series in the opening timeline payload, a window constant change, a second line in ScoreChart, reference line moved to the colour baseline, typical band dropped
 ---
 
 # SEED-261115-sgs: Opening "Score over time" chart, eval-expected score as the primary line
@@ -66,19 +66,33 @@ Dev DB (26 openings with 600+ games, 6 heavy users):
   jumpy as the line it is meant to explain.
 - **Noise bands:** clutter (owner).
 
-## Open Design Points
+## Locked Decisions (owner, 2026-11-15)
 
-- **Openings with fewer than 100 games:** a floor, or a shorter warm-up window. `MIN_GAMES_FOR_TIMELINE`
-  exists today for the 50-game window.
-- **Naming and popover copy:** say "eval", never "pawns". The popover has to explain what the eval-expected
-  line is in one sentence.
-- **Level gap between the lines:** for one dev user, actual score sat 4 to 11 points above eval-expected in
-  all six openings checked. That may be real (outplaying opponents after the opening) or the Lichess curve
-  being fit on 2300+ rapid (SEED-203). Not settled. Users will read the gap as meaningful, so decide whether
-  to explain it, recalibrate, or accept it.
-- **Query cost:** the per-game middlegame-entry eval across full history for heavy users. The existing
-  aggregate query is `stats_repository` (`OpeningPhaseEntryMetrics`); the timeline needs it per game.
-- **Whether the chart's shared score verdict fields** should move to the eval-expected series.
+1. **Openings under 100 games:** keep today's behaviour. The window is "last up to 100 games" and a point is
+   emitted once it holds `MIN_GAMES_FOR_TIMELINE` (10) games. No hard 100-game floor.
+2. **Reference line and typical band:** move the reference line from 50% to the colour baseline of the
+   eval-expected line (the +25 cp / -25 cp baseline from `opening_insights_constants.EVAL_BASELINE_*`
+   converted with the same curve, about 52.3% for White and 47.7% for Black). Drop the typical band: it is
+   calibrated for actual score and no benchmark band for eval-expected exists. A new band is out of scope.
+3. **Level gap between the lines:** ship without recalibrating the curve. One popover sentence says the
+   expected line reflects only the position reached out of the opening, so the actual line can sit above or
+   below it. For one dev user, actual score sat 4 to 11 points above eval-expected in all six openings
+   checked; whether that is real post-opening outperformance or the Lichess curve being fit on 2300+ rapid
+   is not settled and belongs to SEED-203.
+4. **Games without an eval:** skip them in the eval-expected average, keep them in the actual score. The two
+   lines can rest on different game counts, so the tooltip shows the eval game count.
+5. **Names:** "Expected score from opening eval" (primary) and "Actual score" (secondary). The chart title
+   stays "Score over time". Copy says "eval", never "pawns".
+
+## Implementation Notes
+
+- **Not decided:** whether the chart's shared score verdict fields move to the eval-expected series. Leave
+  them on actual score unless the owner says otherwise.
+- **Query cost:** the timeline needs the middlegame-entry eval per game across full history. The existing
+  aggregate query is `stats_repository` (`OpeningPhaseEntryMetrics`). Check the plan on a heavy user.
+- **Window constant:** `ROLLING_WINDOW_SIZE` is used only by the openings timeline; the endgame charts have
+  their own.
+- **Isolation:** if a phase is executing in the main checkout, run this in a separate worktree.
 
 ## When to Surface
 
