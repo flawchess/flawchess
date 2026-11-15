@@ -5,10 +5,10 @@ current_phase: 254
 current_phase_name: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
 status: executing
 stopped_at: Completed 254-09-PLAN.md
-last_updated: "2026-11-15T00:43:48.927Z"
+last_updated: "2026-11-15T16:57:46.557Z"
 last_activity: 2026-11-14
 last_activity_desc: Phase 254 execution started
-state_head: a16c273cf1ef0c3fee0a160617d867188f128528
+state_head: a41a98635277055773122a5ce0decb8a0aa2cfb4
 progress:
   total_phases: 8
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: 4 of 18
 
 Status: Ready to execute
 
-Last activity: 2026-11-14 — Phase 254 execution started
+Last activity: 2026-11-15 — Completed quick task 261115-ntq: implement SEED-261115-sgs (opening chart eval-expected primary line)
 
 Open threads carried forward (not blockers):
 
@@ -1129,6 +1129,7 @@ None active.
 | 261112-k56 | Opening cache: 1-2 ply cached lines count as missing, are re-searched and healed (SEED-261112-s4v Part A item 3) | 2026-11-12 | 74fd92567 | [261112-k56-opening-cache-treat-1-2-ply-cached-lines](./quick/261112-k56-opening-cache-treat-1-2-ply-cached-lines/) |
 | 261112-l25 | Frontend engine hooks: bound lines never replace an exact line's moves (SEED-261112-s4v Part A item 4) | 2026-11-12 | be2e625e9 | [261112-l25-frontend-engine-hooks-bound-lines-never-](./quick/261112-l25-frontend-engine-hooks-bound-lines-never-/) |
 | 261114-p12 | Tactic Depth presets All/Low/Mid/High; Facepalm upper handle on multiples of 5%, hint removed | 2026-11-14 | cd158b2fe | [261114-p12-tactic-depth-filter-presets-all-low-mid-](./quick/261114-p12-tactic-depth-filter-presets-all-low-mid-/) |
+| 261115-ntq | Opening Score over time chart: eval-expected score (rolling 100) as primary line, actual score secondary, loaded on demand (SEED-261115-sgs) | 2026-11-15 | a41a98635 | [261115-ntq-implement-seed-261115-sgs](./quick/261115-ntq-implement-seed-261115-sgs/) |
 
 ## Deferred Items
 

@@ -314,3 +314,11 @@ Before integrating into main (CLAUDE.md pre-merge gate, once, right before the s
 <output>
 Create `.planning/quick/261115-ntq-implement-seed-261115-sgs/261115-ntq-SUMMARY.md` when done
 </output>
+
+<owner_override date="2026-11-15">
+Decided by the owner during execution, after this plan was written:
+- The per-game middlegame-entry eval uses the LATERAL first-phase=1-row lookup (listed above as "Not adopted"), not the sorted join. It lives next to the existing selection in `stats_repository`, with a parity test.
+- Loading stays on demand as planned (front-loading was tried as a direction and reversed the same day, because most-played charts already load on open).
+- Dev user 7 (67k games) is an outlier; prod allows far fewer games per user. Dev user 28 is the representative case.
+See SUMMARY.md "Deviations from plan" for the measured numbers.
+</owner_override>

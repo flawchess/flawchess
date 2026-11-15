@@ -1,6 +1,8 @@
 ---
 id: SEED-261115-sgs
-status: dormant
+status: closed. Resolved by quick task 261115-ntq (merge a41a98635 on main, 2026-11-15; unreleased). Deviation from the seed: the eval series loads on demand when the chart opens, via a LATERAL lookup.
+promoted_to: quick task 261115-ntq
+promoted: 2026-11-15
 planted: 2026-11-15
 planted_during: v2.29, Phase 254 executing; /gsd-explore session with the owner
 trigger_when: when the next Openings stats page or opening-insights phase is planned, or when a user reports misreading a slump in the "Score over time" chart
