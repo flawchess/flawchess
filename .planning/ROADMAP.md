@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 12/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 13/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -490,7 +490,7 @@ Plans:
 - [x] 254-06-PLAN.md — Release R1, close 250-10 as superseded (D-11), prod-run worktree, prod copy and parity, branch and checkout map (orchestrator-inline)
 
 **Wave 7** *(blocked on Wave 6 completion; R2 cycle opened by the orchestrator)*
-- [ ] 254-07-PLAN.md — Prod pre pass with 8 shards beside Phase 252 (D-20) from the prod-run worktree, and the owner's miss labels (orchestrator-inline)
+- [x] 254-07-PLAN.md — Prod pre pass with 8 shards beside Phase 252 (D-20) from the prod-run worktree, and the owner's miss labels (orchestrator-inline)
 - [x] 254-08-PLAN.md — R2 drill readers on the expression: own / foreign predicates and the loader
 
 **Wave 8** *(blocked on 254-08)*
@@ -516,6 +516,44 @@ Plans:
 
 **Wave 15** *(human-gated, one-way)*
 - [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
+
+### Phase 255: Feature Discovery Dot Route (SEED-261115-d0t)
+
+**Goal**: One coherent strategy for the red pulsating dot. An ordered route of features with the dot in exactly
+one place at a time, moving from one unexplored feature to the next, so the same mechanism onboards new users and
+announces a new feature (first case: blunder-check training) to returning ones. One arbiter replaces the three dot
+systems that exist today (nav dots in `App.tsx`, the Openings sidebar hint chain, the re-minted Train flag).
+Evidence, owner decisions and the proposed shape are in the seed; nothing below the locked items is settled until
+the discuss phase.
+
+- **Locked (owner, 2026-11-09):** dot only, no "What's New" panel and no "New" pills; one dot at a time; the dot
+  solves the path problem (nav item first, then the subtab once the user is in the section).
+- **Locked (owner, 2026-11-15):** completion is stored server-side and follows the user across devices.
+- **To settle in discuss:** the storage shape and how existing users are bootstrapped from today's flags; what
+  happens to a step the user ignores (queue-jumping for new features, auto-skip); route order and contents;
+  interplay with the Train waiting-count badge; whether SEED-199's sticky subnav is in scope so a subtab dot stays
+  visible on long pages.
+
+**Depends on**: nothing. Mostly frontend plus one small migration; built in its own worktree while Phases 252
+and 254 wait on their prod runs (owner, 2026-11-15).
+**Requirements**: TBD (coverage set: CONTEXT decisions D-01..D-22)
+**Plans:** 7 plans
+
+Plans:
+**Wave 1**
+- [ ] 255-01-PLAN.md — Backend route storage: guarded DONE transition, POST /users/me/feature-route and profile.feature_route, guests included (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 255-02-PLAN.md — Tracer: Import visit stored server-side, route dot hops to Train on header and bottom bar; arbiter unit tests (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 255-03-PLAN.md — More drawer on the route, cross-surface dot rules, retired localStorage key sweep, typed profile fixtures (wave 3)
+- [ ] 255-04-PLAN.md — Auto-skip clock after 3 active days (server + client) and the existing-user seed migration (wave 3)
+- [ ] 255-05-PLAN.md — In-section dots for Library and Openings subtabs; played-as and filters become route steps, bookmarks dot removed (wave 3)
+- [ ] 255-06-PLAN.md — Train step completes on Start or Resume; Today-tab and start-button dots (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 255-07-PLAN.md — Alembic head re-check, changelog, full pre-merge gate and the route walk checkpoint (wave 4)
 
 ## Backlog
 

@@ -52,10 +52,10 @@ LEAD_IN_PLIES: int = 1
 MAX_BLUNDER_POSITION: int = 5
 
 # 250 D-01 / D-04 facepalm score (app/services/facepalm_score.py). A user blunder qualifies when its
-# score is at least FACEPALM_SCORE_MIN: the owner's starting value, deliberately below the
-# precision-optimal cut (0.8) so drill answers cover both sides of the eventual threshold; D-18
-# resets it after the refit on the repaired lines.
-FACEPALM_SCORE_MIN: float = 0.7
+# score is at least FACEPALM_SCORE_MIN. 254 D-13: 0.50 is the owner's choice of 2026-11-15,
+# deliberately below the labels' meaning (label 1 = "should score above 70%", D-23) so the drill
+# collects answers over a wider difficulty range.
+FACEPALM_SCORE_MIN: float = 0.5
 # Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
 PLAYED_PROB_OFFSET: float = 0.01
 # Plies of the stored refutation line the score reads (one depth for all ratings in this phase).
@@ -64,19 +64,19 @@ LINE_DEPTH: int = 3
 LOSS_CAP: int = 5
 # Loss value of a mate within LINE_DEPTH plies.
 MATE_LOSS: int = 5
-# 250 D-01 / D-04 fitted facepalm coefficients: the output of scripts/blunder_check/fit_facepalm.py
-# on reports/blunder-check/facepalm-features-2026-11-13.tsv (report:
-# reports/blunder-check/facepalm-fit-2026-11-13.md), pasted as printed, never hand-adjusted.
-# Fitted on the lines as stored at label time; D-18 refits on the repaired lines.
+# 254 D-01 / D-21 fitted facepalm model: the output of scripts/blunder_check/fit_facepalm.py,
+# refitted in Phase 254 on 2026-11-15 on the lines as stored (before the Phase 252 repair finished,
+# CONTEXT D-21) with the set 7 miss labels. Features:
+# reports/blunder-check/facepalm-features-2026-11-15.tsv, report:
+# reports/blunder-check/facepalm-fit-2026-11-15.md, pasted as printed, never hand-adjusted.
 # `fit_facepalm.py --check-constants` proves they still equal the refit.
-FACEPALM_INTERCEPT: float = -1.4193
-FACEPALM_PLAYED_COEF: float = -0.6629
-FACEPALM_SPREAD_COEF: float = -0.3304
-FACEPALM_LOSS_COEF: float = 1.1570
+FACEPALM_INTERCEPT: float = -0.7583
+FACEPALM_PLAYED_COEF: float = -0.4146
+FACEPALM_SPREAD_COEF: float = -0.2585
+FACEPALM_LOSS_COEF: float = 1.0129
 FACEPALM_LOSS_FLOOR: int | None = 0
 # 254 D-06 / D-07 / D-08 shape selectors of the score model (app/services/facepalm_score.py):
-# the model holds every shape the refit may pick, so the refit is a constants-only change. The
-# values below reproduce the Phase 250 score exactly (D-12) and the Phase 254 refit replaces them.
+# the model holds every shape the refit may pick, so the refit is a constants-only change.
 # D-06: one material term `loss + lam * missed` ("combined") or loss and missed as separate
 # terms ("split"); D-07: the reply-spread term on every row, only on rows that lose material,
 # or on those rows with the best move's probability standing in for pure misses.
@@ -84,18 +84,18 @@ MaterialForm = Literal["combined", "split"]
 SpreadForm = Literal["always", "loss_only", "best_prob_for_misses"]
 FACEPALM_MATERIAL_FORM: MaterialForm = "split"
 # Coefficient of the missed term in the split form (0.0 = the term is not in the model).
-FACEPALM_MISSED_COEF: float = 0.0
+FACEPALM_MISSED_COEF: float = 0.0891
 # Lower clip of the missed term (None = unclipped: a best line behind at depth 3 gives a
 # negative gain), the cap, and the value of a best-line mate within LINE_DEPTH (a missed mate
 # must not score as nothing missed).
-FACEPALM_MISSED_FLOOR: int | None = 0
-FACEPALM_MISSED_CAP: int = LOSS_CAP
-FACEPALM_MISSED_MATE: int = MATE_LOSS
-FACEPALM_SPREAD_FORM: SpreadForm = "always"
+FACEPALM_MISSED_FLOOR: int | None = None
+FACEPALM_MISSED_CAP: int = 5
+FACEPALM_MISSED_MATE: int = 5
+FACEPALM_SPREAD_FORM: SpreadForm = "best_prob_for_misses"
 # D-08 optional inputs (0.0 = the input is not in the model): ln(best-move probability +
 # PLAYED_PROB_OFFSET) and the reply spread of the position before the blunder.
-FACEPALM_BEST_PROB_COEF: float = 0.0
-FACEPALM_PRE_SPREAD_COEF: float = 0.0
+FACEPALM_BEST_PROB_COEF: float = 1.0405
+FACEPALM_PRE_SPREAD_COEF: float = 0.0000
 # 254 D-03 / D-04 loss-aversion knob: lambda multiplies the missed term only (0 = the loss-only
 # score). Two constants so the consumers can diverge: the blunder-check drill selection (D-03,
 # symmetric while GM Noel Studer's answer is pending) and the library (D-04: chip, filter,

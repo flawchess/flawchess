@@ -29,6 +29,7 @@ from app.services.facepalm_score import (
 )
 from scripts.blunder_check import fit_facepalm
 from scripts.blunder_check.facepalm_features import FEATURE_COLUMNS
+from tests.facepalm_models import PHASE_250_MODEL
 
 # The committed 2026-11-13 table's header (the "legacy" schema the fit still reads).
 LEGACY_FEATURE_COLUMNS: tuple[str, ...] = (
@@ -617,7 +618,12 @@ def test_fit_loads_both_schemas(tmp_path: Path) -> None:
     assert any(r.best_3 is not None and r.best_prob is not None for r in facts.rows)
 
 
-def test_check_constants_legacy_still_passes(tmp_path: Path) -> None:
+def test_check_constants_legacy_still_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shipped model is the Phase 254 refit now; the legacy table reproduces the frozen
+    # Phase 250 model it was fitted into.
+    monkeypatch.setattr(fit_facepalm, "FACEPALM_MODEL", PHASE_250_MODEL)
     argv = [
         "--features",
         str(LEGACY_FEATURES),

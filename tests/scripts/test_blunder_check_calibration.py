@@ -622,7 +622,9 @@ class TestSectionMaterialTypes:
                 _blunder(played_3=-3),  # loses
                 _blunder(played_3=0, best_3=3),  # misses
                 _blunder(played_3=-3, best_3=2),  # loses and misses
-                _blunder(played_3=0, best_3=0),  # neither
+                # neither: an easy-to-find move (high played prob, wide spread) so it stays low
+                # under the refit; the default p 0.05 / spread 2 scores 0.60 there.
+                _blunder(played_3=0, best_3=0, played_prob=0.5, spread=8.0),
                 _blunder(played_3=None),  # unknown: no played line, no mate
             ]
         )
@@ -638,7 +640,8 @@ class TestSectionMaterialTypes:
         assert [by_type[t]["user blunders"] for t in get_args(MaterialType)] == ["1"] * 5
         assert by_type["unknown"]["scored"] == "0.0% (n=1)"
         assert by_type["loses"]["scored"] == "100.0% (n=1)"
-        # Three points down at p 0.05 scores far above every cut; no material loss stays below 0.5.
+        # Three points down at p 0.05 scores far above every cut; no material loss at p 0.5 stays
+        # below 0.5.
         assert all(
             by_type["loses"][f"pass >= {t:.2f}"] == "100.0% (n=1)" for t in pass_thresholds(PARAMS)
         )

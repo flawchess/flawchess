@@ -883,12 +883,33 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
     assert score.user_blunders == 1
 
 
+def _expected_score_without_spread(pre: chess.Board, played: str, pv: str | None) -> float:
+    """The shipped model's score of the Scotch blunder when its reply spread is unknown.
+
+    Since the Phase 254 refit (spread form "best_prob_for_misses") the spread is read only on rows
+    that lose material at depth 3; this line does not, so a NULL spread no longer unscores it.
+    """
+    facts = line_facts(pre, played, pv)
+    assert (facts.loss_at(3) or 0) <= 0, "the fixture line must not lose material"
+    score = facepalm_score(
+        FacepalmFacts(
+            played_prob=_STORED_PLAYED_PROB,
+            reply_spread=None,
+            played_3=facts.material_at(3),
+            mate_ply=facts.mate_ply,
+        ),
+        lam=FACEPALM_DRILL_LAMBDA,
+    )
+    assert score is not None
+    return score
+
+
 async def test_spread_mode_no_rating_keeps_line_facts_and_skips_inference(
     session_factory: async_sessionmaker[AsyncSession],
     make_game: MakeGame,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A user blunder whose mover has no rating: line facts written, spread and score NULL."""
+    """A user blunder whose mover has no rating: line facts written, spread NULL, no inference."""
     pv = _mainline_line(_SCOTCH_PGN, _SCOTCH_FLAW_PLY, _STORED_LINE_PLIES)
     game_id = await make_game(
         pgn=_SCOTCH_PGN,
@@ -906,7 +927,8 @@ async def test_spread_mode_no_rating_keeps_line_facts_and_skips_inference(
     row = score.rows[0]
     assert calls == []
     assert row["maia_reply_spread"] is None
-    assert row["facepalm_score"] is None
+    pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    assert row["facepalm_score"] == pytest.approx(_expected_score_without_spread(pre, played, pv))
     assert row["line_loss_3"] is not None
     assert score.reasons["no_rating"] == 1
 
@@ -973,7 +995,8 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
 async def test_line_mode_blunder_without_stored_spread_gets_facts_but_no_score(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """A blunder the spread pass has not reached: line facts are written, the score stays NULL."""
+    """A blunder the spread pass has not reached: line facts are written, the score is the
+    shipped model's score without a spread (a spread-less row that loses no material keeps one)."""
     game_id, pv = await _scotch_user_blunder(make_game)
     await _store_base_values(
         session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
@@ -981,7 +1004,7 @@ async def test_line_mode_blunder_without_stored_spread_gets_facts_but_no_score(
     row = score_game(await _inputs(session_factory, game_id), None, "line").rows[0]
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
     assert row["line_loss_3"] == line_facts(pre, played, pv).loss_at(3)
-    assert row["facepalm_score"] is None
+    assert row["facepalm_score"] == pytest.approx(_expected_score_without_spread(pre, played, pv))
 
 
 async def _write_line_scores(

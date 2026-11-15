@@ -46,7 +46,6 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from app.services.blunder_check_rules import (  # noqa: E402
     FACEPALM_DRILL_LAMBDA,
-    FACEPALM_SCORE_MIN,
     LINE_DEPTH,
     LOSS_CAP,
     MATE_LOSS,
@@ -75,6 +74,11 @@ IRLS_TOL: float = 1e-8
 SEPARATION_COEF_LIMIT: float = 50.0
 CV_FOLDS: int = 10
 FIT_SEED: int = 250
+# Cut the fit's model selection and fair-share tables use by default. It is the labels' meaning
+# (label 1 = "the score should be above 70%", CONTEXT D-23), NOT the shipped FACEPALM_SCORE_MIN:
+# the drill cut may sit below it on purpose, and a refit must not depend on where the cut is
+# set (--check-constants would otherwise stop reproducing the shipped model once the cut moves).
+FIT_SELECTION_THRESHOLD: float = 0.7
 FIT_THRESHOLDS: tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.9)
 COEF_DECIMALS: int = 4
 
@@ -1667,7 +1671,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", type=Path, required=True, help="markdown report to write")
     parser.add_argument("--seed", type=int, default=FIT_SEED)
     parser.add_argument("--folds", type=int, default=CV_FOLDS)
-    parser.add_argument("--threshold", type=float, default=FACEPALM_SCORE_MIN)
+    parser.add_argument("--threshold", type=float, default=FIT_SELECTION_THRESHOLD)
     parser.add_argument(
         "--loss-floor",
         choices=("auto", "none", "0"),

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 254
-current_phase_name: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
+current_phase: 255
+current_phase_name: Feature Discovery Dot Route (SEED-261115-d0t)
 status: executing
 stopped_at: Completed 254-09-PLAN.md
-last_updated: "2026-11-15T16:57:46.557Z"
-last_activity: 2026-11-14
+last_updated: "2026-11-15T19:32:23.561Z"
+last_activity: 2026-11-15
 last_activity_desc: Phase 254 execution started
-state_head: a41a98635277055773122a5ce0decb8a0aa2cfb4
+state_head: 7ad8708bb9d84dc9a5c4bb376a61c63c43168921
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 63
-  total_plans: 65
-  completed_plans: 54
+  total_plans: 72
+  completed_plans: 55
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,7 +21,7 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 254 (Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)) — EXECUTING
+Phase: 255 (Feature Discovery Dot Route (SEED-261115-d0t)) — READY TO EXECUTE
 Plan: 4 of 18
 
 Status: Ready to execute
@@ -192,6 +192,8 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- Phase 255 added 2026-11-15 (explicit user request; seed recovered the same day from an unsaved `/gsd-explore` session of 2026-11-09): **Feature Discovery Dot Route** (SEED-261115-d0t). One ordered route for the red pulsating dot, one dot at a time, completion stored server-side. Built in its own worktree while Phases 252 and 254 wait on their prod runs; `current_phase` stays 254.
 
 - Phase 247 added 2026-11-08 (explicit user request via `/gsd-phase .planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`, planted the same day from the `/gsd-explore` session on blunder-check selection): **Maia Stats on game_flaws** (SEED-261108-zkp). Eight typed nullable Maia columns on `game_flaws` (played/best/second probability and rank, top-move probability, effective moves) plus a per-game completion stamp; go-forward scoring in eval-apply; local backfill against prod over the tunnel with 8-10 processes in ES-lottery priority order. Prerequisite for blunder check (SEED-261108-dk0); the owner plans to open the next milestone with this phase. Written by hand as 247 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 247`.
 - Phase 246 added 2026-11-06 (explicit user request via `/gsd-phase .planning/seeds/SEED-261106-gw8-train-subnav-split.md`, planted the same day from a `/gsd-explore` session): **Train Subnav Split, Today / Leaderboard / Archive** (SEED-261106-gw8). Three URL-routed tabs behind a thin layout: Today at `/train` (streak card with rank line, full schedule card), Leaderboard at `/train/leaderboard`, Archive at `/train/archive` (Mastered / Parked lists of new `TrainPuzzleCard`s, 20 per page, newest first, Analyze button, no arrows). Session and engine hooks move to the Today route; subnav hidden during solve, score and restored-reveal views. One new backend list endpoint, no migration expected. Base for SEED-261106-q92 (retry). Written by hand as 246 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 246`.
