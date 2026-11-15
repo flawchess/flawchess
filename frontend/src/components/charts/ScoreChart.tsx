@@ -91,11 +91,10 @@ function ScoreChartLegend({ testId, windowSize }: { testId: string; windowSize: 
         <p>
           <strong>{EXPECTED_LINE_NAME}:</strong> the score the engine eval of the position you
           reach out of the opening predicts, averaged over your last {windowSize} games in this
-          opening.
+          opening. The dashed line is the typical expected score for your colour.
         </p>
         <p className="mt-1">
-          <strong>{ACTUAL_LINE_NAME}:</strong> your real results over the same games. The dashed
-          line is the typical expected score for your colour.
+          <strong>{ACTUAL_LINE_NAME}:</strong> your real results over the same games.
         </p>
         <p className="mt-1">
           The expected line reflects only the position reached out of the opening, so your actual
