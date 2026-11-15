@@ -32,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.main import app
 from app.schemas.library import LibraryFlawsResponse, LibraryGamesResponse
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from tests.facepalm_seed import SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
 
 # ---------------------------------------------------------------------------
 # Payload threshold constant
@@ -420,10 +422,13 @@ async def _seed_flaw_committed(
     is_lucky: bool = False,
     is_reversed: bool = False,
     is_squandered: bool = False,
-    facepalm_score: float | None = None,
+    facepalm_target: float | None = None,
     fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
 ) -> None:
     """Insert and commit a GameFlaw row.
+
+    `facepalm_target` seeds facts whose library-lambda expression equals it (D-01): the library
+    computes the score at query time, so the stored score column is never seeded.
 
     es_before, es_after, move_san removed from game_flaws;
     they are sourced at query time via a game_positions join.
@@ -442,7 +447,7 @@ async def _seed_flaw_committed(
             is_lucky=is_lucky,
             is_reversed=is_reversed,
             is_squandered=is_squandered,
-            facepalm_score=facepalm_score,
+            **facepalm_fact_columns(facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA),
             fen=fen,
         )
         session.add(flaw)
@@ -629,7 +634,7 @@ async def facepalm_test_state(test_engine: Any) -> dict[str, Any]:
             game_id=game_id,
             ply=ply,
             severity=severity,
-            facepalm_score=score,
+            facepalm_target=score,
         )
 
     return {"headers": headers, "user_id": user_id, "game1": game1, "game2": game2, "game3": game3}
@@ -1525,14 +1530,14 @@ class TestEvalSeriesPayload:
         )
 
     @pytest.mark.asyncio
-    async def test_flaw_marker_carries_stored_facepalm_score(
+    async def test_flaw_marker_carries_expression_facepalm_score(
         self, eval_series_test_state: dict[str, Any], test_engine: Any
     ) -> None:
-        """The stored score of a blunder row reaches its flaw marker on the Games card.
+        """The query-time expression score of a blunder row reaches its flaw marker (D-01, D-04).
 
-        Pins the _build_card wiring (253 review WR-02): game_flaws row -> facepalm_by_ply
-        -> FlawMarker.facepalm_score. The row is removed afterwards because the fixture
-        is module-scoped.
+        Pins the wiring: fetch_page_facepalm_scores (library lambda, SQL) -> facepalm_by_ply
+        -> FlawMarker.facepalm_score, with the row's facts seeded, not a stored score. The row
+        is removed afterwards because the fixture is module-scoped.
         """
         from sqlalchemy import delete
 
@@ -1542,7 +1547,7 @@ class TestEvalSeriesPayload:
         user_id = eval_series_test_state["user_a_id"]
         game_id = eval_series_test_state["game_analyzed"]
         await _seed_flaw_committed(
-            session_maker, user_id=user_id, game_id=game_id, ply=2, facepalm_score=0.87
+            session_maker, user_id=user_id, game_id=game_id, ply=2, facepalm_target=0.87
         )
         try:
             async with httpx.AsyncClient(
@@ -1566,7 +1571,7 @@ class TestEvalSeriesPayload:
         card = next(g for g in resp.json()["games"] if g["game_id"] == game_id)
         by_ply = {m["ply"]: m for m in card["flaw_markers"]}
         assert by_ply[2]["severity"] == "blunder"
-        assert by_ply[2]["facepalm_score"] == pytest.approx(0.87, abs=1e-6)
+        assert by_ply[2]["facepalm_score"] == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
         assert all(m["facepalm_score"] is None for p, m in by_ply.items() if p != 2)
 
     @pytest.mark.asyncio
@@ -2545,7 +2550,7 @@ class TestFacepalmFilterEndToEnd:
         assert len(body["flaws"]) == 1
         flaw = body["flaws"][0]
         assert (flaw["game_id"], flaw["ply"]) == (facepalm_test_state["game1"], 2)
-        assert flaw["facepalm_score"] == pytest.approx(0.95, abs=1e-6)
+        assert flaw["facepalm_score"] == pytest.approx(0.95, abs=SEED_FACEPALM_TOLERANCE)
 
     @pytest.mark.asyncio
     async def test_flaws_payload_carries_facepalm_score(
@@ -2563,7 +2568,9 @@ class TestFacepalmFilterEndToEnd:
         assert resp.status_code == 200
         by_key = {(f["game_id"], f["ply"]): f for f in resp.json()["flaws"]}
         game1 = facepalm_test_state["game1"]
-        assert by_key[(game1, 2)]["facepalm_score"] == pytest.approx(0.95, abs=1e-6)
+        assert by_key[(game1, 2)]["facepalm_score"] == pytest.approx(
+            0.95, abs=SEED_FACEPALM_TOLERANCE
+        )
         assert "facepalm_score" in by_key[(game1, 6)]
         assert by_key[(game1, 6)]["facepalm_score"] is None
 

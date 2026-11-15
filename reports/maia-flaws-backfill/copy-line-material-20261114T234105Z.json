@@ -1,0 +1,12 @@
+{
+  "batches": 557,
+  "cursor": 3288312,
+  "db": "prod",
+  "dry_run": false,
+  "elapsed_s": 1045.5,
+  "games_scanned": 1113914,
+  "rows_copied": 2145919,
+  "run_stamp": "20261114T234105Z",
+  "start_after": 0,
+  "stopped_early": false
+}

@@ -30,7 +30,9 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
 from app.services.flaws_service import _run_all_moves_pass
+from tests.facepalm_seed import facepalm_fact_columns
 
 # A fixed legal mainline of 60 plies (a seeded quiet playout; no check/capture drama so
 # every ply has legal moves). Verified legal by `seed_judged_game`'s replay.
@@ -56,11 +58,15 @@ SEED_FACEPALM_SCORE: float = 0.95
 
 @dataclass(frozen=True)
 class SeedBlunder:
-    """A blunder flaw row to seed (the facepalm score defaults to a qualifying value)."""
+    """A blunder flaw row to seed (the target facepalm score defaults to a qualifying value).
+
+    The score is seeded as FACTS whose drill-lambda expression equals `facepalm_target`
+    (254 D-01); None seeds an unscored row.
+    """
 
     ply: int
     is_miss: bool = False
-    facepalm_score: float | None = SEED_FACEPALM_SCORE
+    facepalm_target: float | None = SEED_FACEPALM_SCORE
 
 
 def flat_evals(count: int, cp: int) -> list[int]:
@@ -277,7 +283,7 @@ async def seed_judged_game(
                         is_reversed=False,
                         is_squandered=False,
                         fen=boards[blunder.ply].board_fen(),
-                        facepalm_score=blunder.facepalm_score,
+                        **facepalm_fact_columns(blunder.facepalm_target, lam=FACEPALM_DRILL_LAMBDA),
                     )
                 )
     return game_id

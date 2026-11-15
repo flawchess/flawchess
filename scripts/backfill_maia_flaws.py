@@ -115,7 +115,11 @@ from app.models.user import User  # noqa: E402, F401
 from app.repositories.game_flaws_repository import _SEVERITY_INT  # noqa: E402
 from app.repositories.query_utils import is_opponent_expr  # noqa: E402
 from app.services import maia_engine  # noqa: E402
-from app.services.blunder_check_rules import FACEPALM_SCORE_MIN  # noqa: E402
+from app.services.blunder_check_rules import (  # noqa: E402
+    FACEPALM_DRILL_LAMBDA,
+    FACEPALM_SCORE_MIN,
+)
+from app.services.facepalm_score import facepalm_expr  # noqa: E402
 from app.services.maia_flaw_scoring import (  # noqa: E402
     MAX_GAMES_PER_WRITE_TXN,
     GameMaiaScore,
@@ -812,7 +816,13 @@ async def _fetch_facepalm_value_counts(
     session: AsyncSession, user_id: int | None, *, with_spread: bool
 ) -> dict[str, int]:
     """User-side blunder counts the operator plans read: total, with spread (spread mode only),
-    with a score, and qualifying at FACEPALM_SCORE_MIN (D-06: severity blunder, not opponent)."""
+    with a score, and qualifying at FACEPALM_SCORE_MIN (D-06: severity blunder, not opponent).
+
+    The score and qualifying counts use facepalm_expr(FACEPALM_DRILL_LAMBDA), the expression the
+    drill selects with (254 D-01, D-12), never the stored column: the counts then say how many
+    blunders the drill can actually draw, and they follow a refit without a rewrite.
+    """
+    score = facepalm_expr(FACEPALM_DRILL_LAMBDA)
     counts = {
         "user_blunders_total": await _scalar_count(session, _user_blunder_count_stmt(user_id))
     }
@@ -825,13 +835,11 @@ async def _fetch_facepalm_value_counts(
         )
     counts["user_blunders_with_score"] = await _scalar_count(
         session,
-        _user_blunder_count_stmt(user_id, extra_where=[GameFlaw.facepalm_score.is_not(None)]),
+        _user_blunder_count_stmt(user_id, extra_where=[score.is_not(None)]),
     )
     counts["user_blunders_qualifying"] = await _scalar_count(
         session,
-        _user_blunder_count_stmt(
-            user_id, extra_where=[GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN]
-        ),
+        _user_blunder_count_stmt(user_id, extra_where=[score >= FACEPALM_SCORE_MIN]),
     )
     return counts
 

@@ -586,6 +586,7 @@ def _build_card(
     *,
     tactic_flaw_rows: list[GameFlaw] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
+    facepalm_by_ply: dict[int, float] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows.
 
@@ -626,6 +627,10 @@ def _build_card(
     include opponent rows. When None, falls back to flaw_rows so any other caller
     keeps exact existing behavior. severity_counts, chips, and all stats still
     iterate flaw_rows (player-gated) and are byte-for-byte unchanged.
+
+    facepalm_by_ply maps a flaw ply to its facepalm score, computed by the repository query
+    (fetch_page_facepalm_scores, library lambda); it is never derived in Python here (D-01).
+    A ply without an entry (every non-blunder, every unscored blunder) gets no marker score.
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
@@ -686,11 +691,6 @@ def _build_card(
                 if entry is not None:
                     ply, tactic_entry = entry
                     tactic_by_ply[ply] = tactic_entry
-            # Facepalm scores ride on the same both-color row list; a row without a
-            # score (every non-blunder, every unscored blunder) contributes nothing.
-            facepalm_by_ply: dict[int, float] = {
-                fr.ply: fr.facepalm_score for fr in rows_for_tactic if fr.facepalm_score is not None
-            }
             # SAN mainline for client-side per-ply board reconstruction on chart
             # hover. move_san is None on the terminal position only — filter it out
             # so moves[i] aligns with ply i (positions are ply-ordered). Quick
@@ -845,6 +845,11 @@ async def get_library_game(
         await library_repository.fetch_page_game_flaws_both_colors(session, owner_id, game_ids)
     ).get(game_id, [])
 
+    # Facepalm score per flaw ply, computed in SQL with the library lambda (D-01, D-04).
+    facepalm_by_ply = (
+        await library_repository.fetch_page_facepalm_scores(session, owner_id, game_ids)
+    ).get(game_id, {})
+
     # Fetch active eval-job status for the pending→leased pill transition.
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
     active_map = await library_repository.fetch_page_active_eval_status(session, owner_id, game_ids)
@@ -874,6 +879,7 @@ async def get_library_game(
         active_map.get(game_id),
         tactic_flaw_rows=tactic_flaw_rows,
         best_moves_by_ply=best_moves_by_ply,
+        facepalm_by_ply=facepalm_by_ply,
     )
 
 
@@ -1038,6 +1044,11 @@ async def get_library_games(
             session, user_id, page_game_ids
         )
 
+        # Facepalm score per (game, flaw ply) from the library-lambda expression (D-01, D-04).
+        page_facepalm = await library_repository.fetch_page_facepalm_scores(
+            session, user_id, page_game_ids
+        )
+
         # Batch fetch the analyzed subset (eval-coverage gate — not game_flaws presence).
         analyzed_set = await library_repository.fetch_page_analyzed_set(
             session, user_id, page_game_ids
@@ -1071,6 +1082,7 @@ async def get_library_games(
                 active_status_map.get(game.id),
                 tactic_flaw_rows=page_tactic_flaws.get(game.id, []),
                 best_moves_by_ply=page_best_moves.get(game.id, {}),
+                facepalm_by_ply=page_facepalm.get(game.id, {}),
             )
             for game in games
         ]

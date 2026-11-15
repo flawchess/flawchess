@@ -16,6 +16,7 @@ import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any, cast
 
@@ -36,10 +37,14 @@ from app.repositories.query_utils import (
 )
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services.best_move_candidates import pinned_elo_for_mover
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, LINE_DEPTH
+from app.services.facepalm_score import FACEPALM_MODEL, FacepalmFacts
+from app.services.facepalm_score import facepalm_score as score_facepalm_facts
 
 # Private import by design: the report must use the classifier's own per-ply pass (precedent:
 # scripts/remote_eval_worker.py imports it the same way).
 from app.services.flaws_service import _run_all_moves_pass  # noqa: PLC2701
+from app.services.line_material import material_at_depth
 from app.services.normalization import is_correspondence_time_control
 from scripts.backfill_maia_flaws import SHARD_RESIDUE_SQL
 from scripts.blunder_check.metrics import (
@@ -70,9 +75,11 @@ DEFAULT_BATCH_GAMES: int = 500
 # Rating groups for the per-user aggregates (approximation of the exact per-game Elo, D-23).
 RATING_GROUP_WIDTH: int = 50
 BLUNDER_SEVERITY: int = _SEVERITY_INT["blunder"]
-# Version 2 (Phase 250): blunder records carry the facepalm fields instead of the Maia best /
-# refutation pairs and ranks; a cache written before that no longer loads.
-CACHE_VERSION: int = 2
+# Version 3 (Phase 254, D-01): blunder records carry the facepalm FACTS (depth-3 played and best
+# material, both mate plies, played prob, reply spread, best prob, pre-blunder spread) and the report
+# scores them with the model in the checkout; a version 2 cache holds a stored score instead and
+# no longer loads.
+CACHE_VERSION: int = 3
 # Number of user moves kept before each blunder (positions 2..MAX_BLUNDER_POSITION need k-1).
 PRECEDING_MOVES_KEPT: int = MAX_BLUNDER_POSITION - 1
 
@@ -162,7 +169,14 @@ class GameRecord:
 
 @dataclass
 class BlunderRecord:
-    """One user-side blunder of a sampled, rated game, with its ES and the stored facepalm inputs.
+    """One user-side blunder of a sampled, rated game, with its ES and the stored facepalm facts.
+
+    The record holds FACTS, never a stored score (254 D-01): ``facepalm_score`` is computed with
+    the Python twin at FACEPALM_DRILL_LAMBDA and the model in the checkout (FACEPALM_MODEL), so
+    a candidate refit can be evaluated here before it ships. ``played_3`` / ``best_3`` are the
+    signed material (positive = the blunderer is up) after LINE_DEPTH plies of the played / best
+    line, ``line_mate_ply`` the ply the blunderer is mated on the played line and
+    ``best_mate_ply`` the ply the best line mates the opponent.
 
     `has_line` records whether the game holds a stored engine line after the blunder (the
     game_positions.pv of ply + 1), so a NULL score with a spread can be told apart as "no line"
@@ -181,11 +195,32 @@ class BlunderRecord:
     es_ref: float | None
     maia_played_prob: float | None
     maia_reply_spread: float | None
-    line_loss_3: int | None
+    played_3: int | None
+    best_3: int | None
     line_mate_ply: int | None
-    facepalm_score: float | None
+    best_mate_ply: int | None
+    maia_best_prob: float | None
+    maia_pre_spread: float | None
     has_line: bool
     preceding: list[MoveJudgement]
+
+    @cached_property
+    def facepalm_score(self) -> float | None:
+        """The facepalm score of these facts at the drill lambda, None when unscored (254 D-01, D-03)."""
+        return score_facepalm_facts(
+            FacepalmFacts(
+                played_prob=self.maia_played_prob,
+                reply_spread=self.maia_reply_spread,
+                played_3=self.played_3,
+                mate_ply=self.line_mate_ply,
+                best_3=self.best_3,
+                best_mate_ply=self.best_mate_ply,
+                best_prob=self.maia_best_prob,
+                pre_spread=self.maia_pre_spread,
+            ),
+            lam=FACEPALM_DRILL_LAMBDA,
+            model=FACEPALM_MODEL,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -201,9 +236,12 @@ class BlunderRecord:
             "es_ref": self.es_ref,
             "maia_played_prob": self.maia_played_prob,
             "maia_reply_spread": self.maia_reply_spread,
-            "line_loss_3": self.line_loss_3,
+            "played_3": self.played_3,
+            "best_3": self.best_3,
             "line_mate_ply": self.line_mate_ply,
-            "facepalm_score": self.facepalm_score,
+            "best_mate_ply": self.best_mate_ply,
+            "maia_best_prob": self.maia_best_prob,
+            "maia_pre_spread": self.maia_pre_spread,
             "has_line": self.has_line,
             "preceding": [_judgement_to_list(j) for j in self.preceding],
         }
@@ -223,9 +261,12 @@ class BlunderRecord:
             es_ref=raw["es_ref"],
             maia_played_prob=raw["maia_played_prob"],
             maia_reply_spread=raw["maia_reply_spread"],
-            line_loss_3=raw["line_loss_3"],
+            played_3=raw["played_3"],
+            best_3=raw["best_3"],
             line_mate_ply=raw["line_mate_ply"],
-            facepalm_score=raw["facepalm_score"],
+            best_mate_ply=raw["best_mate_ply"],
+            maia_best_prob=raw["maia_best_prob"],
+            maia_pre_spread=raw["maia_pre_spread"],
             has_line=bool(raw["has_line"]),
             preceding=[_judgement_from_list(j) for j in raw["preceding"]],
         )
@@ -366,9 +407,12 @@ class FlawRow:
     is_miss: bool
     maia_played_prob: float | None
     maia_reply_spread: float | None
-    line_loss_3: int | None
+    played_3: int | None
+    best_3: int | None
     line_mate_ply: int | None
-    facepalm_score: float | None
+    best_mate_ply: int | None
+    maia_best_prob: float | None
+    maia_pre_spread: float | None
     has_line: bool
 
 
@@ -482,9 +526,28 @@ async def _load_positions(
     return by_game
 
 
+def _flaw_row(row: Sequence[Any]) -> FlawRow:
+    """A FlawRow from one `_load_flaws` result row: the 9-slot arrays shrink to their depth-3 slot."""
+    return FlawRow(
+        ply=row[1],
+        severity=row[2],
+        is_miss=row[3],
+        maia_played_prob=row[4],
+        maia_reply_spread=row[5],
+        played_3=material_at_depth(row[6], LINE_DEPTH),
+        best_3=material_at_depth(row[7], LINE_DEPTH),
+        line_mate_ply=row[8],
+        best_mate_ply=row[9],
+        maia_best_prob=row[10],
+        maia_pre_spread=row[11],
+        has_line=bool(row[12]),
+    )
+
+
 async def _load_flaws(session: AsyncSession, game_ids: Sequence[int]) -> dict[int, list[FlawRow]]:
     # The stored engine line after a flaw sits on the game_positions row at ply + 1 (the same
-    # join the Maia hook uses); only its presence is read, never the line itself.
+    # join the Maia hook uses); only its presence is read, never the line itself. The score
+    # inputs are the stored FACTS (254 D-01): the report never reads the stored score column.
     next_position = aliased(GamePosition)
     has_line = func.coalesce(func.length(next_position.pv), 0) > 0
     stmt = (
@@ -495,9 +558,12 @@ async def _load_flaws(session: AsyncSession, game_ids: Sequence[int]) -> dict[in
             GameFlaw.is_miss,
             GameFlaw.maia_played_prob,
             GameFlaw.maia_reply_spread,
-            GameFlaw.line_loss_3,
+            GameFlaw.played_line_material,
+            GameFlaw.best_line_material,
             GameFlaw.line_mate_ply,
-            GameFlaw.facepalm_score,
+            GameFlaw.best_line_mate_ply,
+            GameFlaw.maia_best_prob,
+            GameFlaw.maia_pre_spread,
             has_line,
         )
         .select_from(GameFlaw)
@@ -513,7 +579,7 @@ async def _load_flaws(session: AsyncSession, game_ids: Sequence[int]) -> dict[in
     )
     by_game: dict[int, list[FlawRow]] = defaultdict(list)
     for row in (await session.execute(stmt)).all():
-        by_game[row[0]].append(FlawRow(*row[1:]))
+        by_game[row[0]].append(_flaw_row(row))
     return by_game
 
 
@@ -566,9 +632,12 @@ def _blunder_record(
         es_ref=es_ref,
         maia_played_prob=flaw.maia_played_prob,
         maia_reply_spread=flaw.maia_reply_spread,
-        line_loss_3=flaw.line_loss_3,
+        played_3=flaw.played_3,
+        best_3=flaw.best_3,
         line_mate_ply=flaw.line_mate_ply,
-        facepalm_score=flaw.facepalm_score,
+        best_mate_ply=flaw.best_mate_ply,
+        maia_best_prob=flaw.maia_best_prob,
+        maia_pre_spread=flaw.maia_pre_spread,
         has_line=flaw.has_line,
         preceding=[j for j in judgements if j.ply < flaw.ply][-PRECEDING_MOVES_KEPT:],
     )
@@ -770,8 +839,14 @@ def collection_to_dict(collection: Collection) -> dict[str, Any]:
 
 
 def collection_from_dict(raw: Mapping[str, Any]) -> Collection:
-    if raw.get("version") != CACHE_VERSION:
-        raise ValueError("unsupported cache version")
+    version = raw.get("version")
+    if version != CACHE_VERSION:
+        # T-254-26: an older cache holds a stored score, not the facts the report now scores.
+        raise ValueError(
+            f"unsupported cache version {version}: this report reads version {CACHE_VERSION} "
+            "(blunder facts, scored with the checkout's model); re-run the sample without "
+            "--from-cache to write a new cache"
+        )
     return Collection(
         meta=RunMeta.from_dict(raw["meta"]),
         games=[GameRecord.from_dict(g) for g in raw["games"]],

@@ -53,6 +53,7 @@ from app.services.blunder_check_selection import (
     compose_windows,
     user_level_elo,
 )
+from tests.facepalm_seed import SEED_FACEPALM_MARGIN
 from tests.blunder_check_seed import (
     SEED_FACEPALM_SCORE,
     SEED_PGN,
@@ -71,8 +72,6 @@ _USER_BLUNDER_PLY = 40  # white user; 20 clean user moves precede it
 _BLUNDER_DROP_CP = 600
 _RATING = 1500
 _SEEDS = (0, 1, 2, 3, 4)
-# How far below FACEPALM_SCORE_MIN the non-qualifying fixture sits.
-LOW_SCORE_GAP = 0.2
 _START_FEN = "rnbqkbnr/pppqpppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 _TS = datetime.datetime(2026, 11, 10, 12, 0, tzinfo=datetime.timezone.utc)
 # Inside the raw-rating prefilter (band + FOREIGN_RAW_PREFILTER_MARGIN) but outside the pinned-Elo
@@ -437,9 +436,9 @@ async def test_facepalm_only_qualifying_blunders_are_composed(test_engine, monke
             test_engine,
             user_id=caller,
             evals_cp=evals,
-            blunders=[SeedBlunder(ply=_USER_BLUNDER_PLY, facepalm_score=score)],
+            blunders=[SeedBlunder(ply=_USER_BLUNDER_PLY, facepalm_target=score)],
         )
-        for score in (SEED_FACEPALM_SCORE, FACEPALM_SCORE_MIN - LOW_SCORE_GAP)
+        for score in (SEED_FACEPALM_SCORE, FACEPALM_SCORE_MIN - SEED_FACEPALM_MARGIN)
     ]
     try:
         composed = [await _compose(test_engine, caller, seed=seed) for seed in _SEEDS]
