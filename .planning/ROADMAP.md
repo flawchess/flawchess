@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 7/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 8/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -487,7 +487,7 @@ Plans:
 - [x] 254-05-PLAN.md — Blind stratified miss sampler (D-14, D-15)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 254-06-PLAN.md — Release R1, close 250-10 as superseded (D-11), prod-run worktree, prod copy and parity, branch and checkout map (orchestrator-inline)
+- [x] 254-06-PLAN.md — Release R1, close 250-10 as superseded (D-11), prod-run worktree, prod copy and parity, branch and checkout map (orchestrator-inline)
 
 **Wave 7** *(blocked on Wave 6 completion; R2 cycle opened by the orchestrator)*
 - [ ] 254-07-PLAN.md — Prod pre pass with 8 shards beside Phase 252 (D-20) from the prod-run worktree, and the owner's miss labels (orchestrator-inline)
