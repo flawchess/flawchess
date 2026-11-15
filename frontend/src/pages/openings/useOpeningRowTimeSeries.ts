@@ -3,6 +3,7 @@ import { useTimeSeries } from '@/hooks/usePositionBookmarks';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { timeSeriesFilterParams } from '@/pages/openings/useOpeningsChartData';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
+import { resolveMatchSide } from '@/types/api';
 import type { BookmarkTimeSeries, TimeSeriesRequest } from '@/types/position_bookmarks';
 
 /** A most-played row has no bookmark; the endpoint just echoes this id back on its one series. */
@@ -20,35 +21,38 @@ interface UseOpeningRowTimeSeriesResult {
 }
 
 /**
- * The score-over-time series of one repertoire row. Bookmark rows already carry theirs from the
- * table-wide request, so they issue nothing. A most-played row requests its own series on the
- * full-position hash (match side "full"). Callers mount the hook only while the card's chart is
- * open, so mounting is the lazy trigger.
+ * The score-over-time series of one repertoire row, fetched on demand with the eval-expected
+ * series. Every card requests its own one-opening series, bookmark and most-played alike, because
+ * the middlegame-entry eval join is too costly to front-load for all bookmarks on page load (it
+ * added 1.3 to 1.8 s for the heaviest dev user). A bookmark row keeps the table-wide series only
+ * for its totals and verdict fields. Callers mount the hook only while the card's chart is open,
+ * so mounting is the lazy trigger.
  */
 export function useOpeningRowTimeSeries({
   row,
   debouncedFilters,
 }: UseOpeningRowTimeSeriesParams): UseOpeningRowTimeSeriesResult {
-  const needsRequest = row.series === null;
-  const request: TimeSeriesRequest | null = useMemo(() => {
-    if (!needsRequest) return null;
-    return {
+  const { bookmark, color, fullHash } = row;
+  const seriesId = bookmark?.id ?? MOST_PLAYED_ROW_SERIES_ID;
+  const request: TimeSeriesRequest = useMemo(
+    () => ({
       bookmarks: [
         {
-          bookmark_id: MOST_PLAYED_ROW_SERIES_ID,
-          target_hash: row.fullHash,
-          match_side: 'full',
-          color: row.color,
+          bookmark_id: seriesId,
+          target_hash: bookmark?.target_hash ?? fullHash,
+          match_side: bookmark ? resolveMatchSide(bookmark.match_side, color) : 'full',
+          color,
         },
       ],
       ...timeSeriesFilterParams(debouncedFilters),
-    };
-  }, [needsRequest, row.fullHash, row.color, debouncedFilters]);
+      include_expected_score: true,
+    }),
+    [seriesId, bookmark, fullHash, color, debouncedFilters],
+  );
 
   const query = useTimeSeries(request);
-  if (row.series !== null) return { series: row.series, isLoading: false, isError: false };
   return {
-    series: query.data?.series.find((s) => s.bookmark_id === MOST_PLAYED_ROW_SERIES_ID) ?? null,
+    series: query.data?.series.find((s) => s.bookmark_id === seriesId) ?? null,
     isLoading: query.isLoading,
     isError: query.isError,
   };
