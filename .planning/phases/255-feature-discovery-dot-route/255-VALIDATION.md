@@ -42,20 +42,25 @@ Task IDs are filled in by the planner. Behaviours that must be covered (decision
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | D-04, D-19 | — | Only the authenticated user's own row is written; guest writes allowed; promotion keeps state | integration | `uv run pytest tests/test_feature_route.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-10, D-11 | — | Skip rejected before 3 active days, accepted at since+3; `current` repost does not reset the stamp; profile GET writes nothing | integration | `uv run pytest tests/test_feature_route.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-15 | — | `done` recorded for a non-current step; skipped then done upgrades | integration | `uv run pytest tests/test_feature_route.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Guards | T-255-xx | Impersonation no-op; unknown step/action and extra keys return 422; auth required; `feedback_v1` preserved; duplicate posts idempotent; corrupt state fails closed | integration | `uv run pytest tests/test_feature_route.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-16, D-22 | — | Migration seeds exactly the launch step IDs for existing rows incl. guests, preserves `feedback_v1`, idempotent, downgrade removes only `feature_route` | migration | `uv run pytest tests/test_migration_255_feature_route_seed.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-02, D-06, D-12 | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-03 | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Locked targets | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-09 registry drift | — | N/A | unit | vitest registry test plus pytest `get_args` check | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-17, D-18, D-14 | — | N/A | component | `cd frontend && npx vitest run src/App.test.tsx` | ✅ (rewrite) | ⬜ pending |
-| TBD | TBD | TBD | D-21 | — | N/A | component | `cd frontend && npx vitest run src/pages/__tests__/Train.subnav.test.tsx` (path per research) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-07, D-13 | — | N/A | component | `cd frontend && npx vitest run src/pages/__tests__/Openings.render.test.tsx` | ✅ (extend) | ⬜ pending |
-| TBD | TBD | TBD | Subtab dots | — | N/A | component | Library and Openings subtab tests | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Cleanup | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/retiredLocalStorage.test.ts` | ✅ (extend) | ⬜ pending |
+| 255-01-01 | 01 | 1 | D-04, D-15, D-09 registry drift (backend) | T-255-02, T-255-03, T-255-04 | Guarded DONE keeps earlier steps and `feedback_v1`; repeat is a no-op; corrupt state fails closed with one Sentry capture; impersonation never writes; `get_args(FeatureRouteStepId)` in D-06 order | integration | `uv run pytest tests/test_feature_route.py -x` | ❌ W0 (created by 255-01-01) | ⬜ pending |
+| 255-01-02 | 01 | 1 | D-04, D-19, D-11 | T-255-01 | Only the authenticated user's own row is written; guest writes allowed; promotion keeps state; profile GET writes nothing | integration | `uv run pytest tests/test_feature_route.py -x` | ✅ (extend) | ⬜ pending |
+| 255-02-01 | 02 | 2 | D-14, D-15, D-18 (tracer e2e) | T-255-14, T-255-05 | Recorder posts done import on `/library/import`; no write for impersonation, null state or a locked target; backend leg re-runs the 255-01 pytest | component + integration | `uv run pytest tests/test_feature_route.py -x` and `cd frontend && npx vitest run src/components/feature-route/__tests__/FeatureRouteRecorder.test.tsx` | ❌ W0 (created by 255-02-01) | ⬜ pending |
+| 255-02-01 | 02 | 2 | D-17, D-18, D-14, D-21 (header and bottom bar) | — | N/A | component | `cd frontend && npx vitest run src/App.test.tsx` | ✅ (rewrite) | ⬜ pending |
+| 255-02-02, 255-04-02 | 02, 04 | 2, 3 | D-02, D-06, D-12 | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 (created by 255-02-02) | ⬜ pending |
+| 255-02-02 | 02 | 2 | D-03 | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 (created by 255-02-02) | ⬜ pending |
+| 255-02-02 | 02 | 2 | Locked targets | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 (created by 255-02-02) | ⬜ pending |
+| 255-01-01, 255-02-02 | 01, 02 | 1, 2 | D-09 registry drift | — | N/A | unit | `uv run pytest tests/test_feature_route.py -x` (`get_args`) and `cd frontend && npx vitest run src/lib/__tests__/featureRoute.test.ts` | ❌ W0 | ⬜ pending |
+| 255-03-01 | 03 | 3 | D-02, D-03, D-12, D-17 (all three nav surfaces, More drawer) | — | N/A | component | `cd frontend && npx vitest run src/App.test.tsx` | ✅ (extend) | ⬜ pending |
+| 255-03-02 | 03 | 3 | Cleanup (D-04 retired keys), typed fixtures | T-255-15 | Only `user_flag:` keys and the two hint keys are removed; storage errors swallowed | unit | `cd frontend && npx vitest run src/lib/__tests__/retiredLocalStorage.test.ts` | ✅ (extend) | ⬜ pending |
+| 255-04-01 | 04 | 3 | D-10, D-11 | T-255-06 | Skip rejected before 3 active days, accepted at since+3; `current` repost does not reset the stamp; profile GET writes nothing | integration | `uv run pytest tests/test_feature_route.py -x` | ✅ (extend) | ⬜ pending |
+| 255-04-01 | 04 | 3 | D-15 | — | `done` recorded for a non-current step; skipped then done upgrades | integration | `uv run pytest tests/test_feature_route.py -x` | ✅ (extend) | ⬜ pending |
+| 255-04-01 | 04 | 3 | Guards | T-255-01, T-255-02, T-255-03, T-255-04 | Impersonation no-op; unknown step/action and extra keys return 422; auth required; `feedback_v1` preserved; duplicate posts idempotent; corrupt state fails closed | integration | `uv run pytest tests/test_feature_route.py -x` | ✅ (extend) | ⬜ pending |
+| 255-04-03 | 04 | 3 | D-16, D-22 | T-255-08 | Migration seeds exactly the launch step IDs for existing rows incl. guests, preserves `feedback_v1`, idempotent, downgrade removes only `feature_route` | migration | `uv run pytest tests/test_migration_255_feature_route_seed.py -x` | ❌ W0 (created by 255-04-03) | ⬜ pending |
+| 255-06-01, 255-06-02 | 06 | 3 | D-21 | T-255-12 | N/A | component | `cd frontend && npx vitest run src/pages/__tests__/Train.subnav.test.tsx src/components/train/__tests__/TrainStartScreen.test.tsx` | ✅ (extend) | ⬜ pending |
+| 255-05-02 | 05 | 3 | D-07, D-13 (incl. any click on the mobile Stats colour switch) | T-255-10 | N/A | component | `cd frontend && npx vitest run src/pages/__tests__/Openings.render.test.tsx src/components/openings/__tests__/OpeningColorSwitch.test.tsx` | ✅ (extend) | ⬜ pending |
+| 255-05-01 | 05 | 3 | Subtab dots (D-03, D-20) | — | N/A | component | `cd frontend && npx vitest run src/pages/library/__tests__/LibraryPage.reroute.test.tsx src/pages/__tests__/Openings.render.test.tsx` | ✅ (extend) | ⬜ pending |
+| 255-07-01 | 07 | 4 | Full gate, single Alembic head | T-255-13 | N/A | gate | CLAUDE.md pre-merge gate (Plan 07 Task 1) | ✅ | ⬜ pending |
+| 255-07-02 | 07 | 4 | Dot geometry walk (D-02, D-03, D-20) | — | N/A | manual | checkpoint:human-verify route walk at 1280 px and 390 px | — | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,7 +71,7 @@ Task IDs are filled in by the planner. Behaviours that must be covered (decision
 - [ ] `tests/test_feature_route.py` — endpoint, guards, auto-skip clock
 - [ ] `tests/test_migration_255_feature_route_seed.py` — existing-user seed
 - [ ] `frontend/src/lib/__tests__/featureRoute.test.ts` — registry and arbiter
-- [ ] Profile fixtures updated for the new `feature_route` field
+- [ ] Profile fixtures updated for the new `feature_route` field (plan 255-03 Task 2)
 
 ---
 

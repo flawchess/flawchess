@@ -536,8 +536,24 @@ the discuss phase.
 
 **Depends on**: nothing. Mostly frontend plus one small migration; built in its own worktree while Phases 252
 and 254 wait on their prod runs (owner, 2026-11-15).
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: TBD (coverage set: CONTEXT decisions D-01..D-22)
+**Plans:** 7 plans
+
+Plans:
+**Wave 1**
+- [ ] 255-01-PLAN.md — Backend route storage: guarded DONE transition, POST /users/me/feature-route and profile.feature_route, guests included (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 255-02-PLAN.md — Tracer: Import visit stored server-side, route dot hops to Train on header and bottom bar; arbiter unit tests (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 255-03-PLAN.md — More drawer on the route, cross-surface dot rules, retired localStorage key sweep, typed profile fixtures (wave 3)
+- [ ] 255-04-PLAN.md — Auto-skip clock after 3 active days (server + client) and the existing-user seed migration (wave 3)
+- [ ] 255-05-PLAN.md — In-section dots for Library and Openings subtabs; played-as and filters become route steps, bookmarks dot removed (wave 3)
+- [ ] 255-06-PLAN.md — Train step completes on Start or Resume; Today-tab and start-button dots (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 255-07-PLAN.md — Alembic head re-check, changelog, full pre-merge gate and the route walk checkpoint (wave 4)
 
 ## Backlog
 

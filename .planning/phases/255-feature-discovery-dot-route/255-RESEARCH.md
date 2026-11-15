@@ -700,11 +700,14 @@ Recommendation: **no new Umami events.** Every completion, skip, its UTC date an
 | A5 | `with_dot` field is worth storing for measurement | Code Examples | Can be dropped without affecting behaviour |
 | A6 | The Train warmup session is always composable (session_id never null in practice) | Existing Code Map 5 | Owner-confirmed; if `empty` ever shows, the dot just has no render site that day and the skip clock handles it |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Locked-step rule for future steps (pass over vs pause).** Identical for the 9 launch steps; matters when a games-free step is appended after locked ones. Recommendation: pass over; raise in plan check.
+   **RESOLVED:** pass over (no dot, no clock, not marked). Decided under CONTEXT "Claude's Discretion" (locked targets); the plan check found it consistent with D-02, D-10 and D-14 and equivalent to pausing for the nine launch steps. It differs from a literal reading of D-12 only for a future games-free step appended after locked steps, where pass-over lets a zero-game user see the announcement. Flagged to the owner; kept visible as assumption A-1 in plan 255-02 (the arbiter).
 2. **Should the More drawer show the route dot?** Today it shows only the Library dot. Recommendation: render the same nav-level dot there (`-drawer` testid) for consistency; it is the same logical place as the bottom-bar item, so D-02 holds.
+   **RESOLVED:** render the nav-level route dot in the More drawer with a `-drawer` testid (plan 255-03 Task 1).
 3. **Backend Literal vs D-09 "one entry".** Recommendation: accept one extra Literal line per new step, guarded by the paired list tests (Pitfall 7).
+   **RESOLVED:** one frontend registry entry plus one backend `Literal` line per step, guarded by paired list tests (pytest in plan 255-01 Task 1, vitest in plan 255-02 Task 2). A step with a new subtab or control slot also extends the slot union and adds a `RouteDot` at the new site.
 
 ## Environment Availability
 
