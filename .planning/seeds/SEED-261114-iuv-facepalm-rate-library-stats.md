@@ -109,6 +109,10 @@ typed, analogous to the missed / allowed tactic categories.
    blunders, read against the benchmark zone for their Elo and TC (needs no opponent scoring). Then versus
    opponents (needs Part A on prod and on the benchmark DB). Plot the player's and the opponents' bias on the
    same chart over time; the gap between the lines is the versus-opponent bias. Details to refine later.
+4. **Bias names: chance blindness and threat blindness.** Chance blindness = the player misses easy wins more
+   than they allow easy losses; threat blindness = the reverse. The two are the ends of one axis and name what
+   was overlooked, not why (copy must not diagnose). They apply to the statistic only; a single blunder keeps the
+   type names "missed win" and "allowed loss", matching the tactic categories.
 
 **Ideas to build on this**
 
