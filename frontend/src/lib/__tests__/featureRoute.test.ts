@@ -28,8 +28,9 @@ const EXPECTED_STEP_IDS: FeatureRouteStepId[] = [
 const TEST_DATE = '2026-11-15';
 const TODAY = '2026-11-16';
 
-function ctx(pathname: string, navUnlocked: boolean, activeDays = 1): RouteCtx {
-  return { pathname, navUnlocked, activeDays };
+// hasGames defaults to navUnlocked: an unlocked nav always has games.
+function ctx(pathname: string, navUnlocked: boolean, activeDays = 1, hasGames = navUnlocked): RouteCtx {
+  return { pathname, navUnlocked, activeDays, hasGames };
 }
 
 function withCurrent(
@@ -163,10 +164,8 @@ function doneWrites(state: FeatureRouteState | null, c: RouteCtx, route?: readon
 }
 
 describe('done recording (D-15, A-2, A-4)', () => {
-  it('records import when its page opens', () => {
-    expect(doneWrites(stateWith([]), ctx('/library/import', false))).toEqual([
-      { action: 'done', step: 'import' },
-    ]);
+  it('records nothing for import on its page without games (D-14 overruled 2026-11-16)', () => {
+    expect(doneWrites(stateWith([]), ctx('/library/import', false))).toEqual([]);
   });
 
   it('records openings then openings-stats on the stats page, in route order', () => {
@@ -245,10 +244,9 @@ describe('the 3-active-day clock (D-10)', () => {
     expect(planRouteWrites(base, ctx('/library/games', true, 4))).toEqual([]);
   });
 
-  it('stamps the first unresolved step: [done import, current train] for a fresh signup on Import', () => {
+  it('stamps the first unresolved step: [current import] for a zero-game signup on Import', () => {
     expect(planRouteWrites(stateWith([]), ctx('/library/import', false, 1))).toEqual([
-      { action: 'done', step: 'import' },
-      { action: 'current', step: 'train' },
+      { action: 'current', step: 'import' },
     ]);
   });
 

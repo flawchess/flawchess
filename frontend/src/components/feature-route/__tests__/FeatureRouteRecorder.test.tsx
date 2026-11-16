@@ -2,8 +2,10 @@
 /**
  * Tracer check for the feature-discovery route: the real useUserProfile, the
  * recorder and the read hooks wired together over a mocked API. A zero-game
- * signup opening /library/import gets `import` stored through
- * POST /users/me/feature-route and the dot hops to the Train nav item.
+ * signup opening /library/import is only stamped current (no dot, no done); once
+ * the profile reports imported games, `import` is stored through
+ * POST /users/me/feature-route and the dot hops to the Train nav item
+ * (D-14 overruled by the owner on 2026-11-16).
  *
  * Assertions use toHaveBeenCalledWith / not.toHaveBeenCalledWith on specific
  * payloads, never an exact count of all calls, so later plans that add further
@@ -180,19 +182,30 @@ afterEach(() => {
 });
 
 describe('FeatureRouteRecorder', () => {
-  it('(a) a zero-game signup opening /library/import stores import done and the dot hops to Train', async () => {
+  it('(a) a zero-game signup on /library/import is stamped, not completed; the first imported games complete import and the dot hops to Train', async () => {
     tier1State = false;
-    mockProfile(makeProfile({ feature_route: { steps: {}, current: null } }), {
-      steps: { import: { status: 'done', date: '2026-11-15', with_dot: true } },
-      current: null,
+    const server = mockStatefulServer(makeProfile({ feature_route: { steps: {}, current: null } }));
+    const { queryClient } = renderAt('/library/import');
+
+    // Phase 1: no games yet. Import is stamped current so the D-10 clock runs, but is not done.
+    await waitFor(() => expect(gameCountText()).toBe('0'));
+    await waitFor(() => expect(postCount({ action: 'current', step: 'import' })).toBe(1));
+    await flushAsync();
+    expect(apiPost).not.toHaveBeenCalledWith(FEATURE_ROUTE_PATH, { action: 'done', step: 'import' });
+    expect(screen.getByTestId('route-probe').textContent).toBe('none');
+
+    // Phase 2: the import delivers games (the nav is still locked, tier1 not finished).
+    server.profile = { ...server.profile, chess_com_game_count: IMPORTED_GAME_COUNT };
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: USER_PROFILE_QUERY_KEY });
     });
-    renderAt('/library/import');
 
     await waitFor(() =>
       expect(apiPost).toHaveBeenCalledWith(FEATURE_ROUTE_PATH, { action: 'done', step: 'import' }),
     );
     await waitFor(() => expect(screen.getByTestId('route-probe').textContent).toBe('nav:/train'));
     expect(screen.getByTestId('route-probe-train').textContent).toBe('true');
+    expect(server.profile.feature_route?.steps.import?.status).toBe('done');
   });
 
   it('(b) visiting /train does not complete the train step (it completes on use, D-21)', async () => {
