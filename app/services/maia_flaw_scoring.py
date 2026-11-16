@@ -91,14 +91,13 @@ from app.repositories.query_utils import mover_is_white_at_ply
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services import maia_engine
 from app.services.best_move_candidates import pinned_elo_for_mover
-from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, LINE_DEPTH
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
 from app.services.eval_apply import _FullPlyEvalTarget, _game_write_lock_key
 from app.services.facepalm_score import FacepalmFacts, facepalm_score
 from app.services.line_material import (
     LineFacts,
     best_line_facts,
     line_facts,
-    material_at_depth,
 )
 from app.services.maia_engine import full_policy
 from app.services.maia_flaw_stats import (
@@ -869,9 +868,9 @@ def _row_score(flaw: FlawMaiaInput, row: Mapping[str, Any]) -> float | None:
         FacepalmFacts(
             played_prob=_row_value(row, "maia_played_prob", flaw.stored_played_prob),
             reply_spread=_row_value(row, "maia_reply_spread", flaw.stored_reply_spread),
-            played_3=material_at_depth(row["played_line_material"], LINE_DEPTH),
+            played_material=row["played_line_material"],
             mate_ply=row["line_mate_ply"],
-            best_3=material_at_depth(row["best_line_material"], LINE_DEPTH),
+            best_material=row["best_line_material"],
             best_mate_ply=row["best_line_mate_ply"],
             best_prob=_row_value(row, "maia_best_prob", flaw.stored_best_prob),
             pre_spread=_row_value(row, "maia_pre_spread", flaw.stored_pre_spread),

@@ -8,18 +8,23 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
 
 from app.services.blunder_check_rules import (
+    FACEPALM_DRILL_LAMBDA,
+    LINE_DEPTH,
     LOSS_CAP,
     MATE_LOSS,
+    MATERIAL_DECAY_RATIO,
     PLAYED_PROB_OFFSET,
     MaterialForm,
+    MaterialInput,
     SpreadForm,
 )
+from app.services.facepalm_material import single_depth_material
 from app.services.facepalm_score import (
     FacepalmFacts,
     FacepalmModel,
@@ -27,9 +32,10 @@ from app.services.facepalm_score import (
     loss_feature,
     missed_feature,
 )
+from app.services.line_material import LINE_MATERIAL_SLOTS
 from scripts.blunder_check import fit_facepalm
 from scripts.blunder_check.facepalm_features import FEATURE_COLUMNS
-from tests.facepalm_models import PHASE_250_MODEL
+from tests.facepalm_models import PHASE_250_MODEL, PHASE_254_MODEL
 
 # The committed 2026-11-13 table's header (the "legacy" schema the fit still reads).
 LEGACY_FEATURE_COLUMNS: tuple[str, ...] = (
@@ -54,6 +60,20 @@ LEGACY_FEATURE_COLUMNS: tuple[str, ...] = (
 LEGACY_FEATURES = (
     Path(__file__).resolve().parents[2] / "reports/blunder-check/facepalm-features-2026-11-13.tsv"
 )
+
+# The committed Phase 254 facts table (the one PHASE_254_MODEL was fitted on).
+FEATURES_2026_11_15 = (
+    Path(__file__).resolve().parents[2] / "reports/blunder-check/facepalm-features-2026-11-15.tsv"
+)
+
+# The committed Phase 256 facts table (the one the shipped FACEPALM_MODEL was refitted on, label
+# sets 1-8, 256-07). REFIT_FIT_FLAGS are the flags of the recorded fit command that affect the
+# constants: none forced (the owner took the cross-validated choice, 256 D-13). `--labels` is left
+# out on purpose: it does not change the constants.
+REFIT_FEATURES = (
+    Path(__file__).resolve().parents[2] / "reports/blunder-check/facepalm-features-2026-11-16.tsv"
+)
+REFIT_FIT_FLAGS: tuple[str, ...] = ()
 
 SYNTHETIC_ROWS: int = 4000
 SYNTHETIC_SEED: int = 9
@@ -350,6 +370,12 @@ def test_choose_loss_floor_tie_picks_no_clip() -> None:
     assert fit_facepalm.choose_loss_floor(results)[0] is None
 
 
+LEGACY_SPLIT_HEADING: str = (
+    f"## Sets {fit_facepalm.LEGACY_TRAIN_SETS_TEXT} vs set {fit_facepalm.LEGACY_TEST_SET}"
+)
+FACTS_SPLIT_HEADING: str = f"## Sets {fit_facepalm.TRAIN_SETS_TEXT} vs set {fit_facepalm.TEST_SET}"
+
+
 def test_report_has_every_section_and_scores_the_extra_row(tmp_path: Path) -> None:
     features = tmp_path / "features.tsv"
     write_synthetic_features(features)
@@ -363,7 +389,7 @@ def test_report_has_every_section_and_scores_the_extra_row(tmp_path: Path) -> No
         "## Form A",
         "## Form B",
         "## Clip choice",
-        "## Sets 1-5 vs set 6",
+        LEGACY_SPLIT_HEADING,
         "## Extra rows",
         "## Constants",
     ):
@@ -372,8 +398,8 @@ def test_report_has_every_section_and_scores_the_extra_row(tmp_path: Path) -> No
     extra_section = report.split("## Extra rows", 1)[1].split("## Constants", 1)[0]
     assert "row extra" in extra_section
     assert ("AT OR ABOVE THRESHOLD" in extra_section) != ("below threshold" in extra_section)
-    split_section = report.split("## Sets 1-5 vs set 6", 1)[1].split("## Extra rows", 1)[0]
-    assert "AUC on set 6" in split_section
+    split_section = report.split(LEGACY_SPLIT_HEADING, 1)[1].split("## Extra rows", 1)[0]
+    assert f"AUC on set {fit_facepalm.LEGACY_TEST_SET}" in split_section
 
 
 def test_forced_loss_floor_is_stated_and_used(tmp_path: Path) -> None:
@@ -430,12 +456,13 @@ def test_exclusions_are_counted_per_reason() -> None:
 
     usable, excluded = fit_facepalm.split_usable(rows)
 
-    assert len(usable) == 2
+    # The base filter no longer reads the reply spread (254 WR-03): the NULL-spread row stays,
+    # and each candidate decides on it (`_spec_exclusion`).
+    assert len(usable) == 3
     assert excluded == {
         fit_facepalm.REASON_UNDECIDED: 1,
         fit_facepalm.REASON_NO_LABEL: 1,
         fit_facepalm.REASON_NO_PLAYED: 1,
-        fit_facepalm.REASON_NO_SPREAD: 1,
         fit_facepalm.REASON_NO_LOSS: 1,
     }
 
@@ -453,7 +480,14 @@ def test_help_lists_the_documented_flags() -> None:
     for script, flags in (
         (
             "scripts/blunder_check/fit_facepalm.py",
-            ("--features", "--loss-floor", "--check-constants"),
+            (
+                "--features",
+                "--loss-floor",
+                "--material-input",
+                "--loss-gate",
+                "--labels",
+                "--check-constants",
+            ),
         ),
         ("scripts/blunder_check/facepalm_features.py", ("--pv-cache", "--extra")),
     ):
@@ -475,7 +509,7 @@ def test_help_lists_the_documented_flags() -> None:
 
 FACTS_ROWS: int = 1200
 FACTS_SEED: int = 17
-FACTS_SETS: int = 7
+FACTS_SETS: int = 8
 # Known generating model of the synthetic facts table: the combined form (one coefficient on
 # loss + missed, D-06), the spread on every row, no Maia best-move or pre-blunder terms.
 FACTS_TRUE_INTERCEPT: float = 0.4
@@ -511,7 +545,34 @@ def _facts_line_values(
     return played, None, played, None
 
 
-def _facts_cells(index: int, label: object, rng: np.random.Generator, noise: bool) -> str:
+# Deviation of the deeper odd slots from the depth-3 value in the synthetic arrays.
+SLOT_DEVIATIONS: tuple[int, ...] = (-1, 0, 1)
+DEEP_ODD_DEPTHS: tuple[int, ...] = (5, 7, 9)
+
+
+def _line_cells(depth_3: int | None, fill_rng: np.random.Generator) -> list[str]:
+    """The nine per-depth cells of one synthetic line (empty cells when depth 3 is NULL).
+
+    Depth 1 is 0, depth 3 the row's own value, depths 5, 7, 9 deviate from it by -1, 0 or 1, and
+    every even slot copies the odd slot before it. Drawn from `fill_rng`, never from the row's own
+    generator, so the depth-3 columns and every label stay what they were before the arrays existed.
+    """
+    if depth_3 is None:
+        return [""] * LINE_MATERIAL_SLOTS
+    odd = {1: 0, 3: depth_3}
+    for depth in DEEP_ODD_DEPTHS:
+        odd[depth] = depth_3 + int(fill_rng.choice(SLOT_DEVIATIONS))
+    slots = range(1, LINE_MATERIAL_SLOTS + 1)
+    return [str(odd[depth if depth % 2 else depth - 1]) for depth in slots]
+
+
+def _facts_cells(
+    index: int,
+    label: object,
+    rng: np.random.Generator,
+    noise: bool,
+    fill_rng: np.random.Generator,
+) -> str:
     cells = {col: "" for col in FEATURE_COLUMNS}
     played_3, mate_ply, best_3, best_mate_ply = _facts_line_values(rng)
     played = rng.uniform(0.0, FACTS_MAX_PLAYED_PROB)
@@ -527,13 +588,13 @@ def _facts_cells(index: int, label: object, rng: np.random.Generator, noise: boo
             "reply_spread": f"{spread:.6g}",
             "best_prob": f"{rng.uniform(*FACTS_BEST_PROB_RANGE):.6g}" if noise else "",
             "pre_spread": f"{rng.uniform(*FACTS_PRE_SPREAD_RANGE):.6g}" if noise else "",
-            "played_mat_3": "" if played_3 is None else str(played_3),
             "line_mate_ply": "" if mate_ply is None else str(mate_ply),
-            "best_mat_3": "" if best_3 is None else str(best_3),
             "best_mate_ply": "" if best_mate_ply is None else str(best_mate_ply),
             "pv_source": "db",
         }
     )
+    cells.update(zip(fit_facepalm.PLAYED_MAT_COLUMNS, _line_cells(played_3, fill_rng)))
+    cells.update(zip(fit_facepalm.BEST_MAT_COLUMNS, _line_cells(best_3, fill_rng)))
     return "\t".join(cells[col] for col in FEATURE_COLUMNS)
 
 
@@ -579,10 +640,12 @@ def write_synthetic_facts(
     n-th row (the D-18 unknown best line).
     """
     rng = np.random.default_rng(FACTS_SEED)
+    fill_rng = np.random.default_rng(FACTS_SEED + 1)
     lines = ["\t".join(FEATURE_COLUMNS)]
     for index in range(FACTS_ROWS):
         # Labels need the row's own values, so draw the row first and label it afterwards.
-        record = dict(zip(FEATURE_COLUMNS, _facts_cells(index + 1, "", rng, noise).split("\t")))
+        cells = _facts_cells(index + 1, "", rng, noise, fill_rng)
+        record = dict(zip(FEATURE_COLUMNS, cells.split("\t")))
         record["label"] = str(
             _true_label(
                 record,
@@ -592,10 +655,10 @@ def write_synthetic_facts(
             )
         )
         if null_best_every and index % null_best_every == 0:
-            record.update({"best_mat_3": "", "best_mate_ply": ""})
+            record.update({**dict.fromkeys(fit_facepalm.BEST_MAT_COLUMNS, ""), "best_mate_ply": ""})
         lines.append("\t".join(record[col] for col in FEATURE_COLUMNS))
     # The last row is the unlabelled extra row (label cell empty, set "extra").
-    extra = dict(zip(FEATURE_COLUMNS, _facts_cells(0, "", rng, noise).split("\t")))
+    extra = dict(zip(FEATURE_COLUMNS, _facts_cells(0, "", rng, noise, fill_rng).split("\t")))
     extra.update({"n": "extra", "set": "extra", "label": ""})
     lines.append("\t".join(extra[col] for col in FEATURE_COLUMNS))
     path.write_text("\n".join(lines) + "\n")
@@ -612,9 +675,13 @@ def test_fit_loads_both_schemas(tmp_path: Path) -> None:
     # Legacy rows carry played_3 = -line_loss_3 and no best-line or pre-blunder facts.
     first = legacy.rows[1]
     assert first.line_loss_3 is not None and first.played_3 == -first.line_loss_3
+    assert first.played_material == single_depth_material(-first.line_loss_3)
     assert first.best_3 is None and first.best_prob is None
     row = facts.rows[0]
     assert row.played_3 is None or row.line_loss_3 == -row.played_3
+    # Phase 256 D-06: a facts row keeps all nine slots of both lines.
+    assert row.played_material is not None and len(row.played_material) == LINE_MATERIAL_SLOTS
+    assert row.best_material is not None and len(row.best_material) == LINE_MATERIAL_SLOTS
     assert any(r.best_3 is not None and r.best_prob is not None for r in facts.rows)
 
 
@@ -650,6 +717,8 @@ def test_check_constants_reports_every_field_that_moved() -> None:
         spread_form="loss_only",
         best_prob_coef=0.2,
         pre_spread_coef=-0.1,
+        material_input="decaying_mean",
+        loss_gate=1.0,
     )
     pre_refit = FacepalmModel(
         intercept=1.0, played_coef=-0.5, spread_coef=-0.2, loss_coef=0.9, loss_floor=0
@@ -667,6 +736,8 @@ def test_check_constants_reports_every_field_that_moved() -> None:
         "FACEPALM_SPREAD_FORM",
         "FACEPALM_BEST_PROB_COEF",
         "FACEPALM_PRE_SPREAD_COEF",
+        "FACEPALM_MATERIAL_INPUT",
+        "FACEPALM_LOSS_GATE",
     ):
         assert name in table, name
     for name in fit_facepalm.CONSTANT_NAMES:
@@ -718,6 +789,18 @@ SPEC_SHAPES: tuple[fit_facepalm.CandidateSpec, ...] = (
     fit_facepalm.CandidateSpec("combined", 0, LOSS_CAP, "loss_only", pre_spread=True),
     fit_facepalm.CandidateSpec("split", None, 9, "best_prob_for_misses"),
     fit_facepalm.CandidateSpec("combined", 0, 9, "best_prob_for_misses", pre_spread=True),
+    # Phase 256: the aggregate inputs and both loss gates (parity per input and gate).
+    fit_facepalm.CandidateSpec(
+        "split", None, 9, "best_prob_for_misses", material_input="decaying_mean", loss_gate=1.0
+    ),
+    fit_facepalm.CandidateSpec("combined", 0, LOSS_CAP, "loss_only", material_input="first_stable"),
+    fit_facepalm.CandidateSpec("split", 0, LOSS_CAP, "always", material_input="decaying_mean"),
+    fit_facepalm.CandidateSpec(
+        "split", 0, LOSS_CAP, "loss_only", material_input="first_stable", loss_gate=1.0
+    ),
+    fit_facepalm.CandidateSpec(
+        "combined", None, LOSS_CAP, "best_prob_for_misses", material_input="decaying_mean"
+    ),
 )
 
 
@@ -728,7 +811,8 @@ def test_design_matrix_is_the_shipped_twin(
     """sigmoid(x @ coef) equals facepalm_score of the candidate model on every usable row."""
     features = tmp_path / "facts.tsv"
     write_synthetic_facts(features)
-    usable, _ = fit_facepalm.split_usable(fit_facepalm.load_features(features).rows)
+    base, _ = fit_facepalm.split_usable(fit_facepalm.load_features(features).rows)
+    usable, _ = fit_facepalm.spec_usable(base, spec)
     names = fit_facepalm.spec_columns(spec)
     coef = np.round(
         np.random.default_rng(3).normal(0.0, 0.5, len(names)), fit_facepalm.COEF_DECIMALS
@@ -741,9 +825,9 @@ def test_design_matrix_is_the_shipped_twin(
             FacepalmFacts(
                 played_prob=row.played_prob,
                 reply_spread=row.reply_spread,
-                played_3=row.played_3,
+                played_material=row.played_material,
                 mate_ply=row.line_mate_ply,
-                best_3=row.best_3,
+                best_material=row.best_material,
                 best_mate_ply=row.best_mate_ply,
                 best_prob=row.best_prob,
                 pre_spread=row.pre_spread,
@@ -777,6 +861,7 @@ class FactsRun:
             threshold=0.7, folds=fit_facepalm.CV_FOLDS, seed=fit_facepalm.FIT_SEED
         )
         self.usable, _ = fit_facepalm.split_usable(fit_facepalm.load_features(self.features).rows)
+        self.outcome = fit_facepalm.run_facts_fit(self.usable, self.settings)
 
 
 @pytest.fixture(scope="module")
@@ -796,6 +881,9 @@ def _report_model(report: str) -> FacepalmModel:
     def optional_int(text: str) -> int | None:
         return None if text == "None" else int(text)
 
+    def optional_float(text: str) -> float | None:
+        return None if text == "None" else float(text)
+
     return FacepalmModel(
         intercept=float(raw["FACEPALM_INTERCEPT"]),
         played_coef=float(raw["FACEPALM_PLAYED_COEF"]),
@@ -810,6 +898,8 @@ def _report_model(report: str) -> FacepalmModel:
         spread_form=cast(SpreadForm, raw["FACEPALM_SPREAD_FORM"]),
         best_prob_coef=float(raw["FACEPALM_BEST_PROB_COEF"]),
         pre_spread_coef=float(raw["FACEPALM_PRE_SPREAD_COEF"]),
+        material_input=cast(MaterialInput, raw["FACEPALM_MATERIAL_INPUT"]),
+        loss_gate=optional_float(raw["FACEPALM_LOSS_GATE"]),
     )
 
 
@@ -949,6 +1039,78 @@ def test_check_constants_facts_reports_the_selectors(
     assert "FACEPALM_SPREAD_FORM" in capsys.readouterr().err
 
 
+def test_depth_3_fit_reproduces_the_2026_11_15_constants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refactored fit, forced to depth 3, still refits the Phase 254 constants (refactor pin)."""
+    monkeypatch.setattr(fit_facepalm, "FACEPALM_MODEL", PHASE_254_MODEL)
+    argv = [
+        "--features",
+        str(FEATURES_2026_11_15),
+        "--out",
+        str(tmp_path / "r.md"),
+        "--material-input",
+        "depth_3",
+        "--check-constants",
+    ]
+
+    assert fit_facepalm.main(argv) == fit_facepalm.EXIT_OK
+
+
+def test_shipped_constants_reproduce_from_the_refit_features(tmp_path: Path) -> None:
+    """The shipped FACEPALM_* constants are the refit of the committed 2026-11-16 table (256 D-10).
+
+    No monkeypatch: this runs against the real shipped FACEPALM_MODEL, so a hand-edited or stale
+    constant exits EXIT_CONSTANTS_MISMATCH (T-256-19).
+    """
+    argv = [
+        "--features",
+        str(REFIT_FEATURES),
+        "--out",
+        str(tmp_path / "r.md"),
+        *REFIT_FIT_FLAGS,
+        "--check-constants",
+    ]
+
+    assert fit_facepalm.main(argv) == fit_facepalm.EXIT_OK
+
+
+def test_forced_decaying_mean_round_trips_through_check_constants(
+    tmp_path: Path, facts_run: FactsRun, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    forced = ["--material-input", "decaying_mean"]
+    base = ["--features", str(facts_run.features), "--out", str(tmp_path / "a.md"), *forced]
+    assert fit_facepalm.main(base) == 0
+    report = (tmp_path / "a.md").read_text()
+    assert 'FACEPALM_MATERIAL_INPUT: MaterialInput = "decaying_mean"' in report
+    assert "forced by --material-input decaying_mean" in report
+    refit = _report_model(report)
+    assert refit.material_input == "decaying_mean"
+    monkeypatch.setattr(fit_facepalm, "FACEPALM_MODEL", refit)
+
+    forced_check = [*base[:3], str(tmp_path / "b.md"), *forced, "--check-constants"]
+    assert fit_facepalm.main(forced_check) == fit_facepalm.EXIT_OK
+    # Another forced input fits another model, so the decaying-mean model no longer reproduces.
+    other = ["--features", str(facts_run.features), "--out", str(tmp_path / "c.md")]
+    assert (
+        fit_facepalm.main([*other, "--material-input", "depth_3", "--check-constants"])
+        == fit_facepalm.EXIT_CONSTANTS_MISMATCH
+    )
+
+
+def test_material_input_flag_needs_a_facts_table(tmp_path: Path) -> None:
+    argv = [
+        "--features",
+        str(LEGACY_FEATURES),
+        "--out",
+        str(tmp_path / "o.md"),
+        "--material-input",
+        "decaying_mean",
+    ]
+
+    assert fit_facepalm.main(argv) == fit_facepalm.EXIT_FIT_ERROR
+
+
 def test_flags_of_the_other_schema_are_an_error(tmp_path: Path, facts_run: FactsRun) -> None:
     out = str(tmp_path / "o.md")
 
@@ -987,13 +1149,15 @@ def test_report_has_d13_sections(facts_run: FactsRun) -> None:
         "## Chosen model",
         "## Fair / unfair among passers by material type",
         "## Fair / unfair among passers by label set",
-        "## Sets 1-5 vs set 6",
+        FACTS_SPLIT_HEADING,
         "## Extra rows",
         "## Constants",
     ):
         assert heading in report, heading
-    # Repeated-seed CV mean and spread sit next to the single-seed numbers.
+    # Repeated-seed CV mean and spread sit next to the single-seed numbers, with each candidate's
+    # own row count (candidates can fit different rows, Pitfall 1).
     assert "CV AUC mean" in report and "CV AUC spread" in report
+    assert "| candidate | rows |" in report
     # D-18: label rows whose best line is NULL are counted (every NULL_BEST_EVERY-th row).
     labelled = [
         row for row in fit_facepalm.load_features(facts_run.features).rows if row.label is not None
@@ -1010,7 +1174,7 @@ def test_report_has_d13_sections(facts_run: FactsRun) -> None:
     for cut in fit_facepalm.FIT_THRESHOLDS:
         assert f"score >= {cut:.2f}" in type_section
     set_section = report.split("## Fair / unfair among passers by label set", 1)[1].split(
-        "## Sets 1-5 vs set 6", 1
+        FACTS_SPLIT_HEADING, 1
     )[0]
     for set_id in range(1, FACTS_SETS + 1):
         assert re.search(rf"^\| {set_id} \|", set_section, flags=re.MULTILINE)
@@ -1018,3 +1182,676 @@ def test_report_has_d13_sections(facts_run: FactsRun) -> None:
     constants = report.split("## Constants", 1)[1]
     for name in fit_facepalm.MODEL_CONSTANT_NAMES:
         assert re.search(rf"^{name}: ", constants, flags=re.MULTILINE), name
+
+
+# ---------------------------------------------------------------------------
+# Phase 256 plan 04 task 2: per-candidate rows (WR-03, D-05, D-12) and the stage-2 loss gate
+# ---------------------------------------------------------------------------
+
+# Nine-slot signed material lines (index = depth - 1): a pure miss (nothing lost, a pawn-and-more
+# left on the table) and a line that loses a pawn only from depth 5 on.
+LEVEL_LINE: tuple[int, ...] = (0,) * LINE_MATERIAL_SLOTS
+GAIN_LINE: tuple[int, ...] = (0, 0, 3, 3, 3, 3, 3, 3, 3)
+LATE_LOSS_LINE: tuple[int, ...] = (0, 0, 0, 0, -1, -1, -1, -1, -1)
+DEFAULT_BEST_PROB: float = 0.3
+
+
+def _line_row(
+    played_line: tuple[int, ...],
+    *,
+    spread: float | None,
+    best_prob: float | None = DEFAULT_BEST_PROB,
+    best_line: tuple[int, ...] | None = GAIN_LINE,
+    label: float | None = 1.0,
+) -> fit_facepalm.FitRow:
+    """A facts row built from full lines (the fit's own FitRow, no TSV)."""
+    return fit_facepalm.FitRow(
+        n="1",
+        set_id="1",
+        label=label,
+        played_prob=0.1,
+        reply_spread=spread,
+        line_loss_3=-played_line[2],
+        line_mate_ply=None,
+        played_material=played_line,
+        best_material=best_line,
+        best_prob=best_prob,
+    )
+
+
+def _spec(
+    spread_form: SpreadForm, material_input: MaterialInput = "depth_3", gate: float | None = None
+) -> fit_facepalm.CandidateSpec:
+    return fit_facepalm.CandidateSpec(
+        "split", None, LOSS_CAP, spread_form, material_input=material_input, loss_gate=gate
+    )
+
+
+def test_spec_exclusion_keeps_null_spread_pure_miss_under_gated_form() -> None:
+    """254 WR-03 / 256 D-12: a NULL reply spread only excludes a row the form would read it on."""
+    row = _line_row(LEVEL_LINE, spread=None)
+
+    # The base filter no longer reads the spread, so the row reaches every candidate.
+    usable, excluded = fit_facepalm.split_usable([row])
+    assert usable == [row]
+    assert excluded[fit_facepalm.REASON_NO_LOSS] == 0
+    # `always` reads the spread on every row; the gated forms never read it on a pure miss.
+    assert fit_facepalm._spec_exclusion(row, _spec("always")) == fit_facepalm.REASON_NO_SPREAD
+    assert fit_facepalm._spec_exclusion(row, _spec("loss_only")) is None
+    assert fit_facepalm._spec_exclusion(row, _spec("best_prob_for_misses")) is None
+    # Its design row is built without reading the spread (the read used to raise before the gate).
+    values = fit_facepalm.spec_row_values(row, _spec("loss_only"))
+    assert values[fit_facepalm.spec_columns(_spec("loss_only")).index("spread")] == 0.0
+    # A row that loses material reads the spread under every form, so a NULL spread excludes it.
+    losing = _line_row((0, 0, -2, -2, -2, -2, -2, -2, -2), spread=None)
+    for form in ("always", "loss_only", "best_prob_for_misses"):
+        assert fit_facepalm._spec_exclusion(losing, _spec(form)) == fit_facepalm.REASON_NO_SPREAD
+    kept, counts = fit_facepalm.spec_usable([row, losing], _spec("loss_only"))
+    assert kept == [row]
+    assert counts[fit_facepalm.REASON_NO_SPREAD] == 1
+
+
+def test_spec_exclusion_drops_pure_miss_without_best_prob() -> None:
+    """256 D-05: the shipped twin leaves such a row unscored (D-04), so the fit does not fit it."""
+    row = _line_row(LEVEL_LINE, spread=2.0, best_prob=None)
+
+    assert (
+        fit_facepalm._spec_exclusion(row, _spec("best_prob_for_misses"))
+        == fit_facepalm.REASON_NO_BEST_PROB
+    )
+    # Additive or unused best probability reads NULL as 0, as the twin does (D-18).
+    assert fit_facepalm._spec_exclusion(row, _spec("loss_only")) is None
+    assert fit_facepalm._spec_exclusion(row, _spec("always")) is None
+    additive = replace(_spec("loss_only"), best_prob=True)
+    assert fit_facepalm._spec_exclusion(row, additive) is None
+    # A losing row never needs the best probability.
+    losing = _line_row((0, 0, -2, -2, -2, -2, -2, -2, -2), spread=2.0, best_prob=None)
+    assert fit_facepalm._spec_exclusion(losing, _spec("best_prob_for_misses")) is None
+    assert fit_facepalm.REASON_NO_BEST_PROB in fit_facepalm.EXCLUSION_REASONS
+
+
+def test_spec_exclusion_uses_the_loss_gate_on_a_fractional_mean() -> None:
+    """Under the decaying mean a late one-pawn loss is a fraction: losing at gate None, not at 1."""
+    row = _line_row(LATE_LOSS_LINE, spread=None)
+    mean_loss = fit_facepalm.material_loss(
+        row.played_material, None, material_input="decaying_mean", loss_floor=0
+    )
+    assert mean_loss is not None and 0.0 < mean_loss < 1.0
+
+    no_gate = _spec("loss_only", "decaying_mean", None)
+    gate_one = _spec("loss_only", "decaying_mean", 1.0)
+    assert fit_facepalm._spec_exclusion(row, no_gate) == fit_facepalm.REASON_NO_SPREAD
+    assert fit_facepalm._spec_exclusion(row, gate_one) is None
+    # Depth 3 sees no loss at all: the row is a pure miss under either gate.
+    assert fit_facepalm._spec_exclusion(row, _spec("loss_only", "depth_3", None)) is None
+
+
+def test_exclusion_counts_per_spread_form_in_data_section(tmp_path: Path) -> None:
+    features = tmp_path / "facts.tsv"
+    write_synthetic_facts(features)
+    lines = features.read_text().splitlines()
+    header = lines[0].split("\t")
+    spread_at = header.index("reply_spread")
+    played_at = header.index("played_mat_3")
+    label_at = header.index("label")
+    blanked = 0
+    for position, line in enumerate(lines[1:], start=1):
+        cells = line.split("\t")
+        # Blank the spread of a few labelled rows that lose nothing at depth 3 (pure misses).
+        if cells[label_at] in ("0", "1") and cells[played_at] == "0" and blanked < 12:
+            cells[spread_at] = ""
+            lines[position] = "\t".join(cells)
+            blanked += 1
+    features.write_text("\n".join(lines) + "\n")
+    out = tmp_path / "report.md"
+
+    # The blanked rows are pure misses at depth 3, so the counts are read on that input.
+    argv = ["--features", str(features), "--out", str(out), "--material-input", "depth_3"]
+    assert fit_facepalm.main(argv) == 0
+
+    data = out.read_text().split("## Data", 1)[1].split("## Stage 1", 1)[0]
+    assert blanked == 12
+    assert re.search(r"spread always.*excluded: NULL reply_spread 12,", data)
+    for form in ("loss_only", "best_prob_for_misses"):
+        for gate in ("none", "1"):
+            assert re.search(
+                rf"spread {form}, gate {gate}.*excluded: NULL reply_spread 0,", data
+            ), (form, gate)
+    assert "qualify only under a gated form" in data
+    assert re.search(r"qualify only under a gated form[^:]*: 12\b", data)
+
+
+def test_stage_two_lists_gate_candidates(facts_run: FactsRun) -> None:
+    stage1 = fit_facepalm.select_material_form(facts_run.usable, facts_run.settings)
+
+    stage2 = fit_facepalm.select_spread_form(facts_run.usable, stage1.chosen, facts_run.settings)
+
+    assert fit_facepalm.LOSS_GATE_CANDIDATES == (None, 1.0)
+    assert [(fit.spec.spread_form, fit.spec.loss_gate) for fit in stage2.candidates] == [
+        ("always", None),
+        ("loss_only", None),
+        ("loss_only", 1.0),
+        ("best_prob_for_misses", None),
+        ("best_prob_for_misses", 1.0),
+    ]
+    only_one = fit_facepalm.select_spread_form(
+        facts_run.usable, stage1.chosen, facts_run.settings, gate_mode="1"
+    )
+    assert [(fit.spec.spread_form, fit.spec.loss_gate) for fit in only_one.candidates] == [
+        ("always", None),
+        ("loss_only", 1.0),
+        ("best_prob_for_misses", 1.0),
+    ]
+    assert "--loss-gate 1" in only_one.forced_by
+
+
+def test_loss_gate_flag_forces_one_gate(tmp_path: Path, facts_run: FactsRun) -> None:
+    for flag, shipped in (("none", "None"), ("1", "1.0")):
+        out = tmp_path / f"gate-{flag}.md"
+        argv = [
+            "--features",
+            str(facts_run.features),
+            "--out",
+            str(out),
+            "--spread-form",
+            "loss_only",
+            "--loss-gate",
+            flag,
+        ]
+
+        assert fit_facepalm.main(argv) == 0
+
+        report = out.read_text()
+        assert f"forced by --spread-form loss_only, --loss-gate {flag}" in report
+        assert f"FACEPALM_LOSS_GATE: float | None = {shipped}" in report
+    # The gate belongs to the facts schema.
+    assert (
+        fit_facepalm.main(
+            [
+                "--features",
+                str(LEGACY_FEATURES),
+                "--out",
+                str(tmp_path / "x.md"),
+                "--loss-gate",
+                "1",
+            ]
+        )
+        == fit_facepalm.EXIT_FIT_ERROR
+    )
+
+
+def test_d13_tables_align_with_the_chosen_rows_after_exclusion(tmp_path: Path) -> None:
+    """Candidates fit different rows once a NULL spread is no longer a base exclusion (Pitfall 1)."""
+    features = tmp_path / "facts.tsv"
+    write_synthetic_facts(features)
+    lines = features.read_text().splitlines()
+    header = lines[0].split("\t")
+    spread_at, played_at = header.index("reply_spread"), header.index("played_mat_3")
+    for position in range(1, 40):
+        cells = lines[position].split("\t")
+        if cells[played_at] == "0":
+            cells[spread_at] = ""
+            lines[position] = "\t".join(cells)
+    features.write_text("\n".join(lines) + "\n")
+    rows = fit_facepalm.load_features(features).rows
+    settings = fit_facepalm.FitSettings(0.7, fit_facepalm.CV_FOLDS, fit_facepalm.FIT_SEED)
+
+    outcome = fit_facepalm.run_facts_fit(rows, settings, spread_mode="loss_only")
+
+    always = outcome.stage1.chosen
+    assert len(outcome.chosen.rows) == len(outcome.chosen.oof) > len(always.rows)
+    assert len(always.rows) == len(always.oof)
+    report = fit_facepalm.render_facts_report(
+        outcome, features_name="f.tsv", threshold=0.7, folds=fit_facepalm.CV_FOLDS, seed=1
+    )
+    assert "| candidate | rows |" in report
+
+
+# ---------------------------------------------------------------------------
+# Phase 256 plan 05 task 1: the three-input comparison (D-06, D-07, D-09, D-14)
+# ---------------------------------------------------------------------------
+
+
+def test_choose_material_input_rules() -> None:
+    tol = fit_facepalm.AUC_TIE_TOLERANCE
+    share_tol = fit_facepalm.FAIR_SHARE_TIE_TOLERANCE
+    inputs = fit_facepalm.MATERIAL_INPUTS
+    assert inputs == ("decaying_mean", "first_stable", "depth_3")
+    first = fit_facepalm.CandidateScore(6, 0.80, 0.70)
+
+    # A higher CV AUC mean by more than the tolerance wins whatever the shares are and wherever
+    # the input sits in the preference order.
+    ahead = fit_facepalm.CandidateScore(4, 0.80 + 2 * tol, 0.10)
+    index, reason = fit_facepalm.choose_material_input([first, first, ahead])
+    assert index == 2 and "cross-validated AUC" in reason
+    # Within the tolerance the fair share decides, but only beyond its own tolerance.
+    better_share = fit_facepalm.CandidateScore(6, 0.80 + tol / 2, 0.70 + 2 * share_tol)
+    index, reason = fit_facepalm.choose_material_input([first, better_share, first])
+    assert index == 1 and "fair share" in reason
+    # A fair share inside its tolerance is noise: the preference order decides (D-09).
+    noise_share = fit_facepalm.CandidateScore(6, 0.80 + tol / 2, 0.70 + share_tol / 2)
+    index, reason = fit_facepalm.choose_material_input([first, noise_share, noise_share])
+    assert index == 0 and "D-09" in reason
+    # Decaying mean against depth 3 on a full tie: the decaying mean (list order), even when depth 3
+    # has fewer free coefficients (D-09 overrides "fewer coefficients" at this level).
+    simpler = fit_facepalm.CandidateScore(4, 0.80, 0.70)
+    assert fit_facepalm.choose_material_input([first, simpler])[0] == 0
+    # First stable against depth 3: first stable.
+    assert fit_facepalm.choose_material_input([simpler, first, simpler])[0] == 0
+    assert fit_facepalm.choose_material_input([first, first])[0] == 0
+    # No passers is the worst share.
+    no_passers = fit_facepalm.CandidateScore(6, 0.80, None)
+    assert fit_facepalm.choose_material_input([no_passers, first])[0] == 1
+
+
+def _comparison_section(report: str) -> str:
+    return report.split("## Material input", 1)[1].split("## Stage 1", 1)[0]
+
+
+def test_material_input_auto_compares_three_inputs(tmp_path: Path, facts_run: FactsRun) -> None:
+    section = _comparison_section(facts_run.report)
+
+    names = re.findall(r"^\| (\w+) \| [^|]+ \| \d+ \|", section, flags=re.MULTILINE)
+    assert tuple(names) == fit_facepalm.MATERIAL_INPUTS
+    chosen = re.search(r"^Chosen input: (\w+)\. Reason: (.+)\.$", section, flags=re.MULTILINE)
+    assert chosen is not None
+    assert chosen.group(1) in fit_facepalm.MATERIAL_INPUTS
+    # The rows column carries every input's row count (Pitfall 1) and nothing is forced.
+    assert "forced by" not in section
+    # The inputs that were not chosen keep their stage tables (D-14).
+    others = [name for name in fit_facepalm.MATERIAL_INPUTS if name != chosen.group(1)]
+    assert re.findall(r"^## Other input: (\w+)$", facts_run.report, flags=re.MULTILINE) == others
+
+    # A forced input runs one pipeline: one comparison row, the flag named, no other-input block.
+    out = tmp_path / "forced-input.md"
+    argv = ["--features", str(facts_run.features), "--out", str(out)]
+    assert fit_facepalm.main([*argv, "--material-input", "first_stable"]) == 0
+    forced = out.read_text()
+    forced_section = _comparison_section(forced)
+    assert re.findall(r"^\| (\w+) \| [^|]+ \| \d+ \|", forced_section, flags=re.MULTILINE) == [
+        "first_stable"
+    ]
+    assert "Chosen input: first_stable." in forced_section
+    assert "--material-input first_stable" in forced_section
+    assert "## Other input" not in forced
+
+
+# ---------------------------------------------------------------------------
+# Phase 256 plan 05 task 2: the chosen-model section (D-10, D-13)
+# ---------------------------------------------------------------------------
+
+
+def _chosen_model_section(report: str) -> str:
+    return report.split("## Chosen model", 1)[1].split(
+        "## Fair / unfair among passers by material type", 1
+    )[0]
+
+
+def test_constants_block_is_the_chosen_input_final(facts_run: FactsRun) -> None:
+    """D-10 / T-256-24: the pasted constants are the chosen input's final, not another input's."""
+    outcome = fit_facepalm.run_facts_fit(facts_run.usable, facts_run.settings)
+    report = facts_run.report
+
+    chosen_line = re.search(r"^Chosen input: (\w+)\.", report, flags=re.MULTILINE)
+    assert chosen_line is not None
+    block_input = re.search(
+        r'^FACEPALM_MATERIAL_INPUT: MaterialInput = "(\w+)"$', report, flags=re.MULTILINE
+    )
+    assert block_input is not None
+    assert block_input.group(1) == chosen_line.group(1) == outcome.chosen.spec.material_input
+    # The block parsed back is the outcome's model, and that model is the chosen input's final.
+    assert _report_model(report) == outcome.model
+    finals = {entry.material_input: entry.chosen for entry in outcome.inputs}
+    assert outcome.model == finals[outcome.chosen.spec.material_input].model
+    # Every input was fitted on all the labelled sets: the final carries their rows (D-10).
+    assert {row.set_id for row in outcome.chosen.rows} == {str(n) for n in range(1, FACTS_SETS + 1)}
+
+
+def test_report_states_the_assumptions(facts_run: FactsRun) -> None:
+    """D-13: the owner reads the assumptions the inputs rest on next to the chosen model."""
+    section = _chosen_model_section(facts_run.report)
+
+    assert "Assumptions" in section
+    found = {
+        tag: re.findall(rf"^- {tag}[ :].*$", section, flags=re.MULTILINE)
+        for tag in ("A1", "A2", "A4")
+    }
+    assert all(len(matches) == 1 for matches in found.values()), found
+    a1, a2, a4 = (found[tag][0] for tag in ("A1", "A2", "A4"))
+    # The numbers come from the shipped constants, not from literals in the text.
+    assert "first stable" in a1 and str(MATERIAL_DECAY_RATIO) in a1
+    assert str(LINE_DEPTH) in a2 and str(MATE_LOSS) in a2
+    assert "at least" in a4
+    # The per-depth loss floor and the chosen missed floor and cap.
+    chosen = fit_facepalm.run_facts_fit(facts_run.usable, facts_run.settings).chosen.spec
+    floor = fit_facepalm._floor_text(chosen.missed_floor)
+    assert re.search(
+        rf"^- loss floor {fit_facepalm.FACTS_LOSS_FLOOR} per depth", section, flags=re.MULTILINE
+    )
+    assert f"missed floor {floor}, cap {chosen.missed_cap}, applied per depth" in section
+
+
+# ---------------------------------------------------------------------------
+# Phase 256 plan 06 task 1: the set-8 holdout per input (D-08)
+# ---------------------------------------------------------------------------
+
+
+def test_set_eight_holdout_runs_the_pipeline_on_sets_one_to_seven(
+    facts_run: FactsRun, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-256-13: set 8 is only scored. Flipping its labels leaves the sets-1-7 pipeline unchanged."""
+    modes = fit_facepalm.PipelineModes()
+    seen: list[fit_facepalm.InputOutcome] = []
+    real = fit_facepalm.run_input_pipeline
+
+    def spy(*args: Any, **kwargs: Any) -> fit_facepalm.InputOutcome:
+        outcome = real(*args, **kwargs)
+        seen.append(outcome)
+        return outcome
+
+    monkeypatch.setattr(fit_facepalm, "run_input_pipeline", spy)
+    flipped = [
+        replace(row, label=1.0 - row.label)
+        if row.set_id == fit_facepalm.TEST_SET and row.label is not None
+        else row
+        for row in facts_run.usable
+    ]
+    assert any(row.set_id == fit_facepalm.TEST_SET for row in flipped)
+
+    original = fit_facepalm.input_holdout(
+        facts_run.usable, facts_run.settings, "decaying_mean", modes
+    )
+    mirrored = fit_facepalm.input_holdout(flipped, facts_run.settings, "decaying_mean", modes)
+
+    # The pipeline ran once per call, on rows of sets 1-7 only, and chose the same spec and
+    # coefficients whatever set 8 says.
+    assert len(seen) == 2
+    for outcome in seen:
+        assert {row.set_id for row in outcome.chosen.rows} <= set(fit_facepalm.TRAIN_SETS)
+        assert fit_facepalm.TEST_SET not in {row.set_id for row in outcome.chosen.rows}
+    first, second = seen
+    assert first.chosen.spec == second.chosen.spec
+    assert np.array_equal(first.chosen.coef, second.chosen.coef)
+    # Same model, mirrored labels: the AUC mirrors and fair / unfair trade places at every cut.
+    assert original.test_auc is not None and mirrored.test_auc is not None
+    assert original.test_auc + mirrored.test_auc == pytest.approx(1.0)
+    assert original.train_rows == mirrored.train_rows and original.test_rows == mirrored.test_rows
+    assert [(e.fair, e.unfair) for e in original.table] == [
+        (e.unfair, e.fair) for e in mirrored.table
+    ]
+
+
+def test_every_input_carries_its_own_set_eight_holdout(facts_run: FactsRun) -> None:
+    outcome = facts_run.outcome
+    report = facts_run.report
+
+    assert [entry.material_input for entry in outcome.inputs] == list(fit_facepalm.MATERIAL_INPUTS)
+    for entry in outcome.inputs:
+        assert entry.holdout.note == "" and entry.holdout.test_auc is not None
+        # The pipeline is refitted without set 8: it sees fewer rows than the all-sets final.
+        assert entry.holdout.train_rows < len(entry.chosen.rows)
+    assert outcome.split is next(
+        entry.holdout for entry in outcome.inputs if entry.chosen is outcome.chosen
+    )
+    # The chosen input's holdout has its derived level-2 heading, the others sit under their own block.
+    assert re.findall(rf"^{FACTS_SPLIT_HEADING}$", report, flags=re.MULTILINE) == [
+        FACTS_SPLIT_HEADING
+    ]
+    other_heading = f"### Sets {fit_facepalm.TRAIN_SETS_TEXT} vs set {fit_facepalm.TEST_SET}"
+    assert report.count(other_heading) == len(outcome.inputs) - 1
+    section = report.split("## Material input", 1)[1].split("## Stage 1", 1)[0]
+    for column in ("set-8 rows", "set-8 AUC", "set-8 fair / unfair at the cut"):
+        assert column in section
+    assert "about 55 decided rows" in section
+    # One table row per input with the set-8 cells filled (rows, AUC, fair / unfair).
+    for name in fit_facepalm.MATERIAL_INPUTS:
+        pattern = rf"^\| {name} \| .* \| \d+ \| 0\.\d{{3}} \| \d+ / \d+ \|"
+        assert re.search(pattern, section, flags=re.MULTILINE), name
+
+
+def test_a_table_without_set_eight_says_the_holdout_is_empty(
+    tmp_path: Path, facts_run: FactsRun
+) -> None:
+    no_set_eight = [
+        line
+        for line in facts_run.features.read_text().splitlines()
+        if line.split("\t")[1] != fit_facepalm.TEST_SET
+    ]
+    features = tmp_path / "no8.tsv"
+    features.write_text("\n".join(no_set_eight) + "\n")
+    out = tmp_path / "no8.md"
+
+    assert fit_facepalm.main(["--features", str(features), "--out", str(out)]) == 0
+
+    report = out.read_text()
+    section = report.split(FACTS_SPLIT_HEADING, 1)[1].split("## Fair", 1)[0].split("## Other", 1)[0]
+    assert fit_facepalm.HOLDOUT_EMPTY_NOTE in section
+    # Without a set-8 AUC nothing can disagree.
+    assert "Disagreement" not in report
+
+
+def test_holdout_disagreement_is_flagged(facts_run: FactsRun) -> None:
+    outcome = facts_run.outcome
+    chosen = outcome.chosen.spec.material_input
+    other = next(e.material_input for e in outcome.inputs if e.material_input != chosen)
+    tol = fit_facepalm.AUC_TIE_TOLERANCE
+    base = 0.70
+
+    def with_aucs(aucs: dict[str, float | None]) -> list[fit_facepalm.InputOutcome]:
+        return [
+            replace(
+                entry,
+                holdout=fit_facepalm.SplitResult(
+                    50, 55, aucs.get(entry.material_input, base), [], ""
+                ),
+            )
+            for entry in outcome.inputs
+        ]
+
+    # Another input beats the chosen one by more than the tolerance: flagged, both named.
+    ahead = with_aucs({other: base + 2 * tol})
+    flag = fit_facepalm.holdout_disagreement(ahead, chosen)
+    assert flag is not None and chosen in flag and other in flag and "D-13" in flag
+    # Within the tolerance, the chosen input best, or no chosen-input AUC: not flagged.
+    assert fit_facepalm.holdout_disagreement(with_aucs({other: base + tol / 2}), chosen) is None
+    assert fit_facepalm.holdout_disagreement(with_aucs({chosen: base + 2 * tol}), chosen) is None
+    assert fit_facepalm.holdout_disagreement(with_aucs({chosen: None}), chosen) is None
+    # An input without a set-8 AUC never wins the comparison.
+    assert fit_facepalm.holdout_disagreement(with_aucs({other: None}), chosen) is None
+
+    # The report shows the line only when the outcome carries it.
+    flagged = replace(outcome, inputs=ahead, holdout_disagreement=flag)
+    flagged_report = fit_facepalm.render_facts_report(
+        flagged, features_name="f.tsv", threshold=0.7, folds=fit_facepalm.CV_FOLDS, seed=1
+    )
+    assert "Disagreement:" in flagged_report
+    calm = replace(outcome, inputs=with_aucs({}), holdout_disagreement=None)
+    calm_report = fit_facepalm.render_facts_report(
+        calm, features_name="f.tsv", threshold=0.7, folds=fit_facepalm.CV_FOLDS, seed=1
+    )
+    assert "Disagreement:" not in calm_report
+
+
+# ---------------------------------------------------------------------------
+# Phase 256 plan 06 task 2: the owner section for the D-13 checkpoint
+# ---------------------------------------------------------------------------
+
+LABEL_FILE_COLUMNS: tuple[str, ...] = (
+    "n",
+    "set",
+    "elo",
+    "blitz_elo",
+    "move",
+    "link",
+    "engine_drop",
+    "expected_loss",
+    "reply_loss",
+    "practical_loss",
+    "played_prob",
+    "reply_spread",
+    "line_loss3",
+    "mate3",
+    "label",
+    "comment",
+)
+# Fields before the label cell in a labels row (n .. mate3), the rest of the line is label, comment.
+LABEL_FILE_BEFORE_LABEL: int = 14
+OWNER_HEADING: str = "## Owner checks"
+
+
+def _label_line(n: str, set_id: str, link: str, label: str, comment: str | None) -> str:
+    """One labels-file row; a row without a comment has no comment cell at all (15 fields)."""
+    cells = [n, set_id, "1500", "1600", "Nf3", link, *[""] * (LABEL_FILE_BEFORE_LABEL - 6), label]
+    if comment is not None:
+        cells.append(comment)
+    return "\t".join(cells)
+
+
+def _facts_of(row: fit_facepalm.FitRow) -> FacepalmFacts:
+    return FacepalmFacts(
+        played_prob=row.played_prob,
+        reply_spread=row.reply_spread,
+        played_material=row.played_material,
+        mate_ply=row.line_mate_ply,
+        best_material=row.best_material,
+        best_mate_ply=row.best_mate_ply,
+        best_prob=row.best_prob,
+        pre_spread=row.pre_spread,
+    )
+
+
+def _owner_text(report: str) -> str:
+    """The owner section (up to the next level-2 heading)."""
+    assert OWNER_HEADING in report, "the report has no owner section (D-13)"
+    return report.split(OWNER_HEADING, 1)[1].split("\n## ", 1)[0]
+
+
+def _main_code(argv: list[str]) -> int:
+    """`fit_facepalm.main`'s exit code; an argparse rejection is its SystemExit code."""
+    try:
+        return fit_facepalm.main(argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 1
+
+
+def test_owner_section_lists_commented_rows(tmp_path: Path, facts_run: FactsRun) -> None:
+    """D-13: commented label rows verbatim with their old and new score; the rest is skipped."""
+    scored = [row for row in facts_run.usable if row.n.isdigit()][:2]
+    blank_played = "7"
+    lines = facts_run.features.read_text().splitlines()
+    header = lines[0].split("\t")
+    played_at, n_at = header.index("played_prob"), header.index("n")
+    for position, line in enumerate(lines[1:], start=1):
+        cells = line.split("\t")
+        if cells[n_at] == blank_played:
+            cells[played_at] = ""
+            lines[position] = "\t".join(cells)
+    features = tmp_path / "facts.tsv"
+    features.write_text("\n".join(lines) + "\n")
+    comment_a = "currently 6%, should be at least 90%"
+    comment_b = "currently 88%, should be below 60% | with a pipe"
+    labels = tmp_path / "labels.tsv"
+    labels.write_text(
+        "\n".join(
+            [
+                "\t".join(LABEL_FILE_COLUMNS),
+                _label_line(scored[0].n, "7", "https://example.test/a", "1", comment_a),
+                _label_line(scored[1].n, "8", "https://example.test/b", "0", comment_b),
+                # No comment cell at all (a set-8 style row, 15 fields) and an empty comment cell.
+                _label_line("3", "8", "https://example.test/c", "1", None),
+                _label_line("4", "8", "https://example.test/d", "0", ""),
+                # A NULL input leaves the row unscored, an n missing from the features is unknown.
+                _label_line(blank_played, "7", "https://example.test/e", "1", "no played prob"),
+                _label_line("99999", "8", "https://example.test/f", "0", "not in the table"),
+            ]
+        )
+        + "\n"
+    )
+    out = tmp_path / "report.md"
+
+    assert (
+        _main_code(["--features", str(features), "--out", str(out), "--labels", str(labels)]) == 0
+    )
+
+    report = out.read_text()
+    section = _owner_text(report)
+    model = _report_model(report)
+    for row, comment in ((scored[0], comment_a), (scored[1], comment_b)):
+        facts = _facts_of(row)
+        old = fit_facepalm._fmt(
+            facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA, model=fit_facepalm.FACEPALM_MODEL)
+        )
+        new = fit_facepalm._fmt(facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA, model=model))
+        label = f"{row.label:g}"
+        link = "https://example.test/a" if row is scored[0] else "https://example.test/b"
+        set_id = "7" if row is scored[0] else "8"
+        cell = comment.replace("|", "\\|")
+        expected = f"| {row.n} | {set_id} | {label} | {link} | {cell} | {old} | {new} |"
+        assert expected in section, expected
+    assert "| 7 | 7 | 1 | https://example.test/e | no played prob | n/a | n/a |" in section
+    assert (
+        "| 99999 | 8 | n/a | https://example.test/f | not in the table "
+        "| not in features | not in features |" in section
+    )
+    # Rows without a comment are not listed.
+    assert "example.test/c" not in section and "example.test/d" not in section
+
+
+def test_owner_section_without_labels_says_so(facts_run: FactsRun) -> None:
+    section = _owner_text(facts_run.report)
+
+    assert "--labels" in section
+    # The sections that do not need the label file are there all the same.
+    assert "Pure-miss pass rate" in section
+
+
+def test_labels_file_without_comment_column_is_an_error(
+    tmp_path: Path, facts_run: FactsRun, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for dropped in ("comment", "n"):
+        columns = [name for name in LABEL_FILE_COLUMNS if name != dropped]
+        labels = tmp_path / f"no-{dropped}.tsv"
+        labels.write_text("\t".join(columns) + "\n")
+        out = tmp_path / f"no-{dropped}.md"
+
+        code = _main_code(
+            ["--features", str(facts_run.features), "--out", str(out), "--labels", str(labels)]
+        )
+
+        assert code == fit_facepalm.EXIT_FIT_ERROR
+        assert not out.exists()
+        assert f"'{dropped}'" in capsys.readouterr().err
+
+
+def test_owner_section_pure_miss_pass_rates(facts_run: FactsRun) -> None:
+    section = _owner_text(facts_run.report).split("### Pure-miss pass rate", 1)[1]
+    chosen = facts_run.outcome.chosen
+    misses = [
+        position
+        for position, row in enumerate(chosen.rows)
+        if fit_facepalm._row_material_type(row) == "misses"
+    ]
+    assert misses, "the synthetic table must hold pure-miss rows"
+
+    for cut in fit_facepalm.thresholds_for(0.7):
+        passers = sum(1 for position in misses if chosen.oof[position] >= cut)
+        share = fit_facepalm._fmt(passers / len(misses))
+        assert f"| {cut:.2f} | {passers} | {len(misses)} | {share} |" in section, cut
+
+
+def test_owner_section_scores_extra_rows_old_and_new(facts_run: FactsRun) -> None:
+    section = _owner_text(facts_run.report).split("### Added rows", 1)[1].split("### ", 1)[0]
+    # `facts_run.outcome` is fitted on the usable rows only, so read the unlabelled row from the table.
+    extra = next(
+        row for row in fit_facepalm.load_features(facts_run.features).rows if row.n == "extra"
+    )
+    facts = _facts_of(extra)
+    old = facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA, model=fit_facepalm.FACEPALM_MODEL)
+    new = facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA, model=_report_model(facts_run.report))
+    assert old is not None and new is not None
+    cuts = fit_facepalm.thresholds_for(0.7)
+    below = " | ".join("yes" if new < cut else "no" for cut in cuts)
+
+    assert f"| extra | {fit_facepalm._fmt(old)} | {fit_facepalm._fmt(new)} | {below} |" in section
+    for cut in cuts:
+        assert f"below {cut:.2f}" in section

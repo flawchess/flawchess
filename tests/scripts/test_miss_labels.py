@@ -584,16 +584,19 @@ def test_set_eight_tracer_appends_blind_rows_byte_identically(tmp_path: Path) ->
     assert len(new_lines) == len(draw.rows) > 0
     for n, line, row in zip(numbers, new_lines, draw.rows, strict=True):
         fields = line.split("\t")
-        assert len(fields) == 14  # no comment cell
-        assert fields[:5] == [
+        assert len(fields) == 15  # no comment cell
+        # blitz_elo (index 3) was added to the label file by hand on 2026-11-16; the sampler does
+        # not compute it, so an appended row leaves that cell empty.
+        assert fields[:6] == [
             str(n),
             "8",
             str(row.candidate.mover_rating),
+            "",
             row.candidate.move_san,
             f"https://flawchess.com/analysis?game_id={row.candidate.game_id}&ply=20",
         ]
         assert line.endswith("\t" * 9)  # eight hidden columns and the label, all empty
-        assert all(cell == "" for cell in fields[5:])
+        assert all(cell == "" for cell in fields[6:])
     parsed = [r for r in parse_labels(target) if r.set_id == "8"]
     assert [int(r.n) for r in parsed] == numbers
     assert {r.label for r in parsed} == {""}

@@ -79,7 +79,10 @@ BLUNDER_SEVERITY: int = _SEVERITY_INT["blunder"]
 # material, both mate plies, played prob, reply spread, best prob, pre-blunder spread) and the report
 # scores them with the model in the checkout; a version 2 cache holds a stored score instead and
 # no longer loads.
-CACHE_VERSION: int = 3
+# Version 4 (Phase 256): blunder records carry both 9-slot material arrays so an aggregate
+# material input scores the full lines; a version 3 cache holds depth-3 values only and no longer
+# loads.
+CACHE_VERSION: int = 4
 # Number of user moves kept before each blunder (positions 2..MAX_BLUNDER_POSITION need k-1).
 PRECEDING_MOVES_KEPT: int = MAX_BLUNDER_POSITION - 1
 
@@ -173,10 +176,12 @@ class BlunderRecord:
 
     The record holds FACTS, never a stored score (254 D-01): ``facepalm_score`` is computed with
     the Python twin at FACEPALM_DRILL_LAMBDA and the model in the checkout (FACEPALM_MODEL), so
-    a candidate refit can be evaluated here before it ships. ``played_3`` / ``best_3`` are the
-    signed material (positive = the blunderer is up) after LINE_DEPTH plies of the played / best
-    line, ``line_mate_ply`` the ply the blunderer is mated on the played line and
-    ``best_mate_ply`` the ply the best line mates the opponent.
+    a candidate refit can be evaluated here before it ships. ``played_material`` /
+    ``best_material`` are the stored signed material per depth 1..9 (positive = the blunderer is
+    up) of the played / best line (Phase 256: an aggregate input scores the full lines);
+    ``played_3`` / ``best_3`` read the LINE_DEPTH slot. ``line_mate_ply`` is the ply the
+    blunderer is mated on the played line and ``best_mate_ply`` the ply the best line mates the
+    opponent.
 
     `has_line` records whether the game holds a stored engine line after the blunder (the
     game_positions.pv of ply + 1), so a NULL score with a spread can be told apart as "no line"
@@ -195,14 +200,24 @@ class BlunderRecord:
     es_ref: float | None
     maia_played_prob: float | None
     maia_reply_spread: float | None
-    played_3: int | None
-    best_3: int | None
+    played_material: tuple[int | None, ...] | None
+    best_material: tuple[int | None, ...] | None
     line_mate_ply: int | None
     best_mate_ply: int | None
     maia_best_prob: float | None
     maia_pre_spread: float | None
     has_line: bool
     preceding: list[MoveJudgement]
+
+    @property
+    def played_3(self) -> int | None:
+        """Signed material at LINE_DEPTH of the played line."""
+        return material_at_depth(self.played_material, LINE_DEPTH)
+
+    @property
+    def best_3(self) -> int | None:
+        """Signed material at LINE_DEPTH of the best line."""
+        return material_at_depth(self.best_material, LINE_DEPTH)
 
     @cached_property
     def facepalm_score(self) -> float | None:
@@ -211,9 +226,9 @@ class BlunderRecord:
             FacepalmFacts(
                 played_prob=self.maia_played_prob,
                 reply_spread=self.maia_reply_spread,
-                played_3=self.played_3,
+                played_material=self.played_material,
                 mate_ply=self.line_mate_ply,
-                best_3=self.best_3,
+                best_material=self.best_material,
                 best_mate_ply=self.best_mate_ply,
                 best_prob=self.maia_best_prob,
                 pre_spread=self.maia_pre_spread,
@@ -236,8 +251,10 @@ class BlunderRecord:
             "es_ref": self.es_ref,
             "maia_played_prob": self.maia_played_prob,
             "maia_reply_spread": self.maia_reply_spread,
-            "played_3": self.played_3,
-            "best_3": self.best_3,
+            "played_material": list(self.played_material)
+            if self.played_material is not None
+            else None,
+            "best_material": list(self.best_material) if self.best_material is not None else None,
             "line_mate_ply": self.line_mate_ply,
             "best_mate_ply": self.best_mate_ply,
             "maia_best_prob": self.maia_best_prob,
@@ -261,8 +278,8 @@ class BlunderRecord:
             es_ref=raw["es_ref"],
             maia_played_prob=raw["maia_played_prob"],
             maia_reply_spread=raw["maia_reply_spread"],
-            played_3=raw["played_3"],
-            best_3=raw["best_3"],
+            played_material=_material_from_json(raw["played_material"]),
+            best_material=_material_from_json(raw["best_material"]),
             line_mate_ply=raw["line_mate_ply"],
             best_mate_ply=raw["best_mate_ply"],
             maia_best_prob=raw["maia_best_prob"],
@@ -407,8 +424,8 @@ class FlawRow:
     is_miss: bool
     maia_played_prob: float | None
     maia_reply_spread: float | None
-    played_3: int | None
-    best_3: int | None
+    played_material: tuple[int | None, ...] | None
+    best_material: tuple[int | None, ...] | None
     line_mate_ply: int | None
     best_mate_ply: int | None
     maia_best_prob: float | None
@@ -526,16 +543,21 @@ async def _load_positions(
     return by_game
 
 
+def _material_from_json(raw: Sequence[int | None] | None) -> tuple[int | None, ...] | None:
+    """A stored material array read back from the cache JSON (a list) as the tuple the twins read."""
+    return None if raw is None else tuple(raw)
+
+
 def _flaw_row(row: Sequence[Any]) -> FlawRow:
-    """A FlawRow from one `_load_flaws` result row: the 9-slot arrays shrink to their depth-3 slot."""
+    """A FlawRow from one `_load_flaws` result row: both 9-slot arrays are kept whole (Phase 256)."""
     return FlawRow(
         ply=row[1],
         severity=row[2],
         is_miss=row[3],
         maia_played_prob=row[4],
         maia_reply_spread=row[5],
-        played_3=material_at_depth(row[6], LINE_DEPTH),
-        best_3=material_at_depth(row[7], LINE_DEPTH),
+        played_material=None if row[6] is None else tuple(row[6]),
+        best_material=None if row[7] is None else tuple(row[7]),
         line_mate_ply=row[8],
         best_mate_ply=row[9],
         maia_best_prob=row[10],
@@ -632,8 +654,8 @@ def _blunder_record(
         es_ref=es_ref,
         maia_played_prob=flaw.maia_played_prob,
         maia_reply_spread=flaw.maia_reply_spread,
-        played_3=flaw.played_3,
-        best_3=flaw.best_3,
+        played_material=flaw.played_material,
+        best_material=flaw.best_material,
         line_mate_ply=flaw.line_mate_ply,
         best_mate_ply=flaw.best_mate_ply,
         maia_best_prob=flaw.maia_best_prob,

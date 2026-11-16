@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 255
+current_phase: 256
 status: completed
-stopped_at: Phase 255 complete — all phases complete
-last_updated: "2026-11-16T20:11:32.806Z"
+stopped_at: Phase 256 complete — all phases complete
+last_updated: "2026-11-16T21:50:49.985Z"
 last_activity: 2026-11-16
-last_activity_desc: Phase 255 complete
-state_head: f58d8e90fd00cad585fcbec926863b47457548c8
+last_activity_desc: Phase 256 complete
+state_head: 947877752fd39d18716346f6a2320f86b6c9b4b3
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 63
-  total_plans: 72
-  completed_plans: 68
-  percent: 94
+  total_plans: 80
+  completed_plans: 76
+  percent: 95
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 255
+Phase: 256
 Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-16 - Completed quick task 261116-spc: Maia columns for opponent blunders (full-mode hook plus --mode opponent backfill, SEED-261114-iuv Part A)
+Last activity: 2026-11-16 — Phase 256 complete
 
 Open threads carried forward (not blockers):
 
@@ -1194,9 +1194,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-15T21:31:36.354Z
-**Stopped at:** Phase 255 complete — all phases complete
-**Resume file:** None
+**Last session:** 2026-11-16T16:06:01.946Z
+**Stopped at:** Phase 256 complete — all phases complete
+**Resume file:** .planning/phases/256-facepalm-refit-material-aggregated-over-depths/256-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

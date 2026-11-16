@@ -10,6 +10,12 @@ from app.services.blunder_check_rules import (
     LOSS_CAP,
     MATE_LOSS,
 )
+from app.services.facepalm_material import (
+    MATERIAL_DECAY_WEIGHTS,
+    gain_by_depth,
+    loss_by_depth,
+)
+from app.services.facepalm_material import decaying_mean as app_decaying_mean
 from app.services.facepalm_score import loss_feature, missed_feature
 from scripts.blunder_check.decaying_mean import (
     DECAY_DEPTHS,
@@ -124,3 +130,61 @@ def test_depth_three_parity_with_the_shipped_features(
     )
     # The shipped missed term is 0.0 for an unknown slot, the series says None there.
     assert (0.0 if gain is None else float(gain)) == max(0.0, shipped_gain)
+
+
+# The sampler shares the app's arithmetic (Phase 256): same weights, same mean, same per-depth series.
+_SHARED_SERIES_ARRAYS: tuple[list[int | None] | None, ...] = (
+    None,
+    array(-3, 0, 0, 0, 0),
+    array(-9, -9, -9, -9, -9),
+    array(2, 2, 2, 2, 2),
+    array(None, 0, -4, None, 1),
+    [-1, 5, -2],
+)
+_SHARED_MATES = (None, 1, 2, 4)
+
+
+def test_sampler_weights_are_the_apps() -> None:
+    assert DECAY_WEIGHTS == MATERIAL_DECAY_WEIGHTS
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        {1: 2, 3: 4, 5: None, 7: None, 9: None},
+        {1: 3, 3: 3, 5: 0, 7: 0, 9: 0},
+        dict.fromkeys(DECAY_DEPTHS),
+        {3: 5},
+    ],
+)
+def test_sampler_decaying_mean_equals_the_apps(series: dict[int, int | None]) -> None:
+    app_series = tuple(series.get(depth) for depth in DECAY_DEPTHS)
+    assert decaying_mean(series) == app_decaying_mean(app_series)
+
+
+@pytest.mark.parametrize("played_mate", _SHARED_MATES)
+@pytest.mark.parametrize("played", _SHARED_SERIES_ARRAYS)
+def test_sampler_loss_series_equals_the_apps_loss_by_depth(
+    played: list[int | None] | None, played_mate: int | None
+) -> None:
+    sampler = loss_series(played, played_mate)
+    app = loss_by_depth(played, played_mate, loss_floor=0)
+    assert tuple(None if v is None else float(v) for v in sampler.values()) == app
+
+
+@pytest.mark.parametrize("best_mate", _SHARED_MATES)
+@pytest.mark.parametrize("best", _SHARED_SERIES_ARRAYS)
+@pytest.mark.parametrize("played", _SHARED_SERIES_ARRAYS)
+def test_sampler_gain_series_equals_the_apps_gain_by_depth(
+    played: list[int | None] | None, best: list[int | None] | None, best_mate: int | None
+) -> None:
+    sampler = gain_series(played, best, best_mate)
+    app = gain_by_depth(
+        played,
+        best,
+        best_mate,
+        missed_floor=0,
+        missed_cap=FACEPALM_MISSED_CAP,
+        missed_mate=FACEPALM_MISSED_MATE,
+    )
+    assert tuple(None if v is None else float(v) for v in sampler.values()) == app

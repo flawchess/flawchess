@@ -13,30 +13,45 @@ present the score as a share of peers.
 Inputs, all stored on game_flaws (no engine at scoring time):
 - ``played_prob``: Maia's probability for the played move (``maia_played_prob``);
 - ``reply_spread``: effective number of opponent replies one ply later (``maia_reply_spread``);
-- ``played_3``: signed material after LINE_DEPTH plies of the played line (positive = the
-  blunderer is ahead), ``mate_ply``: the ply of the opponent's mate in that line;
-- ``best_3`` / ``best_mate_ply``: the same two facts for the best line (254 D-05);
+- ``played_material`` / ``best_material``: the signed 9-slot material arrays of the played and
+  the best line (positive = the blunderer is ahead; Python index N - 1 = depth N, SQL index N);
+  ``played_3`` / ``best_3`` are their depth-3 slots;
+- ``mate_ply``: the ply of the opponent's mate in the played line, ``best_mate_ply``: the ply of
+  the mate in the best line (254 D-05);
 - ``best_prob``, ``pre_spread``: optional D-08 inputs (the best move's Maia probability and
   the reply spread of the position before the blunder).
 
 Term rules (identical in both twins):
-- loss = ``loss_feature(-played_3, mate_ply)``: net material down after LINE_DEPTH plies,
-  capped at LOSS_CAP, raised to the model's loss floor, MATE_LOSS when the blunderer is mated
-  within LINE_DEPTH plies; None (row unscored) when ``played_3`` is None and no mate settles it.
-  A missing played probability also leaves the row unscored.
-- missed = ``missed_feature``: ``best_3 - max(0, played_3)`` (swing minus loss, 254 D-05),
-  raised to the model's missed floor when it has one and capped at its missed cap; the model's
-  missed-mate value when the best line mates within LINE_DEPTH; 0 when the best line is
-  unknown (D-18: an unknown gain contributes nothing, the row keeps its loss-only score).
+- loss (``material_loss``), in three stages. Coverage (256 D-03, every input): a mate within
+  LINE_DEPTH plies gives MATE_LOSS; otherwise an unknown depth-3 slot leaves the row unscored
+  (None). Then the model's ``material_input`` (256 D-06): "depth_3" is ``loss_feature(-played_3)``,
+  the net loss after LINE_DEPTH plies capped at LOSS_CAP and raised to the model's loss floor;
+  "decaying_mean" is the weighted mean of that loss over the odd depths 1, 3, 5, 7, 9 (a mate
+  beyond LINE_DEPTH counts MATE_LOSS from its ply on); "first_stable" is the first odd-depth loss
+  that the next odd depth repeats, discounted by MATERIAL_DECAY_RATIO to the power of its onset
+  index (no repeated pair: the last known loss, discounted by its own index). A missing played
+  probability also leaves the row unscored.
+- missed (``material_missed``), in the same three stages: a best-line mate within LINE_DEPTH gives
+  the model's missed-mate value; an unknown played depth-3 slot gives 0 for every input; then
+  "depth_3" is ``missed_feature`` (``best_3 - max(0, played_3)``, swing minus loss, 254 D-05,
+  raised to the model's missed floor when it has one and capped at its missed cap) and
+  "decaying_mean" is the weighted mean of that gain over the odd depths and "first_stable" its
+  first confirmed value (same rule as the loss). An unknown best line
+  contributes 0 (D-18: an unknown gain contributes nothing, the row keeps its loss-only score).
+  Loss and missed always read the same material input (no mixed inputs).
 - material (D-06): "combined" adds ``loss_coef * (loss + lam * missed)``; "split" adds
   ``loss_coef * loss`` plus ``missed_coef * lam * missed``. Lambda (D-03, D-04) multiplies the
   missed term only, so lam 0 is the loss-only score.
 - spread (D-07): "always" adds ``spread_coef * reply_spread`` on every row (a missing spread
-  leaves the row unscored); "loss_only" adds it only when loss > 0 (else 0, even with a missing
-  spread); "best_prob_for_misses" does the same and, when loss is not > 0, adds the best-prob
-  term instead.
-- optional (D-08): ``best_prob_coef * ln(best_prob + PLAYED_PROB_OFFSET)`` (0 when best_prob is
-  None, consistent with D-18) and ``pre_spread_coef * pre_spread`` (0 when None).
+  leaves the row unscored); "loss_only" adds it only when the row loses material (else 0, even
+  with a missing spread); "best_prob_for_misses" does the same and, when the row does not lose
+  material, adds the best-prob term instead. "Loses material" is ``loses(loss, model.loss_gate)``
+  (256 D-11): loss > 0 for gate None, loss >= gate for a number. A pure miss under
+  "best_prob_for_misses" with a non-zero best-prob coefficient and an unknown best-move
+  probability is unscored, like a NULL spread under "always" (256 D-04, 254 WR-01).
+- optional (D-08): on the additive path (every spread form but "best_prob_for_misses"),
+  ``best_prob_coef * ln(best_prob + PLAYED_PROB_OFFSET)`` (0 when best_prob is None, consistent
+  with D-18) and ``pre_spread_coef * pre_spread`` (0 when None).
 - Every coefficient of an optional term that is exactly 0.0 (and a zero lambda weight) omits
   its term at build time in both twins, so a NULL unused input never unscores a row.
 - There is no forcing-flag input (254 D-10).
@@ -52,6 +67,7 @@ pass an explicit model. Pure, no I/O.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final, NamedTuple
 
@@ -65,7 +81,9 @@ from app.services.blunder_check_rules import (
     FACEPALM_LAMBDA_MIN,
     FACEPALM_LOSS_COEF,
     FACEPALM_LOSS_FLOOR,
+    FACEPALM_LOSS_GATE,
     FACEPALM_MATERIAL_FORM,
+    FACEPALM_MATERIAL_INPUT,
     FACEPALM_MISSED_CAP,
     FACEPALM_MISSED_COEF,
     FACEPALM_MISSED_FLOOR,
@@ -79,8 +97,20 @@ from app.services.blunder_check_rules import (
     MATE_LOSS,
     PLAYED_PROB_OFFSET,
     MaterialForm,
+    MaterialInput,
     SpreadForm,
 )
+from app.services.facepalm_material import (
+    aggregate,
+    aggregate_sql,
+    gain_by_depth,
+    gain_by_depth_sql,
+    loses,
+    loses_sql,
+    loss_by_depth,
+    loss_by_depth_sql,
+)
+from app.services.line_material import material_at_depth
 
 __all__ = [
     "FACEPALM_MODEL",
@@ -88,11 +118,14 @@ __all__ = [
     "FacepalmFacts",
     "FacepalmModel",
     "MaterialForm",
+    "MaterialInput",
     "SpreadForm",
     "facepalm_expr",
     "facepalm_score",
     "facepalm_score_sql",
     "loss_feature",
+    "material_loss",
+    "material_missed",
     "missed_feature",
 ]
 
@@ -106,7 +139,9 @@ class FacepalmModel:
     """Fitted logistic model; the defaults of the shape fields are the pre-refit values (D-12).
 
     `loss_floor` lower-clips the loss input when not None. `material_form`, `spread_form` and
-    the three optional coefficients select the D-06 / D-07 / D-08 shapes (module docstring).
+    the three optional coefficients select the D-06 / D-07 / D-08 shapes (module docstring);
+    `material_input` selects the depths the loss and the missed gain read (256 D-06) and
+    `loss_gate` the "loses material" threshold of the gated spread forms (256 D-11).
     """
 
     intercept: float
@@ -122,6 +157,8 @@ class FacepalmModel:
     spread_form: SpreadForm = "always"
     best_prob_coef: float = 0.0
     pre_spread_coef: float = 0.0
+    material_input: MaterialInput = "depth_3"
+    loss_gate: float | None = None
 
     def __post_init__(self) -> None:
         missed_active = self.material_form == "combined" or self.missed_coef != 0.0
@@ -144,28 +181,44 @@ FACEPALM_MODEL: Final[FacepalmModel] = FacepalmModel(
     spread_form=FACEPALM_SPREAD_FORM,
     best_prob_coef=FACEPALM_BEST_PROB_COEF,
     pre_spread_coef=FACEPALM_PRE_SPREAD_COEF,
+    material_input=FACEPALM_MATERIAL_INPUT,
+    loss_gate=FACEPALM_LOSS_GATE,
 )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class FacepalmFacts:
-    """The stored facts of one blunder, as scalars (the Python twin's input); all optional."""
+    """The stored facts of one blunder (the Python twin's input); all optional.
+
+    `played_material` and `best_material` are the stored signed 9-slot arrays, 0-based in
+    Python (slot N - 1 = depth N). `played_3` and `best_3` are their depth-3 slots.
+    """
 
     played_prob: float | None
     reply_spread: float | None
-    played_3: int | None
+    played_material: Sequence[int | None] | None
     mate_ply: int | None
-    best_3: int | None = None
+    best_material: Sequence[int | None] | None = None
     best_mate_ply: int | None = None
     best_prob: float | None = None
     pre_spread: float | None = None
+
+    @property
+    def played_3(self) -> int | None:
+        """Signed material of the played line at LINE_DEPTH (reports and tests)."""
+        return material_at_depth(self.played_material, LINE_DEPTH)
+
+    @property
+    def best_3(self) -> int | None:
+        """Signed material of the best line at LINE_DEPTH (reports and tests)."""
+        return material_at_depth(self.best_material, LINE_DEPTH)
 
 
 class FacepalmColumns(NamedTuple):
     """The stored facts of one blunder as SQL column expressions (the SQL twin's input).
 
-    `played_material` and `best_material` are the signed 9-slot arrays; the twin reads slot
-    LINE_DEPTH (one-based indexing).
+    `played_material` and `best_material` are the signed 9-slot arrays; the twin reads the
+    slots of the model's material input (one-based indexing: slot N = depth N).
     """
 
     played_prob: Any
@@ -222,6 +275,77 @@ def missed_feature(
     return float(min(raw, missed_cap))
 
 
+def material_loss(
+    played_material: Sequence[int | None] | None,
+    mate_ply: int | None,
+    *,
+    material_input: MaterialInput,
+    loss_floor: int | None,
+) -> float | None:
+    """The loss input of the score under `material_input`, or None when the row is unscored.
+
+    Coverage gate shared by every input (256 D-03): a mate within LINE_DEPTH plies gives
+    MATE_LOSS (the short-circuit, so a mate at ply 3 is never averaged down), an unknown depth-3
+    slot gives None. Then "depth_3" is `loss_feature` and an aggregate input ("decaying_mean",
+    "first_stable") aggregates the per-depth loss.
+    """
+    if mate_ply is not None and mate_ply <= LINE_DEPTH:
+        return float(MATE_LOSS)
+    played_3 = material_at_depth(played_material, LINE_DEPTH)
+    if played_3 is None:
+        return None
+    if material_input == "depth_3":
+        return loss_feature(-played_3, mate_ply, loss_floor=loss_floor)
+    return aggregate(
+        material_input, loss_by_depth(played_material, mate_ply, loss_floor=loss_floor)
+    )
+
+
+def material_missed(
+    played_material: Sequence[int | None] | None,
+    best_material: Sequence[int | None] | None,
+    best_mate_ply: int | None,
+    *,
+    material_input: MaterialInput,
+    missed_floor: int | None,
+    missed_cap: int,
+    missed_mate: int,
+) -> float:
+    """The missed input of the score under `material_input` (never None).
+
+    A best-line mate within LINE_DEPTH plies gives `missed_mate`; an unknown played depth-3 slot
+    gives 0.0 for every input (so all inputs treat the same rows the same way). Then "depth_3" is
+    `missed_feature` and an aggregate input aggregates the per-depth gain, 0.0 when no depth is
+    known (D-18: an unknown best line contributes nothing).
+    """
+    if best_mate_ply is not None and best_mate_ply <= LINE_DEPTH:
+        return float(missed_mate)
+    played_3 = material_at_depth(played_material, LINE_DEPTH)
+    if played_3 is None:
+        return 0.0
+    if material_input == "depth_3":
+        return missed_feature(
+            played_3,
+            material_at_depth(best_material, LINE_DEPTH),
+            best_mate_ply,
+            missed_floor=missed_floor,
+            missed_cap=missed_cap,
+            missed_mate=missed_mate,
+        )
+    settled = aggregate(
+        material_input,
+        gain_by_depth(
+            played_material,
+            best_material,
+            best_mate_ply,
+            missed_floor=missed_floor,
+            missed_cap=missed_cap,
+            missed_mate=missed_mate,
+        ),
+    )
+    return 0.0 if settled is None else settled
+
+
 def _check_lambda(lam: float) -> None:
     if not FACEPALM_LAMBDA_MIN <= lam <= FACEPALM_LAMBDA_MAX:
         raise ValueError("lam must lie within [FACEPALM_LAMBDA_MIN, FACEPALM_LAMBDA_MAX]")
@@ -241,12 +365,27 @@ def _best_prob_term(model: FacepalmModel, best_prob: float | None) -> float:
     return model.best_prob_coef * math.log(best_prob + PLAYED_PROB_OFFSET)
 
 
+def _pure_miss_term(model: FacepalmModel, best_prob: float | None) -> float | None:
+    """The best_prob_for_misses term of a row that does not lose material (256 D-04, 254 WR-01).
+
+    Fix of 254 WR-01: a pure miss with an unknown best-move probability used to read the best-move
+    term as 0 (`_best_prob_term`), which ranked it as if the best move were likely. Such a row
+    cannot be scored, like a NULL spread under "always": None here leaves it unscored. A zero
+    coefficient omits the term, so it never unscores a row.
+    """
+    if model.best_prob_coef == 0.0:
+        return 0.0
+    if best_prob is None:
+        return None
+    return model.best_prob_coef * math.log(best_prob + PLAYED_PROB_OFFSET)
+
+
 def _spread_term(model: FacepalmModel, facts: FacepalmFacts, loss: float) -> float | None:
-    """The D-07 spread term, or None when the form reads a spread the row does not have."""
-    if model.spread_form != "always" and loss <= 0:
+    """The D-07 spread term, or None when the form reads an input the row does not have."""
+    if model.spread_form != "always" and not loses(loss, model.loss_gate):
         # A pure miss: no reply spread; best_prob_for_misses swaps in the best-move term.
         if model.spread_form == "best_prob_for_misses":
-            return _best_prob_term(model, facts.best_prob)
+            return _pure_miss_term(model, facts.best_prob)
         return 0.0
     if facts.reply_spread is None:
         return None
@@ -275,8 +414,12 @@ def facepalm_score(
     _check_lambda(lam)
     if facts.played_prob is None:
         return None
-    loss_3 = None if facts.played_3 is None else -facts.played_3
-    loss = loss_feature(loss_3, facts.mate_ply, loss_floor=model.loss_floor)
+    loss = material_loss(
+        facts.played_material,
+        facts.mate_ply,
+        material_input=model.material_input,
+        loss_floor=model.loss_floor,
+    )
     spread = None if loss is None else _spread_term(model, facts, loss)
     if loss is None or spread is None:
         return None
@@ -289,10 +432,11 @@ def facepalm_score(
     )
     weight = _missed_weight(model, lam)
     if weight != 0.0:
-        missed = missed_feature(
-            facts.played_3,
-            facts.best_3,
+        missed = material_missed(
+            facts.played_material,
+            facts.best_material,
             facts.best_mate_ply,
+            material_input=model.material_input,
             missed_floor=model.missed_floor,
             missed_cap=model.missed_cap,
             missed_mate=model.missed_mate,
@@ -302,21 +446,50 @@ def facepalm_score(
 
 
 def _loss_sql(columns: FacepalmColumns, model: FacepalmModel) -> ColumnElement[Any]:
-    """SQL twin of the loss input: NULL when the played line is unknown and no mate settles it."""
+    """SQL twin of `material_loss`: NULL when the played line is unknown and no mate settles it."""
     played_3 = columns.played_material[LINE_DEPTH]
-    capped = func.least(-played_3, LOSS_CAP)
-    if model.loss_floor is not None:
-        capped = func.greatest(capped, model.loss_floor)
+    if model.material_input == "depth_3":
+        capped = func.least(-played_3, LOSS_CAP)
+        if model.loss_floor is not None:
+            capped = func.greatest(capped, model.loss_floor)
+        settled = capped
+    else:
+        settled = aggregate_sql(
+            model.material_input,
+            loss_by_depth_sql(
+                columns.played_material, columns.mate_ply, loss_floor=model.loss_floor
+            ),
+        )
     return case(
         (columns.mate_ply <= LINE_DEPTH, literal(float(MATE_LOSS))),
         (played_3.is_(None), null()),
-        else_=capped,
+        else_=settled,
     )
 
 
 def _missed_sql(columns: FacepalmColumns, model: FacepalmModel) -> ColumnElement[Any]:
-    """SQL twin of `missed_feature`; explicit CASE guards, never GREATEST/LEAST over a NULL."""
+    """SQL twin of `material_missed`; explicit CASE guards, never GREATEST/LEAST over a NULL."""
     played_3 = columns.played_material[LINE_DEPTH]
+    if model.material_input != "depth_3":
+        settled = func.coalesce(
+            aggregate_sql(
+                model.material_input,
+                gain_by_depth_sql(
+                    columns.played_material,
+                    columns.best_material,
+                    columns.best_mate_ply,
+                    missed_floor=model.missed_floor,
+                    missed_cap=model.missed_cap,
+                    missed_mate=model.missed_mate,
+                ),
+            ),
+            literal(0.0),
+        )
+        return case(
+            (columns.best_mate_ply <= LINE_DEPTH, literal(float(model.missed_mate))),
+            (played_3.is_(None), literal(0.0)),
+            else_=settled,
+        )
     best_3 = columns.best_material[LINE_DEPTH]
     played_positive = case((played_3 > 0, played_3), else_=literal(0))
     raw = best_3 - played_positive
@@ -340,19 +513,33 @@ def _best_prob_sql(columns: FacepalmColumns, model: FacepalmModel) -> ColumnElem
     )
 
 
+def _pure_miss_sql(columns: FacepalmColumns, model: FacepalmModel) -> ColumnElement[Any]:
+    """SQL twin of `_pure_miss_term`: NULL (row unscored) for a NULL best-move probability.
+
+    Fix of 254 WR-01: the pure-miss branch used `_best_prob_sql`, whose NULL arm reads 0.0, so a
+    no-loss row with an unknown best-move probability scored as if the best move were likely.
+    """
+    if model.best_prob_coef == 0.0:
+        return literal(0.0)
+    return case(
+        (columns.best_prob.is_(None), null()),
+        else_=model.best_prob_coef * func.ln(columns.best_prob + PLAYED_PROB_OFFSET),
+    )
+
+
 def _spread_sql(
     columns: FacepalmColumns, model: FacepalmModel, loss: ColumnElement[Any]
 ) -> ColumnElement[Any]:
-    """SQL twin of `_spread_term`: a gated form is an explicit CASE on loss > 0 (never NULL-gated)."""
+    """SQL twin of `_spread_term`: a gated form is an explicit CASE on `loses` (never NULL-gated)."""
     spread = model.spread_coef * columns.reply_spread
     if model.spread_form == "always":
         return spread
     pure_miss = (
-        _best_prob_sql(columns, model)
+        _pure_miss_sql(columns, model)
         if model.spread_form == "best_prob_for_misses"
         else literal(0.0)
     )
-    return case((loss > 0, spread), else_=pure_miss)
+    return case((loses_sql(loss, model.loss_gate), spread), else_=pure_miss)
 
 
 def _optional_sql(columns: FacepalmColumns, model: FacepalmModel) -> list[ColumnElement[Any]]:

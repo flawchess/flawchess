@@ -31,6 +31,7 @@ from typing import Any
 import chess
 import pytest
 from sqlalchemy import Float, SmallInteger, column, select, text, values
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -46,7 +47,9 @@ from app.services.blunder_check_rules import (
     FACEPALM_LIBRARY_LAMBDA,
     FACEPALM_LOSS_COEF,
     FACEPALM_LOSS_FLOOR,
+    FACEPALM_LOSS_GATE,
     FACEPALM_MATERIAL_FORM,
+    FACEPALM_MATERIAL_INPUT,
     FACEPALM_MISSED_CAP,
     FACEPALM_MISSED_COEF,
     FACEPALM_MISSED_FLOOR,
@@ -60,6 +63,8 @@ from app.services.blunder_check_rules import (
     LOSS_CAP,
     MATE_LOSS,
     PLAYED_PROB_OFFSET,
+    MaterialInput,
+    SpreadForm,
 )
 from app.services.facepalm_score import (
     FACEPALM_MODEL,
@@ -72,7 +77,8 @@ from app.services.facepalm_score import (
     loss_feature,
     missed_feature,
 )
-from app.services.line_material import LINE_LOSS_DEPTHS, material_at_depth
+from app.services.facepalm_material import single_depth_material
+from app.services.line_material import LINE_LOSS_DEPTHS, LINE_MATERIAL_SLOTS
 from app.services.maia_flaw_stats import _effective_moves, reply_spread
 from tests.facepalm_models import PHASE_250_MODEL
 from tests.facepalm_seed import seed_flaw_rows
@@ -120,6 +126,13 @@ _BEST_PROB_MISSES_MODEL = replace(
 )
 _ADDITIVE_BEST_PROB_MODEL = replace(_SPLIT_MODEL, best_prob_coef=0.4)
 _ADDITIVE_PRE_SPREAD_MODEL = replace(_SPLIT_MODEL, pre_spread_coef=-0.2)
+# 256 D-06: the decaying-mean material input; the parity grid's filler zeros at depths 1, 5, 7, 9
+# now enter the mean, which is the point of the grid for these models.
+_DECAYING_MEAN_MODEL = replace(_SPLIT_MODEL, material_input="decaying_mean")
+_DECAYING_MEAN_BPFM_MODEL = replace(_BEST_PROB_MISSES_MODEL, material_input="decaying_mean")
+# 256 D-06 (A1): the first-stable material input.
+_FIRST_STABLE_MODEL = replace(_SPLIT_MODEL, material_input="first_stable")
+_FIRST_STABLE_BPFM_MODEL = replace(_BEST_PROB_MISSES_MODEL, material_input="first_stable")
 _MATERIAL_MODELS = (
     pytest.param(PHASE_250_MODEL, id="pre_refit"),
     pytest.param(FACEPALM_MODEL, id="shipped"),
@@ -134,24 +147,29 @@ _SHAPE_MODELS = (
     pytest.param(_BEST_PROB_MISSES_MODEL, id="best_prob_for_misses"),
     pytest.param(_ADDITIVE_BEST_PROB_MODEL, id="additive_best_prob"),
     pytest.param(_ADDITIVE_PRE_SPREAD_MODEL, id="additive_pre_spread"),
+    pytest.param(_DECAYING_MEAN_MODEL, id="decaying_mean"),
+    pytest.param(_DECAYING_MEAN_BPFM_MODEL, id="decaying_mean_best_prob_for_misses"),
+    pytest.param(_FIRST_STABLE_MODEL, id="first_stable"),
+    pytest.param(_FIRST_STABLE_BPFM_MODEL, id="first_stable_best_prob_for_misses"),
 )
 
 # Window 14 (game 2099808, ply 23), copied from the extra row of the committed features file
-# reports/blunder-check/facepalm-features-2026-11-15.tsv (facts schema). Its stored refutation
-# line is one ply long (pv_plies 1), so the depth-3 played material and the mate ply are NULL.
+# reports/blunder-check/facepalm-features-2026-11-16.tsv (facts schema, the 256-07 prod pull). Its
+# stored refutation line is one ply long (pv_plies 1), so the played material is known at depth 1
+# only and the played depth-3 slot and the mate ply are NULL; the best line is 12 plies long.
 WINDOW_14_GAME_ID = 2099808
 WINDOW_14_PLY = 23
 WINDOW_14_PLAYED_PROB = 0.0949175
 WINDOW_14_REPLY_SPREAD = 7.75985
 WINDOW_14_BEST_PROB = 0.331294
-WINDOW_14_BEST_3 = 0
-WINDOW_14_PLAYED_3: int | None = None
+WINDOW_14_PLAYED_MATERIAL: list[int | None] = [1, None, None, None, None, None, None, None, None]
+WINDOW_14_BEST_MATERIAL: list[int | None] = [0, 0, 0, 0, 1, 1, 1, 1, 1]
 WINDOW_14_MATE_PLY: int | None = None
 _FEATURES_TSV = (
     Path(__file__).resolve().parents[2]
     / "reports"
     / "blunder-check"
-    / "facepalm-features-2026-11-15.tsv"
+    / "facepalm-features-2026-11-16.tsv"
 )
 
 # Parity grid of the SQL twin: NULL in every input. A stored array is None (no array), short
@@ -208,9 +226,9 @@ def _facts(
     return FacepalmFacts(
         played_prob=played_prob,
         reply_spread=reply_spread,
-        played_3=played_3,
+        played_material=None if played_3 is None else single_depth_material(played_3),
         mate_ply=mate_ply,
-        best_3=best_3,
+        best_material=None if best_3 is None else single_depth_material(best_3),
         best_mate_ply=best_mate_ply,
         best_prob=best_prob,
         pre_spread=pre_spread,
@@ -246,14 +264,14 @@ def _phase_250_score(
 
 
 def _facts_of(row: GridRow) -> FacepalmFacts:
-    """The Python twin's scalar facts of one parity-grid row (the arrays read at LINE_DEPTH)."""
+    """The Python twin's facts of one parity-grid row (the stored arrays as they are)."""
     played_prob, spread, played_array, mate, best_array, best_mate, best_prob, pre_spread = row
     return FacepalmFacts(
         played_prob=played_prob,
         reply_spread=spread,
-        played_3=material_at_depth(played_array, LINE_DEPTH),
+        played_material=played_array,
         mate_ply=mate,
-        best_3=material_at_depth(best_array, LINE_DEPTH),
+        best_material=best_array,
         best_mate_ply=best_mate,
         best_prob=best_prob,
         pre_spread=pre_spread,
@@ -423,9 +441,9 @@ def test_new_twin_reproduces_phase_250_score() -> None:
             facts = FacepalmFacts(
                 played_prob=played_prob,
                 reply_spread=spread,
-                played_3=None if loss_3 is None else -loss_3,
+                played_material=single_depth_material(None if loss_3 is None else -loss_3),
                 mate_ply=mate_ply,
-                best_3=10,
+                best_material=single_depth_material(10),
                 best_mate_ply=0,
             )
             actual = facepalm_score(facts, lam=lam, model=PHASE_250_MODEL)
@@ -513,6 +531,189 @@ async def test_sql_twin_parity_every_shape(
     _assert_parity(grid, await _sql_scores(test_engine, grid, model, lam), model, lam)
 
 
+# Aggregate-input parity grid (256 D-06, D-11): varied odd slots per depth with garbage in the even
+# slots, arrays of 3 and 5 slots, NULL slots inside an array, mates on both sides of LINE_DEPTH, a
+# NULL best line, spread and best probability. Kept separate from the 6,048-row grid above.
+_GARBAGE_SLOT = 7
+
+
+def _odd_array(*odd: int | None) -> list[int | None]:
+    """An array whose odd depths are `odd` (depth 1, 3, ...) and whose even slots are garbage."""
+    slots: list[int | None] = []
+    for index, value in enumerate(odd):
+        slots.append(value)
+        if index < len(odd) - 1:
+            slots.append(_GARBAGE_SLOT)
+    return slots
+
+
+_AGG_PLAYED_ARRAYS: tuple[list[int | None] | None, ...] = (
+    None,
+    _odd_array(-1, -4),  # 3 slots
+    _odd_array(-2, -2, -2),  # 5 slots, stable from depth 1
+    _odd_array(-1, -3, -1, 0, -2),
+    _odd_array(0, 5, 2, 9, 2),  # the blunderer ends up ahead: pure misses
+    _odd_array(0, 0, -3, -3, -3),  # a late-settling loss
+    _odd_array(-1, None, -1, -1, -1),  # NULL at depth 3: unscored unless a mate settles it
+    _odd_array(-2, -2, 0, None, -2),  # NULL at depth 7
+)
+_AGG_BEST_ARRAYS: tuple[list[int | None] | None, ...] = (
+    None,
+    [1],
+    _odd_array(3, 3, 3),
+    _odd_array(4, 4, 6, 4, 4),
+    _odd_array(-2, -2, -2, -2, -2),  # the best line is behind: the missed floor bites
+    _odd_array(0, 10, None, 10, 0),
+)
+_AGG_MATE = (None, 3, 5, 1)
+_AGG_BEST_MATE = (None, 0, 2, 4)
+
+
+def _aggregate_grid() -> list[GridRow]:
+    return list(
+        itertools.product(
+            _GRID_PLAYED_PROB,
+            _GRID_SPREAD,
+            _AGG_PLAYED_ARRAYS,
+            _AGG_MATE,
+            _AGG_BEST_ARRAYS,
+            _AGG_BEST_MATE,
+            (None, 0.2),
+            (None,),
+        )
+    )
+
+
+_AGGREGATE_GRID: list[GridRow] = _aggregate_grid()
+# (spread form, loss gate) shapes; gate 1.0 is skipped for "always", which never reads it.
+_AGGREGATE_SHAPES: tuple[tuple[SpreadForm, float | None], ...] = (
+    ("always", None),
+    ("loss_only", None),
+    ("loss_only", 1.0),
+    ("best_prob_for_misses", None),
+    ("best_prob_for_misses", 1.0),
+)
+_AGGREGATE_INPUTS: tuple[MaterialInput, ...] = ("decaying_mean", "first_stable")
+
+
+def _aggregate_model(
+    material_input: MaterialInput, spread_form: SpreadForm, loss_gate: float | None
+) -> FacepalmModel:
+    return replace(
+        _SPLIT_MODEL,
+        material_input=material_input,
+        spread_form=spread_form,
+        loss_gate=loss_gate,
+        best_prob_coef=0.4 if spread_form == "best_prob_for_misses" else 0.0,
+    )
+
+
+@pytest.mark.parametrize("lam", (0.0, 1.0))
+@pytest.mark.parametrize(("spread_form", "loss_gate"), _AGGREGATE_SHAPES)
+@pytest.mark.parametrize("material_input", _AGGREGATE_INPUTS)
+async def test_sql_twin_parity_aggregate_inputs(
+    test_engine: AsyncEngine,
+    material_input: MaterialInput,
+    spread_form: SpreadForm,
+    loss_gate: float | None,
+    lam: float,
+) -> None:
+    # Every aggregate input x spread form x gate x lambda, over rows with NULLs, short arrays,
+    # garbage even slots and mates on both sides of LINE_DEPTH (T-256-06).
+    model = _aggregate_model(material_input, spread_form, loss_gate)
+    grid = [*_AGGREGATE_GRID, *_EXTREME_ROWS]
+    _assert_parity(grid, await _sql_scores(test_engine, grid, model, lam), model, lam)
+
+
+async def test_first_stable_score_value(test_engine: AsyncEngine) -> None:
+    # Level at depth 1, then three pawns down from depth 3 on: the first stable pair starts at
+    # onset index 1, so the loss input is 3 * MATERIAL_DECAY_WEIGHTS[1] = 1.5 (A1), in both twins.
+    row: GridRow = (0.1, 2.0, _odd_array(0, -3, -3, -3, -3), None, None, None, None, None)
+    model = _FIRST_STABLE_MODEL
+    z = (
+        model.intercept
+        + model.played_coef * math.log(0.1 + PLAYED_PROB_OFFSET)
+        + model.spread_coef * 2.0
+        + model.loss_coef * 1.5
+    )
+    expected = 1.0 / (1.0 + math.exp(-z))
+    assert facepalm_score(_facts_of(row), lam=1.0, model=model) == pytest.approx(
+        expected, abs=FORMULA_TOLERANCE
+    )
+    (sql_score,) = await _sql_scores(test_engine, [row], model, 1.0)
+    assert sql_score == pytest.approx(expected, abs=PARITY_TOLERANCE)
+
+
+@pytest.mark.parametrize("material_input", _AGGREGATE_INPUTS)
+def test_aggregate_inputs_leave_the_same_rows_unscored(material_input: MaterialInput) -> None:
+    # D-03: the played depth 3 unknown and no mate within LINE_DEPTH leaves a row unscored under
+    # every input, so all candidates are fitted on the same rows.
+    # spread form "always": a gated form reads the spread only on rows that lose material, and
+    # that predicate differs by input, which is not what this test pins.
+    depth_3_model = _SPLIT_MODEL
+    model = replace(depth_3_model, material_input=material_input)
+    for row in _AGGREGATE_GRID:
+        facts = _facts_of(row)
+        reference = facepalm_score(facts, lam=1.0, model=depth_3_model)
+        assert (facepalm_score(facts, lam=1.0, model=model) is None) == (reference is None), row
+
+
+@pytest.mark.parametrize("played_3", range(-LOSS_CAP - 2, LOSS_CAP + 3))
+async def test_loss_gate_depth_3_integer_losses_identical(
+    test_engine: AsyncEngine, played_3: int
+) -> None:
+    # Under depth_3 the loss is an integer, so `> 0` and `>= 1` are the same predicate (A4).
+    for spread_form in ("loss_only", "best_prob_for_misses"):
+        ungated = _aggregate_model("depth_3", spread_form, None)
+        gated = _aggregate_model("depth_3", spread_form, 1.0)
+        for spread in (2.0, None):
+            row: GridRow = (
+                0.1,
+                spread,
+                _material_array(played_3),
+                None,
+                _material_array(4),
+                None,
+                0.3,
+                None,
+            )
+            expected = facepalm_score(_facts_of(row), lam=1.0, model=ungated)
+            assert facepalm_score(_facts_of(row), lam=1.0, model=gated) == expected
+            assert await _sql_scores(test_engine, [row], gated, 1.0) == (
+                await _sql_scores(test_engine, [row], ungated, 1.0)
+            )
+
+
+@pytest.mark.parametrize("material_input", _AGGREGATE_INPUTS)
+async def test_loss_gate_one_on_fractional_mean(
+    test_engine: AsyncEngine, material_input: MaterialInput
+) -> None:
+    # A one-pawn loss at depth 1 only averages about 0.5 under the decaying mean (and discounts to
+    # 1 under first_stable): gate None reads the (NULL) spread and unscores the row, gate 1.0 does
+    # not, in both twins. A constant one-pawn loss is exactly 1.0 and reads the spread under both.
+    fractional: GridRow = (0.1, None, _odd_array(-1, 0, 0, 0, 0), None, None, None, 0.3, None)
+    constant: GridRow = (0.1, None, _odd_array(-1, -1, -1, -1, -1), None, None, None, 0.3, None)
+    ungated = _aggregate_model(material_input, "loss_only", None)
+    gated = _aggregate_model(material_input, "loss_only", 1.0)
+    if material_input == "decaying_mean":
+        assert facepalm_score(_facts_of(fractional), lam=1.0, model=ungated) is None
+        assert facepalm_score(_facts_of(fractional), lam=1.0, model=gated) is not None
+        assert await _sql_scores(test_engine, [fractional], ungated, 1.0) == [None]
+        (sql_gated,) = await _sql_scores(test_engine, [fractional], gated, 1.0)
+        assert sql_gated is not None
+    for model in (ungated, gated):
+        assert facepalm_score(_facts_of(constant), lam=1.0, model=model) is None
+        assert await _sql_scores(test_engine, [constant], model, 1.0) == [None]
+
+
+@pytest.mark.parametrize("model", [_DECAYING_MEAN_BPFM_MODEL, _FIRST_STABLE_BPFM_MODEL])
+def test_aggregate_expression_is_one_scalar_expression(model: FacepalmModel) -> None:
+    # T-256-07: facepalm_expr is a column expression, so a SELECT inside it would be a subquery.
+    compiled = str(facepalm_expr(1.0, model).compile(dialect=postgresql.dialect())).lower()
+    assert "unnest" not in compiled
+    assert "select" not in compiled
+
+
 @pytest.mark.parametrize("model", [PHASE_250_MODEL, FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL])
 async def test_zero_coefficient_input_never_unscores(
     test_engine: AsyncEngine, model: FacepalmModel
@@ -556,16 +757,68 @@ def test_gated_spread_forms_value() -> None:
     assert z_gap == pytest.approx(0.4 * math.log(0.3 + PLAYED_PROB_OFFSET), abs=FORMULA_TOLERANCE)
 
 
-def test_unknown_best_prob_contributes_zero() -> None:
-    # D-18 consistency: an unknown best-move probability adds nothing, whatever the coefficient.
-    for model in (_ADDITIVE_BEST_PROB_MODEL, _BEST_PROB_MISSES_MODEL):
-        zero_coef = replace(model, best_prob_coef=0.0)
-        for played_3 in (-3, 5):
-            with_coef = _score(model=model, played_3=played_3, best_3=10, best_prob=None)
-            assert with_coef is not None
-            assert with_coef == _score(
-                model=zero_coef, played_3=played_3, best_3=10, best_prob=None
-            )
+def test_additive_unknown_best_prob_contributes_zero() -> None:
+    # D-18 consistency on the additive path: an unknown best-move probability adds nothing,
+    # whatever the coefficient, so the row keeps the score of the zero-coefficient model.
+    zero_coef = replace(_ADDITIVE_BEST_PROB_MODEL, best_prob_coef=0.0)
+    for played_3 in (-3, 5):
+        with_coef = _score(model=_ADDITIVE_BEST_PROB_MODEL, played_3=played_3, best_3=10)
+        assert with_coef is not None
+        assert with_coef == _score(model=zero_coef, played_3=played_3, best_3=10)
+
+
+_PURE_MISS_MODELS = (
+    pytest.param(_BEST_PROB_MISSES_MODEL, id="depth_3"),
+    pytest.param(_DECAYING_MEAN_BPFM_MODEL, id="decaying_mean"),
+)
+
+
+@pytest.mark.parametrize("model", _PURE_MISS_MODELS)
+@pytest.mark.parametrize("spread", (2.0, None))
+async def test_pure_miss_without_best_prob_is_unscored(
+    test_engine: AsyncEngine, model: FacepalmModel, spread: float | None
+) -> None:
+    # 256 D-04 (254 WR-01): a row that does not lose material and has no best-move probability
+    # is unscored under best_prob_for_misses, in both twins.
+    pure_miss: GridRow = (
+        0.1,
+        spread,
+        _material_array(5),
+        None,
+        _material_array(10),
+        None,
+        None,
+        None,
+    )
+    assert facepalm_score(_facts_of(pure_miss), lam=1.0, model=model) is None
+    assert await _sql_scores(test_engine, [pure_miss], model, 1.0) == [None]
+    # A zero best-prob coefficient omits the term, so the same row stays scored.
+    zero_coef = replace(model, best_prob_coef=0.0)
+    scored = facepalm_score(_facts_of(pure_miss), lam=1.0, model=zero_coef)
+    assert scored is not None
+    (sql_score,) = await _sql_scores(test_engine, [pure_miss], zero_coef, 1.0)
+    assert sql_score == pytest.approx(scored, abs=PARITY_TOLERANCE)
+    # A known best-move probability scores the row, with the spread slot reading the term.
+    known: GridRow = (0.1, spread, _material_array(5), None, _material_array(10), None, 0.3, None)
+    known_score = facepalm_score(_facts_of(known), lam=1.0, model=model)
+    assert known_score is not None
+    (known_sql,) = await _sql_scores(test_engine, [known], model, 1.0)
+    assert known_sql == pytest.approx(known_score, abs=PARITY_TOLERANCE)
+
+
+@pytest.mark.parametrize("model", _PURE_MISS_MODELS)
+async def test_losing_row_without_best_prob_keeps_its_score(
+    test_engine: AsyncEngine, model: FacepalmModel
+) -> None:
+    # A row that loses material reads the reply spread, not the best-move term: a NULL best-move
+    # probability changes nothing and the row stays scored (D-04, rows that lose keep their score).
+    lossy: GridRow = (0.1, 2.0, _material_array(-3), None, _material_array(10), None, None, None)
+    expected = facepalm_score(_facts_of(lossy), lam=1.0, model=model)
+    assert expected is not None
+    with_prob: GridRow = (0.1, 2.0, _material_array(-3), None, _material_array(10), None, 0.3, None)
+    assert facepalm_score(_facts_of(with_prob), lam=1.0, model=model) == expected
+    (sql_score,) = await _sql_scores(test_engine, [lossy], model, 1.0)
+    assert sql_score == pytest.approx(expected, abs=PARITY_TOLERANCE)
 
 
 def test_additive_optional_inputs_enter_the_linear_predictor() -> None:
@@ -645,12 +898,21 @@ def test_default_model_is_built_from_the_fitted_constants() -> None:
         spread_form=FACEPALM_SPREAD_FORM,
         best_prob_coef=FACEPALM_BEST_PROB_COEF,
         pre_spread_coef=FACEPALM_PRE_SPREAD_COEF,
+        material_input=FACEPALM_MATERIAL_INPUT,
+        loss_gate=FACEPALM_LOSS_GATE,
     )
     facts = _facts(played_3=-3)
     default = facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA)
     explicit = facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA, model=FACEPALM_MODEL)
     assert default is not None
     assert default == explicit
+
+
+def _tsv_array(row: dict[str, str], prefix: str) -> list[int | None]:
+    return [
+        int(row[f"{prefix}_{depth}"]) if row[f"{prefix}_{depth}"] else None
+        for depth in range(1, LINE_MATERIAL_SLOTS + 1)
+    ]
 
 
 def test_window_14_constants_match_the_committed_features_row() -> None:
@@ -666,29 +928,31 @@ def test_window_14_constants_match_the_committed_features_row() -> None:
     assert float(row["played_prob"]) == WINDOW_14_PLAYED_PROB
     assert float(row["reply_spread"]) == WINDOW_14_REPLY_SPREAD
     assert float(row["best_prob"]) == WINDOW_14_BEST_PROB
-    assert int(row["best_mat_3"]) == WINDOW_14_BEST_3
-    assert (row["played_mat_3"] or None) == WINDOW_14_PLAYED_3
+    assert _tsv_array(row, "played_mat") == WINDOW_14_PLAYED_MATERIAL
+    assert _tsv_array(row, "best_mat") == WINDOW_14_BEST_MATERIAL
     assert (row["line_mate_ply"] or None) == WINDOW_14_MATE_PLY
 
 
 def test_window_14_is_not_selected_by_the_shipped_model() -> None:
-    # CONTEXT specifics: Window 14 must not pass FACEPALM_SCORE_MIN. Its stored line is only one
-    # ply long, so the played depth-3 material is unknown and the score is None: a NULL score
-    # fails the `score >= FACEPALM_SCORE_MIN` filter in SQL and in the pure judge, so an unscored
-    # row never qualifies. Deliberately no numeric "below the cut" claim: the score cannot be
-    # computed from the recorded inputs.
+    # CONTEXT D-13: Window 14 must stay below FACEPALM_SCORE_MIN under the shipped model. Its
+    # stored line is only one ply long, so the played depth-3 material is unknown (the loss input
+    # is NULL on prod, 256-07) and the score is None, which fails the `score >= FACEPALM_SCORE_MIN`
+    # filter in SQL and in the pure judge. If a later line repair makes it scorable, the score
+    # must be below the cut instead; the assertion allows both.
     score = facepalm_score(
-        _facts(
+        FacepalmFacts(
             played_prob=WINDOW_14_PLAYED_PROB,
             reply_spread=WINDOW_14_REPLY_SPREAD,
-            played_3=WINDOW_14_PLAYED_3,
+            played_material=WINDOW_14_PLAYED_MATERIAL,
             mate_ply=WINDOW_14_MATE_PLY,
-            best_3=WINDOW_14_BEST_3,
+            best_material=WINDOW_14_BEST_MATERIAL,
+            best_mate_ply=None,
             best_prob=WINDOW_14_BEST_PROB,
+            pre_spread=None,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
-    assert score is None
+    assert score is None or score < FACEPALM_SCORE_MIN
 
 
 # ---------------------------------------------------------------------------
@@ -748,9 +1012,9 @@ def _facts_of_flaw(flaw: GameFlaw) -> FacepalmFacts:
     return FacepalmFacts(
         played_prob=flaw.maia_played_prob,
         reply_spread=flaw.maia_reply_spread,
-        played_3=material_at_depth(flaw.played_line_material, LINE_DEPTH),
+        played_material=flaw.played_line_material,
         mate_ply=flaw.line_mate_ply,
-        best_3=material_at_depth(flaw.best_line_material, LINE_DEPTH),
+        best_material=flaw.best_line_material,
         best_mate_ply=flaw.best_line_mate_ply,
         best_prob=flaw.maia_best_prob,
         pre_spread=flaw.maia_pre_spread,
@@ -760,8 +1024,28 @@ def _facts_of_flaw(flaw: GameFlaw) -> FacepalmFacts:
 @pytest.mark.parametrize("lam", (0.0, 1.0))
 @pytest.mark.parametrize(
     "model",
-    [PHASE_250_MODEL, FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL, _BEST_PROB_MISSES_MODEL],
-    ids=["pre_refit", "shipped", "split_missed", "combined", "best_prob_misses"],
+    [
+        PHASE_250_MODEL,
+        FACEPALM_MODEL,
+        _SPLIT_MODEL,
+        _COMBINED_MODEL,
+        _BEST_PROB_MISSES_MODEL,
+        _DECAYING_MEAN_MODEL,
+        _DECAYING_MEAN_BPFM_MODEL,
+        _FIRST_STABLE_MODEL,
+        _FIRST_STABLE_BPFM_MODEL,
+    ],
+    ids=[
+        "pre_refit",
+        "shipped",
+        "split_missed",
+        "combined",
+        "best_prob_misses",
+        "decaying_mean",
+        "decaying_mean_best_prob_misses",
+        "first_stable",
+        "first_stable_best_prob_misses",
+    ],
 )
 async def test_expr_matches_python_twin_over_stored_facts(
     db_session: AsyncSession, model: FacepalmModel, lam: float
@@ -807,6 +1091,38 @@ async def test_expr_reads_the_missed_term_from_the_stored_best_array(
     at_zero, at_one = await _scores(0.0), await _scores(1.0)
     assert at_zero[0] is not None and at_one[0] is not None and at_one[0] > at_zero[0]
     assert at_zero[1] == pytest.approx(at_one[1], abs=PARITY_TOLERANCE)
+
+
+async def test_expr_unscores_pure_miss_without_best_prob(db_session: AsyncSession) -> None:
+    # 256 D-04 through facepalm_expr over a stored row: no loss and a NULL maia_best_prob is NULL
+    # under best_prob_for_misses; the additive model reads the NULL as 0 and equals the Python twin.
+    pure_miss: dict[str, Any] = {
+        "maia_played_prob": 0.2,
+        "maia_reply_spread": 2.0,
+        "played_line_material": [0, None, 4, None, 4, None, 4, None, 4],
+        "best_line_material": [0, None, 9, None, 9, None, 9, None, 9],
+        "maia_best_prob": None,
+    }
+    game_id = await _seed_stored_facts(db_session, [pure_miss])
+    flaw = (
+        await db_session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id))
+    ).scalar_one()
+    for model in (_BEST_PROB_MISSES_MODEL, _DECAYING_MEAN_BPFM_MODEL):
+        value = (
+            await db_session.execute(
+                select(facepalm_expr(1.0, model)).where(GameFlaw.game_id == game_id)
+            )
+        ).scalar_one()
+        assert value is None
+        assert facepalm_score(_facts_of_flaw(flaw), lam=1.0, model=model) is None
+    additive = (
+        await db_session.execute(
+            select(facepalm_expr(1.0, _ADDITIVE_BEST_PROB_MODEL)).where(GameFlaw.game_id == game_id)
+        )
+    ).scalar_one()
+    expected = facepalm_score(_facts_of_flaw(flaw), lam=1.0, model=_ADDITIVE_BEST_PROB_MODEL)
+    assert expected is not None
+    assert additive == pytest.approx(expected, abs=PARITY_TOLERANCE)
 
 
 _NINE_SLOTS = "{0,0,0,0,0,0,0,0,0}"

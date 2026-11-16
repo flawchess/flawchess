@@ -8,8 +8,11 @@ database on 2026-11-14, copied exactly as printed (six significant digits):
     uv run --group maia-inference python scripts/blunder_check/facepalm_features.py \\
         --db dev --extra 817357:24 --extra 820181:65 --out temp/blunder-check/owner-fixtures-features.tsv
 
-Depth-3 signed material is positive when the blunderer is up; neither line mates within
-LINE_DEPTH, so both mate plies are None. Game ids and plies only, no usernames.
+The signed material arrays are constant over all nine slots (positive = the blunderer is up),
+computed with the app's ``line_facts`` / ``best_line_facts`` over the committed line fixtures. A
+constant array reads the same material under every material input, so only the coefficients move
+these scores. Neither line mates within LINE_DEPTH, so both mate plies are None. Game ids and
+plies only, no usernames.
 """
 
 from __future__ import annotations
@@ -36,9 +39,9 @@ OWNER_FIXTURE_FACTS: tuple[OwnerFixtureFacts, ...] = (
         facts=FacepalmFacts(
             played_prob=0.458327,
             reply_spread=8.78072,
-            played_3=0,
+            played_material=[0] * 9,
             mate_ply=None,
-            best_3=3,
+            best_material=[3] * 9,
             best_mate_ply=None,
             best_prob=0.206584,
             pre_spread=5.2426,
@@ -51,9 +54,9 @@ OWNER_FIXTURE_FACTS: tuple[OwnerFixtureFacts, ...] = (
         facts=FacepalmFacts(
             played_prob=0.624289,
             reply_spread=8.38388,
-            played_3=5,
+            played_material=[5] * 9,
             mate_ply=None,
-            best_3=10,
+            best_material=[10] * 9,
             best_mate_ply=None,
             best_prob=0.209111,
             pre_spread=2.5917,

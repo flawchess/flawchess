@@ -555,6 +555,52 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 255-07-PLAN.md — Alembic head re-check, changelog, full pre-merge gate and the route walk checkpoint (wave 4)
 
+### Phase 256: Facepalm Refit on Material Aggregated over Depths (SEED-261115-agg)
+
+**Goal**: The facepalm score reads the played line's loss and the best line's missed gain at one depth
+(`LINE_DEPTH` = 3), which carries no signal for misses (missed gain coefficient 0.0891 against 1.0129 for the
+loss). Replace both material inputs with an aggregate over the stored odd depths 1, 3, 5, 7, 9, refit on label
+sets 1 to 8 and release new constants. Working choice: a decaying mean (each later odd depth counts half);
+candidates in the fit are the decaying mean, the first stable value (discounted by its onset) and depth 3 as the
+reference. No backfill and no new stored facts: the score stays a query-time expression over
+`played_line_material` / `best_line_material` (254 D-01), in both twins.
+
+- **Also in scope:** review findings 254 WR-01 (a no-loss row with a NULL `maia_best_prob` becomes unscored) and
+  WR-03 (the fit keeps NULL-spread rows that a gated spread form never reads); the "loses material" gate under a
+  mean (threshold 1 against none, decided by the fit); the owner's `FACEPALM_SCORE_MIN` checkpoint.
+- **Out of scope:** new columns or prod passes, scoring rows whose played line stops before depth 3 (Phase 252
+  repairs those), a separate model for pure misses, new inputs such as "simple capture of an undefended piece".
+
+**Depends on**: label set 8 (60 blind rows, n 241 to 300 in `reports/blunder-check/facepalm-labels.tsv`) labelled
+by the owner. Discuss and plan can run before; execution waits for the labels. Does not wait for Phase 252.
+**Requirements**: TBD (coverage set: CONTEXT decisions D-01..D-15)
+**Plans:** 8/8 plans complete
+
+Plans:
+**Wave 1**
+- [x] 256-01-PLAN.md — Tracer: decaying-mean input in both score twins over the stored arrays; FacepalmFacts, the seed helper and the app and service-test callers carry both arrays (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 256-02-PLAN.md — Fit loader and calibration cache (v4) carry both arrays; whole tree type-checks and the full suite is green again (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 256-03-PLAN.md — WR-01 fixed in both twins (no-loss row without a best probability unscored); first stable input, loss gate parity, sampler shares the app's mean (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 256-04-PLAN.md — Fit: input- and gate-aware candidates, WR-03 / D-05 per-candidate rows, 2026-11-15 reproduction test (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 256-05-PLAN.md — Fit: staged pipeline per input, input choice by repeated CV over all labelled sets (D-07, D-09), chosen-model constants and assumptions (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 256-06-PLAN.md — Fit: set-8 hold-out per input with the disagreement flag (D-08), owner section for D-13 (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion and on the set-8 labels, D-01)*
+- [x] 256-07-PLAN.md — D-01 label gate, prod features, refit, candidate calibration, owner checkpoint (input and FACEPALM_SCORE_MIN); orchestrator-run (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 256-08-PLAN.md — Refitted constants pinned by --check-constants on the committed table, Window 14 and owner fixtures re-pinned, changelog, pre-merge gate (wave 8)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
