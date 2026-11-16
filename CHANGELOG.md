@@ -20,6 +20,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Train: the red dot now clears when you start a training session, not when you open Train.
+- Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.
 - Openings: the sidebar no longer shows a red dot on Bookmarks. Existing accounts start with the new route already complete.
 - Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
 - Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
