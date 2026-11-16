@@ -19,6 +19,42 @@ set id ``MISS_SET_ID`` so the two sets pool in one fit.
 Everything here only reads (``make_readonly_engine``: read-only transactions, statement timeout,
 one connection). The analysis URLs are written to the sheet and never printed.
 
+Set 8 (``--mode disagreement``, SEED-261115-agg, owner decision 2026-11-16)
+---------------------------------------------------------------------------
+The refit phase compares the shipped depth-3 input with a decaying mean over the odd depths
+(1, 3, 5, 7, 9; weights 1, 1/2, 1/4, 1/8, 1/16; ``decaying_mean.py``), and only a few of the 199
+labels sit where the two disagree. This mode draws about 60 blind rows for those cases:
+
+* the loss group (23 rows): the depth-3 loss and the decaying mean of the loss series differ by at
+  least ``DISAGREEMENT_MIN_PAWNS`` (0.5); stratified into spike (a depth 3, 5 or 7 peak),
+  early (nonzero at depth 1, 0 at depth 3), late (0 at depths 1 and 3, the loss appears at depth 5
+  or later) and other, with that precedence;
+* the miss group (22 rows): the played line loses nothing at any known odd depth and the missed
+  gain disagrees the same way, same four strata (a loss row whose only disagreement is the gain
+  is not drawn);
+* about 15 plain depth-3 pure misses over set 7's size x best-move-tertile cells.
+
+A short stratum borrows from its own group (``*_other`` first), and shortfall and unfilled rows
+are reported, never padded across groups. The "other" strata are planner discretion (the owner
+named spike, recovered by depth 3 and appears at depth 5+).
+
+What qualifies, with the cap 5 and threshold 0.5 (weights sum 1.9375): a loss or gain of v at
+depth 1 only qualifies from 1 pawn (gap v / 1.9375 = 0.52); a spike at depth 3 from 1 pawn
+(gap 0.74 v); a value held from depth 5 on (late) from 3 pawns (gap 0.2258 v: 0.68 for a piece,
+0.45 for 2 pawns, which does not qualify); a spike at depth 5 alone only from 4 pawns (gap
+0.129 v), and a value that appears only at depth 7 or 9 never (at most 0.32 at the cap). The
+seed's queen-trade best line (gains 1, 1, 5 capped, 1, 1) has a gap of 0.52 and is drawn as a
+miss spike. So late and depth-5 spike strata are the scarce ones; early and spike at depth 3 are
+cheap.
+
+Append contract: ``--append-to LABELFILE`` appends to the existing label TSV in append mode only
+(never a rewrite), in the set 7 row shape (n, set, elo, move, link, then empty hidden columns and
+an empty label, no comment cell), n continuing from the file's maximum. A second set-8 append is
+refused (restore the file with git before a rerun), and ``--db dev`` can never append to
+``reports/blunder-check/facepalm-labels.tsv`` (exit ``EXIT_APPEND_REFUSED``); both checks run
+before Maia or the DB start. The key (arrays, depth-3 inputs, decaying means, group, stratum) goes
+to gitignored ``temp/``.
+
 Usage::
 
     # dev (local database, the smoke run; dev holds few users, so lift the rating cap)
@@ -30,6 +66,17 @@ Usage::
     # prod (needs the tunnel: bin/prod_db_tunnel.sh; run from the orchestrator, not an executor)
     uv run --group maia-inference python scripts/blunder_check/miss_labels.py --db prod \
         --out temp/blunder-check/miss-labels.tsv
+
+    # set 8, dev smoke (append to a COPY of the label file under temp/, never the real one)
+    uv run --group maia-inference python scripts/blunder_check/miss_labels.py --db dev \
+        --mode disagreement --sample-percent 50 --max-rating 3000 \
+        --append-to temp/blunder-check/set8-smoke-labels.tsv \
+        --key-out temp/blunder-check/set8-smoke-key.json
+
+    # set 8, prod (orchestrator, tunnel up)
+    uv run --group maia-inference python scripts/blunder_check/miss_labels.py --db prod \
+        --mode disagreement --append-to reports/blunder-check/facepalm-labels.tsv \
+        --key-out temp/blunder-check/set8-key-2026-11-16.json
 
 The owner labels the sheet blind (``label`` 1 = unfair / facepalm, 0 = fair, as in the 250
 sheets); the labelled TSV is then passed to ``facepalm_features.py --labels`` next to the
@@ -698,22 +745,58 @@ def _disagreement_pools(
     return pools
 
 
+def _borrow_from_group(
+    stratum: str,
+    missing: int,
+    group: DisagreementGroup,
+    quotas: Mapping[str, int],
+    spare: dict[str, list[MissCandidate]],
+) -> list[Selected]:
+    """Up to `missing` spare rows from the other strata of the same group.
+
+    The group's `*_other` stratum lends first, then the rest in quota-declaration order; every
+    borrowed row keeps the stratum it was drawn from (as set 7's `_borrow` does).
+    """
+    lenders = sorted((name for name in quotas if name != stratum), key=_is_not_other)
+    borrowed: list[Selected] = []
+    for lender in lenders:
+        while len(borrowed) < missing and spare[lender]:
+            borrowed.append(Selected(spare[lender].pop(0), lender, group))
+    return borrowed
+
+
+def _is_not_other(stratum: str) -> bool:
+    """Sort key putting the `*_other` stratum first (sorted is stable, so quota order is kept)."""
+    return not stratum.endswith("_other")
+
+
 def _draw_group(
     group: DisagreementGroup,
     quotas: Mapping[str, int],
     pools: Mapping[DisagreementStratum, list[MissCandidate]],
     rng: random.Random,
 ) -> tuple[list[Selected], dict[str, int], int]:
-    """(rows, shortfall per stratum, rows unfilled) for one group; a short stratum stays short."""
+    """(rows, shortfall per stratum, rows unfilled) for one group.
+
+    A stratum that cannot fill its quota borrows from the group's other strata; rows no stratum
+    of the group can give are `unfilled` (never padded from another group).
+    """
     rows: list[Selected] = []
+    spare: dict[str, list[MissCandidate]] = {}
     shortfall: dict[str, int] = {}
     for stratum, quota in quotas.items():
         pool = pools[cast(DisagreementStratum, stratum)]
         rng.shuffle(pool)
         rows.extend(Selected(candidate, stratum, group) for candidate in pool[:quota])
+        spare[stratum] = pool[quota:]
         if len(pool) < quota:
             shortfall[stratum] = quota - len(pool)
-    return rows, shortfall, sum(shortfall.values())
+    unfilled = 0
+    for stratum, missing in shortfall.items():
+        borrowed = _borrow_from_group(stratum, missing, group, quotas, spare)
+        rows.extend(borrowed)
+        unfilled += missing - len(borrowed)
+    return rows, shortfall, unfilled
 
 
 def stratify_disagreement(
@@ -914,6 +997,29 @@ def summary_line(tally: Tally, result: Stratified) -> str:
     )
 
 
+def _counts_text(counts: Mapping[str, int]) -> str:
+    return ", ".join(f"{name} {count}" for name, count in counts.items())
+
+
+def disagreement_summary_line(tally: Tally, draw: DisagreementDraw) -> str:
+    """One line for a set-8 draw: counts only, never an analysis link.
+
+    Rows read, dropped, stable, per material type, the supply per stratum, rows written per
+    stratum, the shortfall per stratum and the unfilled rows per group.
+    """
+    dropped = _counts_text(dict(sorted(tally.dropped.items())))
+    by_type = _counts_text(dict(sorted(tally.by_type.items())))
+    written = Counter(row.stratum for row in draw.rows)
+    shortfall = _counts_text(dict(sorted(draw.shortfall.items())))
+    return (
+        f"candidates read {tally.read}; dropped: {dropped or 'none'}; stable {tally.stable}; "
+        f"by material type: {by_type or 'none'}; supply per stratum: "
+        f"{_counts_text(draw.supply)}; rows written {len(draw.rows)} "
+        f"({_counts_text(dict(sorted(written.items()))) or 'none'}); "
+        f"shortfall: {shortfall or 'none'}; unfilled {_counts_text(draw.unfilled)}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Database (read-only)
 # ---------------------------------------------------------------------------
@@ -1095,26 +1201,64 @@ async def _load_candidates(
     )
 
 
+def _append_refusal(args: argparse.Namespace) -> str | None:
+    """Why the set-8 output target is refused (checked before Maia or the DB start), else None.
+
+    Dev rows must never land in the committed label file, the target must be a label file, and a
+    set can only be appended once (restore the file with git before a rerun).
+    """
+    if args.append_to is None:
+        return None
+    if args.mode != "disagreement":
+        return "--append-to needs --mode disagreement"
+    real_labels = (_REPO_ROOT / DEFAULT_EXCLUDE_LABELS).resolve()
+    if args.db == "dev" and args.append_to.resolve() == real_labels:
+        return "dev rows must not be appended to the real label file"
+    try:
+        check_append_target(args.append_to, DISAGREEMENT_SET_ID)
+    except AppendRefused as error:
+        return str(error)
+    return None
+
+
 def _write_disagreement(args: argparse.Namespace, draw: DisagreementDraw) -> int:
     """Append the set-8 rows (or write the sheet for --out) and the key file."""
     if args.append_to is None:
         write_blind_tsv(draw.rows, args.out, set_id=DISAGREEMENT_SET_ID)
         numbers = list(range(1, len(draw.rows) + 1))
     else:
-        numbers = append_blind_rows(draw.rows, args.append_to, set_id=DISAGREEMENT_SET_ID)
+        try:
+            numbers = append_blind_rows(draw.rows, args.append_to, set_id=DISAGREEMENT_SET_ID)
+        except AppendRefused as error:
+            print(f"append refused: {error}", file=sys.stderr)
+            return EXIT_APPEND_REFUSED
     write_key(draw.rows, args.key_out, numbers=numbers, set_id=DISAGREEMENT_SET_ID)
     return EXIT_OK
 
 
+def _excluded_label_files(args: argparse.Namespace) -> list[Path]:
+    """The label TSVs whose games are never redrawn: the given (or default) ones and the target."""
+    paths = list(args.exclude_labels or [_REPO_ROOT / DEFAULT_EXCLUDE_LABELS])
+    if args.append_to is not None:
+        paths.append(args.append_to)
+    return paths
+
+
 async def _run(args: argparse.Namespace) -> int:
-    excluded = excluded_game_ids(args.exclude_labels or [DEFAULT_EXCLUDE_LABELS])
+    refusal = _append_refusal(args)
+    if refusal is not None:
+        print(f"append refused: {refusal}", file=sys.stderr)
+        return EXIT_APPEND_REFUSED
+    excluded = excluded_game_ids(_excluded_label_files(args))
     tally = Tally()
     candidates = await _load_candidates(args, excluded, tally)
     if candidates is None:
         return EXIT_MAIA_UNAVAILABLE
     if args.mode == "disagreement":
         draw = stratify_disagreement(candidates, plain_target=args.pure_misses, seed=args.seed)
-        return _write_disagreement(args, draw)
+        code = _write_disagreement(args, draw)
+        print(disagreement_summary_line(tally, draw))
+        return code
     result = stratify(
         candidates, pure_target=args.pure_misses, mixed_target=args.mixed, seed=args.seed
     )
