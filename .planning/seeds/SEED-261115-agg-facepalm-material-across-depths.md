@@ -89,3 +89,14 @@ prod pass is needed; even slots are mid-exchange values by construction (Phase 2
 - Keep the owner's label meaning (label 1 = "should score above 70%", D-23) and re-check the 15 commented
   set 7 rows and the two owner fixtures under the new model.
 - More miss labels would help more than any input change if the differences stay inside the noise.
+
+## Carried over from the Phase 254 code review (2026-11-16)
+
+Two review findings touch the fit and belong in this refit (details in
+`.planning/phases/254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611/254-REVIEW.md`):
+
+- **WR-01:** a NULL `maia_best_prob` adds 0 to the best-move term, so the row scores as if the best move were
+  as easy as possible. On prod 14,826 of 2,178,931 rows with scoring inputs (0.68%) have a NULL best prob.
+  Decide: leave such rows unscored, or use a neutral constant.
+- **WR-03:** `fit_facepalm.py` drops every row with a NULL `reply_spread`, although the gated spread forms never
+  read it on no-loss rows. This thins the miss-heavy part of the fit.
