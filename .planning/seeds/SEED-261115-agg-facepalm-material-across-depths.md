@@ -100,3 +100,47 @@ Two review findings touch the fit and belong in this refit (details in
   Decide: leave such rows unscored, or use a neutral constant.
 - **WR-03:** `fit_facepalm.py` drops every row with a NULL `reply_spread`, although the gated spread forms never
   read it on no-loss rows. This thins the miss-heavy part of the fit.
+
+## Probe of 2026-11-16 (after Phase 254 shipped; owner review)
+
+Owner's goal: a meaningful score. How many pure misses pass the drill cut is secondary.
+
+Quick harness on `facepalm-features-2026-11-15.tsv` (full model, 10-fold cross-validation over 10 seeds; not
+`fit_facepalm.py`, so the numbers are indicative). The same aggregate is used for the loss and the missed gain,
+over the odd depths 1, 3, 5, 7, 9 (even slots are mid-exchange values). AUC on the same 199 rows:
+
+| Input for both terms | AUC |
+|---|---|
+| Decaying mean, each later odd depth counts half (weights 1, 1/2, 1/4, 1/8, 1/16, normalised over known depths) | 0.916 |
+| Plain mean | 0.896 |
+| Depth 3 (shipped) | 0.880 |
+| First stable value (same balance at two odd depths in a row), discounted by its onset | 0.872 |
+| First stable value | 0.860 |
+| Value of the longest run | 0.845 |
+| Most frequent value | 0.842 |
+| Final stable value (= last depth) | 0.832 |
+| Lowest point | 0.778 |
+
+- Decaying mean against depth 3, paired bootstrap: AUC gain 0.035, 95% range 0.007 to 0.065. Decay 0.2 to 0.6
+  gives 0.914 to 0.918, so fix the decay at 1/2 and do not fit it. Held out: wins on set 6 (0.945 vs 0.904) and
+  set 7 (0.905 vs 0.875), loses on set 5 (0.934 vs 0.954). Best of about 11 candidates, so the gain is optimistic.
+- The gain coefficient rises from 0.15 to 0.39, so misses get a real material signal and the lambda knob matters.
+- Stabilised balance (owner's idea) loses to depth 3: the early swing is itself the signal (rows like
+  `-3, -3, 0, ...` are labelled fair), and 36 of 198 full played lines still change at depth 9. Only 26 of 199
+  rows move their loss input by a pawn or more between depth 3 and the decaying mean, so few labels can tell the
+  rules apart. Keep "first stable value, discounted" as a candidate for the refit.
+- Within pure misses the best-move probability carries the ranking (AUC 0.80 alone); a pure-miss offset fits
+  negative, so the low miss pass rate is what the labels ask for.
+- Among "neither" rows the largest loss at any depth has AUC 0.73 (23 rows).
+
+## Decided with the owner (2026-11-16)
+
+- Refit around the decaying mean; candidates in `fit_facepalm.py`: decaying mean, first stable value
+  (discounted), depth 3 as the reference.
+- Label set 8, about 60 rows, blind, appended to `reports/blunder-check/facepalm-labels.tsv` (the same file as
+  sets 1 to 7): about 45 rows where depth 3 and the decaying mean differ by a pawn or more (losses recovered by
+  depth 3, losses that appear at depth 5 or later, mid-line spikes; split between losses and misses) and about
+  15 plain pure misses. No short-line group: Phase 252 repairs truncated lines.
+- Open for the phase: the "loses material" gate (loss > 0 flips on any small late loss under a mean; test a
+  threshold of 1 against no gate), WR-01, WR-03.
+- Order: a quick task for the sampler and the draw now, then a phase for the refit, executed once set 8 is labelled.
