@@ -125,8 +125,11 @@ def test_tsv_header_and_spread_match_the_apps_functions(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 REAL_LABELS = Path(__file__).resolve().parents[2] / "reports/blunder-check/facepalm-labels.tsv"
-# Sets 1-6 (180 rows) plus the 50 miss rows of set 7 (Phase 254 D-14).
+# Sets 1-6 (180 rows) plus the 50 miss rows of set 7 (Phase 254 D-14); set 8 (the blind
+# disagreement rows of SEED-261115-agg) may be appended after them.
 EXPECTED_LABEL_ROWS: int = 230
+SETS_ONE_TO_SEVEN: frozenset[str] = frozenset("1234567")
+ALL_LABEL_SETS: frozenset[str] = SETS_ONE_TO_SEVEN | {"8"}
 SEED_PLY: int = 20
 
 
@@ -167,10 +170,19 @@ def _resolved_row(inputs: GameInputs) -> FeatureRow:
 def test_parse_labels_on_the_real_label_file() -> None:
     rows = parse_labels(REAL_LABELS)
 
-    assert len(rows) == EXPECTED_LABEL_ROWS
-    # A row the owner has not labelled yet carries an empty label.
-    assert {row.label for row in rows} - {""} == {"1", "0", "0.5"}
-    assert {row.set_id for row in rows} == {"1", "2", "3", "4", "5", "6", "7"}
+    # Holds before and after the set-8 append: sets 1-7 are always there, set 8 only after it.
+    assert len([row for row in rows if row.set_id in SETS_ONE_TO_SEVEN]) == EXPECTED_LABEL_ROWS
+    set_ids = {row.set_id for row in rows}
+    assert SETS_ONE_TO_SEVEN <= set_ids <= ALL_LABEL_SETS
+    # A row the owner has not labelled yet carries an empty label (all of set 8 until labelled).
+    assert {row.label for row in rows} - {""} <= {"1", "0", "0.5"}
+    assert {row.label for row in rows if row.set_id in SETS_ONE_TO_SEVEN} - {""} == {
+        "1",
+        "0",
+        "0.5",
+    }
+    # Every set-8 row parsed a game and a ply from its link.
+    assert all(row.game_id > 0 and row.ply >= 0 for row in rows if row.set_id == "8")
     first = rows[0]
     assert (first.n, first.game_id, first.ply, first.label) == ("1", 1940139, 21, "0")
 

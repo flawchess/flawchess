@@ -686,6 +686,31 @@ def test_facts_schema_run_prints_every_model_constant(tmp_path: Path) -> None:
         assert re.search(rf"^{name}: [^=]+= \S+$", section, flags=re.MULTILINE), name
 
 
+SET_EIGHT_ROWS: tuple[int, ...] = (241, 242, 243)
+
+
+def test_unlabelled_set_eight_rows_are_extras_not_fit_rows(tmp_path: Path) -> None:
+    """Blind set-8 rows (empty label) are excluded as unlabelled and listed under Extra rows."""
+    features = tmp_path / "facts.tsv"
+    write_synthetic_facts(features)
+    lines = features.read_text().splitlines()
+    extra = dict(zip(FEATURE_COLUMNS, lines[-1].split("\t"), strict=True))
+    for n in SET_EIGHT_ROWS:
+        row = {**extra, "n": str(n), "set": "8", "label": ""}
+        lines.append("\t".join(row[col] for col in FEATURE_COLUMNS))
+    features.write_text("\n".join(lines) + "\n")
+
+    table = fit_facepalm.load_features(features)
+    _, excluded = fit_facepalm.split_usable(table.rows)
+    out = tmp_path / "report.md"
+
+    assert excluded[fit_facepalm.REASON_NO_LABEL] == 1 + len(SET_EIGHT_ROWS)
+    assert fit_facepalm.main(["--features", str(features), "--out", str(out)]) == 0
+    extra_section = out.read_text().split("## Extra rows", 1)[1].split("## Constants", 1)[0]
+    for n in SET_EIGHT_ROWS:
+        assert f"- row {n}:" in extra_section
+
+
 SPEC_SHAPES: tuple[fit_facepalm.CandidateSpec, ...] = (
     fit_facepalm.BASELINE_SPEC,
     fit_facepalm.CandidateSpec("combined", None, 9, "always"),

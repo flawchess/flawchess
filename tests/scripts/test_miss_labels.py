@@ -7,33 +7,47 @@ import json
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 import chess
 import pytest
 
+from app.services.line_material import best_line_facts, line_facts
+from scripts.blunder_check import miss_labels
 from scripts.blunder_check.facepalm_features import parse_labels
 from scripts.blunder_check.metrics import MaterialType
 from scripts.blunder_check.miss_labels import (
     BEST_PROB_TERTILES,
     BLIND_COLUMNS,
+    DISAGREEMENT_SAMPLE_SEED,
+    DISAGREEMENT_SET_ID,
+    EXIT_APPEND_REFUSED,
+    LOSS_STRATUM_QUOTAS,
     MIN_STABLE_LINE_PLIES,
     MISS_SET_ID,
+    MISS_STRATUM_QUOTAS,
     MISSED_SIZE_BUCKETS,
     MIXED_STRATUM,
     MIXED_TARGET,
+    PLAIN_MISS_TARGET,
     PURE_MISS_TARGET,
+    AppendRefused,
+    DisagreementDraw,
     MissCandidate,
     RawCandidate,
     Selected,
     Tally,
+    append_blind_rows,
     best_prob_tertile,
     build_candidate,
     collect_candidates,
+    disagreement_group,
+    disagreement_summary_line,
     is_stable_line,
     missed_size_bucket,
     stratify,
+    stratify_disagreement,
     summary_line,
     tertile_cuts,
     write_blind_tsv,
@@ -42,6 +56,7 @@ from scripts.blunder_check.miss_labels import (
 from tests.services.maia_fakes import fake_full_policy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REAL_LABELS = REPO_ROOT / "reports/blunder-check/facepalm-labels.tsv"
 
 # White Qe4 against Qe7: Qxe7 wins a queen (best_3 +9), Qa8+ wins nothing (played_3 0).
 MISS_FEN = "6k1/4q3/8/8/4Q3/8/8/6K1 w - - 0 1"
@@ -275,6 +290,8 @@ def test_help_exits_zero() -> None:
     )
     assert completed.returncode == 0
     assert "--sample-percent" in completed.stdout
+    assert "--append-to" in completed.stdout
+    assert "--mode" in completed.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -406,3 +423,434 @@ def test_bucket_and_tertile_helpers() -> None:
     cuts = tertile_cuts(probs)
     assert len(cuts) == BEST_PROB_TERTILES - 1
     assert [best_prob_tertile(p, cuts) for p in probs] == [0, 0, 0, 1, 1, 1, 2, 2, 2]
+
+
+# ---------------------------------------------------------------------------
+# Set 8: the disagreement draw (SEED-261115-agg)
+# ---------------------------------------------------------------------------
+
+OLD_MAX_N = 240  # the real label file's last n (rows 1-20 and 31-240)
+
+
+def odd9(*odd: int | None) -> tuple[int | None, ...]:
+    """A 9-slot material array from five odd-depth values; even slots copy the previous odd."""
+    slots: list[int | None] = []
+    for index, value in enumerate(odd):
+        slots.append(value)
+        if index < len(odd) - 1:
+            slots.append(value)
+    return tuple(slots)
+
+
+QUEEN_TRADE_BEST: tuple[int | None, ...] = (1, 1, 1, 1, 10, 10, 1, 1, 1)
+ZEROS = odd9(0, 0, 0, 0, 0)
+
+
+def test_disagreement_group_loss_shapes() -> None:
+    def group(*played: int) -> tuple[str, str] | None:
+        return disagreement_group(odd9(*played), None, ZEROS, None)
+
+    assert group(-3, 0, 0, 0, 0) == ("loss", "loss_early")  # mean 1.548 vs 0
+    assert group(0, 0, -5, -5, -5) == ("loss", "loss_late")  # mean 1.129 vs 0
+    assert group(0, 0, -3, -3, -3) == ("loss", "loss_late")  # a piece from depth 5: mean 0.677
+    assert group(0, -3, 0, 0, 0) == ("loss", "loss_spike")  # mean 0.774 vs 3
+    assert group(0, -3, -3, -3, -3) == ("loss", "loss_other")  # mean 1.452 vs 3
+    # Below the 0.5 threshold: a 2 pawn loss from depth 5 (mean 0.452), a one pawn blip at 5.
+    assert group(0, 0, -2, -2, -2) is None
+    assert group(0, 0, -1, 0, 0) is None
+    assert group(0, 0, 0, 0, 0) is None
+
+
+def test_disagreement_group_miss_shapes() -> None:
+    def group(*best: int, best_mate_ply: int | None = None) -> tuple[str, str] | None:
+        return disagreement_group(ZEROS, None, odd9(*best), best_mate_ply)
+
+    assert group(3, 0, 0, 0, 0) == ("miss", "miss_early")
+    assert group(0, 3, 0, 0, 0) == ("miss", "miss_spike")
+    assert group(0, 3, 3, 3, 3) == ("miss", "miss_other")
+    assert group(0, 0, 0, 0, 0, best_mate_ply=4) == ("miss", "miss_late")
+    # The seed's queen trade: the capped spike at depth 5 moves the mean 0.516, over 0.5.
+    assert disagreement_group(ZEROS, None, QUEEN_TRADE_BEST, None) == ("miss", "miss_spike")
+    assert group(0, 0, 0, 0, 0) is None
+
+
+def test_a_loss_whose_only_disagreement_is_the_gain_is_not_drawn() -> None:
+    played = odd9(-1, -1, -1, -1, -1)
+    assert disagreement_group(played, None, odd9(0, 3, 3, 3, 3), None) is None
+
+
+def disagreement_candidate(
+    game_id: int,
+    played: Sequence[int | None],
+    best: Sequence[int | None],
+    *,
+    played_mate_ply: int | None = None,
+    best_mate_ply: int | None = None,
+    best_prob: float = 0.2,
+    material: MaterialType = "misses",
+    missed: int | None = 3,
+) -> MissCandidate:
+    """A candidate carrying material arrays (depth-3 fields are the arrays' depth-3 slots)."""
+    return MissCandidate(
+        game_id=game_id,
+        ply=20,
+        mover_rating=1400 + game_id % 7,
+        move_san="Nf3",
+        pinned_elo=1400.0,
+        played_3=played[2],
+        best_3=best[2],
+        missed=missed,
+        played_mate_ply=played_mate_ply,
+        best_mate_ply=best_mate_ply,
+        best_prob=best_prob,
+        pre_spread=6.5,
+        material=material,
+        played_material=tuple(played),
+        best_material=tuple(best),
+    )
+
+
+def test_build_candidate_modes_and_arrays() -> None:
+    board = chess.Board(MISS_FEN)
+    expected_played = line_facts(board, MISS_PLAYED, MISS_REFUTATION_PV).material_array()
+    expected_best = best_line_facts(board, MISS_BEST_PV).material_array()
+
+    default = build_candidate(raw_miss(), board, MISS_PLAYED, fake_full_policy, Tally())
+    disagreement = build_candidate(
+        raw_miss(), board, MISS_PLAYED, fake_full_policy, Tally(), mode="disagreement"
+    )
+
+    assert default is not None and disagreement is not None
+    assert (default.played_3, default.best_3, default.material) == (0, 9, "misses")
+    assert disagreement.played_material == tuple(expected_played)
+    assert disagreement.best_material == tuple(expected_best)
+    assert (disagreement.played_3, disagreement.best_3) == (0, 9)
+
+
+def tracer_pool() -> list[MissCandidate]:
+    """At least one candidate per loss and miss stratum plus depth-3 pure misses."""
+    pool: list[MissCandidate] = []
+    game_id = 20_000
+    loss_shapes = [(-3, 0, 0, 0, 0), (0, 0, -5, -5, -5), (0, -3, 0, 0, 0), (0, -3, -3, -3, -3)]
+    miss_shapes = [(3, 0, 0, 0, 0), (0, 3, 0, 0, 0), (0, 3, 3, 3, 3)]
+    for shape in loss_shapes:
+        for _ in range(3):
+            game_id += 1
+            pool.append(
+                disagreement_candidate(game_id, odd9(*shape), ZEROS, material="loses", missed=None)
+            )
+    for shape in miss_shapes:
+        for _ in range(3):
+            game_id += 1
+            pool.append(disagreement_candidate(game_id, ZEROS, odd9(*shape)))
+    for _ in range(3):
+        game_id += 1
+        pool.append(
+            disagreement_candidate(
+                game_id, ZEROS, ZEROS, best_mate_ply=4, missed=None, material="neither"
+            )
+        )
+    for i in range(12):
+        game_id += 1
+        pool.append(fake_candidate(game_id, missed=1 + i % 3, best_prob=TIER_PROBS[i % 3]))
+    return pool
+
+
+def sets_one_to_seven_copy(target: Path) -> bytes:
+    """Copy the real label file's header and rows of sets 1-7 byte for byte (set 8 may follow)."""
+    kept = [
+        line
+        for index, line in enumerate(REAL_LABELS.read_bytes().splitlines(keepends=True))
+        if index == 0 or line.split(b"\t")[1] in {b"1", b"2", b"3", b"4", b"5", b"6", b"7"}
+    ]
+    target.write_bytes(b"".join(kept))
+    return target.read_bytes()
+
+
+def test_set_eight_tracer_appends_blind_rows_byte_identically(tmp_path: Path) -> None:
+    """Pool -> stratify -> key -> append into a copy of sets 1-7 of the real label file."""
+    target = tmp_path / "labels.tsv"
+    before = sets_one_to_seven_copy(target)
+    assert before.endswith(b"\n")
+
+    draw = stratify_disagreement(tracer_pool(), plain_target=4, seed=7)
+    numbers = append_blind_rows(draw.rows, target, set_id=DISAGREEMENT_SET_ID)
+    write_key(draw.rows, tmp_path / "key.json", numbers=numbers, set_id=DISAGREEMENT_SET_ID)
+
+    after = target.read_bytes()
+    assert after.startswith(before)  # every old byte is unchanged
+    assert numbers == list(range(OLD_MAX_N + 1, OLD_MAX_N + 1 + len(draw.rows)))
+    new_lines = after[len(before) :].decode().splitlines()
+    assert len(new_lines) == len(draw.rows) > 0
+    for n, line, row in zip(numbers, new_lines, draw.rows, strict=True):
+        fields = line.split("\t")
+        assert len(fields) == 14  # no comment cell
+        assert fields[:5] == [
+            str(n),
+            "8",
+            str(row.candidate.mover_rating),
+            row.candidate.move_san,
+            f"https://flawchess.com/analysis?game_id={row.candidate.game_id}&ply=20",
+        ]
+        assert line.endswith("\t" * 9)  # eight hidden columns and the label, all empty
+        assert all(cell == "" for cell in fields[5:])
+    parsed = [r for r in parse_labels(target) if r.set_id == "8"]
+    assert [int(r.n) for r in parsed] == numbers
+    assert {r.label for r in parsed} == {""}
+
+    key = json.loads((tmp_path / "key.json").read_text())
+    assert sorted(key, key=int) == [str(n) for n in numbers]
+    for n, row in zip(numbers, draw.rows, strict=True):
+        entry = key[str(n)]
+        assert entry["set"] == "8"
+        assert (entry["game_id"], entry["stratum"]) == (row.candidate.game_id, row.stratum)
+        assert entry["group"] == row.group
+        assert entry["played_material"] == list(row.candidate.played_material)
+    # The tracer draws every group and every loss stratum it had supply for.
+    assert {row.group for row in draw.rows} == {"loss", "miss", "plain"}
+    assert {row.stratum for row in draw.rows if row.group == "loss"} == set(LOSS_STRATUM_QUOTAS)
+
+
+# ---------------------------------------------------------------------------
+# Set 8: borrowing, summary, append guards (Task 2)
+# ---------------------------------------------------------------------------
+
+# Played / best odd-depth arrays that land in each disagreement stratum.
+STRATUM_SHAPES: dict[str, tuple[tuple[int, ...], tuple[int, ...], int | None]] = {
+    "loss_spike": ((0, -3, 0, 0, 0), (0, 0, 0, 0, 0), None),
+    "loss_early": ((-3, 0, 0, 0, 0), (0, 0, 0, 0, 0), None),
+    "loss_late": ((0, 0, -5, -5, -5), (0, 0, 0, 0, 0), None),
+    "loss_other": ((0, -3, -3, -3, -3), (0, 0, 0, 0, 0), None),
+    "miss_spike": ((0, 0, 0, 0, 0), (0, 3, 0, 0, 0), None),
+    "miss_early": ((0, 0, 0, 0, 0), (3, 0, 0, 0, 0), None),
+    "miss_late": ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), 4),
+    "miss_other": ((0, 0, 0, 0, 0), (0, 3, 3, 3, 3), None),
+}
+ALL_QUOTAS: dict[str, int] = {**LOSS_STRATUM_QUOTAS, **MISS_STRATUM_QUOTAS}
+AMPLE_SUPPLY = 12
+LOSS_GROUP_ROWS = sum(LOSS_STRATUM_QUOTAS.values())
+MISS_GROUP_ROWS = sum(MISS_STRATUM_QUOTAS.values())
+
+
+def _material_of(stratum: str, best_mate_ply: int | None) -> MaterialType:
+    """The depth-3 material type of a stratum's shape (a best mate at ply 4 is no depth-3 miss)."""
+    if stratum.startswith("loss"):
+        return "loses"
+    return "neither" if best_mate_ply is not None else "misses"
+
+
+def stratum_pool(supply: dict[str, int], first_game_id: int = 30_000) -> list[MissCandidate]:
+    """`supply[stratum]` candidates for each disagreement stratum."""
+    pool: list[MissCandidate] = []
+    game_id = first_game_id
+    for stratum, count in supply.items():
+        played, best, mate = STRATUM_SHAPES[stratum]
+        for _ in range(count):
+            game_id += 1
+            pool.append(
+                disagreement_candidate(
+                    game_id,
+                    odd9(*played),
+                    odd9(*best),
+                    best_mate_ply=mate,
+                    material=_material_of(stratum, mate),
+                    missed=None if mate is not None or stratum.startswith("loss") else 3,
+                )
+            )
+    return pool
+
+
+def ample_pool(**overrides: int) -> list[MissCandidate]:
+    supply = {**dict.fromkeys(ALL_QUOTAS, AMPLE_SUPPLY), **overrides}
+    return stratum_pool(supply) + cell_pool()
+
+
+def disagreement_shortfall(draw: DisagreementDraw) -> dict[str, int]:
+    """The shortfall of the loss / miss strata only (plain cells depend on the fake pool's tiers)."""
+    return {name: count for name, count in draw.shortfall.items() if name in ALL_QUOTAS}
+
+
+def test_stratify_disagreement_fills_every_quota() -> None:
+    draw = stratify_disagreement(ample_pool(), plain_target=PLAIN_MISS_TARGET, seed=1)
+
+    assert len(draw.rows) == LOSS_GROUP_ROWS + MISS_GROUP_ROWS + PLAIN_MISS_TARGET == 60
+    assert (LOSS_GROUP_ROWS, MISS_GROUP_ROWS) == (23, 22)
+    by_stratum = Counter(row.stratum for row in draw.rows if row.group != "plain")
+    assert dict(by_stratum) == ALL_QUOTAS
+    assert Counter(row.group for row in draw.rows) == {"loss": 23, "miss": 22, "plain": 15}
+    plain = [row for row in draw.rows if row.group == "plain"]
+    assert len({row.stratum for row in plain}) > 3  # spread over the set-7 cells
+    assert disagreement_shortfall(draw) == {}
+    assert draw.unfilled == {"loss": 0, "miss": 0, "plain": 0}
+    assert draw.supply["loss_late"] == AMPLE_SUPPLY
+
+
+def test_a_short_stratum_borrows_from_its_own_group() -> None:
+    draw = stratify_disagreement(ample_pool(loss_late=2), plain_target=PLAIN_MISS_TARGET, seed=1)
+
+    loss = [row for row in draw.rows if row.group == "loss"]
+    assert len(loss) == LOSS_GROUP_ROWS  # the group is still full
+    by_stratum = Counter(row.stratum for row in loss)
+    assert by_stratum["loss_late"] == 2
+    # Borrowed rows keep their own stratum: loss_other lends first (12 - 5 = 7 spare, 4 needed).
+    assert by_stratum["loss_other"] == LOSS_STRATUM_QUOTAS["loss_other"] + 4
+    assert disagreement_shortfall(draw) == {"loss_late": 4}
+    assert draw.unfilled == {"loss": 0, "miss": 0, "plain": 0}
+    assert len([row for row in draw.rows if row.group == "miss"]) == MISS_GROUP_ROWS
+
+
+def test_borrowing_spills_to_the_next_stratum_in_quota_order() -> None:
+    draw = stratify_disagreement(
+        ample_pool(loss_late=0, loss_other=6), plain_target=PLAIN_MISS_TARGET, seed=1
+    )
+
+    by_stratum = Counter(row.stratum for row in draw.rows if row.group == "loss")
+    # loss_other has 1 spare, so 5 more come from loss_spike (6 spare), the first in quota order.
+    assert by_stratum["loss_other"] == 6
+    assert by_stratum["loss_spike"] == LOSS_STRATUM_QUOTAS["loss_spike"] + 5
+    assert sum(by_stratum.values()) == LOSS_GROUP_ROWS
+    assert disagreement_shortfall(draw) == {"loss_late": 6}
+
+
+def test_a_group_without_supply_stays_short_and_is_not_padded() -> None:
+    supply = {**dict.fromkeys(ALL_QUOTAS, AMPLE_SUPPLY), **dict.fromkeys(LOSS_STRATUM_QUOTAS, 2)}
+    draw = stratify_disagreement(
+        stratum_pool(supply) + cell_pool(), plain_target=PLAIN_MISS_TARGET, seed=1
+    )
+
+    loss = [row for row in draw.rows if row.group == "loss"]
+    assert len(loss) == 8  # 4 strata x 2
+    assert draw.unfilled["loss"] == LOSS_GROUP_ROWS - 8
+    assert draw.unfilled["miss"] == 0
+    assert len([row for row in draw.rows if row.group == "miss"]) == MISS_GROUP_ROWS
+    assert len(draw.rows) == 8 + MISS_GROUP_ROWS + PLAIN_MISS_TARGET
+
+
+def test_no_candidate_is_drawn_twice() -> None:
+    # Pure misses that are also disagreement rows must not return in the plain draw.
+    pool = ample_pool(miss_early=60, miss_spike=60, miss_other=60, miss_late=60)
+
+    draw = stratify_disagreement(pool, plain_target=PLAIN_MISS_TARGET, seed=3)
+
+    ids = [(row.candidate.game_id, row.candidate.ply) for row in draw.rows]
+    assert len(ids) == len(set(ids))
+
+
+def test_disagreement_draw_is_deterministic() -> None:
+    pool = ample_pool()
+
+    first = stratify_disagreement(pool, plain_target=PLAIN_MISS_TARGET, seed=5)
+    reversed_pool = stratify_disagreement(
+        list(reversed(pool)), plain_target=PLAIN_MISS_TARGET, seed=5
+    )
+    other = stratify_disagreement(pool, plain_target=PLAIN_MISS_TARGET, seed=6)
+
+    order = [row.candidate.game_id for row in first.rows]
+    assert order == [row.candidate.game_id for row in reversed_pool.rows]
+    assert order != [row.candidate.game_id for row in other.rows]
+
+
+def test_append_twice_is_refused_and_leaves_the_file_unchanged(tmp_path: Path) -> None:
+    target = tmp_path / "labels.tsv"
+    sets_one_to_seven_copy(target)
+    draw = stratify_disagreement(tracer_pool(), plain_target=3, seed=1)
+
+    append_blind_rows(draw.rows, target, set_id=DISAGREEMENT_SET_ID)
+    after_first = target.read_bytes()
+    with pytest.raises(AppendRefused):
+        append_blind_rows(draw.rows, target, set_id=DISAGREEMENT_SET_ID)
+
+    assert target.read_bytes() == after_first
+
+
+def test_append_adds_one_newline_when_the_file_has_none(tmp_path: Path) -> None:
+    target = tmp_path / "labels.tsv"
+    header = "n\tset\telo\tmove\tlink\tengine_drop\tlabel\tcomment"
+    old = header + "\n1\t1\t1500\te4\thttps://flawchess.com/analysis?game_id=1&ply=2\t\t1\tnote"
+    target.write_text(old)  # no trailing newline
+    draw = stratify_disagreement(tracer_pool(), plain_target=0, seed=1)
+
+    numbers = append_blind_rows(draw.rows[:2], target, set_id=DISAGREEMENT_SET_ID)
+
+    text = target.read_text()
+    assert text.startswith(old + "\n")
+    assert numbers == [2, 3]
+    new_lines = text[len(old) + 1 :].splitlines()
+    assert [len(line.split("\t")) for line in new_lines] == [7, 7]  # up to and including label
+    assert text.endswith("\n")
+
+
+def test_append_refuses_a_header_without_a_label_column(tmp_path: Path) -> None:
+    target = tmp_path / "labels.tsv"
+    text = "n\tset\telo\tmove\tlink\tcomment\n1\t1\t1500\te4\tx\t\n"
+    target.write_text(text)
+
+    with pytest.raises(AppendRefused):
+        append_blind_rows([], target, set_id=DISAGREEMENT_SET_ID)
+
+    assert target.read_text() == text
+
+
+def _forbid(name: str) -> object:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"{name} must not run before the append guards")
+
+    return fail
+
+
+def test_dev_rows_never_reach_the_real_label_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    before = REAL_LABELS.read_bytes()
+    monkeypatch.setattr(miss_labels.maia_engine, "start_maia", _forbid("start_maia"))
+    monkeypatch.setattr(miss_labels, "make_readonly_engine", _forbid("make_readonly_engine"))
+
+    code = miss_labels.main(
+        ["--db", "dev", "--mode", "disagreement", "--append-to", str(REAL_LABELS)]
+    )
+
+    assert code == EXIT_APPEND_REFUSED
+    assert REAL_LABELS.read_bytes() == before
+
+
+def test_missing_target_and_existing_set_are_refused_before_maia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(miss_labels.maia_engine, "start_maia", _forbid("start_maia"))
+    monkeypatch.setattr(miss_labels, "make_readonly_engine", _forbid("make_readonly_engine"))
+    argv = ["--db", "dev", "--mode", "disagreement", "--append-to"]
+
+    assert miss_labels.main([*argv, str(tmp_path / "absent.tsv")]) == EXIT_APPEND_REFUSED
+
+    target = tmp_path / "labels.tsv"
+    sets_one_to_seven_copy(target)
+    draw = stratify_disagreement(tracer_pool(), plain_target=3, seed=1)
+    append_blind_rows(draw.rows, target, set_id=DISAGREEMENT_SET_ID)
+    after = target.read_bytes()
+    assert miss_labels.main([*argv, str(target)]) == EXIT_APPEND_REFUSED
+    assert target.read_bytes() == after
+
+
+def test_disagreement_summary_line_has_counts_and_no_link() -> None:
+    tally = Tally(read=500, stable=400)
+    tally.by_type["misses"] = 90
+    draw = stratify_disagreement(ample_pool(loss_late=2), plain_target=PLAIN_MISS_TARGET, seed=1)
+
+    line = disagreement_summary_line(tally, draw)
+
+    assert "candidates read 500" in line
+    assert "supply per stratum:" in line and "loss_late 2" in line
+    assert "rows written 60" in line
+    assert "loss_late 4" in line.split("shortfall:")[1]
+    assert "unfilled loss 0, miss 0, plain 0" in line
+    assert "http" not in line and "game_id" not in line
+
+
+def test_mode_defaults_keep_set_eight_off_set_seven_files() -> None:
+    args = miss_labels._parse_args(["--db", "dev", "--out", "x.tsv"])
+    assert (args.seed, args.pure_misses, args.key_out) == (254, 40, miss_labels.DEFAULT_KEY_OUT)
+
+    args = miss_labels._parse_args(
+        ["--db", "dev", "--mode", "disagreement", "--append-to", "labels.tsv"]
+    )
+    assert args.seed == DISAGREEMENT_SAMPLE_SEED == 261116
+    assert args.pure_misses == PLAIN_MISS_TARGET
+    assert args.key_out == Path("temp/blunder-check/set8-key.json") != miss_labels.DEFAULT_KEY_OUT
