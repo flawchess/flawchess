@@ -746,18 +746,18 @@ def _disagreement_pools(
 
 
 def _borrow_from_group(
-    stratum: str,
+    stratum: DisagreementStratum,
     missing: int,
     group: DisagreementGroup,
-    quotas: Mapping[str, int],
-    spare: dict[str, list[MissCandidate]],
+    quotas: Sequence[tuple[DisagreementStratum, int]],
+    spare: dict[DisagreementStratum, list[MissCandidate]],
 ) -> list[Selected]:
     """Up to `missing` spare rows from the other strata of the same group.
 
     The group's `*_other` stratum lends first, then the rest in quota-declaration order; every
     borrowed row keeps the stratum it was drawn from (as set 7's `_borrow` does).
     """
-    lenders = sorted((name for name in quotas if name != stratum), key=_is_not_other)
+    lenders = sorted((name for name, _ in quotas if name != stratum), key=_is_not_other)
     borrowed: list[Selected] = []
     for lender in lenders:
         while len(borrowed) < missing and spare[lender]:
@@ -772,20 +772,20 @@ def _is_not_other(stratum: str) -> bool:
 
 def _draw_group(
     group: DisagreementGroup,
-    quotas: Mapping[str, int],
+    quotas: Sequence[tuple[DisagreementStratum, int]],
     pools: Mapping[DisagreementStratum, list[MissCandidate]],
     rng: random.Random,
-) -> tuple[list[Selected], dict[str, int], int]:
+) -> tuple[list[Selected], dict[DisagreementStratum, int], int]:
     """(rows, shortfall per stratum, rows unfilled) for one group.
 
     A stratum that cannot fill its quota borrows from the group's other strata; rows no stratum
     of the group can give are `unfilled` (never padded from another group).
     """
     rows: list[Selected] = []
-    spare: dict[str, list[MissCandidate]] = {}
-    shortfall: dict[str, int] = {}
-    for stratum, quota in quotas.items():
-        pool = pools[cast(DisagreementStratum, stratum)]
+    spare: dict[DisagreementStratum, list[MissCandidate]] = {}
+    shortfall: dict[DisagreementStratum, int] = {}
+    for stratum, quota in quotas:
+        pool = pools[stratum]
         rng.shuffle(pool)
         rows.extend(Selected(candidate, stratum, group) for candidate in pool[:quota])
         spare[stratum] = pool[quota:]
@@ -813,9 +813,11 @@ def stratify_disagreement(
     # Sorted first so the draw depends on the pool, never on the order it arrived in.
     ordered = sorted(candidates, key=lambda c: (c.game_id, c.ply))
     pools = _disagreement_pools(ordered)
-    supply = {stratum: len(pool) for stratum, pool in pools.items()}
-    loss_rows, loss_short, loss_unfilled = _draw_group("loss", LOSS_STRATUM_QUOTAS, pools, rng)
-    miss_rows, miss_short, miss_unfilled = _draw_group("miss", MISS_STRATUM_QUOTAS, pools, rng)
+    supply: dict[str, int] = {stratum: len(pool) for stratum, pool in pools.items()}
+    loss_quotas = list(LOSS_STRATUM_QUOTAS.items())
+    miss_quotas = list(MISS_STRATUM_QUOTAS.items())
+    loss_rows, loss_short, loss_unfilled = _draw_group("loss", loss_quotas, pools, rng)
+    miss_rows, miss_short, miss_unfilled = _draw_group("miss", miss_quotas, pools, rng)
     rows = loss_rows + miss_rows
     taken = {(row.candidate.game_id, row.candidate.ply) for row in rows}
     plain_pool = [c for c in ordered if c.material == PURE_TYPE and (c.game_id, c.ply) not in taken]
