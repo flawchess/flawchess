@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 17/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 18/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -515,7 +515,7 @@ Plans:
 - [x] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
 
 **Wave 15** *(human-gated, one-way)*
-- [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
+- [x] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
 
 ### Phase 255: Feature Discovery Dot Route (SEED-261115-d0t)
 
