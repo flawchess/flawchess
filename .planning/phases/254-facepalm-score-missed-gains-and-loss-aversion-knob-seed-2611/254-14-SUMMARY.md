@@ -108,6 +108,8 @@ actuals:
 
 - **Hook check (S4):** at 06:28Z and 06:58Z no game had been imported or analysed since 04:55Z (the last one got its Maia stamp at 04:55:36Z, before the deploy), and no analysed game is waiting for the hook. The write path is covered by the dev run and the test suite on the dropped schema. Re-check once prod has traffic: games with `maia_flaws_completed_at > '2026-11-16 05:57+00'` above 0.
 
+- **Update 07:16Z:** the first game since the deploy (3294647) was imported and processed at 07:13Z. The hook ran on the dropped schema: all three stamps set, `maia_played_prob` written on its one flaw, no Sentry issue. That flaw is a mistake, not a blunder, so the blunder-only facts (reply spread, material arrays, best prob) are not expected on it and have not yet been seen written after the deploy.
+
 ## Task Commits
 
 1. **Drop squash (plans 13, 17, changelog)** - `cb79fc0a6` (refactor)
