@@ -52,7 +52,7 @@ covered_files:
   - "reports/blunder-check/facepalm-fit-2026-11-15.md"
   - "reports/blunder-check/facepalm-labels.tsv"
   - "scripts/blunder_check/fit_facepalm.py"
-covered_digest: "v4:sha256:d5d9a594c69fb4182642330fed4a3e1ec5c8bff5f3348d1a20ccda3158be432c"
+covered_digest: "v4:sha256:93a59c66e9e8f342ac52ee8b6ef8b69d7df74a216863ac817a510de978846d04"
 behavior_unverified: 1
 overrides_applied: 3
 overrides:
