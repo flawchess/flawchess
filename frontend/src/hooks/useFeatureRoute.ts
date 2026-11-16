@@ -27,7 +27,10 @@ export function useRouteCtx(): RouteCtx {
   const { data: profile } = useUserProfile();
   // The profile's today-inclusive count drives the D-10 clock (D-11): no extra request.
   const activeDays = profile?.active_days ?? 0;
-  return { pathname, navUnlocked, activeDays };
+  // hasGames, not navUnlocked: the Import step completes as soon as games exist, even
+  // while the import still runs and the nav is locked (D-14 overruled 2026-11-16).
+  const hasGames = hasImportedGames(profile);
+  return { pathname, navUnlocked, activeDays, hasGames };
 }
 
 /** The current dot placement, or null. A profile without feature_route gives no dot. */

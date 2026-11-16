@@ -36,8 +36,10 @@ from app.repositories.game_flaws_repository import (
     MAIA_FLAW_COLUMNS,
 )
 from app.services import maia_engine, maia_flaw_scoring
+from app.services.best_move_candidates import pinned_elo_for_mover
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
 from app.services.line_material import LineFacts, best_line_facts, line_facts
+from app.services.maia_flaw_stats import pre_blunder_spread, reply_spread
 from scripts import backfill_maia_flaws as backfill
 from tests.facepalm_seed import facepalm_fact_columns
 from tests.services.maia_fakes import fake_full_policy
@@ -528,10 +530,12 @@ async def test_full_mode_default_writes_base_and_facepalm_values_and_all_stamps(
     base = await _flaw_values(session_factory, game_id)
     assert all(v["maia_played_prob"] is not None for v in base.values())
     values = await _facepalm_values(session_factory, game_id)
-    # Plies 2 and 8 are the white user's blunders; ply 5 is the opponent's.
+    # Plies 2 and 8 are the white user's blunders; ply 5 is the opponent's (SEED-261114-iuv
+    # Part A: it gets the spread, never the four line facts).
     assert values[2]["maia_reply_spread"] is not None
     assert values[8]["maia_reply_spread"] is not None
-    assert all(v is None for v in values[5].values())
+    assert values[5]["maia_reply_spread"] is not None
+    assert all(v is None for c, v in values[5].items() if c != "maia_reply_spread")
 
 
 def test_cli_mode_choices() -> None:
@@ -1573,3 +1577,303 @@ async def test_spread_mode_writes_the_arrays_but_leaves_the_pre_keys_untouched(
     assert maia_after["maia_pre_spread"] == _SEEDED_PRE["maia_pre_spread"]
     assert maia_after["maia_played_prob"] == played_prob_before
     assert await _pre_stamp(session_factory, game_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Opponent mode (SEED-261114-iuv Part A): row-selected, three columns, no stamp
+# ---------------------------------------------------------------------------
+
+_OPPONENT_PLY = 5
+_OPPONENT_BEST_MOVE = "g8f6"
+_OPPONENT_COLUMNS: tuple[str, ...] = maia_flaw_scoring.OPPONENT_ROW_COLUMNS
+_FOUR_STAMPS: tuple[str, ...] = (
+    "maia_flaws_completed_at",
+    "facepalm_spread_completed_at",
+    "facepalm_line_completed_at",
+    "facepalm_pre_completed_at",
+)
+
+
+async def _columns_except_opponent(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    """Every game_flaws column but the three opponent-mode keys, per ply."""
+    columns = [c for c in GameFlaw.__table__.columns if c.name not in _OPPONENT_COLUMNS]
+    async with maker() as session:
+        rows = (
+            await session.execute(select(*columns).where(GameFlaw.game_id == game_id))
+        ).mappings()
+        return {row["ply"]: dict(row) for row in rows}
+
+
+async def _all_stamps(maker: async_sessionmaker[AsyncSession], game_id: int) -> tuple[Any, ...]:
+    async with maker() as session:
+        row = (
+            await session.execute(
+                select(*[getattr(Game, c) for c in _FOUR_STAMPS]).where(Game.id == game_id)
+            )
+        ).one()
+    return tuple(row)
+
+
+async def _opponent_values(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    async with maker() as session:
+        flaws = (
+            (await session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+            .scalars()
+            .all()
+        )
+    return {f.ply: {c: getattr(f, c) for c in _OPPONENT_COLUMNS} for f in flaws}
+
+
+async def _opponent_game(
+    maker: async_sessionmaker[AsyncSession], make_game: MakeGame, **kwargs: Any
+) -> int:
+    """A base-stamped game (white user, flaws 2, 5, 8) with stored played probs, the best move g8f6
+    at ply 5 and already written facepalm values on the user's ply-2 blunder."""
+    game_id = await make_game(
+        base_stamped=True, seed_base=True, pv={_OPPONENT_PLY: _OPPONENT_BEST_MOVE}, **kwargs
+    )
+    await _set_flaw(maker, game_id, 2, **_SEEDED_FACEPALM)
+    return game_id
+
+
+def _pinned(raw: int) -> float:
+    return pinned_elo_for_mover(
+        raw_rating=raw, platform="lichess", time_control_bucket="blitz", is_correspondence=False
+    )
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_writes_only_the_three_columns_and_no_stamp(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    game_id = await _opponent_game(session_factory, make_game)
+    columns_before = await _columns_except_opponent(session_factory, game_id)
+    stamps_before = await _all_stamps(session_factory, game_id)
+    calls: list[tuple[str, float]] = []
+
+    def _spy(fen: str, elo: float) -> dict[str, float]:
+        calls.append((fen, elo))
+        return fake_full_policy(fen, elo)
+
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _spy)
+
+    report = await _run(session_factory, tmp_path, mode="opponent")
+
+    assert report.mode == "opponent"
+    assert report.games_selected == 1
+    # Exactly one pre-blunder plus one post-blunder inference, at the opponent's (black's) Elo.
+    pre, played = _boards_by_ply(_PGN)[_OPPONENT_PLY]
+    post = pre.copy()
+    post.push_uci(played)
+    black = _pinned(1600)
+    assert calls == [(pre.fen(), black), (post.fen(), black)]
+    values = await _opponent_values(session_factory, game_id)
+    pre_policy = fake_full_policy(pre.fen(), 0.0)
+    assert values[_OPPONENT_PLY]["maia_reply_spread"] == pytest.approx(
+        reply_spread(fake_full_policy(post.fen(), 0.0)), rel=1e-6
+    )
+    assert values[_OPPONENT_PLY]["maia_best_prob"] == pytest.approx(
+        pre_policy[_OPPONENT_BEST_MOVE], rel=1e-6
+    )
+    assert values[_OPPONENT_PLY]["maia_pre_spread"] == pytest.approx(
+        pre_blunder_spread(pre_policy), rel=1e-6
+    )
+    # Every other column of every row (maia_played_prob 0.11 included) and all four stamps stay.
+    assert await _columns_except_opponent(session_factory, game_id) == columns_before
+    played_prob = (await _flaw_values(session_factory, game_id))[_OPPONENT_PLY]["maia_played_prob"]
+    assert played_prob == pytest.approx(_SEEDED_BASE["maia_played_prob"], rel=1e-6)
+    assert await _all_stamps(session_factory, game_id) == stamps_before
+    saved = json.loads((tmp_path / f"dev-opponent-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["opponent_spreads_scored"] == 1
+    assert saved["opponent_pre_scored"] == 1
+    assert saved["opponent_spreads_null"] == 0
+    assert saved["opponent_pre_null"] == 0
+    assert saved["spreads_scored"] == 0
+    assert saved["pre_scored"] == 0
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_rerun_selects_nothing(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    game_id = await _opponent_game(session_factory, make_game)
+    first = await _run(session_factory, tmp_path, mode="opponent")
+    before = await _opponent_values(session_factory, game_id)
+
+    second = await _run(session_factory, tmp_path, mode="opponent")
+
+    assert first.games_selected == 1
+    assert second.games_selected == 0
+    assert await _opponent_values(session_factory, game_id) == before
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_dry_run_writes_nothing(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    game_id = await _opponent_game(session_factory, make_game)
+    before = await _opponent_values(session_factory, game_id)
+
+    report = await _run(session_factory, tmp_path, mode="opponent", dry_run=True)
+
+    assert report.games_scored == 1
+    assert report.opponent_spreads_scored == 1
+    assert report.games_stamped == 0
+    assert await _opponent_values(session_factory, game_id) == before
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_residue_is_counted_and_selected_again(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """A row whose board cannot be rebuilt keeps a NULL spread: counted as fen_mismatch, the run
+    returns normally (no re-query loop) and the next run selects the game again."""
+    game_id = await _opponent_game(
+        session_factory, make_game, fen_override={_OPPONENT_PLY: "8/8/8/8/8/8/8/8"}
+    )
+
+    first = await _run(session_factory, tmp_path, mode="opponent")
+    second = await _run(session_factory, tmp_path, mode="opponent")
+
+    assert first.games_selected == 1
+    assert first.reasons.get("fen_mismatch") == 1
+    assert first.opponent_spreads_null == 1
+    assert (await _opponent_values(session_factory, game_id))[_OPPONENT_PLY][
+        "maia_reply_spread"
+    ] is None
+    assert second.games_selected == 1
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_selector_selects_by_row(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    white_user = await _opponent_game(session_factory, make_game)
+    # Black user: plies 2 and 8 are White's moves, i.e. the opponent's blunders.
+    black_user = await make_game(base_stamped=True, seed_base=True, user_color="black")
+    no_played_prob = await make_game(base_stamped=True)
+    spread_set = await _opponent_game(session_factory, make_game)
+    await _set_flaw(session_factory, spread_set, _OPPONENT_PLY, maia_reply_spread=3.5)
+    # Ply 5 is a mistake here; the user's blunders at plies 2 and 8 carry a played prob and a NULL
+    # spread, which proves the parity and severity filters.
+    opponent_mistake = await make_game(base_stamped=True, seed_base=True, severities={5: 1})
+
+    selected = set(await _select(session_factory, "opponent"))
+
+    assert selected == {white_user, black_user}
+    assert not selected & {no_played_prob, spread_set, opponent_mistake}
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_needs_no_base_stamp(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """Selection is by row alone: an unstamped game with the stored values qualifies."""
+    game_id = await make_game(base_stamped=False, seed_base=True)
+    assert game_id in set(await _select(session_factory, "opponent"))
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_shards_are_disjoint_and_exhaustive(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    game_ids = {await make_game(seed_base=True) for _ in range(_SHARD_GAMES)}
+    per_shard = [
+        await _select(session_factory, "opponent", shard=shard, num_shards=_SHARD_COUNT)
+        for shard in range(_SHARD_COUNT)
+    ]
+    flat = [gid for ids in per_shard for gid in ids]
+    assert len(flat) == len(set(flat)), "a game landed in two shards"
+    assert set(flat) == game_ids
+
+
+def test_opponent_pending_clause_compiled_from_is_opponent_expr() -> None:
+    assert backfill._OPPONENT_IS_MOVER_SQL == (
+        "CASE WHEN (ob.ply % 2 = 0) THEN g.user_color = 'black' ELSE g.user_color = 'white' END"
+    )
+    assert backfill._STAMP_CLAUSE_BY_MODE["opponent"] == backfill._OPPONENT_PENDING_CLAUSE
+
+
+def test_opponent_mode_needs_maia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No Maia session: the opponent mode exits EXIT_MAIA_UNAVAILABLE and never opens a DB session."""
+
+    async def _noop_start(**_: Any) -> None:
+        return None
+
+    async def _must_not_run(**_: Any) -> None:
+        raise AssertionError("run_shard must not run without Maia")
+
+    monkeypatch.setattr(maia_engine, "start_maia", _noop_start)
+    monkeypatch.setattr(maia_engine, "_session", None)
+    monkeypatch.setattr(backfill, "run_shard", _must_not_run)
+    monkeypatch.setattr(backfill.settings, "SENTRY_DSN", "")
+    old_int = signal.getsignal(signal.SIGINT)
+    old_term = signal.getsignal(signal.SIGTERM)
+    try:
+        code = backfill._shard_process_entry(
+            db="dev",
+            shard=0,
+            num_shards=1,
+            user_id=None,
+            limit=None,
+            batch_games=backfill.DEFAULT_BATCH_GAMES,
+            dry_run=False,
+            throttle_ms=0,
+            report_dir=str(tmp_path),
+            run_stamp=_RUN_STAMP,
+            mode="opponent",
+        )
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+    assert code == backfill.EXIT_MAIA_UNAVAILABLE
+
+
+def test_cli_accepts_opponent_mode_and_rejects_cutoff_with_it() -> None:
+    assert backfill._parse_args(["--db", "dev", "--mode", "opponent"]).mode == "opponent"
+    assert "opponent" in backfill.BACKFILL_MODE_CHOICES
+    with pytest.raises(SystemExit):
+        backfill._parse_args(
+            ["--db", "dev", "--mode", "opponent", "--cutoff", "2026-11-10T12:00:00+00:00"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_opponent_mode_status_counts(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two games with one opponent blunder each (ply 5); a limit-1 run fills one of them."""
+    for _ in range(2):
+        await _opponent_game(session_factory, make_game)
+    await _run(session_factory, tmp_path, mode="opponent", limit=1)
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "opponent")
+
+    expected = {
+        "opponent_pending_games": 1,
+        "opponent_blunders_total": 2,
+        "opponent_blunders_with_played_prob": 2,
+        "opponent_blunders_with_spread": 1,
+        "opponent_blunders_with_pre_spread": 1,
+        "opponent_blunders_with_best_prob": 1,
+        "opponent_blunders_pending": 1,
+    }
+    assert counts == expected
+    assert list(counts) == list(expected), "the key order is part of the printed contract"
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "opponent")
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line == " ".join(f"{k}={v}" for k, v in expected.items())

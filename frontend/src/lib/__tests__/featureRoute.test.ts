@@ -28,8 +28,9 @@ const EXPECTED_STEP_IDS: FeatureRouteStepId[] = [
 const TEST_DATE = '2026-11-15';
 const TODAY = '2026-11-16';
 
-function ctx(pathname: string, navUnlocked: boolean, activeDays = 1): RouteCtx {
-  return { pathname, navUnlocked, activeDays };
+// hasGames defaults to navUnlocked: an unlocked nav always has games.
+function ctx(pathname: string, navUnlocked: boolean, activeDays = 1, hasGames = navUnlocked): RouteCtx {
+  return { pathname, navUnlocked, activeDays, hasGames };
 }
 
 function withCurrent(
@@ -106,11 +107,12 @@ describe('placement (D-03)', () => {
     expect(placement(s, ctx('/train', true))).toBe('control:train-start');
   });
 
-  it('import: nav elsewhere, Import subtab inside Library, nothing on the Import page itself', () => {
+  it('import without games: nav elsewhere, Import subtab inside Library, nothing on the Import page itself', () => {
     const s = stateWith([]);
-    expect(placement(s, ctx('/bots', false))).toBe('nav:/library');
-    expect(placement(s, ctx('/library/games', false))).toBe('subtab:library-import');
-    expect(placement(s, ctx('/library/import', false))).toBeNull();
+    expect(placement(s, ctx('/bots', false, 1, false))).toBe('nav:/library');
+    expect(placement(s, ctx('/train', false, 1, false))).toBe('nav:/library');
+    expect(placement(s, ctx('/library/games', false, 1, false))).toBe('subtab:library-import');
+    expect(placement(s, ctx('/library/import', false, 1, false))).toBeNull();
   });
 
   it('openings-played-as: nav elsewhere, control inside Openings', () => {
@@ -129,6 +131,27 @@ describe('placement (D-03)', () => {
     const s = stateWith(EXPECTED_STEP_IDS.filter((id) => id !== 'library-stats'));
     expect(placement(s, ctx('/library/games', true))).toBe('subtab:library-stats');
     expect(placement(s, ctx('/bots', true))).toBe('nav:/library');
+  });
+});
+
+describe('import completes when games exist (D-14 overruled 2026-11-16)', () => {
+  it('Train is the candidate only after import is done or skipped', () => {
+    const c = ctx('/train', false, 1, false);
+    expect(resolveRouteDot(stateWith([]), c)?.step).toBe('import');
+    expect(resolveRouteDot(stateWith(['import']), c)?.step).toBe('train');
+    expect(resolveRouteDot(stateWith([], ['import']), c)?.step).toBe('train');
+  });
+
+  it('games on the Import page post [done import, current train] and move the dot to Train', () => {
+    const c = ctx('/library/import', false, 1, true);
+    const writes = planRouteWrites(stateWith([]), c);
+    expect(writes).toEqual([
+      { action: 'done', step: 'import' },
+      { action: 'current', step: 'train' },
+    ]);
+    let next = stateWith([]);
+    for (const w of writes) next = applyRouteWrite(next, w, { today: TODAY, activeDays: 1 });
+    expect(placement(next, c)).toBe('nav:/train');
   });
 });
 
@@ -163,10 +186,28 @@ function doneWrites(state: FeatureRouteState | null, c: RouteCtx, route?: readon
 }
 
 describe('done recording (D-15, A-2, A-4)', () => {
-  it('records import when its page opens', () => {
-    expect(doneWrites(stateWith([]), ctx('/library/import', false))).toEqual([
+  it('records nothing for import on its page without games (D-14 overruled 2026-11-16)', () => {
+    expect(doneWrites(stateWith([]), ctx('/library/import', false))).toEqual([]);
+  });
+
+  it('records import from the games alone, on any page and while the nav is still locked (D-14 overruled 2026-11-16, D-15)', () => {
+    for (const path of ['/library/import', '/library/games', '/train']) {
+      expect(doneWrites(stateWith([]), ctx(path, false, 1, true))).toEqual([{ action: 'done', step: 'import' }]);
+    }
+  });
+
+  it('records import then bots on /bots once games exist, in route order', () => {
+    expect(doneWrites(stateWith([]), ctx('/bots', false, 1, true))).toEqual([
+      { action: 'done', step: 'import' },
+      { action: 'done', step: 'bots' },
+    ]);
+  });
+
+  it('a skipped import with games becomes done (A-4), a done one records nothing', () => {
+    expect(doneWrites(stateWith([], ['import']), ctx('/library/games', true))).toEqual([
       { action: 'done', step: 'import' },
     ]);
+    expect(doneWrites(stateWith(['import']), ctx('/library/games', true))).toEqual([]);
   });
 
   it('records openings then openings-stats on the stats page, in route order', () => {
@@ -245,11 +286,23 @@ describe('the 3-active-day clock (D-10)', () => {
     expect(planRouteWrites(base, ctx('/library/games', true, 4))).toEqual([]);
   });
 
-  it('stamps the first unresolved step: [done import, current train] for a fresh signup on Import', () => {
+  it('stamps the first unresolved step: [current import] for a zero-game signup on Import', () => {
     expect(planRouteWrites(stateWith([]), ctx('/library/import', false, 1))).toEqual([
-      { action: 'done', step: 'import' },
+      { action: 'current', step: 'import' },
+    ]);
+  });
+
+  it('import without games: the D-10 clock keeps the dot through day 3 and skips it on day 4', () => {
+    const state = withCurrent(stateWith([]), 'import', 1);
+    const day3 = ctx('/library/games', false, 3, false);
+    expect(planRouteWrites(state, day3)).toEqual([]);
+    expect(placement(state, day3)).toBe('subtab:library-import');
+    const day4 = ctx('/library/games', false, 4, false);
+    expect(planRouteWrites(state, day4)).toEqual([
+      { action: 'skip', step: 'import' },
       { action: 'current', step: 'train' },
     ]);
+    expect(placement(state, day4)).toBeNull();
   });
 
   it('visiting a later step stamps the first unresolved one: [done bots, current train]', () => {

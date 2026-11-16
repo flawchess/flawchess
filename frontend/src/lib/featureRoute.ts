@@ -27,8 +27,13 @@ export interface RouteStepDef {
   subtab?: { slot: RouteSubtabSlot; isOn: (pathname: string) => boolean };
   /** The control the dot sits on for "used" steps, once the section and subtab are open. */
   control?: RouteControlSlot;
-  /** `visit`: done when the page opens (D-13). `used`: done when the control is used (D-13, D-21). */
-  completion: 'visit' | 'used';
+  /**
+   * `visit`: done when the page opens (D-13). `used`: done when the control is used (D-13, D-21).
+   * `games`: done once the profile has at least one imported game, on any page; used only by
+   * the Import step (D-14 as overruled by the owner on 2026-11-16; a user with nothing to
+   * import is released by the D-10 skip).
+   */
+  completion: 'visit' | 'used' | 'games';
   visitMatch?: (pathname: string) => boolean;
   /** True when the step's target is locked until games are imported (D-23). */
   requiresGames: boolean;
@@ -37,6 +42,11 @@ export interface RouteStepDef {
 export interface RouteCtx {
   pathname: string;
   navUnlocked: boolean;
+  /**
+   * The profile has imported games (`hasImportedGames`). Deliberately not `navUnlocked`:
+   * Train needs no games, so the dot may move to Train while an import is still running.
+   */
+  hasGames: boolean;
   /** Today-inclusive active-day count (profile.active_days), the D-10 clock (D-11). */
   activeDays: number;
 }
@@ -74,8 +84,7 @@ export const FEATURE_ROUTE: readonly RouteStepDef[] = [
     id: 'import',
     nav: '/library',
     subtab: { slot: 'library-import', isOn: (p) => p.startsWith('/library/import') },
-    completion: 'visit',
-    visitMatch: (p) => p.startsWith('/library/import'),
+    completion: 'games',
     requiresGames: false,
   },
   {
@@ -181,7 +190,9 @@ function placeStep(step: RouteStepDef, pathname: string): RouteDotPlacement | nu
     return { step: step.id, slot: `subtab:${step.subtab.slot}` };
   }
   if (step.control != null) return { step: step.id, slot: `control:${step.control}` };
-  // On a visit step's own page: the recorder completes it, so no dot.
+  // On a step's own page there is nothing left to point at: a visit step is completed there
+  // by the recorder, and the games step (Import, before any games) leaves it to the Import
+  // page's own call to action. Either way, no dot.
   return null;
 }
 
@@ -196,7 +207,8 @@ export function isCandidateExpired(state: FeatureRouteState, stepId: string, act
  * The single dot placement for the stored state, or null (no dot): a null state
  * fails closed, a locked first unresolved step pauses the route, an expired
  * candidate gives way (the recorder posts its skip and the next render moves on),
- * and a visit step whose page is open has nothing left to point at.
+ * and a visit step whose page is open (or the Import page before any games) has nothing
+ * left to point at.
  */
 export function resolveRouteDot(
   state: FeatureRouteState | null,
@@ -251,7 +263,22 @@ export function applyRouteWrite(
   }
 }
 
-/** The done requests the current page warrants, in route order (D-13, D-15). */
+/** Whether the current page or profile completes `step` (D-13, D-14 overruled 2026-11-16). */
+function isCompletedByCtx(step: RouteStepDef, ctx: RouteCtx): boolean {
+  switch (step.completion) {
+    case 'visit':
+      return step.visitMatch?.(ctx.pathname) ?? false;
+    case 'games':
+      return ctx.hasGames;
+    case 'used':
+      return false;
+  }
+}
+
+/**
+ * The done requests the current page and profile warrant, in route order (D-13, D-15;
+ * Import by games per the 2026-11-16 overrule of D-14).
+ */
 function planDoneWrites(
   state: FeatureRouteState,
   ctx: RouteCtx,
@@ -259,8 +286,7 @@ function planDoneWrites(
 ): FeatureRouteActionRequest[] {
   const requests: FeatureRouteActionRequest[] = [];
   for (const step of route) {
-    if (step.completion !== 'visit' || step.visitMatch == null) continue;
-    if (!step.visitMatch(ctx.pathname)) continue;
+    if (!isCompletedByCtx(step, ctx)) continue;
     if (!isStepAvailable(step, ctx.navUnlocked)) continue;
     const request: FeatureRouteActionRequest = { action: 'done', step: step.id };
     if (isRouteWriteNeeded(state, request)) requests.push(request);
@@ -294,9 +320,9 @@ function planClockWrites(
 
 /**
  * The write requests the current page and clock warrant, in order: done requests for
- * visit steps whose page is open (recorded whether or not the dot pointed at them,
- * D-15, also while the route is paused on a locked step; a visit to an unavailable
- * target records nothing, A-2), then the skip of an expired candidate, then the
+ * visit steps whose page is open and for the Import step once games exist (recorded
+ * whether or not the dot pointed at them, D-15, also while the route is paused on a
+ * locked step; a visit to an unavailable target records nothing, A-2), then the skip of an expired candidate, then the
  * current stamp of the resulting candidate.
  *
  * D-23: the clock of a locked step does not run. A locked first unresolved step is

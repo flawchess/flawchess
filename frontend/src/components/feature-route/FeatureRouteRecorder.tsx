@@ -11,7 +11,8 @@ import { planRouteWrites } from '@/lib/featureRoute';
 const ROUTE_WRITE_RESEND_COOLDOWN_MS = 10_000;
 
 /**
- * Records visit-completion steps (D-13, D-15) and drives the clock (D-10): posts
+ * Records visit-completion steps (D-13, D-15) and the Import step once the profile has
+ * games (D-14 overruled 2026-11-16), and drives the clock (D-10): posts
  * every request planRouteWrites returns (done, skip, current). Mounted once in
  * ProtectedLayout.
  *
@@ -32,7 +33,7 @@ export function FeatureRouteRecorder(): null {
   const sentAtRef = useRef<Map<string, number>>(new Map());
   const state = profile?.feature_route ?? null;
   const impersonated = profile?.impersonation != null;
-  const { pathname, navUnlocked, activeDays } = ctx;
+  const { pathname, navUnlocked, activeDays, hasGames } = ctx;
 
   useEffect(() => {
     if (state == null || impersonated) return;
@@ -42,7 +43,7 @@ export function FeatureRouteRecorder(): null {
     // stamp sent the same request again, unbounded and at network speed. No state
     // change clears a key any more; the cooldown alone decides when a resend is allowed.
     const now = Date.now();
-    for (const request of planRouteWrites(state, { pathname, navUnlocked, activeDays })) {
+    for (const request of planRouteWrites(state, { pathname, navUnlocked, activeDays, hasGames })) {
       const key = `${request.action}:${request.step}`;
       // Bug fix (WR-01): a sent key used to block its request for the whole session, so
       // a done POST that failed (network blip, 5xx) was never sent again and the dot
@@ -54,7 +55,7 @@ export function FeatureRouteRecorder(): null {
       sentAtRef.current.set(key, now);
       record(request);
     }
-  }, [state, pathname, navUnlocked, activeDays, impersonated, record]);
+  }, [state, pathname, navUnlocked, activeDays, hasGames, impersonated, record]);
 
   return null;
 }

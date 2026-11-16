@@ -56,9 +56,9 @@ links (the last three stay in SEED-199).
   new features: a user with earlier open steps reaches the new one after those are done or skipped.
 
 ### Completion and existing users
-- **D-13:** A page or subtab step is done when the page or subtab is opened (Import, Bots, Openings,
-  Openings Stats, Endgames, Library Stats). A control step is done when the control is used (played-as,
-  filters, and Train per D-21).
+- **D-13:** A page or subtab step is done when the page or subtab is opened (Bots, Openings,
+  Openings Stats, Endgames, Library Stats). Import follows the games rule since 2026-11-16, see D-14. A
+  control step is done when the control is used (played-as, filters, and Train per D-21).
 - **D-21:** The Train step uses the "used" rule (owner, 2026-11-15, during planning). It is done when the user
   clicks the start-training-session button of the personalized puzzle training on Train, Today. Opening Train
   does not complete it. Per D-03 the dot sits on the Train nav item while the user is elsewhere and on the
@@ -73,6 +73,15 @@ links (the last three stay in SEED-199).
 - **D-14:** The Import step is done when the Library Import subtab is visited, not when games exist. Some
   users have no chess.com or lichess account and must not be stuck on it. The Import subtab is the landing
   page for an account without games, so this step normally clears on the first session.
+  **Overruled by the owner on 2026-11-16:** the Import step now completes when the account has at least one
+  imported game (`hasImportedGames`, not the full nav unlock, so the dot may move to Train while the import
+  still runs), on any page. Reason: visit-completion cleared the dot on the landing page at once and drew
+  attention to Train before any import happened. Users without a chess.com or lichess account are released
+  by the D-10 skip on the 4th active day. On /library/import without games no dot is shown (the page's own
+  call to action is enough). An Import button click does not complete the step, and deleting all games does
+  not un-complete it. No server change (implemented in quick task 261116-ar3). D-15's "the dot never points
+  at a page the user has already opened" no longer holds for Import: the Library dot can return after a
+  visit without an import.
 - **D-15:** Every completion is recorded from launch on, whether or not the dot is on that step. The dot never
   points at a page the user has already opened since launch.
 - **D-16:** Existing users (everyone who signed up before launch, guests included) start with the whole route

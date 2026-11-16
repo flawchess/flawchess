@@ -22,6 +22,9 @@ from app.repositories.query_utils import mover_is_white_at_ply
 # game_flaws.severity value of a blunder (game_flaws_repository._SEVERITY_INT).
 _BLUNDER_SEVERITY = 2
 
+# The four line-fact columns an opponent row must never carry (FACEPALM_COLUMNS minus the spread).
+_LINE_FACT_COLUMNS: tuple[str, ...] = tuple(c for c in FACEPALM_COLUMNS if c != "maia_reply_spread")
+
 
 def fake_full_policy(fen: str, elo: float) -> dict[str, float]:
     """Deterministic stand-in for ``maia_engine.full_policy``.
@@ -46,11 +49,13 @@ async def assert_maia_lane_state(
     (``maia_flaws_completed_at``, the spread and line stamps and the Phase 254
     ``facepalm_pre_completed_at``) set, or all NULL when
     ``expect_stamped`` is False and nothing was written; every user-side blunder whose
-    post-blunder position has a legal move has a non-NULL ``maia_reply_spread``, and every
-    other flaw has every facepalm and pre-blunder column NULL. User-side is computed with
-    ``mover_is_white_at_ply`` and the game's user_color. Returns the number of user-side
-    blunders carrying a reply spread; callers assert it is at least 1 when their seed
-    guarantees a user-side blunder with a legal reply.
+    post-blunder position has a legal move has a non-NULL ``maia_reply_spread``. An opponent
+    blunder (SEED-261114-iuv Part A) never carries a line fact, and when stamped with a legal reply
+    and a stored played probability it carries ``maia_reply_spread`` and ``maia_pre_spread``.
+    Every other flaw (mistakes, or any flaw when ``expect_stamped`` is False) has every facepalm
+    and pre-blunder column NULL. User-side is computed with ``mover_is_white_at_ply`` and the
+    game's user_color. Returns the number of user-side blunders carrying a reply spread; callers
+    assert it is at least 1 when their seed guarantees a user-side blunder with a legal reply.
     """
     async with maker() as session:
         game = (await session.execute(select(Game).where(Game.id == game_id))).scalar_one()
@@ -75,13 +80,25 @@ async def assert_maia_lane_state(
         user_blunder = flaw.severity == _BLUNDER_SEVERITY and mover_is_white_at_ply(flaw.ply) == (
             game.user_color == "white"
         )
+        opponent_blunder = flaw.severity == _BLUNDER_SEVERITY and not user_blunder
         if expect_stamped and user_blunder and _has_legal_reply(pgn_boards, flaw.ply):
             assert flaw.maia_reply_spread is not None, flaw.ply
             scored += 1
+        elif expect_stamped and opponent_blunder:
+            _assert_opponent_blunder_row(flaw, _has_legal_reply(pgn_boards, flaw.ply))
         elif not (expect_stamped and user_blunder):
             for column in (*FACEPALM_COLUMNS, *FACEPALM_PRE_COLUMNS):
                 assert getattr(flaw, column) is None, (flaw.ply, column)
     return scored
+
+
+def _assert_opponent_blunder_row(flaw: GameFlaw, has_legal_reply: bool) -> None:
+    """A stamped opponent blunder: line facts NULL always, the Maia columns set when scorable."""
+    for column in _LINE_FACT_COLUMNS:
+        assert getattr(flaw, column) is None, (flaw.ply, column)
+    if has_legal_reply and flaw.maia_played_prob is not None:
+        assert flaw.maia_reply_spread is not None, flaw.ply
+        assert flaw.maia_pre_spread is not None, flaw.ply
 
 
 def _boards_by_ply(pgn: str) -> dict[int, tuple[chess.Board, str]]:

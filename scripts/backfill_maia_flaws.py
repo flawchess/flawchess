@@ -3,7 +3,7 @@
 Phase 247 (D-06, D-10, D-11, D-13, D-16). Scores every flaw of every UNSTAMPED game that has
 flaws, from boards replayed out of games.pgn (never from game_flaws.fen), through the same
 shared scorer the live lanes use (app/services/maia_flaw_scoring.py), and stamps each game in
-the same transaction as its column write.
+the same transaction as its column write (every mode but --mode opponent, which has no stamp).
 
 Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode was removed by D-11):
     --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob,
@@ -36,6 +36,24 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        facts. Resumable (the stamp is the checkpoint, a second
                        run selects 0 games) and sharded by hash residue like the spread pass.
 
+    --mode opponent    (SEED-261114-iuv Part A) selection BY ROW: games with an opponent blunder whose
+                       maia_played_prob is set and maia_reply_spread is NULL (no base stamp
+                       needed). ONE pre-blunder inference (maia_best_prob, maia_pre_spread) plus ONE
+                       post-blunder inference (maia_reply_spread) per such blunder, at the mover's
+                       (the opponent's) pinned Elo. Writes only those three columns: never
+                       maia_played_prob, never the line facts (the drill and library readers have no
+                       side gate and rely on opponent rows scoring NULL), never a user-side row,
+                       never a stamp. No stamp column exists for it, so the row predicate is the
+                       checkpoint and a rerun resumes. Run it only against a DB whose lanes already
+                       run the updated full-mode hook: a full re-score by the old hook would write
+                       NULL Maia values on opponent rows and undo the backfill.
+                       Residue: stalemating blunders (counted as no_legal_reply) and rows whose board
+                       cannot be rebuilt (fen_mismatch, ply_beyond_mainline, ...) keep a NULL spread
+                       and are selected again by every later run. One run never loops on them: each
+                       shard selects one snapshot and iterates it once. `--status --mode opponent`
+                       shows the residue as opponent_blunders_pending. Guests are handled like the
+                       other modes (no filter). Needs Maia (exit 3 without it).
+
 Two-pass design for the facepalm columns (250 D-08, D-18): the spread pass needs Maia and is run
 once (about 2.3M user blunders on prod); the line pass needs only the DB, so it can be re-run
 whenever the stored lines change (e.g. after the Phase 252 pv repair). The line pass writes both
@@ -44,7 +62,7 @@ value; the spread pass never writes the two pre-blunder keys. For the line pass 
 CUTOFF is the checkpoint: re-run with the SAME cutoff to resume a crashed or stopped run (games
 stamped at or after it are skipped); use a NEW (later) cutoff for a new full recompute.
 
-The stamp of the chosen mode IS the checkpoint: a crash, a SIGTERM, or a D-09
+The stamp of the chosen mode IS the checkpoint (opponent mode: its row predicate): a crash, a SIGTERM, or a D-09
 unstamp (a reclassification that clears stamps) is caught by simply re-running. A second run
 over the same scope selects zero games and writes nothing. Zero-flaw games are never selected
 (the go-forward scorer stamps them), so there is no scan of all games.
@@ -76,6 +94,9 @@ Usage:
     PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode pre --workers 8 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode pre
     (pre mode, 254 D-20: 8 shards, one connection each; the stamp is the checkpoint, re-run to resume)
+    PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode opponent --workers 8 --throttle-ms 50
+    uv run python scripts/backfill_maia_flaws.py --db prod --status --mode opponent
+    (opponent mode: row predicate is the checkpoint, re-run to resume; run after the hook deploy)
 """
 
 from __future__ import annotations
@@ -95,7 +116,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import sentry_sdk
-from sqlalchemy import ColumnElement, Select, func, not_, select, text
+from sqlalchemy import ColumnElement, Select, func, literal_column, not_, select, text
+from sqlalchemy.dialects.postgresql import asyncpg as asyncpg_dialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Bootstrap project root so `app.*` imports resolve when running as a script.
@@ -147,7 +169,7 @@ BackfillDb = Literal["dev", "benchmark", "prod"]
 BACKFILL_DB_CHOICES: tuple[str, ...] = ("dev", "benchmark", "prod")
 AbortReason = Literal["maia_unavailable", "too_many_batch_failures"]
 BackfillMode = ScoringMode
-BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line", "pre")
+BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line", "pre", "opponent")
 DEFAULT_MODE: BackfillMode = "full"
 
 # Top 8 hex digits of md5(game id) as an unsigned 32-bit integer. Unseeded and pure, so a
@@ -187,11 +209,35 @@ _LINE_STALE_CLAUSE: str = (
     " OR g.facepalm_line_completed_at < CAST(:cutoff AS timestamptz))"
 )
 
-# The only mode-dependent part of the selector: one of these constants, never user input.
+# SQL text of "the mover of ply `ob.ply` is the game's opponent", compiled from the shared
+# is_opponent_expr so the parity rule lives in one place. Compiled with the asyncpg dialect (the
+# generic postgresql dialect targets a pyformat driver and would double the `%`, which asyncpg
+# passes to Postgres verbatim); literal binds, so the text is built from constants only.
+_OPPONENT_IS_MOVER_SQL: str = str(
+    is_opponent_expr(literal_column("ob.ply"), literal_column("g.user_color")).compile(
+        dialect=asyncpg_dialect.dialect(), compile_kwargs={"literal_binds": True}
+    )
+)
+
+# Games the opponent pass (SEED-261114-iuv Part A) still has to do, selected BY ROW: an opponent
+# blunder whose played probability is stored and whose reply spread is not. No stamp and no
+# base-stamp requirement (the row predicate is the checkpoint). Shared by the selector and the
+# status counts, built only from constants (never a CLI value). No guest filter, as in every other
+# mode (the selector's users join has none).
+_OPPONENT_PENDING_CLAUSE: str = (
+    "EXISTS (SELECT 1 FROM game_flaws ob WHERE ob.game_id = g.id"
+    f" AND ob.severity = {_SEVERITY_INT['blunder']}"
+    " AND ob.maia_played_prob IS NOT NULL AND ob.maia_reply_spread IS NULL"
+    f" AND {_OPPONENT_IS_MOVER_SQL})"
+)
+
+# The only mode-dependent part of the selector: one of these constants, never user input. The
+# "opponent" slot holds a row predicate rather than a stamp predicate.
 _STAMP_CLAUSE_BY_MODE: dict[BackfillMode, str] = {
     "full": "g.maia_flaws_completed_at IS NULL",
     "spread": _SPREAD_PENDING_CLAUSE,
     "pre": _PRE_PENDING_CLAUSE,
+    "opponent": _OPPONENT_PENDING_CLAUSE,
     "line": f"{_LINE_STALE_CLAUSE} AND g.facepalm_spread_completed_at IS NOT NULL",
 }
 
@@ -284,6 +330,12 @@ class ShardReport:
     # 254 D-08, reason in `reasons`).
     pre_scored: int = 0
     pre_null: int = 0
+    # Opponent blunders whose reply spread / pre-blunder spread was written non-NULL / left NULL
+    # (modes full and opponent; SEED-261114-iuv Part A, reason in `reasons`).
+    opponent_spreads_scored: int = 0
+    opponent_spreads_null: int = 0
+    opponent_pre_scored: int = 0
+    opponent_pre_null: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
@@ -334,6 +386,11 @@ def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
     if score.mode in ("full", "pre"):
         report.pre_scored += score.pre_scored
         report.pre_null += score.user_blunders - score.pre_scored
+    if score.mode in ("full", "opponent"):
+        report.opponent_spreads_scored += score.opponent_spreads_scored
+        report.opponent_spreads_null += score.opponent_blunders - score.opponent_spreads_scored
+        report.opponent_pre_scored += score.opponent_pre_scored
+        report.opponent_pre_null += score.opponent_blunders - score.opponent_pre_scored
     for reason, n in score.reasons.items():
         report.reasons[reason] = report.reasons.get(reason, 0) + n
 
@@ -467,7 +524,9 @@ def _progress_line(report: ShardReport, done: int, started: float) -> str:
         f"stamped={report.games_stamped} flaws_scored={report.flaws_scored} "
         f"({report.flaws_scored / elapsed:.1f} flaws/s) "
         f"spreads_scored={report.spreads_scored} scores_set={report.scores_set} "
-        f"pre_scored={report.pre_scored}" + (f" cutoff={report.cutoff}" if report.cutoff else "")
+        f"pre_scored={report.pre_scored} "
+        f"opponent_spreads_scored={report.opponent_spreads_scored}"
+        + (f" cutoff={report.cutoff}" if report.cutoff else "")
     )
 
 
@@ -697,7 +756,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="full: all values + the stamps. spread: the facepalm columns of user-side "
         "blunders, on base-stamped games (Phase 250). line: the Maia-free line pass (needs "
         "--cutoff). pre: the two pre-blunder Maia inputs of user-side blunders, on "
-        "base-stamped games (Phase 254).",
+        "base-stamped games (Phase 254). opponent: the three Maia columns of opponent blunders, "
+        "selected by row, no stamp (SEED-261114-iuv Part A).",
     )
     parser.add_argument(
         "--cutoff",
@@ -918,6 +978,63 @@ async def _fetch_pre_status(session: AsyncSession, user_id: int | None) -> dict[
     return counts
 
 
+# Opponent pass progress (SEED-261114-iuv Part A): the games the selector would pick, from its own
+# constant so the two cannot drift apart.
+_OPPONENT_STATUS_QUERIES: dict[str, str] = {
+    "opponent_pending_games": (
+        f"SELECT count(*) FROM games g WHERE {_OPPONENT_PENDING_CLAUSE}"
+        " AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id){u}"
+    ),
+}
+
+
+def _opponent_blunder_count_stmt(
+    user_id: int | None,
+    *,
+    extra_where: Sequence[ColumnElement[bool]] = (),
+) -> Select[Any]:
+    """Count of opponent blunders (severity blunder AND is_opponent_expr); the mirror image of
+    `_user_blunder_count_stmt`. `extra_where` narrows the count."""
+    stmt = (
+        select(func.count())
+        .select_from(GameFlaw)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            is_opponent_expr(GameFlaw.ply, Game.user_color),
+        )
+    )
+    if extra_where:
+        stmt = stmt.where(*extra_where)
+    if user_id is not None:
+        stmt = stmt.where(Game.user_id == user_id)
+    return stmt
+
+
+async def _fetch_opponent_status(session: AsyncSession, user_id: int | None) -> dict[str, int]:
+    """Opponent pass progress: the pending games, then the opponent blunders in total and per
+    filled column. `opponent_blunders_pending` (played prob set, reply spread NULL) is what a
+    finished run leaves: the residue the pass cannot score (stalemating blunders, boards that
+    cannot be rebuilt)."""
+    counts = await _stamp_counts(session, user_id, _OPPONENT_STATUS_QUERIES)
+    value_filters: dict[str, Sequence[ColumnElement[bool]]] = {
+        "opponent_blunders_total": (),
+        "opponent_blunders_with_played_prob": [GameFlaw.maia_played_prob.is_not(None)],
+        "opponent_blunders_with_spread": [GameFlaw.maia_reply_spread.is_not(None)],
+        "opponent_blunders_with_pre_spread": [GameFlaw.maia_pre_spread.is_not(None)],
+        "opponent_blunders_with_best_prob": [GameFlaw.maia_best_prob.is_not(None)],
+        "opponent_blunders_pending": [
+            GameFlaw.maia_played_prob.is_not(None),
+            GameFlaw.maia_reply_spread.is_(None),
+        ],
+    }
+    for key, extra_where in value_filters.items():
+        counts[key] = await _scalar_count(
+            session, _opponent_blunder_count_stmt(user_id, extra_where=extra_where)
+        )
+    return counts
+
+
 async def fetch_status(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int | None,
@@ -928,7 +1045,9 @@ async def fetch_status(
 
     Full mode keeps the four 247 counts (the 247-07 monitor greps that line); spread mode
     returns the Phase 250 stamp and value counts; pre mode the 254 stamp and pre-input counts;
-    line mode (needs `cutoff`) the games done / pending against it plus the score counts.
+    opponent mode (SEED-261114-iuv Part A) the pending games, the opponent-blunder counts per
+    filled column and the residue (`opponent_blunders_pending`); line mode (needs `cutoff`) the
+    games done / pending against it plus the score counts.
     """
     if mode == "spread":
         async with session_maker() as session:
@@ -938,6 +1057,9 @@ async def fetch_status(
     if mode == "pre":
         async with session_maker() as session:
             return await _fetch_pre_status(session, user_id)
+    if mode == "opponent":
+        async with session_maker() as session:
+            return await _fetch_opponent_status(session, user_id)
     if mode == "line":
         if cutoff is None:
             raise ValueError("line mode status needs a cutoff")
@@ -1006,6 +1128,10 @@ def _combined_total_line(reports: list[dict[str, Any]]) -> str:
         "scores_null",
         "pre_scored",
         "pre_null",
+        "opponent_spreads_scored",
+        "opponent_spreads_null",
+        "opponent_pre_scored",
+        "opponent_pre_null",
     )
     totals = {k: sum(int(r.get(k, 0)) for r in reports) for k in keys}
     reasons: Counter[str] = Counter()

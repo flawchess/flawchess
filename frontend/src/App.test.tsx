@@ -877,7 +877,7 @@ describe('Train waiting badge', () => {
     expect(useTrainProgressSpy).toHaveBeenCalledWith({ enabled: false });
   });
 
-  it('control: zero-game signup with no steps done shows library-notification-dot on both surfaces (D-14, D-18)', () => {
+  it('control: zero-game signup with no steps done shows library-notification-dot on both surfaces (D-18; Import completes when games exist)', () => {
     profileState = { ...ZERO_GAME_PROFILE, feature_route: { steps: {}, current: null } };
     tier1State = false;
     trainProgressData = { waiting_count: 12 };
@@ -952,6 +952,22 @@ describe('Feature route dot', () => {
     expect(drawerDotIds('/bots')).toEqual(['library-notification-dot-drawer']);
     renderMobileBottomBar('/bots');
     expect(screen.getByTestId('library-notification-dot-mobile')).toBeTruthy();
+  });
+
+  it('zero-game with no steps done shows no route dot at /library/import (header and drawer)', () => {
+    profileState = { ...ZERO_GAME, feature_route: { steps: {}, current: null } };
+    tier1State = false;
+
+    // D-14 overruled 2026-11-16: the Import page is not completed by a visit and carries no dot.
+    expect(headerDotIds('/library/import')).toEqual([]);
+    expect(drawerDotIds('/library/import')).toEqual([]);
+  });
+
+  it('zero-game with no steps done keeps the Library dot on the header at /train', () => {
+    profileState = { ...ZERO_GAME, feature_route: { steps: {}, current: null } };
+    tier1State = false;
+
+    expect(headerDotIds('/train')).toEqual(['library-notification-dot']);
   });
 
   it('with import done the Library dot is gone from all three surfaces', () => {
