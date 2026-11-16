@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 256
 status: completed
 stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-16T21:50:49.985Z"
+last_updated: "2026-11-16T22:09:56.116Z"
 last_activity: 2026-11-16
-last_activity_desc: Phase 256 complete
-state_head: 947877752fd39d18716346f6a2320f86b6c9b4b3
+last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
+state_head: "0ba78fa1d78f06580b4da39a649fec79806c1007"
 progress:
   total_phases: 10
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-16 — Phase 256 complete
+Last activity: 2026-11-16 -- Phase 256 shipped (squash-merged to main as b2a66e3b7)
 
 Open threads carried forward (not blockers):
 
