@@ -24,6 +24,7 @@ from app.repositories import (
 )
 from app.repositories.user_import_settings_repository import import_scope_expanded
 from app.schemas.admin import ImpersonationContext
+from app.schemas.feature_route import FeatureRouteActionRequest, FeatureRouteState
 from app.schemas.feedback_ask import FeedbackAskActionRequest, FeedbackAskView
 from app.schemas.users import (
     FirstTouchRequest,
@@ -33,7 +34,7 @@ from app.schemas.users import (
     UserProfileResponse,
     UserProfileUpdate,
 )
-from app.services import feedback_ask_service
+from app.services import feature_route_service, feedback_ask_service
 from app.services.current_strength_service import resolve_current_strength_for_user
 from app.users import current_active_user
 
@@ -119,6 +120,7 @@ async def _build_profile_response(
         current_strength=current_strength,
         active_days=ask.active_days,
         feedback_ask=ask.view,
+        feature_route=feature_route_service.build_feature_route_view(user),
     )
 
 
@@ -262,6 +264,24 @@ async def feedback_ask_action(
     """
     return await feedback_ask_service.apply_feedback_ask_action(
         session, user, body.action, now_utc=now_utc, impersonated=impersonation is not None
+    )
+
+
+@router.post("/me/feature-route", response_model=FeatureRouteState | None)
+async def feature_route_action(
+    body: FeatureRouteActionRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
+    now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
+) -> FeatureRouteState | None:
+    """Record a feature-discovery route step as done.
+
+    user id only from current_active_user (V4); always 200 and idempotent; guests write
+    (D-19); impersonation is a read-only no-op.
+    """
+    return await feature_route_service.apply_feature_route_action(
+        session, user, body, now_utc=now_utc, impersonated=impersonation is not None
     )
 
 

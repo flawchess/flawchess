@@ -525,7 +525,7 @@ class TestFacepalmGate:
         # D-01: the clause reads the query-time expression over the stored facts, not the column.
         assert "played_line_material" in sql, f"EXISTS must read the fact columns; got: {sql}"
         assert "maia_played_prob" in sql, f"EXISTS must read the fact columns; got: {sql}"
-        assert "game_flaws.facepalm_score" not in sql, f"stored score must not be read; got: {sql}"
+        assert "facepalm_score" not in sql, f"stored score must not be read; got: {sql}"
 
     def test_full_range_adds_no_clause(self) -> None:
         """0..100 is the neutral full range: no facepalm clause, no flaw EXISTS."""

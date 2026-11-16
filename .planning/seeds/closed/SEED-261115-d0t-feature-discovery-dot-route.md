@@ -1,7 +1,8 @@
 ---
 id: SEED-261115-d0t
-status: promoted
+status: closed. Resolved by Phase 255 (squash-merge 6fd0ff2f2 on main, 2026-11-15; unreleased). Completion is stored server-side on users.prompt_state.feature_route. Owner decision D-23 added during planning: a locked step pauses the route. Left open: review Info items IN-01..IN-05 (255-REVIEW-DISPOSITION.md) and a multi-day lock without a games delete keeping the old current stamp.
 promoted_to: Phase 255 (2026-11-15, owner: build now while Phases 252 and 254 wait; completion stored server-side)
+promoted: 2026-11-15
 planted: 2026-11-15
 planted_during: v2.29, Phase 254 executing. Recovered from an unsaved /gsd-explore session with the owner (2026-11-09, session d7913f78); the session stopped on the storage question below and wrote no artifact
 trigger_when: owner wants to announce a new feature to existing users (first case: blunder-check training leaving beta), or any nav/onboarding work. Frontend-only unless server-side storage is chosen, so it can run beside compute-heavy backend phases

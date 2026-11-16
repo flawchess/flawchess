@@ -669,6 +669,10 @@ export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same f
 // var live in index.css; box-shadow only (a halo, no ring), so no layout shift.
 export const TOUR_SPOTLIGHT_CLASS = 'train-tour-spotlight';
 
+// Feature-discovery route dot (D-01, D-02): the one red pulsating dot that
+// walks the user from one unexplored feature to the next.
+export const ROUTE_DOT_COLOR_CLASS = 'bg-red-500';
+
 // Train streak flame + freeze meter. The streak count
 // sits inside a 3-layer flame (red outer, orange middle, yellow core); the 0-7
 // `shield_level` buffer renders as snowflake "freezes" in an icy blue. Hot vs

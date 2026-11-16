@@ -25,14 +25,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { UserProfile } from '@/types/users';
+import type { FeatureRouteState, UserProfile } from '@/types/users';
 
 // ── Mock useUserProfile / useReadiness / useAuth so tests control navUnlocked
 // state without a real API or QueryClientProvider.
 let profileState: Partial<UserProfile> | null = null;
 let tier1State = false;
 
-vi.mock('@/hooks/useUserProfile', () => ({
+// Partial mock: hasImportedGames (used by useNavUnlocked) stays real, only the
+// profile query is replaced.
+vi.mock('@/hooks/useUserProfile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useUserProfile')>()),
   useUserProfile: () => ({ data: profileState }),
 }));
 
@@ -669,6 +672,13 @@ describe('mobile bottom-bar target count', () => {
   });
 });
 
+function routeWithDone(ids: string[]): FeatureRouteState {
+  return {
+    steps: Object.fromEntries(ids.map((id) => [id, { status: 'done' as const, date: '2026-11-15', with_dot: false }])),
+    current: null,
+  };
+}
+
 describe('Train waiting badge', () => {
   const UNLOCKED_PROFILE: Partial<UserProfile> = {
     email: 'badge@example.com',
@@ -696,10 +706,6 @@ describe('Train waiting badge', () => {
     lichess_game_count: 0,
     impersonation: null,
   };
-
-  afterEach(() => {
-    localStorage.clear();
-  });
 
   it('unlocked profile with waiting_count: 12, badge_visible: true -> badge reads 12 on desktop and mobile', () => {
     profileState = UNLOCKED_PROFILE;
@@ -799,63 +805,57 @@ describe('Train waiting badge', () => {
     expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('99+');
   });
 
-  it('the numeric badge wins over the reworked-Train dot when both apply (waiting_count: 12, flag unset)', () => {
-    profileState = UNLOCKED_PROFILE;
+  it('the numeric badge replaces the Train route dot when both apply (waiting_count: 12, import done, D-17)', () => {
+    profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import']) };
     tier1State = true;
     trainProgressData = { waiting_count: 12, badge_visible: true };
-    localStorage.setItem(`user_flag:openings_visited:${UNLOCKED_PROFILE.email}`, '1');
-    localStorage.setItem(`user_flag:endgames_visited:${UNLOCKED_PROFILE.email}`, '1');
 
-    const { unmount } = renderNavHeader();
+    const { unmount } = renderNavHeader('/bots');
     expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
     expect(screen.queryByTestId('train-notification-dot')).toBeNull();
     unmount();
 
-    renderMobileBottomBar();
+    renderMobileBottomBar('/bots');
     expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('12');
     expect(screen.queryByTestId('train-notification-dot-mobile')).toBeNull();
   });
 
-  // The Train dot uses its own localStorage key so
-  // accounts that already cleared the old Openings/Endgames dots (and used
-  // Train before) still see it once.
-  it('reworked-Train dot shows for an unlocked account with no badge, even with the older visited flags set', () => {
-    profileState = UNLOCKED_PROFILE;
+  it('the Train route dot shows on both surfaces once import is done and train is open', () => {
+    profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import']) };
     tier1State = true;
     trainProgressData = { waiting_count: 0, badge_visible: false };
-    localStorage.setItem(`user_flag:openings_visited:${UNLOCKED_PROFILE.email}`, '1');
-    localStorage.setItem(`user_flag:endgames_visited:${UNLOCKED_PROFILE.email}`, '1');
 
-    const { unmount } = renderNavHeader();
+    const { unmount } = renderNavHeader('/bots');
     expect(screen.queryByTestId('train-notification-dot')).not.toBeNull();
     expect(screen.queryByTestId('train-notification-badge')).toBeNull();
     unmount();
 
-    renderMobileBottomBar();
+    renderMobileBottomBar('/bots');
     expect(screen.queryByTestId('train-notification-dot-mobile')).not.toBeNull();
   });
 
-  it('reworked-Train dot is gone once train_bots_visited is set for that account', () => {
-    profileState = UNLOCKED_PROFILE;
+  it('with import and train done the dot moves from Train to Bots', () => {
+    profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import', 'train']) };
     tier1State = true;
     trainProgressData = { waiting_count: 0, badge_visible: false };
-    localStorage.setItem(`user_flag:train_bots_visited:${UNLOCKED_PROFILE.email}`, '1');
 
-    const { unmount } = renderNavHeader();
+    const { unmount } = renderNavHeader('/library/games');
     expect(screen.queryByTestId('train-notification-dot')).toBeNull();
+    expect(screen.queryByTestId('bots-notification-dot')).not.toBeNull();
     unmount();
 
-    renderMobileBottomBar();
+    renderMobileBottomBar('/library/games');
     expect(screen.queryByTestId('train-notification-dot-mobile')).toBeNull();
+    expect(screen.queryByTestId('bots-notification-dot-mobile')).not.toBeNull();
   });
 
-  it('reworked-Train dot never shows on a locked (zero-game) account', () => {
-    profileState = ZERO_GAME_PROFILE;
+  it('a zero-game account with import done still gets the Train dot (Train is never locked, D-21)', () => {
+    profileState = { ...ZERO_GAME_PROFILE, feature_route: routeWithDone(['import']) };
     tier1State = false;
     trainProgressData = undefined;
 
-    renderNavHeader();
-    expect(screen.queryByTestId('train-notification-dot')).toBeNull();
+    renderNavHeader('/bots');
+    expect(screen.queryByTestId('train-notification-dot')).not.toBeNull();
   });
 
   it('zero-game locked profile: useTrainProgress called with enabled: false, no badge renders', () => {
@@ -877,17 +877,189 @@ describe('Train waiting badge', () => {
     expect(useTrainProgressSpy).toHaveBeenCalledWith({ enabled: false });
   });
 
-  it('control: zero-game profile with waiting_count: 12 still shows library-notification-dot on both surfaces', () => {
-    profileState = ZERO_GAME_PROFILE;
+  it('control: zero-game signup with no steps done shows library-notification-dot on both surfaces (D-14, D-18)', () => {
+    profileState = { ...ZERO_GAME_PROFILE, feature_route: { steps: {}, current: null } };
     tier1State = false;
     trainProgressData = { waiting_count: 12 };
 
-    const { unmount } = renderNavHeader();
+    // Rendered at /bots: at /library the import step's dot correctly moves off
+    // the nav item onto the Import subtab (D-03).
+    const { unmount } = renderNavHeader('/bots');
     expect(screen.getByTestId('library-notification-dot')).toBeTruthy();
     unmount();
 
-    renderMobileBottomBar();
+    renderMobileBottomBar('/bots');
     expect(screen.getByTestId('library-notification-dot-mobile')).toBeTruthy();
+  });
+
+  it('a profile without feature_route (corrupt or not loaded) shows no route dot', () => {
+    profileState = { ...ZERO_GAME_PROFILE, feature_route: null };
+    tier1State = false;
+
+    renderNavHeader('/bots');
+    expect(screen.queryByTestId('library-notification-dot')).toBeNull();
+    expect(screen.queryByTestId('train-notification-dot')).toBeNull();
+  });
+});
+
+describe('Feature route dot', () => {
+  const UNLOCKED: Partial<UserProfile> = {
+    email: 'route@example.com',
+    is_superuser: false,
+    is_guest: false,
+    chess_com_game_count: 50,
+    lichess_game_count: 0,
+    impersonation: null,
+  };
+  const ZERO_GAME: Partial<UserProfile> = { ...UNLOCKED, chess_com_game_count: 0 };
+  const ALL_BUT_ENDGAMES = [
+    'import',
+    'train',
+    'bots',
+    'openings',
+    'openings-played-as',
+    'openings-filters',
+    'openings-stats',
+    'library-stats',
+  ];
+  // Every route state below uses current: null (routeWithDone), so the three-active-day
+  // skip clock added later cannot expire a step under these cases.
+
+  /** Header dot testids rendered for the current state (desktop surface). */
+  function headerDotIds(path: string): string[] {
+    const { unmount } = renderNavHeader(path);
+    const ids = screen
+      .queryAllByTestId(/-notification-dot$/)
+      .map((el) => el.getAttribute('data-testid') ?? '');
+    unmount();
+    return ids;
+  }
+
+  function drawerDotIds(path: string): string[] {
+    const { unmount } = renderMobileMoreDrawer(path);
+    const ids = screen
+      .queryAllByTestId(/-notification-dot-drawer$/)
+      .map((el) => el.getAttribute('data-testid') ?? '');
+    unmount();
+    return ids;
+  }
+
+  it('zero-game with no steps done shows the Library dot on the header, bottom bar and drawer', () => {
+    profileState = { ...ZERO_GAME, feature_route: { steps: {}, current: null } };
+    tier1State = false;
+
+    expect(headerDotIds('/bots')).toEqual(['library-notification-dot']);
+    expect(drawerDotIds('/bots')).toEqual(['library-notification-dot-drawer']);
+    renderMobileBottomBar('/bots');
+    expect(screen.getByTestId('library-notification-dot-mobile')).toBeTruthy();
+  });
+
+  it('with import done the Library dot is gone from all three surfaces', () => {
+    profileState = { ...ZERO_GAME, feature_route: routeWithDone(['import']) };
+    tier1State = false;
+
+    expect(headerDotIds('/bots')).not.toContain('library-notification-dot');
+    expect(drawerDotIds('/bots')).not.toContain('library-notification-dot-drawer');
+    renderMobileBottomBar('/bots');
+    expect(screen.queryByTestId('library-notification-dot-mobile')).toBeNull();
+  });
+
+  it('D-17: the Train badge and the Bots dot show together, and the drawer carries the Bots dot', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(['import', 'train']) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 12, badge_visible: true };
+
+    const { unmount } = renderNavHeader('/library/games');
+    expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
+    expect(screen.getByTestId('bots-notification-dot')).toBeTruthy();
+    unmount();
+
+    expect(drawerDotIds('/library/games')).toEqual(['bots-notification-dot-drawer']);
+  });
+
+  it('D-17: with train open and the badge visible the drawer has no Train dot', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 12, badge_visible: true };
+
+    expect(drawerDotIds('/bots')).not.toContain('train-notification-dot-drawer');
+    expect(headerDotIds('/bots')).not.toContain('train-notification-dot');
+  });
+
+  it('the drawer carries the Train dot when train is open and no badge shows', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+
+    expect(drawerDotIds('/bots')).toEqual(['train-notification-dot-drawer']);
+  });
+
+  it('D-02: the header carries at most one dot and the drawer dot sits on the same nav item', () => {
+    const states: { profile: Partial<UserProfile>; done: string[] | null; tier1: boolean }[] = [
+      { profile: ZERO_GAME, done: [], tier1: false },
+      { profile: ZERO_GAME, done: ['import'], tier1: false },
+      { profile: ZERO_GAME, done: ['import', 'train', 'bots'], tier1: false },
+      { profile: UNLOCKED, done: ['import', 'train'], tier1: true },
+      { profile: UNLOCKED, done: ['import', 'train', 'bots'], tier1: true },
+      { profile: UNLOCKED, done: ALL_BUT_ENDGAMES, tier1: true },
+      { profile: UNLOCKED, done: null, tier1: true },
+    ];
+    for (const { profile, done, tier1 } of states) {
+      profileState = { ...profile, feature_route: done == null ? null : routeWithDone(done) };
+      tier1State = tier1;
+      trainProgressData = { waiting_count: 0, badge_visible: false };
+
+      const header = headerDotIds('/analysis');
+      const drawer = drawerDotIds('/analysis');
+      expect(header.length).toBeLessThanOrEqual(1);
+      expect(drawer.map((id) => id.replace('-drawer', ''))).toEqual(header);
+    }
+  });
+
+  it('D-23: a zero-game account with import, train and bots done shows no route dot anywhere', () => {
+    profileState = { ...ZERO_GAME, feature_route: routeWithDone(['import', 'train', 'bots']) };
+    tier1State = false;
+
+    expect(headerDotIds('/bots')).toEqual([]);
+    expect(drawerDotIds('/bots')).toEqual([]);
+    renderMobileBottomBar('/bots');
+    expect(screen.queryByTestId(/-notification-dot-mobile$/)).toBeNull();
+  });
+
+  it('D-23: the same account once unlocked shows the Openings dot on all three surfaces', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(['import', 'train', 'bots']) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+
+    expect(headerDotIds('/bots')).toEqual(['openings-notification-dot']);
+    expect(drawerDotIds('/bots')).toEqual(['openings-notification-dot-drawer']);
+    renderMobileBottomBar('/bots');
+    expect(screen.getByTestId('openings-notification-dot-mobile')).toBeTruthy();
+  });
+
+  it('D-12: with every step but endgames resolved the Endgames nav item carries the dot', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(ALL_BUT_ENDGAMES) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+
+    expect(headerDotIds('/bots')).toEqual(['endgames-notification-dot']);
+    expect(drawerDotIds('/bots')).toEqual(['endgames-notification-dot-drawer']);
+  });
+
+  it('a profile without feature_route shows no route dot on the drawer (fails closed)', () => {
+    profileState = { ...ZERO_GAME, feature_route: null };
+    tier1State = false;
+
+    expect(drawerDotIds('/bots')).toEqual([]);
+  });
+
+  it('D-03: inside the Train section the nav item and the drawer row carry no Train dot', () => {
+    profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+
+    expect(headerDotIds('/train')).not.toContain('train-notification-dot');
+    expect(drawerDotIds('/train')).not.toContain('train-notification-dot-drawer');
   });
 });
 

@@ -38,9 +38,7 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_update_game_flaw_rows
 from app.services.line_material import (
-    LINE_LOSS_COLUMNS,
     LINE_LOSS_DEPTHS,
-    LINE_MATE_PLY_COLUMN,
     LineFacts,
     LINE_MATERIAL_SLOTS,
     best_line_facts,
@@ -245,7 +243,7 @@ def test_unusable_input_gives_null_facts(played: str, line: str | None) -> None:
     facts = line_facts(chess.Board(), played, line)
     assert _losses(facts) == _NO_LOSS
     assert facts.mate_ply is None
-    assert facts.as_columns() == dict.fromkeys([*LINE_LOSS_COLUMNS.values(), LINE_MATE_PLY_COLUMN])
+    assert facts.material_array() == [None] * LINE_MATERIAL_SLOTS
 
 
 def test_caller_board_is_not_mutated() -> None:
@@ -270,7 +268,7 @@ def _replayed_mainline(pgn: str) -> tuple[list[chess.Board], list[chess.Move]]:
     return boards, moves
 
 
-async def test_line_facts_round_trip_through_game_flaws_columns(test_engine) -> None:
+async def test_line_facts_round_trip_through_game_flaws_arrays(test_engine) -> None:
     user_id, _ = await register_user("line-material", beta=True, test_engine=test_engine)
     evals = with_user_blunder(flat_evals(_SEED_ROWS, 0), _SEED_BLUNDER_PLY, _SEED_BLUNDER_DROP_CP)
     game_id = await seed_judged_game(
@@ -286,9 +284,12 @@ async def test_line_facts_round_trip_through_game_flaws_columns(test_engine) -> 
             for move in moves[_SEED_BLUNDER_PLY + 1 : _SEED_BLUNDER_PLY + 1 + _SEED_LINE_PLIES]
         )
         facts = line_facts(boards[_SEED_BLUNDER_PLY], moves[_SEED_BLUNDER_PLY].uci(), line)
-        columns = facts.as_columns()
-        # A ten-ply line reaches every stored depth, so nothing is NULL.
-        assert all(columns[LINE_LOSS_COLUMNS[depth]] is not None for depth in LINE_LOSS_DEPTHS)
+        columns = {
+            "played_line_material": facts.material_array(),
+            "line_mate_ply": facts.mate_ply,
+        }
+        # A ten-ply line reaches every odd stored depth, so none of those slots is NULL.
+        assert all(facts.material_at(depth) is not None for depth in LINE_LOSS_DEPTHS)
         maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with maker() as session:
             await bulk_update_game_flaw_rows(
@@ -302,13 +303,11 @@ async def test_line_facts_round_trip_through_game_flaws_columns(test_engine) -> 
             ).scalar_one()
             game = (await session.execute(select(Game).where(Game.id == game_id))).scalar_one()
         stored = {
-            **{
-                LINE_LOSS_COLUMNS[depth]: getattr(flaw, LINE_LOSS_COLUMNS[depth])
-                for depth in LINE_LOSS_DEPTHS
-            },
-            LINE_MATE_PLY_COLUMN: getattr(flaw, LINE_MATE_PLY_COLUMN),
+            "played_line_material": flaw.played_line_material,
+            "line_mate_ply": flaw.line_mate_ply,
         }
         assert stored == columns
+        assert flaw.played_line_material == facts.material_array()
         assert game.facepalm_spread_completed_at is None
         assert game.facepalm_line_completed_at is None
     finally:

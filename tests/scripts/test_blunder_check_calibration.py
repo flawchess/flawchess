@@ -119,8 +119,6 @@ SEEDED_PLAYED_3 = -3
 SEEDED_BEST_3 = 2
 SEEDED_BEST_PROB = 0.6
 SEEDED_PRE_SPREAD = 4.0
-# A stored score the report must ignore: no facts of the seeded blunder produce it (254 D-01).
-STORED_DECOY_SCORE = 0.123
 
 MakeGame = Callable[..., Awaitable[int]]
 
@@ -233,7 +231,6 @@ async def make_game(
                         best_line_material=_material(SEEDED_BEST_3) if is_user_ply else None,
                         maia_best_prob=SEEDED_BEST_PROB if is_user_ply else None,
                         maia_pre_spread=SEEDED_PRE_SPREAD if is_user_ply else None,
-                        facepalm_score=STORED_DECOY_SCORE if is_user_ply else None,
                     )
                 )
             await session.commit()
@@ -300,7 +297,7 @@ class TestTracer:
         assert blunder.maia_best_prob == pytest.approx(SEEDED_BEST_PROB)
         assert blunder.maia_pre_spread == pytest.approx(SEEDED_PRE_SPREAD)
         assert blunder.has_line
-        # The score comes from the facts, never from the stored column (254 D-01).
+        # The score is computed from the facts (254 D-01); the stored column no longer exists.
         expected = facepalm_score(
             FacepalmFacts(
                 played_prob=SEEDED_PLAYED_PROB,
@@ -314,7 +311,6 @@ class TestTracer:
             lam=FACEPALM_DRILL_LAMBDA,
         )
         assert blunder.facepalm_score == pytest.approx(expected)
-        assert blunder.facepalm_score != pytest.approx(STORED_DECOY_SCORE)
 
         collection = Collection(
             meta=RunMeta(db_name="test", date="2026-11-09", games_sampled=1),

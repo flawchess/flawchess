@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 13/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 17/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -503,16 +503,16 @@ Plans:
 - [x] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)
 
 **Wave 11** *(human-gated: after Phase 252's prod repair is complete)*
-- [ ] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)
+- [x] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)
 
 **Wave 12** *(blocked on Wave 11 completion)*
-- [ ] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
+- [x] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
 
 **Wave 13** *(blocked on Wave 12 completion)*
-- [ ] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
+- [x] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
 
 **Wave 14** *(blocked on Wave 13 completion)*
-- [ ] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
+- [x] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
 
 **Wave 15** *(human-gated, one-way)*
 - [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
@@ -537,23 +537,23 @@ the discuss phase.
 **Depends on**: nothing. Mostly frontend plus one small migration; built in its own worktree while Phases 252
 and 254 wait on their prod runs (owner, 2026-11-15).
 **Requirements**: TBD (coverage set: CONTEXT decisions D-01..D-22)
-**Plans:** 7 plans
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 255-01-PLAN.md — Backend route storage: guarded DONE transition, POST /users/me/feature-route and profile.feature_route, guests included (wave 1)
+- [x] 255-01-PLAN.md — Backend route storage: guarded DONE transition, POST /users/me/feature-route and profile.feature_route, guests included (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 255-02-PLAN.md — Tracer: Import visit stored server-side, route dot hops to Train on header and bottom bar; arbiter unit tests (wave 2)
+- [x] 255-02-PLAN.md — Tracer: Import visit stored server-side, route dot hops to Train on header and bottom bar; arbiter unit tests (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 255-03-PLAN.md — More drawer on the route, cross-surface dot rules, retired localStorage key sweep, typed profile fixtures (wave 3)
-- [ ] 255-04-PLAN.md — Auto-skip clock after 3 active days (server + client) and the existing-user seed migration (wave 3)
-- [ ] 255-05-PLAN.md — In-section dots for Library and Openings subtabs; played-as and filters become route steps, bookmarks dot removed (wave 3)
-- [ ] 255-06-PLAN.md — Train step completes on Start or Resume; Today-tab and start-button dots (wave 3)
+- [x] 255-03-PLAN.md — More drawer on the route, cross-surface dot rules, retired localStorage key sweep, typed profile fixtures (wave 3)
+- [x] 255-04-PLAN.md — Auto-skip clock after 3 active days (server + client) and the existing-user seed migration (wave 3)
+- [x] 255-05-PLAN.md — In-section dots for Library and Openings subtabs; played-as and filters become route steps, bookmarks dot removed (wave 3)
+- [x] 255-06-PLAN.md — Train step completes on Start or Resume; Today-tab and start-button dots (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 255-07-PLAN.md — Alembic head re-check, changelog, full pre-merge gate and the route walk checkpoint (wave 4)
+- [x] 255-07-PLAN.md — Alembic head re-check, changelog, full pre-merge gate and the route walk checkpoint (wave 4)
 
 ## Backlog
 

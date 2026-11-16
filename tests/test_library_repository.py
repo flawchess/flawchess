@@ -2734,7 +2734,7 @@ class TestFacepalmBuildFlawFilterClauses:
         sql = _compile_facepalm_clauses(*band)
         assert "played_line_material" in sql, sql
         assert "maia_played_prob" in sql, sql
-        assert "game_flaws.facepalm_score" not in sql, sql
+        assert "facepalm_score" not in sql, sql
 
     def test_low_band_has_not_null_and_upper_bound_only(self) -> None:
         """(0, 29): IS NOT NULL plus an upper '<' bound, no '>=' lower bound."""

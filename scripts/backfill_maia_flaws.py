@@ -12,20 +12,18 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        keys and the four stamps.
     --mode spread      games that are base-stamped with facepalm_spread_completed_at NULL (the
                        Maia pass of the facepalm backfill, 250 D-08). One post-blunder inference
-                       per user-side blunder yields the reply spread; the line facts and the
-                       facepalm score are derived with the hook's own scorer, reading the STORED
-                       maia_played_prob instead of re-running the base inference. Writes exactly
-                       the facepalm columns (the reply spread, both line arrays, both mate plies,
-                       the legacy line columns and the score; never the two pre-blunder keys) and
+                       per user-side blunder yields the reply spread; the line facts are derived
+                       with the hook's own scorer, reading the STORED maia_played_prob instead of
+                       re-running the base inference. Writes exactly the facepalm fact columns
+                       (the reply spread, both line arrays, both mate plies; the score is computed
+                       at query time, 254 D-01; never the two pre-blunder keys) and
                        stamps facepalm_spread_completed_at and facepalm_line_completed_at.
     --mode line --cutoff <ISO timestamp with offset>
                        the Maia-free, re-runnable line pass (250 D-18). Every spread-stamped game
                        whose facepalm_line_completed_at is NULL or older than the cutoff has the
                        line facts of its user-side blunders recomputed from the stored lines (the
                        played line at ply + 1 and the best line at the flaw ply): played and best
-                       line material arrays, line_mate_ply and best_line_mate_ply, the legacy line
-                       columns and facepalm_score (from maia_played_prob, maia_reply_spread and the
-                       stored pre keys), INCLUDING rows
+                       line material arrays, line_mate_ply and best_line_mate_ply, INCLUDING rows
                        that already hold values and blunders that had no line before. It never
                        starts Maia, never computes the spread and never exits 3 for a missing
                        Maia. --cutoff is required here and rejected for every other mode.
@@ -34,15 +32,15 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        the R1 pre-blunder inputs). ONE Maia inference at the pre-blunder position per
                        user-side blunder fills maia_best_prob and maia_pre_spread, exactly as the hook
                        derives them. Writes only those two columns and stamps only
-                       facepalm_pre_completed_at: never maia_played_prob, the reply spread, the line
-                       facts or the stored score. Resumable (the stamp is the checkpoint, a second
+                       facepalm_pre_completed_at: never maia_played_prob, the reply spread or the line
+                       facts. Resumable (the stamp is the checkpoint, a second
                        run selects 0 games) and sharded by hash residue like the spread pass.
 
 Two-pass design for the facepalm columns (250 D-08, D-18): the spread pass needs Maia and is run
 once (about 2.3M user blunders on prod); the line pass needs only the DB, so it can be re-run
 whenever the stored lines change (e.g. after the Phase 252 pv repair). The line pass writes both
-line material arrays, both mate plies (played and best line) and the legacy line columns (254 D-09),
-and never a Maia value; the spread pass never writes the two pre-blunder keys. For the line pass the
+line material arrays and both mate plies (played and best line) (254 D-09), and never a Maia
+value; the spread pass never writes the two pre-blunder keys. For the line pass the
 CUTOFF is the checkpoint: re-run with the SAME cutoff to resume a crashed or stopped run (games
 stamped at or after it are skipped); use a NEW (later) cutoff for a new full recompute.
 

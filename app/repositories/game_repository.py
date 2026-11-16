@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories import feature_route_repository
 from app.schemas.normalization import Color
 
 # Imported by the bulk-insert test to pin the chunk boundary.
@@ -305,6 +306,8 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
     """Delete all games and positions for the given user.
 
     Deletes game_positions first (child rows), then games. Returns the count of deleted games.
+    Also removes the feature-route `current` stamp (D-23): a route step whose target needs
+    games must not keep counting active days while the account has none.
 
     Args:
         session: AsyncSession to use for the deletes.
@@ -315,7 +318,9 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
     """
     await session.execute(delete(GamePosition).where(GamePosition.user_id == user_id))
     result = await session.execute(delete(Game).where(Game.user_id == user_id).returning(Game.id))
-    return len(result.fetchall())
+    deleted = len(result.fetchall())
+    await feature_route_repository.clear_current(session, user_id=user_id)
+    return deleted
 
 
 async def update_bot_game_persona_id(session: AsyncSession, game_id: int, persona_id: str) -> None:

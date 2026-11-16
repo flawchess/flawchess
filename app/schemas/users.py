@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 from app.core.platform_usernames import extract_platform_username
 from app.repositories.query_utils import AnalyticsPlatform
 from app.schemas.admin import ImpersonationContext
+from app.schemas.feature_route import FeatureRouteState
 from app.schemas.feedback_ask import FeedbackAskView
 from app.schemas.normalization import TimeControlBucket
 
@@ -84,6 +85,9 @@ class UserProfileResponse(BaseModel):
     active_days: int
     # Server-decided milestone feedback ask state.
     feedback_ask: FeedbackAskView
+    # Server-side feature-discovery route (D-04). None only when the stored state is
+    # corrupt; the client then shows no dot.
+    feature_route: FeatureRouteState | None
 
 
 class UserProfileUpdate(BaseModel):
