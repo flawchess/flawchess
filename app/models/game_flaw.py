@@ -122,14 +122,18 @@ class GameFlaw(Base):
     # diff/upsert preserves it by omission.
     maia_played_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
 
-    # Phase 250 facepalm-score facts (D-05). Nullable, NULL = not scored. User-side blunders
-    # only (D-06). Written only by app/services/maia_flaw_scoring.py, never by
+    # Phase 250 facepalm-score facts (D-05). Nullable, NULL = not scored. maia_reply_spread (and
+    # the Phase 254 maia_best_prob / maia_pre_spread below) are written for blunders of BOTH
+    # players since SEED-261114-iuv Part A; line_mate_ply and the three Phase 254 line-fact
+    # columns below stay user-side only (opponent rows keep them NULL, so facepalm_expr stays NULL
+    # there and the drill and library readers, which have no side gate, keep ignoring opponent
+    # rows). Written only by app/services/maia_flaw_scoring.py, never by
     # flaw_record_to_row, so a diff/upsert preserves them by omission. The Phase 250 stored
     # score and the five line-loss snapshot columns were dropped in Phase 254 (D-02, D-19):
     # the score is computed at query time by facepalm_expr and the played_line_material array
     # below replaces the snapshots.
     #   maia_reply_spread = 2 ** entropy (bits) of the full Maia policy one ply after the
-    #                       blunder (opponent to move), at the blunderer's pinned Elo.
+    #                       blunder (opponent to move), at the blunderer's (the mover's) pinned Elo.
     #   line_mate_ply     = first line ply after which the blunderer is mated; NULL = no mate.
     maia_reply_spread: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
     line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

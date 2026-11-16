@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 255
 status: completed
 stopped_at: Phase 255 complete — all phases complete
-last_updated: "2026-11-16T15:42:43.734Z"
+last_updated: "2026-11-16T20:11:32.806Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 255 complete
-state_head: 6f4d484e84e1c70f62848a0b9ef215bfc914b5e1
+state_head: f58d8e90fd00cad585fcbec926863b47457548c8
 progress:
   total_phases: 9
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-16 - Completed quick task 261116-mco: facepalm label set 8 (disagreement sampler, 60 blind prod rows appended to facepalm-labels.tsv)
+Last activity: 2026-11-16 - Completed quick task 261116-spc: Maia columns for opponent blunders (full-mode hook plus --mode opponent backfill, SEED-261114-iuv Part A)
 
 Open threads carried forward (not blockers):
 
@@ -1141,6 +1141,7 @@ None active.
 | 261115-ntq | Opening Score over time chart: eval-expected score (rolling 100) as primary line, actual score secondary, loaded on demand (SEED-261115-sgs) | 2026-11-15 | a41a98635 | [261115-ntq-implement-seed-261115-sgs](./quick/261115-ntq-implement-seed-261115-sgs/) |
 | 261116-ar3 | Feature route: complete the Import step when games exist, not on visit (overrules 255 D-14) | 2026-11-16 | 272206481 | [261116-ar3-feature-route-complete-the-import-step-w](./quick/261116-ar3-feature-route-complete-the-import-step-w/) |
 | 261116-mco | Facepalm label set 8: disagreement sampler in miss_labels.py, 60 blind prod rows appended to facepalm-labels.tsv | 2026-11-16 | 6f4d484e8 | [261116-mco-facepalm-label-set-8-sampler-disagreemen](./quick/261116-mco-facepalm-label-set-8-sampler-disagreemen/) |
+| 261116-spc | Maia columns for opponent blunders: full-mode hook plus --mode opponent backfill (SEED-261114-iuv Part A) | 2026-11-16 | f58d8e90f | [261116-spc-maia-columns-for-opponent-blunders-full-](./quick/261116-spc-maia-columns-for-opponent-blunders-full-/) |
 
 ## Deferred Items
 
