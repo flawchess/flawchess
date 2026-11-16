@@ -7,17 +7,20 @@ import json
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 import chess
 import pytest
 
+from app.services.line_material import best_line_facts, line_facts
 from scripts.blunder_check.facepalm_features import parse_labels
 from scripts.blunder_check.metrics import MaterialType
 from scripts.blunder_check.miss_labels import (
     BEST_PROB_TERTILES,
     BLIND_COLUMNS,
+    DISAGREEMENT_SET_ID,
+    LOSS_STRATUM_QUOTAS,
     MIN_STABLE_LINE_PLIES,
     MISS_SET_ID,
     MISSED_SIZE_BUCKETS,
@@ -28,12 +31,15 @@ from scripts.blunder_check.miss_labels import (
     RawCandidate,
     Selected,
     Tally,
+    append_blind_rows,
     best_prob_tertile,
     build_candidate,
     collect_candidates,
+    disagreement_group,
     is_stable_line,
     missed_size_bucket,
     stratify,
+    stratify_disagreement,
     summary_line,
     tertile_cuts,
     write_blind_tsv,
@@ -42,6 +48,7 @@ from scripts.blunder_check.miss_labels import (
 from tests.services.maia_fakes import fake_full_policy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REAL_LABELS = REPO_ROOT / "reports/blunder-check/facepalm-labels.tsv"
 
 # White Qe4 against Qe7: Qxe7 wins a queen (best_3 +9), Qa8+ wins nothing (played_3 0).
 MISS_FEN = "6k1/4q3/8/8/4Q3/8/8/6K1 w - - 0 1"
@@ -275,6 +282,8 @@ def test_help_exits_zero() -> None:
     )
     assert completed.returncode == 0
     assert "--sample-percent" in completed.stdout
+    assert "--append-to" in completed.stdout
+    assert "--mode" in completed.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -406,3 +415,185 @@ def test_bucket_and_tertile_helpers() -> None:
     cuts = tertile_cuts(probs)
     assert len(cuts) == BEST_PROB_TERTILES - 1
     assert [best_prob_tertile(p, cuts) for p in probs] == [0, 0, 0, 1, 1, 1, 2, 2, 2]
+
+
+# ---------------------------------------------------------------------------
+# Set 8: the disagreement draw (SEED-261115-agg)
+# ---------------------------------------------------------------------------
+
+OLD_MAX_N = 240  # the real label file's last n (rows 1-20 and 31-240)
+
+
+def odd9(*odd: int | None) -> tuple[int | None, ...]:
+    """A 9-slot material array from five odd-depth values; even slots copy the previous odd."""
+    slots: list[int | None] = []
+    for index, value in enumerate(odd):
+        slots.append(value)
+        if index < len(odd) - 1:
+            slots.append(value)
+    return tuple(slots)
+
+
+QUEEN_TRADE_BEST: tuple[int | None, ...] = (1, 1, 1, 1, 10, 10, 1, 1, 1)
+ZEROS = odd9(0, 0, 0, 0, 0)
+
+
+def test_disagreement_group_loss_shapes() -> None:
+    def group(*played: int) -> tuple[str, str] | None:
+        return disagreement_group(odd9(*played), None, ZEROS, None)
+
+    assert group(-3, 0, 0, 0, 0) == ("loss", "loss_early")  # mean 1.548 vs 0
+    assert group(0, 0, -5, -5, -5) == ("loss", "loss_late")  # mean 1.129 vs 0
+    assert group(0, 0, -3, -3, -3) == ("loss", "loss_late")  # a piece from depth 5: mean 0.677
+    assert group(0, -3, 0, 0, 0) == ("loss", "loss_spike")  # mean 0.774 vs 3
+    assert group(0, -3, -3, -3, -3) == ("loss", "loss_other")  # mean 1.452 vs 3
+    # Below the 0.5 threshold: a 2 pawn loss from depth 5 (mean 0.452), a one pawn blip at 5.
+    assert group(0, 0, -2, -2, -2) is None
+    assert group(0, 0, -1, 0, 0) is None
+    assert group(0, 0, 0, 0, 0) is None
+
+
+def test_disagreement_group_miss_shapes() -> None:
+    def group(*best: int, best_mate_ply: int | None = None) -> tuple[str, str] | None:
+        return disagreement_group(ZEROS, None, odd9(*best), best_mate_ply)
+
+    assert group(3, 0, 0, 0, 0) == ("miss", "miss_early")
+    assert group(0, 3, 0, 0, 0) == ("miss", "miss_spike")
+    assert group(0, 3, 3, 3, 3) == ("miss", "miss_other")
+    assert group(0, 0, 0, 0, 0, best_mate_ply=4) == ("miss", "miss_late")
+    # The seed's queen trade: the capped spike at depth 5 moves the mean 0.516, over 0.5.
+    assert disagreement_group(ZEROS, None, QUEEN_TRADE_BEST, None) == ("miss", "miss_spike")
+    assert group(0, 0, 0, 0, 0) is None
+
+
+def test_a_loss_whose_only_disagreement_is_the_gain_is_not_drawn() -> None:
+    played = odd9(-1, -1, -1, -1, -1)
+    assert disagreement_group(played, None, odd9(0, 3, 3, 3, 3), None) is None
+
+
+def disagreement_candidate(
+    game_id: int,
+    played: Sequence[int | None],
+    best: Sequence[int | None],
+    *,
+    played_mate_ply: int | None = None,
+    best_mate_ply: int | None = None,
+    best_prob: float = 0.2,
+    material: MaterialType = "misses",
+    missed: int | None = 3,
+) -> MissCandidate:
+    """A candidate carrying material arrays (depth-3 fields are the arrays' depth-3 slots)."""
+    return MissCandidate(
+        game_id=game_id,
+        ply=20,
+        mover_rating=1400 + game_id % 7,
+        move_san="Nf3",
+        pinned_elo=1400.0,
+        played_3=played[2],
+        best_3=best[2],
+        missed=missed,
+        played_mate_ply=played_mate_ply,
+        best_mate_ply=best_mate_ply,
+        best_prob=best_prob,
+        pre_spread=6.5,
+        material=material,
+        played_material=tuple(played),
+        best_material=tuple(best),
+    )
+
+
+def test_build_candidate_modes_and_arrays() -> None:
+    board = chess.Board(MISS_FEN)
+    expected_played = line_facts(board, MISS_PLAYED, MISS_REFUTATION_PV).material_array()
+    expected_best = best_line_facts(board, MISS_BEST_PV).material_array()
+
+    default = build_candidate(raw_miss(), board, MISS_PLAYED, fake_full_policy, Tally())
+    disagreement = build_candidate(
+        raw_miss(), board, MISS_PLAYED, fake_full_policy, Tally(), mode="disagreement"
+    )
+
+    assert default is not None and disagreement is not None
+    assert (default.played_3, default.best_3, default.material) == (0, 9, "misses")
+    assert disagreement.played_material == tuple(expected_played)
+    assert disagreement.best_material == tuple(expected_best)
+    assert (disagreement.played_3, disagreement.best_3) == (0, 9)
+
+
+def tracer_pool() -> list[MissCandidate]:
+    """At least one candidate per loss and miss stratum plus depth-3 pure misses."""
+    pool: list[MissCandidate] = []
+    game_id = 20_000
+    loss_shapes = [(-3, 0, 0, 0, 0), (0, 0, -5, -5, -5), (0, -3, 0, 0, 0), (0, -3, -3, -3, -3)]
+    miss_shapes = [(3, 0, 0, 0, 0), (0, 3, 0, 0, 0), (0, 3, 3, 3, 3)]
+    for shape in loss_shapes:
+        for _ in range(3):
+            game_id += 1
+            pool.append(
+                disagreement_candidate(game_id, odd9(*shape), ZEROS, material="loses", missed=None)
+            )
+    for shape in miss_shapes:
+        for _ in range(3):
+            game_id += 1
+            pool.append(disagreement_candidate(game_id, ZEROS, odd9(*shape)))
+    for _ in range(3):
+        game_id += 1
+        pool.append(disagreement_candidate(game_id, ZEROS, ZEROS, best_mate_ply=4, missed=None))
+    for i in range(12):
+        game_id += 1
+        pool.append(fake_candidate(game_id, missed=1 + i % 3, best_prob=TIER_PROBS[i % 3]))
+    return pool
+
+
+def sets_one_to_seven_copy(target: Path) -> bytes:
+    """Copy the real label file's header and rows of sets 1-7 byte for byte (set 8 may follow)."""
+    kept = [
+        line
+        for index, line in enumerate(REAL_LABELS.read_bytes().splitlines(keepends=True))
+        if index == 0 or line.split(b"\t")[1] in {b"1", b"2", b"3", b"4", b"5", b"6", b"7"}
+    ]
+    target.write_bytes(b"".join(kept))
+    return target.read_bytes()
+
+
+def test_set_eight_tracer_appends_blind_rows_byte_identically(tmp_path: Path) -> None:
+    """Pool -> stratify -> key -> append into a copy of sets 1-7 of the real label file."""
+    target = tmp_path / "labels.tsv"
+    before = sets_one_to_seven_copy(target)
+    assert before.endswith(b"\n")
+
+    draw = stratify_disagreement(tracer_pool(), plain_target=4, seed=7)
+    numbers = append_blind_rows(draw.rows, target, set_id=DISAGREEMENT_SET_ID)
+    write_key(draw.rows, tmp_path / "key.json", numbers=numbers, set_id=DISAGREEMENT_SET_ID)
+
+    after = target.read_bytes()
+    assert after.startswith(before)  # every old byte is unchanged
+    assert numbers == list(range(OLD_MAX_N + 1, OLD_MAX_N + 1 + len(draw.rows)))
+    new_lines = after[len(before) :].decode().splitlines()
+    assert len(new_lines) == len(draw.rows) > 0
+    for n, line, row in zip(numbers, new_lines, draw.rows, strict=True):
+        fields = line.split("\t")
+        assert len(fields) == 14  # no comment cell
+        assert fields[:5] == [
+            str(n),
+            "8",
+            str(row.candidate.mover_rating),
+            row.candidate.move_san,
+            f"https://flawchess.com/analysis?game_id={row.candidate.game_id}&ply=20",
+        ]
+        assert line.endswith("\t" * 9)  # eight hidden columns and the label, all empty
+        assert all(cell == "" for cell in fields[5:])
+    parsed = [r for r in parse_labels(target) if r.set_id == "8"]
+    assert [int(r.n) for r in parsed] == numbers
+    assert {r.label for r in parsed} == {""}
+
+    key = json.loads((tmp_path / "key.json").read_text())
+    assert sorted(key, key=int) == [str(n) for n in numbers]
+    for n, row in zip(numbers, draw.rows, strict=True):
+        entry = key[str(n)]
+        assert entry["set"] == "8"
+        assert (entry["game_id"], entry["stratum"]) == (row.candidate.game_id, row.stratum)
+        assert entry["group"] == row.group
+        assert entry["played_material"] == list(row.candidate.played_material)
+    # The tracer draws every group and every loss stratum it had supply for.
+    assert {row.group for row in draw.rows} == {"loss", "miss", "plain"}
+    assert {row.stratum for row in draw.rows if row.group == "loss"} == set(LOSS_STRATUM_QUOTAS)
