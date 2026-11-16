@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 15/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 17/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -509,10 +509,10 @@ Plans:
 - [x] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
 
 **Wave 13** *(blocked on Wave 12 completion)*
-- [ ] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
+- [x] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
 
 **Wave 14** *(blocked on Wave 13 completion)*
-- [ ] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
+- [x] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
 
 **Wave 15** *(human-gated, one-way)*
 - [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)

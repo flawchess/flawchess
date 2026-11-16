@@ -96,7 +96,7 @@ Owner fixture scores (`FACEPALM_DRILL_LAMBDA` 1.0): 817357:24 0.021508 to 0.1457
 - Deployed with `bin/deploy.sh`, finished 2026-11-15T22:02Z, server SHA `76b303ee`, site HTTP 200. Forward-port `ab15fab8c` (run by hand; the script skipped it).
 - Live counts with the deployed code: `spread_stamped_games=1041229 spread_pending_games=0 user_blunders_total=2327683 user_blunders_with_spread=2326316 user_blunders_with_score=1952059 user_blunders_qualifying=929926`. Qualifying share 47.6% of scored; before the refit 627,406 at the cut 0.70.
 - Smoke (read-only, live expression): the owner fixtures are not on prod, so four set 7 pure misses labelled fair were read: 2952292:85 scores 0.706, 1554612:24 0.723, 1941531:89 0.713 (all qualify, stored column 0.41, 0.18, 0.34); 3264420:25 scores 0.039 (best-move probability 5%). Library and drill lambda give the same value.
-- Sentry at 22:05Z: no issue first seen in the previous 2 hours. A check one hour after the deploy is appended below.
+- Sentry at 22:05Z: no issue first seen in the previous 2 hours. At 23:03Z (one hour after the deploy): no issue first seen in the previous 2 hours and no unresolved issue with an event in the previous 90 minutes.
 - No prod write pass (D-01).
 
 ## Deviations from Plan

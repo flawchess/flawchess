@@ -41,7 +41,8 @@ from dataclasses import dataclass
 
 import chess
 
-# Depths (plies of the stored line) whose net loss is stored on game_flaws (D-05).
+# Odd depths (plies of the stored line) the Phase 250 fixtures are aligned with (D-05); the score
+# reads the depth-3 slot of the signed arrays.
 LINE_LOSS_DEPTHS: tuple[int, ...] = (1, 3, 5, 7, 9)
 
 # Slots of the signed material arrays (D-09, D-17): slot N (1-based) = net material at depth N.
@@ -51,12 +52,6 @@ LINE_LOSS_DEPTHS: tuple[int, ...] = (1, 3, 5, 7, 9)
 # "fixed", because nothing in the D-05 score reads them (research Pitfall 14).
 LINE_MATERIAL_SLOTS: int = 9
 LINE_MATERIAL_DEPTHS: tuple[int, ...] = tuple(range(1, LINE_MATERIAL_SLOTS + 1))
-
-# game_flaws column holding the net loss at each depth.
-LINE_LOSS_COLUMNS: Mapping[int, str] = {depth: f"line_loss_{depth}" for depth in LINE_LOSS_DEPTHS}
-
-# game_flaws column holding the ply at which the blunderer is mated within the line.
-LINE_MATE_PLY_COLUMN: str = "line_mate_ply"
 
 # Material values (pawn units). The king is never captured; 0 keeps the table total.
 PIECE_VALUES: Mapping[chess.PieceType, int] = {
@@ -105,14 +100,6 @@ class LineFacts:
     def material_array(self) -> list[int | None]:
         """Signed net material for depths 1..9 (slot N - 1 = depth N; positive = blunderer up)."""
         return [self.material_at(depth) for depth in LINE_MATERIAL_DEPTHS]
-
-    def as_columns(self) -> dict[str, int | None]:
-        """The five line_loss_N values plus line_mate_ply, keyed by game_flaws column."""
-        columns: dict[str, int | None] = {
-            LINE_LOSS_COLUMNS[depth]: self.loss_at(depth) for depth in LINE_LOSS_DEPTHS
-        }
-        columns[LINE_MATE_PLY_COLUMN] = self.mate_ply
-        return columns
 
 
 def material_at_depth(material: Sequence[int | None] | None, depth: int) -> int | None:

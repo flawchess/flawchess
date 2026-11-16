@@ -178,20 +178,15 @@ FLAW_BLOB_AND_TACTIC_COLUMNS: tuple[str, ...] = (
 # preserves them by omission (D-09).
 MAIA_FLAW_COLUMNS: tuple[str, ...] = ("maia_played_prob",)
 
-# Phase 250: the eight facepalm columns (reply spread, line losses, mate ply, score), plus the
-# three Phase 254 fact columns (D-09: the signed material arrays of the played and the best line
-# and the best line's mate ply). Its OWN tuple, deliberately NOT part of MAIA_FLAW_COLUMNS or
-# FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit these keys: the
-# diff/upsert in _classify_and_fill_oracle preserves them by omission (D-05, T-254-06).
+# The facepalm fact columns: the reply spread, the played line's mate ply and the three Phase 254
+# fact columns (D-09: the signed material arrays of the played and the best line and the best
+# line's mate ply). The stored score and the five legacy line-loss columns are no longer written
+# (254 D-02, D-19); the score is computed at query time. Its OWN tuple, deliberately NOT part of
+# MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit these
+# keys: the diff/upsert in _classify_and_fill_oracle preserves them by omission (D-05, T-254-06).
 FACEPALM_COLUMNS: tuple[str, ...] = (
     "maia_reply_spread",
-    "line_loss_1",
-    "line_loss_3",
-    "line_loss_5",
-    "line_loss_7",
-    "line_loss_9",
     "line_mate_ply",
-    "facepalm_score",
     "played_line_material",
     "best_line_material",
     "best_line_mate_ply",

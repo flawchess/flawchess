@@ -28,6 +28,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Blunder check (beta): the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
 - Facepalm score: computed on the fly from the stored facts, so the blunder check and the library always use the current model (no visible change yet).
 - Facepalm score now also takes missed wins of material into account, mainly through how likely a player at your level is to find the winning move. The blunder check (beta) was re-tuned with new labels and now also serves somewhat less obvious blunders.
+- Internal: removed the stored facepalm score and the old line-loss columns; the score is computed from the stored facts.
 - Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
 
 ### Fixed

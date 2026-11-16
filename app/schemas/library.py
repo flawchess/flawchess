@@ -92,9 +92,10 @@ class FlawMarker(BaseModel):
     missed_tactic_confidence: int | None = None  # raw confidence int (0-100), or None when gated
     # 0-based ply depth of the missed tactic; None when its motif chip is hidden.
     missed_tactic_depth: int | None = None
-    # Raw 0..1 score from game_flaws.facepalm_score, None when the flaw row carries none
-    # (today only the user's own blunders are scored). Same value and flooring as
-    # FlawListItem.facepalm_score. A ranking, not a probability.
+    # Raw 0..1 score computed at query time by facepalm_expr(FACEPALM_LIBRARY_LAMBDA) over the
+    # stored facts (254 D-01), None when the flaw row carries none (today only the user's own
+    # blunders are scored). Same value and flooring as FlawListItem.facepalm_score. A ranking,
+    # not a probability.
     facepalm_score: float | None = None
 
 
@@ -239,9 +240,9 @@ class FlawListItem(BaseModel):
     missed_tactic_motif: str | None = None
     missed_tactic_confidence: int | None = None
     missed_tactic_depth: int | None = None
-    # Raw 0..1 score from game_flaws.facepalm_score (Phase 250), set only for the user's
-    # own blunders and None when unscored. The frontend floors it to a whole percent. A
-    # ranking, not a probability (250 D-01).
+    # Raw 0..1 score computed at query time by facepalm_expr(FACEPALM_LIBRARY_LAMBDA) (254
+    # D-01), set only for the user's own blunders and None when unscored. The frontend floors
+    # it to a whole percent. A ranking, not a probability (250 D-01).
     facepalm_score: float | None = None
 
 

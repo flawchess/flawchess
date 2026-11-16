@@ -37,7 +37,7 @@ from app.repositories.game_flaws_repository import (
 )
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
-from app.services.line_material import best_line_facts, line_facts
+from app.services.line_material import LineFacts, best_line_facts, line_facts
 from scripts import backfill_maia_flaws as backfill
 from tests.facepalm_seed import facepalm_fact_columns
 from tests.services.maia_fakes import fake_full_policy
@@ -551,31 +551,6 @@ _USER_BLUNDER_PLIES: tuple[int, ...] = (2, 8)
 # Facts cannot hit the bar exactly (REAL inputs), so the status test seeds a clearly
 # qualifying score instead.
 _ABOVE_THE_BAR = 0.1
-_BLUNDER_SEVERITY = 2
-
-
-async def _stored_score_counts(maker: async_sessionmaker[AsyncSession]) -> tuple[int, int]:
-    """(scored, qualifying) user-side blunders read from the STORED column, for the D-12 parity."""
-    async with maker() as session:
-        scored = (
-            await session.execute(
-                select(func.count()).where(
-                    GameFlaw.user_id == _TEST_USER_ID,
-                    GameFlaw.severity == _BLUNDER_SEVERITY,
-                    GameFlaw.facepalm_score.is_not(None),
-                )
-            )
-        ).scalar_one()
-        qualifying = (
-            await session.execute(
-                select(func.count()).where(
-                    GameFlaw.user_id == _TEST_USER_ID,
-                    GameFlaw.severity == _BLUNDER_SEVERITY,
-                    GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
-                )
-            )
-        ).scalar_one()
-    return int(scored), int(qualifying)
 
 
 def _boards_by_ply(pgn: str) -> dict[int, tuple[chess.Board, str]]:
@@ -640,15 +615,13 @@ async def test_spread_mode_scores_and_stamps_base_stamped_game(
     assert report.games_stamped == 1
     values = await _facepalm_values(session_factory, game_id)
     pre = _boards_by_ply(_PGN)[2]
-    expected = line_facts(pre[0], pre[1], _LINE_AFTER_PLY_2).as_columns()
+    expected = _fact_columns(line_facts(pre[0], pre[1], _LINE_AFTER_PLY_2))
     assert any(v is not None for v in expected.values()), "the fixture line must settle a depth"
     # Ply 2 (user blunder with a stored line): spread, line facts and score.
     assert values[2]["maia_reply_spread"] is not None
     assert {c: values[2][c] for c in expected} == expected
-    assert values[2]["facepalm_score"] is not None
     # Ply 8 (user blunder, no stored line after the last ply): spread only.
     assert values[8]["maia_reply_spread"] is not None
-    assert values[8]["facepalm_score"] is None
     assert all(values[8][c] is None for c in expected)
     # Ply 5 is the opponent's blunder: out of scope (D-06).
     assert all(v is None for v in values[5].values())
@@ -808,13 +781,9 @@ async def test_spread_status_counts(
     await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
     await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
     await _run(session_factory, tmp_path, limit=1, mode="spread")
-    # D-12: with the pre-refit constants the expression counts equal the stored-column counts.
-    stored_counts = await _stored_score_counts(session_factory)
+    # D-02: the pass writes facts only; the expression (the status counts) scores them.
     expression_counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "spread")
-    assert (
-        expression_counts["user_blunders_with_score"],
-        expression_counts["user_blunders_qualifying"],
-    ) == stored_counts
+    assert expression_counts["user_blunders_with_score"] == 1
     # Make the scored game's ply-2 facts score above the bar so the qualifying count is exercised
     # (the counts read the expression over the facts, never the stored column, 254 D-01).
     async with session_factory() as session:
@@ -911,9 +880,19 @@ async def _spread_stamped_game(
     return game_id
 
 
-def _expected_line_columns(line: str) -> dict[str, int | None]:
+def _fact_columns(facts: LineFacts) -> dict[str, Any]:
+    """The stored fact columns of a played line (254 D-09): the signed array (None when every slot
+    is unsettled, the stored shape) and the played line's mate ply."""
+    material = facts.material_array()
+    return {
+        "played_line_material": None if all(v is None for v in material) else material,
+        "line_mate_ply": facts.mate_ply,
+    }
+
+
+def _expected_line_columns(line: str) -> dict[str, Any]:
     pre, played = _boards_by_ply(_PGN)[2]
-    return line_facts(pre, played, line).as_columns()
+    return _fact_columns(line_facts(pre, played, line))
 
 
 @pytest.mark.asyncio
@@ -984,7 +963,7 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
     values; the new line's facts and score replace the old, the spread and base stay untouched."""
     game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
     old_facts = _expected_line_columns(_LINE_AFTER_PLY_2)
-    await _set_flaw(session_factory, game_id, 2, **old_facts, facepalm_score=0.5)
+    await _set_flaw(session_factory, game_id, 2, **old_facts)
     # A repair shortened the stored line after the last pass.
     await _set_line(session_factory, game_id, 3, _SHORT_LINE_AFTER_PLY_2)
     new_facts = _expected_line_columns(_SHORT_LINE_AFTER_PLY_2)
@@ -998,7 +977,7 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
     row = (await _facepalm_values(session_factory, game_id))[2]
     assert {c: row[c] for c in new_facts} == new_facts
     assert row["maia_reply_spread"] == _STORED_SPREAD
-    assert row["facepalm_score"] != 0.5
+    assert row["played_line_material"] != old_facts["played_line_material"]
     assert await _flaw_values(session_factory, game_id) == base_before
     _, line_stamp = await _facepalm_stamps(session_factory, game_id)
     assert line_stamp >= _CUTOFF
@@ -1028,7 +1007,7 @@ async def test_line_mode_blunder_without_a_line_gets_one_later(
     row = (await _facepalm_values(session_factory, game_id))[2]
     expected = _expected_line_columns(_LINE_AFTER_PLY_2)
     assert {c: row[c] for c in expected} == expected
-    assert row["facepalm_score"] is not None
+    assert row["played_line_material"] is not None
 
 
 @pytest.mark.asyncio
@@ -1197,8 +1176,6 @@ _BEST_PV_AT_PLY_2 = "g1f3"
 # Distinct stand-ins for values the pre pass must never touch.
 _SEEDED_FACEPALM: dict[str, Any] = {
     "maia_reply_spread": 3.5,
-    "facepalm_score": 0.4,
-    "line_loss_1": 12,
     "played_line_material": [-3, None, -3, None, -3, None, -3, None, -3],
 }
 
@@ -1523,7 +1500,7 @@ async def test_line_mode_writes_both_arrays_both_mate_plies_and_no_maia_value(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
 ) -> None:
     """D-09: the line pass writes played_line_material, best_line_material, line_mate_ply and
-    best_line_mate_ply plus the legacy columns from the stored lines (pv at ply + 1 and at ply),
+    best_line_mate_ply (and no legacy column) from the stored lines (pv at ply + 1 and at ply),
     and no Maia value: the base value, the spread and the two pre keys keep their seeded values."""
     game_id = await _fact_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
     maia_before = await _maia_values(session_factory, game_id)
@@ -1535,9 +1512,8 @@ async def test_line_mode_writes_both_arrays_both_mate_plies_and_no_maia_value(
     expected = _expected_new_facts(_BEST_LINE_AT_PLY_2)
     assert expected["best_line_material"] is not None, "the best line must settle a depth"
     assert {c: row[c] for c in _NEW_FACT_COLUMNS} == expected
-    legacy = _expected_line_columns(_LINE_AFTER_PLY_2)
-    assert {c: row[c] for c in legacy} == legacy
-    assert row["facepalm_score"] is not None
+    played = _expected_line_columns(_LINE_AFTER_PLY_2)
+    assert {c: row[c] for c in played} == played
     # No Maia value is written by the line pass.
     assert await _maia_values(session_factory, game_id) == maia_before
     assert maia_before["maia_best_prob"] == _SEEDED_PRE["maia_best_prob"]
