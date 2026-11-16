@@ -140,3 +140,35 @@ typed, analogous to the missed / allowed tactic categories.
 - This split is by material at depth 3, the tactic missed / allowed split is by motif. They overlap but will not
   agree row for row.
 - Facepalm blunders are rare; type x clock x side cells get thin. Check counts before designing the matrix.
+
+## Part A sequencing (owner, 2026-11-16): after Phase 256, before the prod feed
+
+Decision: finish Phase 256 first, then start the Maia backfill for opponent blunders. It does not have to wait
+for the end of the Phase 252 repair, but the order of the steps matters.
+
+**Findings (prod, 2026-11-16)**
+
+- Opponent blunders: 2,331,306 rows, `maia_played_prob` on 2,312,811, and 0 rows with `maia_reply_spread`,
+  `maia_pre_spread`, `maia_best_prob` or line material. User blunders are fully covered.
+- The Phase 252 `repair` step only rewrites `game_positions.pv`; it touches no Maia stamp or column. The best
+  move is pinned (252 D-01), so all three Maia columns are independent of the repair.
+- The `feed` step is the hazard: it hands games back to tier 4, and every tier-4 blob submit runs the Maia hook
+  in full mode. `_flaw_row` writes NULL into the facepalm and pre keys of non-user blunders, so a backfill run
+  before the hook change is wiped for every fed game.
+- Lines vs games (0.5% sample, 5,380 games): 30% of allowed and 35% of missed blunder lines are short, but 91%
+  of games have at least one short flaw line (upper bound of the fed set). The rescore is per game.
+- The score stays NULL while `played_line_material` is NULL (`_loss_sql`). Two readers have no side gate and
+  rely on that: the drill's unserved-blunder EXISTS (`blunder_check_repository.py`) and
+  `fetch_page_facepalm_scores`. Gate them before opponent line facts are written.
+
+**Order**
+
+1. Full mode fills the three Maia columns for opponent blunders (line facts stay user-only for now). In full
+   mode the two pre inputs are free (same policy as `maia_played_prob`); the reply spread is one inference.
+2. Deploy step 1, before the prod feed starts.
+3. New backfill mode for opponent blunders: both inferences in one pass, selected by row
+   (`maia_reply_spread IS NULL AND maia_played_prob IS NOT NULL`), so no new stamp column. About 4.7M
+   inferences; the Phase 250 spread pass (half that) took 5 to 6 hours locally.
+4. Line facts for opponents and the reader gates come with the rest of Part A, after the repair.
+
+The benchmark DB needs the same order; its feed pilot started on 2026-11-16.
