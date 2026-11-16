@@ -1,7 +1,7 @@
 ---
 phase: 254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611
 verified: 2026-11-16T08:30:00Z
-status: human_needed
+status: passed
 score: 22/23 must-haves verified (D-01..D-23 plus the goal truth; 5 owner-accepted deviations counted as passed by override)
 covered_files:
   - ".planning/phases/254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611/254-01-PLAN.md"
@@ -52,7 +52,7 @@ covered_files:
   - "reports/blunder-check/facepalm-fit-2026-11-15.md"
   - "reports/blunder-check/facepalm-labels.tsv"
   - "scripts/blunder_check/fit_facepalm.py"
-covered_digest: "v4:sha256:93a59c66e9e8f342ac52ee8b6ef8b69d7df74a216863ac817a510de978846d04"
+covered_digest: "v4:sha256:8aef2fa9877c6e670983a5202c0c104be8a2573034d1e0ef8fef388232e97cd3"
 behavior_unverified: 1
 overrides_applied: 3
 overrides:
@@ -86,7 +86,7 @@ human_verification:
 
 **Phase Goal:** Make the facepalm score see missed material gains, with a weight (the loss-aversion knob) that each consumer sets. Today the score only measures what the played move gives away, so an obvious missed win of material scores near 0 (prod: 88% of allowed hanging pieces score >= 0.70 vs 21% of missed ones, at the same material swing).
 **Verified:** 2026-11-16
-**Status:** human_needed
+**Status:** passed (both human items closed on 2026-11-16, see 254-UAT.md: hook check passed at 14:23Z, owner approved the closure reading)
 **Re-verification:** No, initial verification
 **Method:** read the code on `main` (a377f2c73), ran targeted tests, re-ran the constants check, read the fit and calibration reports. Prod state (deploy, alembic version, prod counts) is taken from the orchestrator's brief and the SUMMARYs, not observed.
 

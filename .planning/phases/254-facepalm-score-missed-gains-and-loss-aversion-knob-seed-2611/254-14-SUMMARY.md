@@ -65,8 +65,8 @@ coverage:
     requirement: "D-02"
     verification:
       - kind: manual
-        ref: "prod MCP at 06:28Z and 06:58Z: no game imported or analysed since 04:55Z, so nothing to observe"
-        status: pending
+        ref: "prod MCP at 14:23Z: 11 games processed since the deploy, 27 user blunders with reply spread, both arrays and best prob"
+        status: pass
     human_judgment: false
 duration: 100 min
 completed: 2026-11-16
@@ -79,7 +79,7 @@ actuals:
 
 # Phase 254 Plan 14: drop the stored score on prod Summary
 
-**The stored facepalm score and the five old line-loss columns are gone from prod (`83410165c`, deployed 2026-11-16T05:56Z). The score is computed from the stored facts everywhere. One check is still open: no game has been analysed on prod since the deploy, so the hook has not yet been seen writing on the new schema.**
+**The stored facepalm score and the five old line-loss columns are gone from prod (`83410165c`, deployed 2026-11-16T05:56Z). The score is computed from the stored facts everywhere. The hook was seen writing all facts on the new schema the same day (14:23Z).**
 
 ## Task 1: dev end to end and gate
 
@@ -109,6 +109,8 @@ actuals:
 - **Hook check (S4):** at 06:28Z and 06:58Z no game had been imported or analysed since 04:55Z (the last one got its Maia stamp at 04:55:36Z, before the deploy), and no analysed game is waiting for the hook. The write path is covered by the dev run and the test suite on the dropped schema. Re-check once prod has traffic: games with `maia_flaws_completed_at > '2026-11-16 05:57+00'` above 0.
 
 - **Update 07:16Z:** the first game since the deploy (3294647) was imported and processed at 07:13Z. The hook ran on the dropped schema: all three stamps set, `maia_played_prob` written on its one flaw, no Sentry issue. That flaw is a mistake, not a blunder, so the blunder-only facts (reply spread, material arrays, best prob) are not expected on it and have not yet been seen written after the deploy.
+
+- **Closed 14:23Z:** 11 games have been processed since the deploy. 27 of their blunders carry the reply spread, both material arrays and the best-move probability. The hook check passes.
 
 ## Task Commits
 
