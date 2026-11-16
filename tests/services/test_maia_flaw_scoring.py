@@ -38,9 +38,9 @@ from app.repositories.game_flaws_repository import (
 from app.services.eval_apply import _classify_and_fill_oracle
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.best_move_candidates import pinned_elo_for_mover
-from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, LINE_DEPTH
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
 from app.services.facepalm_score import FacepalmFacts, facepalm_expr, facepalm_score
-from app.services.line_material import LineFacts, best_line_facts, line_facts, material_at_depth
+from app.services.line_material import LineFacts, best_line_facts, line_facts
 from app.services.maia_flaw_scoring import (
     best_move_uci,
     ScoringMode,
@@ -445,9 +445,9 @@ async def test_scores_set_counts_in_memory(
         FacepalmFacts(
             played_prob=row["maia_played_prob"],
             reply_spread=row["maia_reply_spread"],
-            played_3=material_at_depth(row["played_line_material"], LINE_DEPTH),
+            played_material=row["played_line_material"],
             mate_ply=row["line_mate_ply"],
-            best_3=material_at_depth(row["best_line_material"], LINE_DEPTH),
+            best_material=row["best_line_material"],
             best_mate_ply=row["best_line_mate_ply"],
             best_prob=row["maia_best_prob"],
             pre_spread=row["maia_pre_spread"],
@@ -903,6 +903,9 @@ _PK_KEYS = {"user_id", "game_id", "ply"}
 # A stored played probability that no fake_full_policy call could produce for the Scotch ply-4
 # move, so a score computed from it proves the stored value was read, not re-derived.
 _STORED_PLAYED_PROB = 0.0123
+# The Scotch blunder loses no material, so under best_prob_for_misses its score reads the best-move
+# probability: a stored one keeps the row scored (254 WR-01 / 256 D-04).
+_STORED_BEST_PROB = 0.3
 _STORED_SPREAD = 3.5
 
 
@@ -934,7 +937,11 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
         pv={_SCOTCH_FLAW_PLY + 1: pv},
     )
     await _store_base_values(
-        session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
+        session_factory,
+        game_id,
+        _SCOTCH_FLAW_PLY,
+        maia_played_prob=_STORED_PLAYED_PROB,
+        maia_best_prob=_STORED_BEST_PROB,
     )
     calls = _recording_policy(monkeypatch)
 
@@ -958,8 +965,9 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            best_prob=_STORED_BEST_PROB,
             reply_spread=spread,
-            played_3=facts.material_at(3),
+            played_material=facts.material_array(),
             mate_ply=facts.mate_ply,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
@@ -981,8 +989,9 @@ def _expected_score_without_spread(pre: chess.Board, played: str, pv: str | None
     score = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            best_prob=_STORED_BEST_PROB,
             reply_spread=None,
-            played_3=facts.material_at(3),
+            played_material=facts.material_array(),
             mate_ply=facts.mate_ply,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
@@ -1005,7 +1014,11 @@ async def test_spread_mode_no_rating_keeps_line_facts_and_skips_inference(
         pv={_SCOTCH_FLAW_PLY + 1: pv},
     )
     await _store_base_values(
-        session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
+        session_factory,
+        game_id,
+        _SCOTCH_FLAW_PLY,
+        maia_played_prob=_STORED_PLAYED_PROB,
+        maia_best_prob=_STORED_BEST_PROB,
     )
     calls = _recording_policy(monkeypatch)
 
@@ -1048,6 +1061,7 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
         _SCOTCH_FLAW_PLY,
         maia_played_prob=_STORED_PLAYED_PROB,
         maia_reply_spread=_STORED_SPREAD,
+        maia_best_prob=_STORED_BEST_PROB,
     )
 
     def _must_not_run(fen: str, elo: float) -> dict[str, float]:
@@ -1070,8 +1084,9 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            best_prob=_STORED_BEST_PROB,
             reply_spread=_STORED_SPREAD,
-            played_3=facts.material_at(3),
+            played_material=facts.material_array(),
             mate_ply=facts.mate_ply,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
@@ -1089,7 +1104,11 @@ async def test_line_mode_blunder_without_stored_spread_gets_facts_but_no_score(
     one)."""
     game_id, pv = await _scotch_user_blunder(make_game)
     await _store_base_values(
-        session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
+        session_factory,
+        game_id,
+        _SCOTCH_FLAW_PLY,
+        maia_played_prob=_STORED_PLAYED_PROB,
+        maia_best_prob=_STORED_BEST_PROB,
     )
     score = score_game(await _inputs(session_factory, game_id), None, "line")
     row = score.rows[0]
@@ -2077,8 +2096,9 @@ async def test_pre_inputs_reuse_the_flaw_policy_call(
 async def test_best_move_missing_keeps_loss_only_score(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """No pv and no best_move at the flaw ply: best prob and best arrays NULL, reason counted,
-    the row is still scored on the loss alone and the pre spread is still stored."""
+    """No pv and no best_move at the flaw ply: best prob and best arrays NULL, reason counted, the
+    pre spread is still stored. The Scotch blunder loses no material, so under best_prob_for_misses
+    the row is unscored without a best-move probability (254 WR-01 / 256 D-04)."""
     game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
     score = score_game(await _inputs(session_factory, game_id), None)
     assert score.reasons["best_move_missing"] == 1
@@ -2087,7 +2107,7 @@ async def test_best_move_missing_keeps_loss_only_score(
     assert row["maia_pre_spread"] is not None
     assert row["best_line_material"] is None
     assert row["best_line_mate_ply"] is None
-    assert score.scores_set == 1
+    assert score.scores_set == 0
 
 
 async def test_best_move_outside_the_policy_counts_best_move_missing(
@@ -2143,7 +2163,11 @@ async def test_spread_and_line_rows_never_carry_pre_inputs(
     """Spread and line modes write FACEPALM_COLUMNS only: the pre keys belong to full mode."""
     game_id, _ = await _best_line_user_blunder(make_game)
     await _store_base_values(
-        session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
+        session_factory,
+        game_id,
+        _SCOTCH_FLAW_PLY,
+        maia_played_prob=_STORED_PLAYED_PROB,
+        maia_best_prob=_STORED_BEST_PROB,
     )
     inputs = await _inputs(session_factory, game_id)
     for mode in ("spread", "line"):

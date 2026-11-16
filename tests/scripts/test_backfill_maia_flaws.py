@@ -611,6 +611,9 @@ async def test_spread_mode_scores_and_stamps_base_stamped_game(
         seed_base=True,
         pv={3: _LINE_AFTER_PLY_2},
     )
+    # Ply 2 is a pure miss (no material loss): under best_prob_for_misses its score needs a stored
+    # best-move probability (254 WR-01 / 256 D-04). The spread pass leaves the pre keys alone.
+    await _set_flaw(session_factory, game_id, 2, maia_best_prob=_SEEDED_PRE["maia_best_prob"])
     base_before = await _flaw_values(session_factory, game_id)
     base_stamp_before = await _stamp(session_factory, game_id)
 
@@ -782,8 +785,10 @@ async def test_spread_status_counts(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Exact spread counts after one of two games was scored: 2 user blunders each, one scored."""
-    await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
-    await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
+    for _ in range(2):
+        game_id = await make_game(base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
+        # Ply 2 is a pure miss: its score needs a best-move probability (254 WR-01 / 256 D-04).
+        await _set_flaw(session_factory, game_id, 2, maia_best_prob=_SEEDED_PRE["maia_best_prob"])
     await _run(session_factory, tmp_path, limit=1, mode="spread")
     # D-02: the pass writes facts only; the expression (the status counts) scores them.
     expression_counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "spread")
@@ -880,7 +885,14 @@ async def _spread_stamped_game(
         facepalm_spread_completed_at=func.now(),
         facepalm_line_completed_at=line_stamp,
     )
-    await _set_flaw(maker, game_id, 2, maia_reply_spread=_STORED_SPREAD)
+    # Ply 2 is a pure miss: its score needs a best-move probability (254 WR-01 / 256 D-04).
+    await _set_flaw(
+        maker,
+        game_id,
+        2,
+        maia_reply_spread=_STORED_SPREAD,
+        maia_best_prob=_SEEDED_PRE["maia_best_prob"],
+    )
     return game_id
 
 

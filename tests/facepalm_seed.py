@@ -36,6 +36,10 @@ SEED_PROB_MIN: Final[float] = 0.001
 # Reply spreads of the search grid. Between 4 and 16 there must be a value (8): a low target
 # (about 0.05) needs a spread above 4 so that played_prob stays inside (SEED_PROB_MIN, 1].
 SEED_SPREADS: Final[tuple[float, ...]] = (1.0, 2.0, 4.0, 8.0, 16.0)
+# Best-move probability of a scored seed row. Under best_prob_for_misses a no-loss grid point
+# (played_3 0) reads the best-move term, and since 254 WR-01 / 256 D-04 an unknown best-move
+# probability leaves that row unscored, so seeded rows carry one.
+SEED_BEST_PROB: Final[float] = 0.2
 # Played-move probability used to read the rest of the linear predictor off the Python twin.
 _PROBE_PROB: Final[float] = 0.5
 _ARRAY_SLOTS: Final[int] = 9
@@ -66,8 +70,13 @@ def _rest_of_z(model: FacepalmModel, lam: float, played_3: int, spread: float) -
     Reading it off `facepalm_score` keeps the seed valid for every model shape: the twin owns
     the term rules. None when the twin leaves the row unscored.
     """
+    # The probe reads the same array the seed stores, so it is valid under every material input.
     facts = FacepalmFacts(
-        played_prob=_PROBE_PROB, reply_spread=spread, played_3=played_3, mate_ply=None
+        played_prob=_PROBE_PROB,
+        reply_spread=spread,
+        played_material=_material_array(played_3),
+        mate_ply=None,
+        best_prob=SEED_BEST_PROB,
     )
     score = facepalm_score(facts, lam=lam, model=model)
     if score is None:
@@ -82,8 +91,9 @@ def facepalm_fact_columns(
     """GameFlaw keyword values whose `facepalm_expr(lam, model)` equals `target` (None = unscored).
 
     Reader tests seed facts, never the stored score, since readers use the expression from R2
-    on (D-01). The best line and the two pre-blunder inputs stay NULL, so the missed term is 0
-    and `lam` does not move the value. Search: the played depth-3 material from 0 down to
+    on (D-01). The best line and the pre-blunder spread stay NULL, so the missed term is 0 and
+    `lam` does not move the value; the best-move probability is SEED_BEST_PROB (a no-loss row
+    stays scored under best_prob_for_misses, 254 WR-01). Search: the played depth-3 material from 0 down to
     -LOSS_CAP, spreads from SEED_SPREADS, the first grid point whose solved played probability
     lies in [SEED_PROB_MIN, 1.0] wins; the probability is solved in closed form from the logit
     of the target. Raises ValueError when no grid point reaches the target (for example a refit
@@ -108,6 +118,7 @@ def facepalm_fact_columns(
                     "maia_played_prob": probability,
                     "maia_reply_spread": spread,
                     "played_line_material": _material_array(played_3),
+                    "maia_best_prob": SEED_BEST_PROB,
                 }
     raise ValueError("no seed grid point reaches the target score")
 

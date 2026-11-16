@@ -54,7 +54,9 @@ MAX_BLUNDER_POSITION: int = 5
 # 250 D-01 / D-04 facepalm score (app/services/facepalm_score.py). A user blunder qualifies when its
 # score is at least FACEPALM_SCORE_MIN. 254 D-13: 0.50 is the owner's choice of 2026-11-15,
 # deliberately below the labels' meaning (label 1 = "should score above 70%", D-23) so the drill
-# collects answers over a wider difficulty range.
+# collects answers over a wider difficulty range. 256 D-13: at the Phase 256 refit checkpoint of
+# 2026-11-16 the owner kept 0.50 (reports/blunder-check/facepalm-fit-2026-11-16.md, "Owner
+# section"); the orchestrator had recommended 0.70 to cut false alarms, the owner declined.
 FACEPALM_SCORE_MIN: float = 0.5
 # Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
 PLAYED_PROB_OFFSET: float = 0.01
@@ -65,15 +67,18 @@ LOSS_CAP: int = 5
 # Loss value of a mate within LINE_DEPTH plies.
 MATE_LOSS: int = 5
 # 254 D-01 / D-21 fitted facepalm model: the output of scripts/blunder_check/fit_facepalm.py,
-# refitted in Phase 254 on 2026-11-15 on the lines as stored (before the Phase 252 repair finished,
-# CONTEXT D-21) with the set 7 miss labels. Features:
-# reports/blunder-check/facepalm-features-2026-11-15.tsv, report:
-# reports/blunder-check/facepalm-fit-2026-11-15.md, pasted as printed, never hand-adjusted.
-# `fit_facepalm.py --check-constants` proves they still equal the refit.
-FACEPALM_INTERCEPT: float = -0.7583
-FACEPALM_PLAYED_COEF: float = -0.4146
-FACEPALM_SPREAD_COEF: float = -0.2585
-FACEPALM_LOSS_COEF: float = 1.0129
+# refitted in Phase 256 on 2026-11-16 on label sets 1-8 with the material input aggregated over
+# depths (the stored lines as they were, before the Phase 252 repair finished). Features:
+# reports/blunder-check/facepalm-features-2026-11-16.tsv, report:
+# reports/blunder-check/facepalm-fit-2026-11-16.md, pasted as printed, never hand-adjusted.
+# `fit_facepalm.py --features reports/blunder-check/facepalm-features-2026-11-16.tsv
+# --labels reports/blunder-check/facepalm-labels.tsv --out <report> --check-constants` proves they
+# still equal the refit (no forced flag; tests/scripts/test_fit_facepalm.py runs it).
+# The previous Phase 254 model (depth_3 input) is kept as tests/facepalm_models.PHASE_254_MODEL.
+FACEPALM_INTERCEPT: float = -1.2172
+FACEPALM_PLAYED_COEF: float = -0.6083
+FACEPALM_SPREAD_COEF: float = -0.3617
+FACEPALM_LOSS_COEF: float = 1.1643
 FACEPALM_LOSS_FLOOR: int | None = 0
 # 254 D-06 / D-07 / D-08 shape selectors of the score model (app/services/facepalm_score.py):
 # the model holds every shape the refit may pick, so the refit is a constants-only change.
@@ -84,17 +89,30 @@ MaterialForm = Literal["combined", "split"]
 SpreadForm = Literal["always", "loss_only", "best_prob_for_misses"]
 FACEPALM_MATERIAL_FORM: MaterialForm = "split"
 # Coefficient of the missed term in the split form (0.0 = the term is not in the model).
-FACEPALM_MISSED_COEF: float = 0.0891
+FACEPALM_MISSED_COEF: float = 0.3538
 # Lower clip of the missed term (None = unclipped: a best line behind at depth 3 gives a
 # negative gain), the cap, and the value of a best-line mate within LINE_DEPTH (a missed mate
 # must not score as nothing missed).
-FACEPALM_MISSED_FLOOR: int | None = None
+FACEPALM_MISSED_FLOOR: int | None = 0
 FACEPALM_MISSED_CAP: int = 5
 FACEPALM_MISSED_MATE: int = 5
 FACEPALM_SPREAD_FORM: SpreadForm = "best_prob_for_misses"
+# 256 D-06: which stored depths the loss and the missed gain read. "depth_3" reads depth 3 only
+# (the Phase 254 score); "decaying_mean" is the weighted mean over the odd depths 1, 3, 5, 7, 9;
+# "first_stable" is the first odd-depth value that the next odd depth confirms, discounted by
+# MATERIAL_DECAY_RATIO to the power of its onset index. Set by the refit; depth_3 reproduces the
+# Phase 254 score.
+MaterialInput = Literal["depth_3", "decaying_mean", "first_stable"]
+FACEPALM_MATERIAL_INPUT: MaterialInput = "decaying_mean"
+# 256 D-11: the "loses material" test of the gated spread forms. None = any loss above 0, a number
+# g = loss >= g. Set by the refit.
+FACEPALM_LOSS_GATE: float | None = None
+# Weight ratio between consecutive odd depths of the aggregate material inputs, fixed by the owner
+# in SEED-261115-agg, not fitted.
+MATERIAL_DECAY_RATIO: float = 0.5
 # D-08 optional inputs (0.0 = the input is not in the model): ln(best-move probability +
 # PLAYED_PROB_OFFSET) and the reply spread of the position before the blunder.
-FACEPALM_BEST_PROB_COEF: float = 1.0405
+FACEPALM_BEST_PROB_COEF: float = 1.9618
 FACEPALM_PRE_SPREAD_COEF: float = 0.0000
 # 254 D-03 / D-04 loss-aversion knob: lambda multiplies the missed term only (0 = the loss-only
 # score). Two constants so the consumers can diverge: the blunder-check drill selection (D-03,

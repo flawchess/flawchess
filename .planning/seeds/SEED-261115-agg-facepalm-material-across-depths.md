@@ -144,3 +144,8 @@ over the odd depths 1, 3, 5, 7, 9 (even slots are mid-exchange values). AUC on t
 - Open for the phase: the "loses material" gate (loss > 0 flips on any small late loss under a mean; test a
   threshold of 1 against no gate), WR-01, WR-03.
 - Order: a quick task for the sampler and the draw now, then a phase for the refit, executed once set 8 is labelled.
+
+## Promoted (2026-11-16)
+
+Phase 256 in ROADMAP.md. Decisions from the discuss phase:
+`.planning/phases/256-facepalm-refit-material-aggregated-over-depths/256-CONTEXT.md`.

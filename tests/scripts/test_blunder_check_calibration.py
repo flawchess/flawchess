@@ -33,8 +33,8 @@ from app.services.blunder_check_rules import (
     LINE_DEPTH,
     SlotPlan,
 )
+from app.services.facepalm_material import single_depth_material
 from app.services.facepalm_score import FacepalmFacts, facepalm_score
-from app.services.line_material import material_at_depth
 from scripts.blunder_check.metrics import (
     HAZARD,
     EloBucket,
@@ -121,6 +121,16 @@ SEEDED_BEST_PROB = 0.6
 SEEDED_PRE_SPREAD = 4.0
 
 MakeGame = Callable[..., Awaitable[int]]
+
+
+def _line_of(value: int | None) -> tuple[int | None, ...] | None:
+    """The stored array of a scalar test input: depth 3 known, the rest unknown (None stays None)."""
+    return None if value is None else single_depth_material(value)
+
+
+def _as_tuple(array: list[int | None] | None) -> tuple[int | None, ...] | None:
+    """A stored array as the record holds it (None stays None, an unscored seed has no line)."""
+    return None if array is None else tuple(array)
 
 
 def _material(value: int) -> list[int | None]:
@@ -293,6 +303,9 @@ class TestTracer:
             SEEDED_BEST_3,
             None,
         )
+        # Phase 256: the record keeps the stored 9-slot arrays whole, not just their depth-3 slot.
+        assert blunder.played_material == tuple(_material(SEEDED_PLAYED_3))
+        assert blunder.best_material == tuple(_material(SEEDED_BEST_3))
         assert blunder.best_mate_ply is None
         assert blunder.maia_best_prob == pytest.approx(SEEDED_BEST_PROB)
         assert blunder.maia_pre_spread == pytest.approx(SEEDED_PRE_SPREAD)
@@ -302,9 +315,9 @@ class TestTracer:
             FacepalmFacts(
                 played_prob=SEEDED_PLAYED_PROB,
                 reply_spread=SEEDED_SPREAD,
-                played_3=SEEDED_PLAYED_3,
+                played_material=tuple(_material(SEEDED_PLAYED_3)),
                 mate_ply=None,
-                best_3=SEEDED_BEST_3,
+                best_material=tuple(_material(SEEDED_BEST_3)),
                 best_prob=SEEDED_BEST_PROB,
                 pre_spread=SEEDED_PRE_SPREAD,
             ),
@@ -388,6 +401,9 @@ _UNSET: Any = object()
 DEFAULT_PLAYED_PROB = 0.05
 DEFAULT_SPREAD = 2.0
 DEFAULT_PLAYED_3 = -3
+# Best-move probability of a no-loss blunder that must stay scored under best_prob_for_misses
+# (254 WR-01 / 256 D-04: a pure miss without a best-move probability is unscored).
+DEFAULT_BEST_PROB = 0.2
 
 
 def _blunder(
@@ -400,7 +416,7 @@ def _blunder(
     best_3: int | None = None,
     mate_ply: int | None = None,
     best_mate_ply: int | None = None,
-    best_prob: float | None = None,
+    best_prob: float | None = _UNSET,
     pre_spread: float | None = None,
     has_line: bool = True,
     preceding: list[MoveJudgement] | None = None,
@@ -413,23 +429,29 @@ def _blunder(
 
     `score` seeds the facts (prob, spread, played_3) so the computed score lands within
     SEED_FACEPALM_TOLERANCE of it (None = an unscored fact set); any fact passed explicitly
-    overrides the seeded or default one.
+    overrides the seeded or default one. `best_prob` defaults to the seeded one with a `score`
+    (so a seeded no-loss row stays scored) and to None otherwise; pass None to keep it unknown.
     """
     facts: dict[str, Any] = {
         "played_prob": DEFAULT_PLAYED_PROB,
         "spread": DEFAULT_SPREAD,
-        "played_3": DEFAULT_PLAYED_3,
+        "played_material": single_depth_material(DEFAULT_PLAYED_3),
+        "best_prob": None,
     }
     if score is not _UNSET:
         seeded = facepalm_fact_columns(score, lam=FACEPALM_DRILL_LAMBDA)
         facts = {
             "played_prob": seeded["maia_played_prob"],
             "spread": seeded["maia_reply_spread"],
-            "played_3": material_at_depth(seeded["played_line_material"], LINE_DEPTH),
+            # The seeded array is kept whole (Phase 256: the record scores the full line).
+            "played_material": _as_tuple(seeded["played_line_material"]),
+            "best_prob": seeded["maia_best_prob"],
         }
-    for key, value in (("played_prob", played_prob), ("spread", spread), ("played_3", played_3)):
+    for key, value in (("played_prob", played_prob), ("spread", spread), ("best_prob", best_prob)):
         if value is not _UNSET:
             facts[key] = value
+    if played_3 is not _UNSET:
+        facts["played_material"] = _line_of(played_3)
     return BlunderRecord(
         game_id=1,
         ply=20,
@@ -443,11 +465,11 @@ def _blunder(
         es_ref=0.5,
         maia_played_prob=facts["played_prob"],
         maia_reply_spread=facts["spread"],
-        played_3=facts["played_3"],
-        best_3=best_3,
+        played_material=facts["played_material"],
+        best_material=_line_of(best_3),
         line_mate_ply=mate_ply,
         best_mate_ply=best_mate_ply,
-        maia_best_prob=best_prob,
+        maia_best_prob=facts["best_prob"],
         maia_pre_spread=pre_spread,
         has_line=has_line,
         preceding=preceding or [],
@@ -567,9 +589,9 @@ class TestBlunderRecordFacts:
             FacepalmFacts(
                 played_prob=0.03,
                 reply_spread=3.0,
-                played_3=-2,
+                played_material=single_depth_material(-2),
                 mate_ply=None,
-                best_3=4,
+                best_material=single_depth_material(4),
                 best_mate_ply=None,
                 best_prob=0.5,
                 pre_spread=6.0,
@@ -616,11 +638,13 @@ class TestSectionMaterialTypes:
         return Collection(
             blunders=[
                 _blunder(played_3=-3),  # loses
-                _blunder(played_3=0, best_3=3),  # misses
+                _blunder(played_3=0, best_3=3, best_prob=DEFAULT_BEST_PROB),  # misses
                 _blunder(played_3=-3, best_3=2),  # loses and misses
                 # neither: an easy-to-find move (high played prob, wide spread) so it stays low
                 # under the refit; the default p 0.05 / spread 2 scores 0.60 there.
-                _blunder(played_3=0, best_3=0, played_prob=0.5, spread=8.0),
+                _blunder(
+                    played_3=0, best_3=0, played_prob=0.5, spread=8.0, best_prob=DEFAULT_BEST_PROB
+                ),
                 _blunder(played_3=None),  # unknown: no played line, no mate
             ]
         )
@@ -971,14 +995,15 @@ class TestCacheRoundTrip:
         restored = read_cache(path)
         assert restored.blunders == collection.blunders
 
-    def test_cache_with_the_previous_version_is_refused(self, tmp_path: Path) -> None:
-        # T-254-26: a version 2 cache holds a stored score, not the facts the report now scores.
+    def test_cache_version_3_is_refused(self, tmp_path: Path) -> None:
+        # T-256-04: a version 3 cache holds depth-3 material only, which an aggregate model
+        # would score as depth 3 on every input; it must be re-sampled.
         path = tmp_path / "cache.json"
         write_cache(Collection(blunders=[_blunder()]), path)
         raw = json.loads(path.read_text())
-        raw["version"] = 2
+        raw["version"] = 3
         path.write_text(json.dumps(raw))
-        with pytest.raises(ValueError, match=r"unsupported cache version 2.*version 3"):
+        with pytest.raises(ValueError, match=r"unsupported cache version 3.*version 4"):
             read_cache(path)
 
     def test_cache_round_trips_every_fact_and_stores_no_score(self, tmp_path: Path) -> None:
@@ -997,6 +1022,10 @@ class TestCacheRoundTrip:
         restored = read_cache(path).blunders[0]
         assert restored == blunder
         assert (restored.played_3, restored.best_3, restored.best_mate_ply) == (-2, 3, 2)
+        # Phase 256 (CACHE_VERSION 4): both full arrays come back as tuples.
+        assert restored.played_material == single_depth_material(-2)
+        assert restored.best_material == single_depth_material(3)
+        assert stored["played_material"] == list(single_depth_material(-2))
         assert (restored.maia_best_prob, restored.maia_pre_spread) == (0.41, 5.5)
 
 

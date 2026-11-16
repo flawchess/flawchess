@@ -1,19 +1,15 @@
-"""Per-depth loss / missed-gain series and their decaying mean (SEED-261115-agg).
+"""The set-8 sampler's view of the per-depth loss / missed-gain series (SEED-261115-agg).
 
-The shipped facepalm score reads the material of the played and the best line at depth 3 only.
-The seed asks whether a mean over the stored depths 1, 3, 5, 7 and 9, weighted 1, 1/2, 1/4, 1/8,
-1/16 (normalised over the depths that are known), tracks the owner's labels better. This module
-holds that arithmetic once, pure (no I/O, no DB, no Maia), so the set-8 sampler
-(``miss_labels.py --mode disagreement``) can find the rows where depth 3 and the decaying mean
-disagree. The later refit phase may reuse or move it.
+The shipped implementation lives in ``app/services/facepalm_material.py``: the depths, the decay
+ratio and weights and the weighted mean are imported from there, so the app, the fit and the
+sampler share one decaying mean (Phase 256 D-06). This module stays as the set-8 draw used it
+(``miss_labels.py --mode disagreement``, quick task 261116-mco): ``loss_series`` and
+``gain_series`` keep the sampler's owner-spec integer series, with the per-depth gain floored at 0,
+and ``decaying_mean`` takes a depth-keyed mapping. ``tests/scripts/test_decaying_mean.py`` pins
+both series to the app's ``loss_by_depth`` / ``gain_by_depth`` (floor 0).
 
 Only odd depths are used: even slots of the material arrays are mid-exchange values (Phase 254
 D-17, ``app.services.line_material``). The decay ratio is fixed by the owner, not fitted.
-
-Deliberate difference from the shipped score: the per-depth gain is floored at 0 per the owner's
-spec, while the shipped missed term has ``FACEPALM_MISSED_FLOOR`` None (a best line behind the
-played one gives a negative raw value). Settling that is the refit's job; the shipped constants
-and ``app/services/facepalm_score.py`` are untouched.
 """
 
 from __future__ import annotations
@@ -25,14 +21,20 @@ from app.services.blunder_check_rules import (
     FACEPALM_MISSED_MATE,
     LOSS_CAP,
     MATE_LOSS,
+    MATERIAL_DECAY_RATIO,
 )
-from app.services.line_material import LINE_LOSS_DEPTHS, material_at_depth
+from app.services.facepalm_material import (
+    MATERIAL_DECAY_WEIGHTS,
+    MATERIAL_DEPTHS,
+)
+from app.services.facepalm_material import decaying_mean as _app_decaying_mean
+from app.services.line_material import material_at_depth
 
 # Odd depths only: even slots are mid-exchange values (Phase 254 D-17).
-DECAY_DEPTHS: tuple[int, ...] = LINE_LOSS_DEPTHS
+DECAY_DEPTHS: tuple[int, ...] = MATERIAL_DEPTHS
 # Weight ratio between consecutive odd depths, fixed by the owner (not fitted).
-DECAY_RATIO: float = 0.5
-DECAY_WEIGHTS: tuple[float, ...] = tuple(DECAY_RATIO**index for index in range(len(DECAY_DEPTHS)))
+DECAY_RATIO: float = MATERIAL_DECAY_RATIO
+DECAY_WEIGHTS: tuple[float, ...] = MATERIAL_DECAY_WEIGHTS
 
 
 def loss_series(
@@ -78,13 +80,5 @@ def gain_series(
 
 
 def decaying_mean(series: Mapping[int, int | None]) -> float | None:
-    """Weighted mean over the known depths (weights renormalised over them); None when none known."""
-    total = 0.0
-    weight_sum = 0.0
-    for depth, weight in zip(DECAY_DEPTHS, DECAY_WEIGHTS, strict=True):
-        value = series.get(depth)
-        if value is None:
-            continue
-        total += weight * value
-        weight_sum += weight
-    return None if weight_sum == 0.0 else total / weight_sum
+    """Weighted mean over the known depths (the app's `decaying_mean`); None when none known."""
+    return _app_decaying_mean(tuple(series.get(depth) for depth in DECAY_DEPTHS))
