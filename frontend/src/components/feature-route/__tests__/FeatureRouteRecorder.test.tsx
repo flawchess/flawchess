@@ -208,6 +208,19 @@ describe('FeatureRouteRecorder', () => {
     expect(server.profile.feature_route?.steps.import?.status).toBe('done');
   });
 
+  it('(n) a profile with games completes import from /train even while the nav is locked (D-14 overruled 2026-11-16)', async () => {
+    tier1State = false;
+    mockStatefulServer(
+      makeProfile({ chess_com_game_count: IMPORTED_GAME_COUNT, feature_route: { steps: {}, current: null } }),
+    );
+    renderAt('/train');
+
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith(FEATURE_ROUTE_PATH, { action: 'done', step: 'import' }),
+    );
+    await waitFor(() => expect(screen.getByTestId('route-probe').textContent).toBe('control:train-start'));
+  });
+
   it('(b) visiting /train does not complete the train step (it completes on use, D-21)', async () => {
     mockProfile(makeProfile({ feature_route: { steps: { import: doneRecord() }, current: null } }));
     renderAt('/train');
