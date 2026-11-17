@@ -1192,8 +1192,7 @@ export function EvalChart({
                 {/* Facepalm score of a scored blunder, on its own line below the verdict. */}
                 {activeMarker.severity === 'blunder' && activeMarker.facepalm_score != null && (
                   <div
-                    className="flex items-center gap-1.5"
-                    style={{ color: severityColor(activeMarker.severity) }}
+                    className="flex items-center gap-1.5 text-muted-foreground"
                     data-testid="eval-chart-tooltip-facepalm"
                   >
                     <TreePalm className="h-3 w-3 shrink-0" aria-hidden="true" />
