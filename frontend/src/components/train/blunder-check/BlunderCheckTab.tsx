@@ -119,8 +119,8 @@ function StartScreen({
         </Button>
       )}
       <p className="text-sm text-muted-foreground" data-testid="blunder-check-idea">
-        Puzzles tell you that something is up. Real games don't. Blunder check trains the habit
-        of checking a move before you play it.
+        Most games are decided by blunders, not brilliancies. Strong players avoid them by
+        checking every move before they play it. This drill turns that check into a habit.
       </p>
       <ul
         className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
