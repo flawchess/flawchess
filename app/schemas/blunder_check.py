@@ -104,6 +104,9 @@ class WindowStartResponse(BaseModel):
     # so no clock runs): `prompt` is then the first judged move and `timer_remaining_ms` the full
     # countdown it will get. False on every begin response and on any reload after Ready.
     awaiting_ready: bool
+    # The game move that led to `start_fen`, for the last-move highlight before any window move
+    # is shown. None at the game's first position and on windows composed before it was stored.
+    prior_uci: str | None
 
 
 class AnswerRequest(BaseModel):

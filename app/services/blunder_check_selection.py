@@ -190,6 +190,8 @@ class WindowSnapshot:
     start_fen: str
     move_ucis: str
     lead_in_plies: int
+    # The move played just before `start_fen`, None at the game's first position.
+    prior_uci: str | None
 
 
 def _mainline(pgn: str) -> tuple[chess.Board, list[chess.Move]] | None:
@@ -222,6 +224,7 @@ def build_snapshot(pgn: str, first_ply: int, last_ply: int) -> WindowSnapshot | 
         start_fen=board.fen(),
         move_ucis=" ".join(move.uci() for move in moves[lead_start : end + 1]),
         lead_in_plies=first_ply - lead_start,
+        prior_uci=moves[lead_start - 1].uci() if lead_start > 0 else None,
     )
 
 
@@ -540,6 +543,7 @@ def _new_window(position: int, item: _Filled) -> NewWindow | None:
         start_fen=snapshot.start_fen,
         move_ucis=snapshot.move_ucis,
         lead_in_plies=snapshot.lead_in_plies,
+        prior_uci=snapshot.prior_uci,
         key_uci=None if blunder_ply is None else batch.positions[blunder_ply].best_move,
         refutation_uci=None
         if blunder_ply is None

@@ -132,6 +132,7 @@ class NewWindow:
     key_uci: str | None
     refutation_uci: str | None
     points_possible: int
+    prior_uci: str | None = None
 
 
 async def insert_session(
@@ -171,6 +172,7 @@ async def insert_session(
                         start_fen=w.start_fen,
                         move_ucis=w.move_ucis,
                         lead_in_plies=w.lead_in_plies,
+                        prior_uci=w.prior_uci,
                         key_uci=w.key_uci,
                         refutation_uci=w.refutation_uci,
                         points_possible=w.points_possible,

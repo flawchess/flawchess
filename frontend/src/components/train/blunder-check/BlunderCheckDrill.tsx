@@ -449,7 +449,7 @@ function SolutionLoadingView({
     () => applyUcis(window.startFen, window.shownUcis),
     [window.startFen, window.shownUcis],
   );
-  const lastUci = window.shownUcis[window.shownUcis.length - 1];
+  const lastUci = window.shownUcis[window.shownUcis.length - 1] ?? window.priorUci;
   return (
     <BlunderCheckStage
       progress={progress}
@@ -533,8 +533,10 @@ function WindowView({
     () => applyUcis(window.startFen, window.shownUcis),
     [window.startFen, window.shownUcis],
   );
-  const lastUci = window.shownUcis[window.shownUcis.length - 1];
-  const lastMove = uciToSquares(lastUci ?? null);
+  // Before any window move is shown (the Ready gate, the lead-in's first beat) the highlight is
+  // the game move that led to the start position, as on any board.
+  const lastUci = window.shownUcis[window.shownUcis.length - 1] ?? window.priorUci;
+  const lastMove = uciToSquares(lastUci);
   // Null once the prompted move is on the board (and for a malformed UCI): no arrow, no badge.
   const promptSquares = showsPromptArrow(state) ? uciToSquares(prompt.move_uci) : null;
   const arrows: BoardArrow[] = promptSquares !== null

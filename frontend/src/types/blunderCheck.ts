@@ -61,6 +61,8 @@ export interface WindowStartResponse {
   start_fen: string;
   orientation: 'white' | 'black';
   lead_in_ucis: string[];
+  /** The game move that led to `start_fen` (last-move highlight on the Ready gate), or null. */
+  prior_uci: string | null;
   answered: AnsweredMove[];
   prompt: Prompt;
   timer_remaining_ms: number;

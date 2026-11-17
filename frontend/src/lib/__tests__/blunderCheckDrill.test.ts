@@ -47,6 +47,7 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     start_fen: START_FEN,
     orientation: 'black',
     lead_in_ucis: LEAD_IN,
+    prior_uci: null,
     answered: [],
     prompt: { move_index: 1, move_uci: 'b8c6' },
     timer_remaining_ms: FIRST_TIMER_MS,
@@ -181,6 +182,8 @@ describe('ready gate (L-01, L-05)', () => {
     const state = asPhase(gate({ window_points: 0, session_points: 4 }), 'ready_gate');
     expect(state.window.shownUcis).toEqual([]);
     expect(state.window.startFen).toBe(START_FEN);
+    expect(state.window.priorUci).toBeNull();
+    expect(asPhase(gate({ prior_uci: 'e2e4' }), 'ready_gate').window.priorUci).toBe('e2e4');
     expect(state.prompt).toEqual({ move_index: 1, move_uci: 'b8c6' });
     expect(state.timerMs).toBe(FIRST_TIMER_MS);
     expect(state.sessionPoints).toBe(4);

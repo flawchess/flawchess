@@ -68,6 +68,7 @@ _START_KEYS = {
     "session_points",
     "better_move",
     "awaiting_ready",
+    "prior_uci",
 }
 _ANSWER_KEYS = {
     "move_index",
@@ -177,6 +178,7 @@ async def _new_window(test_engine, user_id: int, position: int, spec: _Spec) -> 
         start_fen=snapshot.start_fen,
         move_ucis=snapshot.move_ucis,
         lead_in_plies=snapshot.lead_in_plies,
+        prior_uci=snapshot.prior_uci,
         key_uci=None
         if blunder_ply is None
         else await _best_move_at(test_engine, game_id, blunder_ply),
@@ -297,6 +299,8 @@ async def test_tracer_start_and_catch_position_one_blunder(test_engine, clock) -
         assert body["lead_in_ucis"] == mainline[_BLUNDER_PLY - LEAD_IN_PLIES : _BLUNDER_PLY]
         assert body["prompt"] == {"move_index": 1, "move_uci": mainline[_BLUNDER_PLY]}
         assert body["orientation"] == "white"
+        # The move before the start position, for the Ready gate's last-move highlight.
+        assert body["prior_uci"] == mainline[_BLUNDER_PLY - LEAD_IN_PLIES - 1]
         assert body["answered"] == []
         assert body["window_points"] == 0
 

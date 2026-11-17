@@ -146,6 +146,8 @@ class WindowStart:
     better_move: BetterMoveData | None = None
     # True while the window sits on its Ready gate: no prompt is issued and no clock runs.
     awaiting_ready: bool = False
+    # The game move that led to `start_fen` (the Ready gate's last-move highlight), else None.
+    prior_uci: str | None = None
 
 
 @dataclass(frozen=True)
@@ -291,6 +293,7 @@ async def _resume_better_move(
             session, session_id=session_id
         ),
         better_move=await _better_move_task(session, window),
+        prior_uci=window.prior_uci,
     )
 
 
@@ -326,6 +329,7 @@ async def _window_start(
             session, session_id=session_id
         ),
         awaiting_ready=not rows,
+        prior_uci=window.prior_uci,
     )
 
 

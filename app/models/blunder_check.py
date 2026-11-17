@@ -178,6 +178,10 @@ class BlunderCheckWindow(Base):
     start_fen: Mapped[str] = mapped_column(Text, nullable=False)
     move_ucis: Mapped[str] = mapped_column(Text, nullable=False)
     lead_in_plies: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    # The game move that led to `start_fen`, shown as the last-move highlight on the Ready gate.
+    # NULL when the window starts at the game's first position, and on windows composed before
+    # the column existed.
+    prior_uci: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Stockfish best move at the blunder ply (the D-17 key), and the refutation.
     key_uci: Mapped[str | None] = mapped_column(String(5), nullable=True)
     refutation_uci: Mapped[str | None] = mapped_column(String(5), nullable=True)

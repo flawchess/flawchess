@@ -439,6 +439,7 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     start_fen: START_FEN,
     orientation: 'white',
     lead_in_ucis: LEAD_IN,
+    prior_uci: null,
     answered: [],
     prompt: { move_index: 1, move_uci: PROMPT_UCI },
     timer_remaining_ms: FRESH_TIMER_MS,
@@ -694,7 +695,12 @@ describe('window loop', () => {
     // A realistic window: one lead-in ply by the opponent, the user (white) judges the next move.
     const startFen = applyUcis(START_FEN, ['e2e4']);
     startWindow.mockImplementation(async () =>
-      windowStart({ start_fen: startFen, lead_in_ucis: ['e7e5'], orientation: 'white' }),
+      windowStart({
+        start_fen: startFen,
+        lead_in_ucis: ['e7e5'],
+        prior_uci: 'e2e4',
+        orientation: 'white',
+      }),
     );
     renderTab();
     await advance(50);
@@ -705,6 +711,8 @@ describe('window loop', () => {
       "Check out the position, you play white. It's your opponent's turn.",
     );
     expect(boardFen()).toBe(startFen);
+    // The move that led to the start position is highlighted, as on any board.
+    expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe('e2e4');
     // However long the user studies, nothing starts and nothing is sent.
     await advance(60_000);
     expect(boardFen()).toBe(startFen);
@@ -720,6 +728,8 @@ describe('window loop', () => {
     expect(boardFen()).toBe(startFen);
     await advance(LEAD_IN_START_DELAY_MS);
     expect(boardFen()).toBe(applyUcis(startFen, ['e7e5']));
+    // The highlight follows the replayed lead-in move.
+    expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe('e7e5');
     await advance(LEAD_IN_PLY_INTERVAL_MS);
     expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
     expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);

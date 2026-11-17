@@ -247,6 +247,7 @@ def _start_response(start: blunder_check_service.WindowStart) -> WindowStartResp
         session_points=start.session_points,
         better_move=_better_move_schema(start.better_move),
         awaiting_ready=start.awaiting_ready,
+        prior_uci=start.prior_uci,
     )
 
 

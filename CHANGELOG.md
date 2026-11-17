@@ -35,7 +35,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Facepalm score: refitted on more of your labelled blunders. It now weighs the material a blunder loses or misses over the whole engine line, earlier moves counting most, instead of at one point three moves in, so missed wins count for more. Scores change for every blunder (the library chip, the Facepalm Score filter and the blunder-check selection all follow), and a blunder that loses no material and whose best move's likelihood is unknown no longer gets a score.
 - Internal: removed the stored facepalm score and the old line-loss columns; the score is computed from the stored facts.
 - Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
-- Blunder check (beta): every sequence now opens paused on its starting position, and the host tells you which side you play and whose turn it is. Press Ready when you have looked at the position: the opponent's move and the 10-second timer only start then.
+- Blunder check (beta): every sequence now opens paused on its starting position with the last played move highlighted, and the host tells you which side you play and whose turn it is. Press Ready when you have looked at the position: the opponent's move and the 10-second timer only start then.
 
 ### Fixed
 

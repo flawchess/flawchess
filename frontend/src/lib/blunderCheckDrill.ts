@@ -86,6 +86,8 @@ export interface DrillWindow {
   leadInUcis: readonly string[];
   /** Every UCI already played on the board, in order, starting from `startFen`. */
   shownUcis: readonly string[];
+  /** The game move that led to `startFen`: the last-move highlight while nothing is shown yet. */
+  priorUci: string | null;
   windowPoints: number;
 }
 
@@ -231,6 +233,7 @@ function betterMoveResumed(
       leadInUcis: response.lead_in_ucis,
       // The caught blunder itself was never played on the board.
       shownUcis: [...response.lead_in_ucis, ...answeredUcis(response.answered.slice(0, -1))],
+      priorUci: response.prior_uci,
       windowPoints: response.window_points,
     },
     prompt: response.prompt,
@@ -261,6 +264,7 @@ function windowFromServer(
     orientation: response.orientation,
     leadInUcis: response.lead_in_ucis,
     shownUcis: resumed ? [...response.lead_in_ucis, ...answeredUcis(response.answered)] : [],
+    priorUci: response.prior_uci,
     windowPoints: response.window_points,
   };
   const common = {
