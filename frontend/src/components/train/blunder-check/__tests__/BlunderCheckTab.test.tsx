@@ -259,7 +259,7 @@ describe('start screen', () => {
 
     const button = await enabledStartButton();
     expect(button.textContent).toBe('Start');
-    expect(screen.getByText('Blunder check')).not.toBeNull();
+    expect(screen.getByText('Blunder Check')).not.toBeNull();
     expect(
       screen.getByText('Check each move before it is played: Good move or blunder?'),
     ).not.toBeNull();

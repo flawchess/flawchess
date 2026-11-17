@@ -79,7 +79,7 @@ function StartScreen({
       data-testid="blunder-check-start-screen"
     >
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Blunder check</h2>
+        <h2 className="text-lg font-semibold">Blunder Check</h2>
         <Badge
           variant="default"
           className="px-2.5 text-sm font-semibold uppercase tracking-wide"
