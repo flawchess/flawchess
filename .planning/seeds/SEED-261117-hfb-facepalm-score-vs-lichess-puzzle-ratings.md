@@ -49,6 +49,11 @@ encode. Maia answers the other question (what players do in a game when nobody t
 
 ## Proposed steps
 
+Step 1 was run on 2026-11-17 as spike 007 (`.planning/spikes/007-facepalm-vs-puzzle-ratings/`,
+verdict PARTIAL): the miss side ranks puzzles well (Spearman -0.57 on short non-mate puzzles),
+the loss side fails as shipped (-0.24), Maia's probability of the punishing move beats reply
+spread, and the decaying mean holds up. Steps 2 and 3 remain open.
+
 ### 1. Validate (spike, do first)
 
 Compute the shipped score's facts on a rating-stratified sample (about 30k puzzles with a settled

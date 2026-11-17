@@ -1,0 +1,1003 @@
+{
+ "n": 26464,
+ "elo": "features-elo1500.tsv",
+ "verdict": {
+  "threshold": -0.3,
+  "loss_view_rho": -0.237,
+  "miss_view_rho": -0.567,
+  "verdict": "PARTIAL"
+ },
+ "correlations": {
+  "all": {
+   "n": 26464,
+   "terms": {
+    "composite, loss view": {
+     "n": 19068,
+     "coverage": 0.7205,
+     "rho": -0.618,
+     "rho_partial_length": -0.296
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 19068,
+     "coverage": 0.7205,
+     "rho": -0.666,
+     "rho_partial_length": -0.362
+    },
+    "composite, miss view": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.642,
+     "rho_partial_length": -0.508
+    },
+    "composite, miss view, carried forward": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.641,
+     "rho_partial_length": -0.509
+    },
+    "loss, depth 3": {
+     "n": 26462,
+     "coverage": 0.9999,
+     "rho": -0.621,
+     "rho_partial_length": -0.344
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 26462,
+     "coverage": 0.9999,
+     "rho": -0.623,
+     "rho_partial_length": -0.412
+    },
+    "loss, first stable": {
+     "n": 26462,
+     "coverage": 0.9999,
+     "rho": -0.629,
+     "rho_partial_length": -0.353
+    },
+    "missed, depth 3": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.347,
+     "rho_partial_length": -0.335
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.591,
+     "rho_partial_length": -0.384
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.59,
+     "rho_partial_length": -0.385
+    },
+    "missed, first stable": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.602,
+     "rho_partial_length": -0.374
+    },
+    "reply spread (shipped)": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": 0.365,
+     "rho_partial_length": 0.285
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.492,
+     "rho_partial_length": -0.415
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": -0.079,
+     "rho_partial_length": -0.063
+    },
+    "pre-blunder spread": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": 0.054,
+     "rho_partial_length": 0.039
+    },
+    "solver moves (length baseline)": {
+     "n": 26464,
+     "coverage": 1.0,
+     "rho": 0.606,
+     "rho_partial_length": -0.001
+    }
+   }
+  },
+  "primary: non-mate, solver moves <= 2": {
+   "n": 9072,
+   "terms": {
+    "composite, loss view": {
+     "n": 5733,
+     "coverage": 0.6319,
+     "rho": -0.237,
+     "rho_partial_length": -0.237
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 5733,
+     "coverage": 0.6319,
+     "rho": -0.321,
+     "rho_partial_length": -0.321
+    },
+    "composite, miss view": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.567,
+     "rho_partial_length": -0.567
+    },
+    "composite, miss view, carried forward": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.567,
+     "rho_partial_length": -0.567
+    },
+    "loss, depth 3": {
+     "n": 9070,
+     "coverage": 0.9998,
+     "rho": -0.403,
+     "rho_partial_length": -0.403
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 9070,
+     "coverage": 0.9998,
+     "rho": -0.374,
+     "rho_partial_length": -0.374
+    },
+    "loss, first stable": {
+     "n": 9070,
+     "coverage": 0.9998,
+     "rho": -0.38,
+     "rho_partial_length": -0.38
+    },
+    "missed, depth 3": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": null,
+     "rho_partial_length": 0.0
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.4,
+     "rho_partial_length": -0.4
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.4,
+     "rho_partial_length": -0.4
+    },
+    "missed, first stable": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.4,
+     "rho_partial_length": -0.4
+    },
+    "reply spread (shipped)": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": 0.253,
+     "rho_partial_length": 0.253
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.451,
+     "rho_partial_length": -0.451
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": -0.032,
+     "rho_partial_length": -0.032
+    },
+    "pre-blunder spread": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": 0.012,
+     "rho_partial_length": 0.012
+    },
+    "solver moves (length baseline)": {
+     "n": 9072,
+     "coverage": 1.0,
+     "rho": 0.007,
+     "rho_partial_length": -0.0
+    }
+   }
+  },
+  "non-mate": {
+   "n": 18839,
+   "terms": {
+    "composite, loss view": {
+     "n": 11451,
+     "coverage": 0.6078,
+     "rho": -0.299,
+     "rho_partial_length": -0.149
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 11451,
+     "coverage": 0.6078,
+     "rho": -0.374,
+     "rho_partial_length": -0.217
+    },
+    "composite, miss view": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.453,
+     "rho_partial_length": -0.427
+    },
+    "composite, miss view, carried forward": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.452,
+     "rho_partial_length": -0.43
+    },
+    "loss, depth 3": {
+     "n": 18837,
+     "coverage": 0.9999,
+     "rho": -0.389,
+     "rho_partial_length": -0.243
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 18837,
+     "coverage": 0.9999,
+     "rho": -0.353,
+     "rho_partial_length": -0.28
+    },
+    "loss, first stable": {
+     "n": 18837,
+     "coverage": 0.9999,
+     "rho": -0.377,
+     "rho_partial_length": -0.233
+    },
+    "missed, depth 3": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": 0.151,
+     "rho_partial_length": -0.119
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.376,
+     "rho_partial_length": -0.304
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.378,
+     "rho_partial_length": -0.309
+    },
+    "missed, first stable": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.408,
+     "rho_partial_length": -0.309
+    },
+    "reply spread (shipped)": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": 0.165,
+     "rho_partial_length": 0.185
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.336,
+     "rho_partial_length": -0.349
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.009,
+     "rho_partial_length": -0.031
+    },
+    "pre-blunder spread": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": -0.021,
+     "rho_partial_length": 0.008
+    },
+    "solver moves (length baseline)": {
+     "n": 18839,
+     "coverage": 1.0,
+     "rho": 0.403,
+     "rho_partial_length": 0.0
+    }
+   }
+  },
+  "mate": {
+   "n": 7625,
+   "terms": {
+    "composite, loss view": {
+     "n": 7617,
+     "coverage": 0.999,
+     "rho": -0.444,
+     "rho_partial_length": -0.263
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 7617,
+     "coverage": 0.999,
+     "rho": -0.528,
+     "rho_partial_length": -0.339
+    },
+    "composite, miss view": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.555,
+     "rho_partial_length": -0.401
+    },
+    "composite, miss view, carried forward": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.555,
+     "rho_partial_length": -0.401
+    },
+    "loss, depth 3": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.395,
+     "rho_partial_length": -0.109
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.4,
+     "rho_partial_length": -0.115
+    },
+    "loss, first stable": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.396,
+     "rho_partial_length": -0.11
+    },
+    "missed, depth 3": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.402,
+     "rho_partial_length": -0.182
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.414,
+     "rho_partial_length": -0.148
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.414,
+     "rho_partial_length": -0.148
+    },
+    "missed, first stable": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.414,
+     "rho_partial_length": -0.148
+    },
+    "reply spread (shipped)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": 0.465,
+     "rho_partial_length": 0.334
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.507,
+     "rho_partial_length": -0.382
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": 0.08,
+     "rho_partial_length": 0.082
+    },
+    "pre-blunder spread": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": -0.062,
+     "rho_partial_length": -0.092
+    },
+    "solver moves (length baseline)": {
+     "n": 7625,
+     "coverage": 1.0,
+     "rho": 0.502,
+     "rho_partial_length": 0.005
+    }
+   }
+  },
+  "solver moves = 1": {
+   "n": 3555,
+   "terms": {
+    "composite, loss view": {
+     "n": 3553,
+     "coverage": 0.9994,
+     "rho": -0.194,
+     "rho_partial_length": -0.194
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 3553,
+     "coverage": 0.9994,
+     "rho": -0.283,
+     "rho_partial_length": -0.283
+    },
+    "composite, miss view": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.289,
+     "rho_partial_length": -0.289
+    },
+    "composite, miss view, carried forward": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.289,
+     "rho_partial_length": -0.289
+    },
+    "loss, depth 3": {
+     "n": 3553,
+     "coverage": 0.9994,
+     "rho": -0.018,
+     "rho_partial_length": -0.018
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 3553,
+     "coverage": 0.9994,
+     "rho": -0.018,
+     "rho_partial_length": -0.018
+    },
+    "loss, first stable": {
+     "n": 3553,
+     "coverage": 0.9994,
+     "rho": -0.018,
+     "rho_partial_length": -0.018
+    },
+    "missed, depth 3": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.043,
+     "rho_partial_length": -0.043
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.043,
+     "rho_partial_length": -0.043
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.043,
+     "rho_partial_length": -0.043
+    },
+    "missed, first stable": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.043,
+     "rho_partial_length": -0.043
+    },
+    "reply spread (shipped)": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": 0.284,
+     "rho_partial_length": 0.284
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.289,
+     "rho_partial_length": -0.289
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": 0.07,
+     "rho_partial_length": 0.07
+    },
+    "pre-blunder spread": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": -0.056,
+     "rho_partial_length": -0.056
+    },
+    "solver moves (length baseline)": {
+     "n": 3555,
+     "coverage": 1.0,
+     "rho": null,
+     "rho_partial_length": null
+    }
+   }
+  },
+  "solver moves = 2": {
+   "n": 12122,
+   "terms": {
+    "composite, loss view": {
+     "n": 8785,
+     "coverage": 0.7247,
+     "rho": -0.406,
+     "rho_partial_length": -0.406
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 8785,
+     "coverage": 0.7247,
+     "rho": -0.455,
+     "rho_partial_length": -0.455
+    },
+    "composite, miss view": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.627,
+     "rho_partial_length": -0.627
+    },
+    "composite, miss view, carried forward": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.627,
+     "rho_partial_length": -0.627
+    },
+    "loss, depth 3": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.507,
+     "rho_partial_length": -0.507
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.5,
+     "rho_partial_length": -0.5
+    },
+    "loss, first stable": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.503,
+     "rho_partial_length": -0.503
+    },
+    "missed, depth 3": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.399,
+     "rho_partial_length": -0.399
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.484,
+     "rho_partial_length": -0.484
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.484,
+     "rho_partial_length": -0.484
+    },
+    "missed, first stable": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.484,
+     "rho_partial_length": -0.484
+    },
+    "reply spread (shipped)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": 0.341,
+     "rho_partial_length": 0.341
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.503,
+     "rho_partial_length": -0.503
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": -0.071,
+     "rho_partial_length": -0.071
+    },
+    "pre-blunder spread": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": 0.038,
+     "rho_partial_length": 0.038
+    },
+    "solver moves (length baseline)": {
+     "n": 12122,
+     "coverage": 1.0,
+     "rho": null,
+     "rho_partial_length": null
+    }
+   }
+  },
+  "solver moves = 3": {
+   "n": 7904,
+   "terms": {
+    "composite, loss view": {
+     "n": 5091,
+     "coverage": 0.6441,
+     "rho": -0.096,
+     "rho_partial_length": -0.096
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 5091,
+     "coverage": 0.6441,
+     "rho": -0.169,
+     "rho_partial_length": -0.169
+    },
+    "composite, miss view": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.332,
+     "rho_partial_length": -0.332
+    },
+    "composite, miss view, carried forward": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.336,
+     "rho_partial_length": -0.336
+    },
+    "loss, depth 3": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.003,
+     "rho_partial_length": -0.003
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.245,
+     "rho_partial_length": -0.245
+    },
+    "loss, first stable": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.018,
+     "rho_partial_length": -0.018
+    },
+    "missed, depth 3": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.214,
+     "rho_partial_length": -0.214
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.239,
+     "rho_partial_length": -0.239
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.227,
+     "rho_partial_length": -0.227
+    },
+    "missed, first stable": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.215,
+     "rho_partial_length": -0.215
+    },
+    "reply spread (shipped)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": 0.138,
+     "rho_partial_length": 0.138
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.288,
+     "rho_partial_length": -0.288
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": -0.049,
+     "rho_partial_length": -0.049
+    },
+    "pre-blunder spread": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": 0.017,
+     "rho_partial_length": 0.017
+    },
+    "solver moves (length baseline)": {
+     "n": 7904,
+     "coverage": 1.0,
+     "rho": null,
+     "rho_partial_length": null
+    }
+   }
+  },
+  "solver moves >= 4": {
+   "n": 2883,
+   "terms": {
+    "composite, loss view": {
+     "n": 1639,
+     "coverage": 0.5685,
+     "rho": -0.022,
+     "rho_partial_length": -0.028
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 1639,
+     "coverage": 0.5685,
+     "rho": -0.099,
+     "rho_partial_length": -0.106
+    },
+    "composite, miss view": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.178,
+     "rho_partial_length": -0.185
+    },
+    "composite, miss view, carried forward": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.18,
+     "rho_partial_length": -0.185
+    },
+    "loss, depth 3": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.036,
+     "rho_partial_length": -0.039
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.1,
+     "rho_partial_length": -0.076
+    },
+    "loss, first stable": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.044,
+     "rho_partial_length": -0.046
+    },
+    "missed, depth 3": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.053,
+     "rho_partial_length": -0.047
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.086,
+     "rho_partial_length": -0.073
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.088,
+     "rho_partial_length": -0.07
+    },
+    "missed, first stable": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.069,
+     "rho_partial_length": -0.055
+    },
+    "reply spread (shipped)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": 0.128,
+     "rho_partial_length": 0.145
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.172,
+     "rho_partial_length": -0.184
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": -0.053,
+     "rho_partial_length": -0.056
+    },
+    "pre-blunder spread": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": 0.028,
+     "rho_partial_length": 0.038
+    },
+    "solver moves (length baseline)": {
+     "n": 2883,
+     "coverage": 1.0,
+     "rho": 0.158,
+     "rho_partial_length": -0.002
+    }
+   }
+  },
+  "hangingPiece": {
+   "n": 989,
+   "terms": {
+    "composite, loss view": {
+     "n": 940,
+     "coverage": 0.9505,
+     "rho": -0.389,
+     "rho_partial_length": -0.17
+    },
+    "composite, loss view, played prob fixed": {
+     "n": 940,
+     "coverage": 0.9505,
+     "rho": -0.499,
+     "rho_partial_length": -0.238
+    },
+    "composite, miss view": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.417,
+     "rho_partial_length": -0.355
+    },
+    "composite, miss view, carried forward": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.417,
+     "rho_partial_length": -0.355
+    },
+    "loss, depth 3": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.493,
+     "rho_partial_length": -0.139
+    },
+    "loss, decaying mean (shipped)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.459,
+     "rho_partial_length": -0.171
+    },
+    "loss, first stable": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.478,
+     "rho_partial_length": -0.14
+    },
+    "missed, depth 3": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.301,
+     "rho_partial_length": -0.387
+    },
+    "missed, decaying mean (shipped)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.381,
+     "rho_partial_length": -0.212
+    },
+    "missed, decaying mean, carried forward": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.381,
+     "rho_partial_length": -0.213
+    },
+    "missed, first stable": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.399,
+     "rho_partial_length": -0.183
+    },
+    "reply spread (shipped)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": 0.268,
+     "rho_partial_length": 0.298
+    },
+    "ln P(punishing move) (Findable / best-move term)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.291,
+     "rho_partial_length": -0.299
+    },
+    "ln P(blunder) (played term, not testable)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": -0.21,
+     "rho_partial_length": -0.071
+    },
+    "pre-blunder spread": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": 0.167,
+     "rho_partial_length": 0.114
+    },
+    "solver moves (length baseline)": {
+     "n": 989,
+     "coverage": 1.0,
+     "rho": 0.672,
+     "rho_partial_length": -0.011
+    }
+   }
+  }
+ },
+ "models": {
+  "length only": {
+   "r2": 0.383,
+   "rmse": 476.6,
+   "rho": 0.562
+  },
+  "ln P(punishing move) only": {
+   "r2": 0.199,
+   "rmse": 542.9,
+   "rho": 0.492
+  },
+  "reply spread only": {
+   "r2": 0.094,
+   "rmse": 577.5,
+   "rho": 0.365
+  },
+  "reply spread + ln P(punishing move)": {
+   "r2": 0.207,
+   "rmse": 540.2,
+   "rho": 0.488
+  },
+  "loss + reply spread (shipped loss-view pair)": {
+   "r2": 0.43,
+   "rmse": 458.2,
+   "rho": 0.648
+  },
+  "loss + ln P(punishing move)": {
+   "r2": 0.476,
+   "rmse": 439.0,
+   "rho": 0.69
+  },
+  "loss + reply spread + ln P(punishing move)": {
+   "r2": 0.477,
+   "rmse": 438.8,
+   "rho": 0.69
+  },
+  "shipped terms (loss, spread, missed, ln P(punish))": {
+   "r2": 0.49,
+   "rmse": 433.2,
+   "rho": 0.698
+  },
+  "shipped terms + length": {
+   "r2": 0.541,
+   "rmse": 410.8,
+   "rho": 0.735
+  },
+  "shipped terms + length + extras": {
+   "r2": 0.583,
+   "rmse": 391.7,
+   "rho": 0.763
+  }
+ },
+ "sensitivity": {
+  "n_shared": 6000,
+  "rho": {
+   "composite, loss view": {
+    "base": -0.614,
+    "features-elo1100.tsv": -0.604,
+    "features-elo1900.tsv": -0.627
+   },
+   "composite, miss view, carried forward": {
+    "base": -0.641,
+    "features-elo1100.tsv": -0.623,
+    "features-elo1900.tsv": -0.655
+   },
+   "reply spread (shipped)": {
+    "base": 0.366,
+    "features-elo1100.tsv": 0.314,
+    "features-elo1900.tsv": 0.414
+   },
+   "ln P(punishing move) (Findable / best-move term)": {
+    "base": -0.491,
+    "features-elo1100.tsv": -0.471,
+    "features-elo1900.tsv": -0.508
+   },
+   "ln P(blunder) (played term, not testable)": {
+    "base": -0.092,
+    "features-elo1100.tsv": -0.147,
+    "features-elo1900.tsv": -0.008
+   }
+  }
+ }
+}
