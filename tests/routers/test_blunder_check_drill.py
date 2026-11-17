@@ -67,6 +67,7 @@ _START_KEYS = {
     "window_points",
     "session_points",
     "better_move",
+    "awaiting_ready",
 }
 _ANSWER_KEYS = {
     "move_index",
@@ -228,6 +229,10 @@ async def _start(token: str, session_id: int, position: int) -> httpx.Response:
     return await _call(token, f"{_BASE}/{session_id}/windows/{position}/start")
 
 
+async def _begin(token: str, session_id: int, position: int) -> httpx.Response:
+    return await _call(token, f"{_BASE}/{session_id}/windows/{position}/begin")
+
+
 async def _answer(
     token: str,
     session_id: int,
@@ -286,12 +291,18 @@ async def test_tracer_start_and_catch_position_one_blunder(test_engine, clock) -
         assert start.status_code == 200, start.text
         body = start.json()
         assert set(body) == _START_KEYS
+        assert body["awaiting_ready"] is True
+        assert body["timer_remaining_ms"] == _FULL_TIMER_MS
         assert len(body["lead_in_ucis"]) == LEAD_IN_PLIES
         assert body["lead_in_ucis"] == mainline[_BLUNDER_PLY - LEAD_IN_PLIES : _BLUNDER_PLY]
         assert body["prompt"] == {"move_index": 1, "move_uci": mainline[_BLUNDER_PLY]}
         assert body["orientation"] == "white"
         assert body["answered"] == []
         assert body["window_points"] == 0
+
+        begun = await _begin(s.token, s.session_id, 0)
+        assert begun.status_code == 200, begun.text
+        assert begun.json()["awaiting_ready"] is False
 
         resp = await _answer(s.token, s.session_id, 0, 1, "blunder")
         assert resp.status_code == 200, resp.text
@@ -356,9 +367,18 @@ def _all_keys(value: object) -> set[str]:
 
 
 async def _started(s: _Setup, position: int = 0) -> dict[str, Any]:
+    """Start a window the way the client does: press Ready when the start lands on the gate.
+
+    A reload after Ready (or a caught window waiting for its better move) is not on the gate,
+    so its start body is returned as is and begin is not called.
+    """
     resp = await _start(s.token, s.session_id, position)
     assert resp.status_code == 200, resp.text
-    return resp.json()
+    if not resp.json()["awaiting_ready"]:
+        return resp.json()
+    begun = await _begin(s.token, s.session_id, position)
+    assert begun.status_code == 200, begun.text
+    return begun.json()
 
 
 async def _ok(s: _Setup, move_index: int, answer: str, position: int = 0) -> dict[str, Any]:
@@ -522,13 +542,15 @@ async def test_ceiling_reload_after_answers_returns_answered_moves_and_real_time
 @pytest.mark.asyncio
 async def test_payload_shapes_leak_no_key_material(test_engine, clock) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
+        gate = (await _start(s.token, s.session_id, 0)).json()
         start = await _started(s)
         first = await _ok(s, 1, "safe")
         reload_body = await _started(s)
         second = await _ok(s, 2, "safe")
-    assert set(start) == _START_KEYS and set(reload_body) == _START_KEYS
+    assert set(gate) == _START_KEYS and set(start) == _START_KEYS
+    assert set(reload_body) == _START_KEYS
     assert set(first) == _ANSWER_KEYS and set(second) == _ANSWER_KEYS
-    for body in (start, first, reload_body, second):
+    for body in (gate, start, first, reload_body, second):
         assert not (_all_keys(body) & _FORBIDDEN_KEYS)
     # Lead-in plus exactly one arrow: no later move of the window is sent before it is answered.
     assert len(start["lead_in_ucis"]) == LEAD_IN_PLIES
@@ -604,11 +626,14 @@ async def test_idor_another_users_session_and_window_answer_404(test_engine, clo
         )
         started = await _start(other_token, s.session_id, 0)
         answered = await _answer(other_token, s.session_id, 0, 1, "safe")
+        begun = await _begin(other_token, s.session_id, 0)
+        unknown_begin = await _begin(s.token, s.session_id, 7)
         unknown_window = await _start(s.token, s.session_id, 7)
         unknown_session = await _start(s.token, s.session_id + 10_000_000, 0)
         window = await _window_row(test_engine, s.session_id, 0)
     assert other_id != s.user_id
     assert started.status_code == 404 and answered.status_code == 404
+    assert begun.status_code == 404 and unknown_begin.status_code == 404
     assert unknown_window.status_code == 404 and unknown_session.status_code == 404
     assert window.started_at is None
 
@@ -717,5 +742,116 @@ async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
 async def test_non_beta_user_is_refused_on_the_drill_routes(test_engine, clock) -> None:
     _, token = await register_user("bc-drill-nonbeta", beta=False, test_engine=test_engine)
     assert (await _start(token, 1, 0)).status_code == 403
+    assert (await _begin(token, 1, 0)).status_code == 403
     assert (await _answer(token, 1, 0, 1, "safe")).status_code == 403
     assert (await _finish(token, 1)).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Ready gate (quick 261117-sfh): start opens it, begin starts the clock
+# ---------------------------------------------------------------------------
+
+_GATE_STUDY_S = 120  # well past ANSWER_CEILING_S
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_start_opens_the_gate_without_a_prompt(test_engine, clock) -> None:
+    mainline = _mainline_ucis()
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        gate = await _start(s.token, s.session_id, 0)
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+    assert gate.status_code == 200, gate.text
+    body = gate.json()
+    assert body["awaiting_ready"] is True
+    assert body["answered"] == []
+    assert body["prompt"] == {"move_index": 1, "move_uci": mainline[30]}
+    assert body["timer_remaining_ms"] == _FULL_TIMER_MS
+    assert window.started_at == _T0
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_reload_shows_the_gate_again_with_no_time_lost(test_engine, clock) -> None:
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        first = (await _start(s.token, s.session_id, 0)).json()
+        clock.advance(_GATE_STUDY_S)
+        again = (await _start(s.token, s.session_id, 0)).json()
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+    assert first["awaiting_ready"] is True and again["awaiting_ready"] is True
+    assert again["timer_remaining_ms"] == _FULL_TIMER_MS
+    assert again["prompt"] == first["prompt"]
+    assert rows == []
+    assert window.started_at == _T0
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_time_never_counts_toward_the_answer_ceiling(test_engine, clock) -> None:
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        await _start(s.token, s.session_id, 0)
+        clock.advance(_GATE_STUDY_S)
+        begun = (await _begin(s.token, s.session_id, 0)).json()
+        clock.advance(_BEFORE_CEILING_S)
+        result = await _ok(s, 1, "safe")
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+    assert begun["awaiting_ready"] is False
+    assert begun["timer_remaining_ms"] == _FULL_TIMER_MS
+    # Graded on its merits: with the clock at the start stamp this would be a timeout.
+    assert result["result"] == "correct_safe"
+    assert rows[0].prompted_at == _T0 + datetime.timedelta(seconds=_GATE_STUDY_S)
+    assert rows[0].server_elapsed_ms == _BEFORE_CEILING_S * 1000
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_begin_is_idempotent_and_never_buys_time(test_engine, clock) -> None:
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        await _start(s.token, s.session_id, 0)
+        clock.advance(_GATE_STUDY_S)
+        first = (await _begin(s.token, s.session_id, 0)).json()
+        clock.advance(_RELOAD_DELAY_S)
+        second = (await _begin(s.token, s.session_id, 0)).json()
+        reload_body = (await _start(s.token, s.session_id, 0)).json()
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+    assert first["timer_remaining_ms"] == _FULL_TIMER_MS
+    assert (
+        second["awaiting_ready"] is False and second["timer_remaining_ms"] == _RELOAD_REMAINING_MS
+    )
+    assert reload_body["awaiting_ready"] is False
+    assert reload_body["timer_remaining_ms"] == _RELOAD_REMAINING_MS
+    assert reload_body["prompt"] == first["prompt"]
+    assert len(rows) == 1
+    assert rows[0].prompted_at == _T0 + datetime.timedelta(seconds=_GATE_STUDY_S)
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_answer_and_begin_out_of_order_are_rejected(test_engine, clock) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        before_start = await _begin(s.token, s.session_id, 0)
+        await _start(s.token, s.session_id, 0)
+        during_gate = await _answer(s.token, s.session_id, 0, 1, "blunder")
+        window = await _window_row(test_engine, s.session_id, 0)
+        gate_rows = await _answer_rows(test_engine, window.id)
+        await _begin(s.token, s.session_id, 0)
+        # A missed blunder ends the window for good.
+        await _ok(s, 1, "safe")
+        after_end = await _begin(s.token, s.session_id, 0)
+    assert before_start.status_code == 409 and before_start.json()["detail"] == "not_started"
+    assert during_gate.status_code == 409 and during_gate.json()["detail"] == "stale_prompt"
+    assert window.points_scored == 0 and gate_rows == []
+    assert after_end.status_code == 409 and after_end.json()["detail"] == "window_ended"
+
+
+@pytest.mark.asyncio
+async def test_ready_gate_every_window_opens_on_the_gate(test_engine, clock) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_ONE, _HERRING_3]) as s:
+        await _started(s, 0)
+        await _ok(s, 1, "safe")  # a missed blunder ends window 0
+        second = await _start(s.token, s.session_id, 1)
+        second_window = await _window_row(test_engine, s.session_id, 1)
+        second_rows = await _answer_rows(test_engine, second_window.id)
+    assert second.status_code == 200, second.text
+    assert second.json()["awaiting_ready"] is True
+    assert second_rows == []

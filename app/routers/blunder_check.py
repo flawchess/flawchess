@@ -246,6 +246,7 @@ def _start_response(start: blunder_check_service.WindowStart) -> WindowStartResp
         window_points=start.window_points,
         session_points=start.session_points,
         better_move=_better_move_schema(start.better_move),
+        awaiting_ready=start.awaiting_ready,
     )
 
 
@@ -290,6 +291,27 @@ async def start_window(
     start = await _guarded(
         session,
         blunder_check_service.start_window(
+            session, user_id=user.id, session_id=session_id, position=position, now_utc=now_utc
+        ),
+        user_id=user.id,
+        session_id=session_id,
+        position=position,
+    )
+    return _start_response(start)
+
+
+@router.post("/sessions/{session_id}/windows/{position}/begin", response_model=WindowStartResponse)
+async def begin_window(
+    session_id: SessionIdPath,
+    position: PositionPath,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: BetaUser,
+    now_utc: NowUtc,
+) -> WindowStartResponse:
+    """Ready on the gate: issue the first prompt and start its clock (idempotent)."""
+    start = await _guarded(
+        session,
+        blunder_check_service.begin_window(
             session, user_id=user.id, session_id=session_id, position=position, now_utc=now_utc
         ),
         user_id=user.id,

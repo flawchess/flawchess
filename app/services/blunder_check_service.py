@@ -1,7 +1,10 @@
 """Blunder-check session orchestration (Phase 249).
 
 Business logic between the router and the repository: start a session or resume the open one,
-start a window, grade answers (the server owns every grade, D-12/D-13/D-18) and finish a session.
+open a window on its Ready gate (`start_window`), issue its first prompt when the user presses
+Ready (`begin_window`), grade answers (the server owns every grade, D-12/D-13/D-18) and finish a
+session. `blunder_check_windows.started_at` marks the gate opening and the first answer row's
+`prompted_at` marks Ready, so the answer clock never runs while the user studies the position.
 """
 
 from __future__ import annotations
@@ -73,6 +76,8 @@ _NOT_FOUND_MESSAGE: Final = "Blunder-check session or window not found"
 _CONFLICT_MESSAGE: Final = "Blunder-check request conflicts with the window state"
 _MISSING_SNAPSHOT_MOVE: Final = "Blunder-check window snapshot is missing a judged move"
 _FIRST_MOVE_INDEX: Final = 1
+# The countdown a freshly issued prompt gets (also what the Ready gate announces).
+_FULL_TIMER_MS: Final = MOVE_TIMER_SECONDS * MS_PER_SECOND
 _ILLEGAL_MOVE_MESSAGE: Final = "Illegal blunder-check better move"
 _MISSING_FALSE_ALARM_ROW: Final = "Blunder-check false-alarm window has no false-alarm answer row"
 _WINDOW_CASE_NAME: Final[dict[WindowCase, WindowCaseName]] = {
@@ -139,6 +144,8 @@ class WindowStart:
     session_points: int
     # The still-open better-move task of a caught window (a reload during that step), else None.
     better_move: BetterMoveData | None = None
+    # True while the window sits on its Ready gate: no prompt is issued and no clock runs.
+    awaiting_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -287,6 +294,41 @@ async def _resume_better_move(
     )
 
 
+async def _window_start(
+    session: AsyncSession,
+    window: BlunderCheckWindow,
+    *,
+    session_id: int,
+    rows: list[BlunderCheckAnswer],
+    now_utc: datetime.datetime,
+) -> WindowStart:
+    """The shared start/begin payload: the Ready gate when no prompt row exists yet, else the open prompt."""
+    open_row = _open_row(rows)
+    if rows and open_row is None:
+        raise BlunderCheckConflictError("window_ended")
+    if open_row is None:
+        # Ready gate: the first judged move and the full countdown it will get, no clock yet.
+        prompt = PromptData(_FIRST_MOVE_INDEX, _arrow_uci(window, window.first_ply))
+        timer_ms = _FULL_TIMER_MS
+    else:
+        prompt = PromptData(open_row.move_index, _arrow_uci(window, open_row.ply))
+        timer_ms = timer_remaining_ms(open_row.prompted_at, now_utc)
+    return WindowStart(
+        position=window.position,
+        start_fen=window.start_fen,
+        orientation="white" if mover_is_white_at_ply(window.first_ply) else "black",
+        lead_in_ucis=window_ucis(window.move_ucis)[: window.lead_in_plies],
+        answered=[_answered_move(window, row) for row in rows if row.answered_at is not None],
+        prompt=prompt,
+        timer_remaining_ms=timer_ms,
+        window_points=window.points_scored,
+        session_points=await blunder_check_repository.session_points(
+            session, session_id=session_id
+        ),
+        awaiting_ready=not rows,
+    )
+
+
 async def start_window(
     session: AsyncSession,
     *,
@@ -295,10 +337,12 @@ async def start_window(
     position: int,
     now_utc: datetime.datetime,
 ) -> WindowStart:
-    """Start window `position`, or reload it: the lead-in, answered moves and the open prompt.
+    """Open window `position` on its Ready gate, or reload it.
 
-    Idempotent: the open prompt keeps its original `prompted_at`, so a reload reports the real
-    time left and never buys time (D-18).
+    A fresh window gets no prompt row and no clock (the user is still looking at the start
+    position, L-01/L-05); a reload during the gate returns the gate again with the full
+    countdown. After Ready the open prompt keeps its original `prompted_at`, so a reload reports
+    the real time left and never buys time (D-18).
     """
     found = await blunder_check_repository.get_window_for_user(
         session, user_id=user_id, session_id=session_id, position=position
@@ -317,6 +361,35 @@ async def start_window(
     await blunder_check_repository.mark_window_started(
         session, window_id=window.id, now_utc=now_utc
     )
+    # Bug fix (quick 261117-sfh): the first prompt row used to be inserted here, so its clock
+    # (and the answer ceiling) ran while the user was still orienting on the start position.
+    # It is inserted by `begin_window` when the user presses Ready.
+    rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
+    return await _window_start(session, window, session_id=session_id, rows=rows, now_utc=now_utc)
+
+
+async def begin_window(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    session_id: int,
+    position: int,
+    now_utc: datetime.datetime,
+) -> WindowStart:
+    """Ready on the gate: issue the first prompt, whose clock starts now (L-05).
+
+    Idempotent: `insert_prompt` is ON CONFLICT DO NOTHING, so a repeat keeps the original
+    `prompted_at` and reports the real time left; it never buys time.
+    """
+    found = await blunder_check_repository.get_window_for_user(
+        session, user_id=user_id, session_id=session_id, position=position
+    )
+    if found is None:
+        raise BlunderCheckNotFoundError
+    header, window = found
+    _check_startable(header, window)
+    if window.started_at is None:
+        raise BlunderCheckConflictError("not_started")
     await blunder_check_repository.insert_prompt(
         session,
         window_id=window.id,
@@ -325,22 +398,7 @@ async def start_window(
         prompted_at=now_utc,
     )
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
-    open_row = _open_row(rows)
-    if open_row is None:
-        raise BlunderCheckConflictError("window_ended")
-    return WindowStart(
-        position=window.position,
-        start_fen=window.start_fen,
-        orientation="white" if mover_is_white_at_ply(window.first_ply) else "black",
-        lead_in_ucis=window_ucis(window.move_ucis)[: window.lead_in_plies],
-        answered=[_answered_move(window, row) for row in rows if row.answered_at is not None],
-        prompt=PromptData(open_row.move_index, _arrow_uci(window, open_row.ply)),
-        timer_remaining_ms=timer_remaining_ms(open_row.prompted_at, now_utc),
-        window_points=window.points_scored,
-        session_points=await blunder_check_repository.session_points(
-            session, session_id=session_id
-        ),
-    )
+    return await _window_start(session, window, session_id=session_id, rows=rows, now_utc=now_utc)
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +511,7 @@ async def _build_outcome(
     timer_ms: int | None = None
     if not grade.window_ends:
         next_prompt = await _continue_window(session, window=window, row=row, now_utc=now_utc)
-        timer_ms = MOVE_TIMER_SECONDS * MS_PER_SECOND
+        timer_ms = _FULL_TIMER_MS
     # The reply after a judged move is shown while the window goes on or once it cleared;
     # after a caught/missed blunder or a false alarm it stays hidden until the solution.
     reveals_reply = not grade.window_ends or grade.outcome == "cleared"
