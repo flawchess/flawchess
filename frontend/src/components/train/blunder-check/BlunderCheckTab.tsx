@@ -14,6 +14,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactElement } from 'react';
 import axios from 'axios';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
@@ -77,7 +78,16 @@ function StartScreen({
       className="mx-auto flex w-full max-w-md flex-col gap-4"
       data-testid="blunder-check-start-screen"
     >
-      <h2 className="text-lg font-semibold">Blunder check</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">Blunder check</h2>
+        <Badge
+          variant="default"
+          className="px-2.5 text-sm font-semibold uppercase tracking-wide"
+          data-testid="blunder-check-beta-badge"
+        >
+          Beta
+        </Badge>
+      </div>
       <p className="text-sm text-muted-foreground">
         Check each move before it is played: Good move or blunder?
       </p>
