@@ -507,6 +507,10 @@ def test_build_snapshot_includes_lead_in_and_reply() -> None:
     assert snapshot.lead_in_plies == LEAD_IN_PLIES == 1
     # Plies 9..15: lead-in (1) + judged span 10..14 (5 plies) + the reply at 15.
     assert len(snapshot.move_ucis.split()) == 7
+    # The move that led to the start position is ply 8, the one before the lead-in.
+    game = chess.pgn.read_game(io.StringIO(SEED_PGN))
+    assert game is not None
+    assert snapshot.prior_uci == list(game.mainline_moves())[8].uci()
     board = chess.Board(snapshot.start_fen)
     for uci in snapshot.move_ucis.split():
         move = chess.Move.from_uci(uci)
@@ -519,6 +523,7 @@ def test_build_snapshot_clamps_at_game_start_and_rejects_past_end() -> None:
     assert early is not None
     assert early.lead_in_plies == 0
     assert early.start_fen == chess.STARTING_FEN
+    assert early.prior_uci is None
     assert build_snapshot(SEED_PGN, first_ply=58, last_ply=70) is None
     assert build_snapshot("not a pgn at all (", first_ply=4, last_ply=6) is None
 

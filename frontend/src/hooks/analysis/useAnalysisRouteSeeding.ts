@@ -22,7 +22,7 @@
  * and `hasAutoFlipped` are used ONLY inside effects that live here, so they
  * stay fully encapsulated.
  *
- * `forkPlyForOrientation`, `flawKey` and the `TacticRef`/`OpenLine` types are
+ * `forkPlyForOrientation`, `flawKey` and the `PendingFlaw`/`OpenLine` types are
  * imported from `lib/analysisTactics.ts` (a lib module, not a page module, so
  * "hooks must not depend on page-level modules" does not apply) rather than
  * copied here.
@@ -36,7 +36,6 @@ import type { GameFlawCard, TacticLinesResponse } from '@/types/library';
 import {
   forkPlyForOrientation,
   flawKey,
-  type TacticRef,
   type PendingFlaw,
   type OpenLine,
 } from '@/lib/analysisTactics';
@@ -57,7 +56,6 @@ export interface UseAnalysisRouteSeedingOptions {
   // API boundary (types/library.ts) — the original inline `const
   // autoOrientation = ...` in Analysis.tsx inferred this same wider type.
   autoOrientation: string | null;
-  initialTactic: TacticRef | null;
 
   // ── Game-mode data ──────────────────────────────────────────────────────
   gameData: GameFlawCard | undefined;
@@ -110,7 +108,6 @@ export function useAnalysisRouteSeeding(
     lineSans,
     rootFenSeed,
     autoOrientation,
-    initialTactic,
     gameData,
     pendingFlaw,
     contextualTacticData,
@@ -216,26 +213,15 @@ export function useAnalysisRouteSeeding(
     if (seededKey.current !== key || navigatedInitialPlyKey.current === key) return;
     navigatedInitialPlyKey.current = key;
     const ply = initialPly ?? 0;
-    // If the opening ply carries a user tactic chip, open its line
-    // automatically — same effect as clicking the chip (setPendingFlaw + navigate to the
-    // fork node; the useTacticLines → insertPvLine graft effect below records the sideline
-    // once the PV arrives). Missed forks at the decision board (ply-1), allowed at the flaw
-    // position. initialAlignPly mirrors this fork so the move list top-aligns the same node.
-    if (initialTactic !== null) {
-      const forkNodeId = mainLine[forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)];
-      if (forkNodeId !== undefined) {
-        setPendingFlaw(initialTactic);
-        // URL seeding, not a user move — this effect runs in a
-        // SEPARATE commit from loadMainLine (per the comment above), so
-        // loadMainLine's own silencing (inside useAnalysisBoard) does not reach it.
-        goToNode(forkNodeId, { silent: true });
-        return;
-      }
-    }
-    // No tactic chip here (or fork out of bounds): navigate to initialPly as before.
-    // Out-of-bounds ply is a no-op, not a crash.
+    // Always land on the game move at `ply`, even when it carries a tactic chip. Bug fix:
+    // this used to open the chip's line automatically, which parked the board at the line's
+    // fork (one ply BEFORE the linked move for a missed tactic) with a sideline grafted, so
+    // Back/Forward walked a hypothetical line instead of the game. Lines now open only on an
+    // explicit chip click or Explain. Out-of-bounds ply is a no-op, not a crash.
     const nodeId = mainLine[ply];
-    // Same URL-seeding rationale as the fork branch above.
+    // URL seeding, not a user move — this effect runs in a SEPARATE commit from
+    // loadMainLine (per the comment above), so loadMainLine's own silencing (inside
+    // useAnalysisBoard) does not reach it.
     if (nodeId !== undefined) goToNode(nodeId, { silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainLine, isGameMode, gameId]);
@@ -248,8 +234,8 @@ export function useAnalysisRouteSeeding(
     // Bug fix (Phase 245 review WR-02): every path that cannot graft must clear pendingFlaw.
     // A pending flaw that never clears hides the Explain bar on every other ply (rule 2 of
     // resolveExplainBarState) and pins the contextual fetch to its ply for the rest of the
-    // session. Since 245-02 a 404 resolves to null instead of an error, so a drifted chip or
-    // deep-link open used to stick here silently.
+    // session. Since 245-02 a 404 resolves to null instead of an error, so a drifted chip
+    // open used to stick here silently.
     if (contextualTacticData === null) {
       setPendingFlaw(null);
       return;
@@ -281,7 +267,7 @@ export function useAnalysisRouteSeeding(
     // line first shows the fork (the position before the mistake), then advances after a
     // short pause (UAT); an allowed line forks at the flaw position the board already shows,
     // so it lands on the refutation at once (rootNodeId is the refutation because the graft
-    // drops allowed_moves[0]). Chips and initialTactic carry no flag and park at the fork.
+    // drops allowed_moves[0]). Chips carry no flag and park at the fork.
     if (pendingFlaw.enter) enterExplainLine(forkNodeId, rootNodeId, pendingFlaw.orientation);
     setOpenLines((prev) => new Map(prev).set(key, { rootNodeId, ply: pendingFlaw.ply, orientation: pendingFlaw.orientation }));
     setPendingFlaw(null);

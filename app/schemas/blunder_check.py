@@ -82,7 +82,7 @@ class BetterMoveTask(BaseModel):
 
 
 class WindowStartResponse(BaseModel):
-    """Window start (or reload): the lead-in, answered moves so far and the single open prompt.
+    """Window start (or reload) and begin: the lead-in, answered moves so far and the single open prompt.
 
     No game id, ply, case, is_own, window length or remaining-prompt count (D-16).
     """
@@ -100,6 +100,13 @@ class WindowStartResponse(BaseModel):
     # Set only on a reload after a caught blunder whose better move is still open: `answered`
     # then ends with the caught move, `prompt` repeats it and no prompt timer runs.
     better_move: BetterMoveTask | None
+    # True while the window sits on its Ready gate (start was called but no prompt is issued yet,
+    # so no clock runs): `prompt` is then the first judged move and `timer_remaining_ms` the full
+    # countdown it will get. False on every begin response and on any reload after Ready.
+    awaiting_ready: bool
+    # The game move that led to `start_fen`, for the last-move highlight before any window move
+    # is shown. None at the game's first position and on windows composed before it was stored.
+    prior_uci: str | None
 
 
 class AnswerRequest(BaseModel):

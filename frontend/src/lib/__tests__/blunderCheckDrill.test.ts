@@ -47,6 +47,7 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     start_fen: START_FEN,
     orientation: 'black',
     lead_in_ucis: LEAD_IN,
+    prior_uci: null,
     answered: [],
     prompt: { move_index: 1, move_uci: 'b8c6' },
     timer_remaining_ms: FIRST_TIMER_MS,
@@ -54,6 +55,8 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     window_points: 0,
     session_points: 4,
     better_move: null,
+    // The begin / post-Ready shape; a fresh start response overrides it with true.
+    awaiting_ready: false,
     ...overrides,
   };
 }
@@ -96,11 +99,21 @@ function loaded(response: WindowStartResponse = windowStart()): DrillState {
   ]);
 }
 
+/** A fresh window past its Ready gate: loaded on the gate, Ready pressed, begin answered with `response`. */
+function begun(response: WindowStartResponse = windowStart()): DrillState {
+  return run([
+    { type: 'SESSION_READY', session: SESSION },
+    { type: 'WINDOW_LOADED', response: { ...response, awaiting_ready: true, answered: [], better_move: null } },
+    { type: 'READY_CONFIRMED' },
+    { type: 'WINDOW_BEGUN', response },
+  ]);
+}
+
 /** A window at its first prompt (lead-in fully replayed). */
 function atPrompt(): DrillState {
   return run(
     [...LEAD_IN, 'prompt'].map((): DrillEvent => ({ type: 'LEAD_IN_TICK' })),
-    loaded(),
+    begun(),
   );
 }
 
@@ -140,7 +153,7 @@ describe('session-level events', () => {
 
 describe('lead-in', () => {
   it('shows no ply on load, then one more per tick, then the prompt', () => {
-    let state = asPhase(loaded(), 'lead_in');
+    let state = asPhase(begun(), 'lead_in');
     expect(state.window.shownUcis).toEqual([]);
     for (let shown = 1; shown <= LEAD_IN.length; shown++) {
       state = asPhase(drillReducer(state, { type: 'LEAD_IN_TICK' }), 'lead_in');
@@ -155,8 +168,112 @@ describe('lead-in', () => {
   });
 
   it('a window with no lead-in plies goes to the prompt on the first tick', () => {
-    const state = run([{ type: 'LEAD_IN_TICK' }], loaded(windowStart({ lead_in_ucis: [] })));
+    const state = run([{ type: 'LEAD_IN_TICK' }], begun(windowStart({ lead_in_ucis: [] })));
     expect(asPhase(state, 'prompt').window.shownUcis).toEqual([]);
+  });
+});
+
+describe('ready gate (L-01, L-05)', () => {
+  const BEGUN_TIMER_MS = 9700;
+  const gate = (overrides: Partial<WindowStartResponse> = {}): DrillState =>
+    loaded(windowStart({ awaiting_ready: true, ...overrides }));
+
+  it('a fresh window loads on the gate with nothing shown and the server numbers', () => {
+    const state = asPhase(gate({ window_points: 0, session_points: 4 }), 'ready_gate');
+    expect(state.window.shownUcis).toEqual([]);
+    expect(state.window.startFen).toBe(START_FEN);
+    expect(state.window.priorUci).toBeNull();
+    expect(asPhase(gate({ prior_uci: 'e2e4' }), 'ready_gate').window.priorUci).toBe('e2e4');
+    expect(state.prompt).toEqual({ move_index: 1, move_uci: 'b8c6' });
+    expect(state.timerMs).toBe(FIRST_TIMER_MS);
+    expect(state.sessionPoints).toBe(4);
+    const progress = drillProgress(state);
+    expect(progress?.position).toBe(0);
+    expect(progress?.pot).toBe(0);
+  });
+
+  it('nothing plays and nothing is answerable on the gate', () => {
+    const state = gate();
+    for (const event of [
+      { type: 'LEAD_IN_TICK' },
+      { type: 'ANSWER_SUBMITTED', answer: 'safe' },
+      { type: 'ANSWER_SUBMITTED', answer: 'timeout' },
+      { type: 'ADVANCE_TICK' },
+      { type: 'WINDOW_BEGUN', response: windowStart() },
+    ] satisfies DrillEvent[]) {
+      expect(drillReducer(state, event)).toBe(state);
+    }
+  });
+
+  it('Ready moves the gate to beginning, keeping the window and prompt', () => {
+    const state = gate();
+    const beginning = asPhase(drillReducer(state, { type: 'READY_CONFIRMED' }), 'beginning');
+    expect(beginning.window).toBe(asPhase(state, 'ready_gate').window);
+    expect(beginning.prompt).toEqual({ move_index: 1, move_uci: 'b8c6' });
+  });
+
+  it('a second Ready, or Ready outside the gate, changes nothing', () => {
+    const beginning = drillReducer(gate(), { type: 'READY_CONFIRMED' });
+    expect(drillReducer(beginning, { type: 'READY_CONFIRMED' })).toBe(beginning);
+    const leadIn = begun();
+    expect(drillReducer(leadIn, { type: 'READY_CONFIRMED' })).toBe(leadIn);
+    const prompt = atPrompt();
+    expect(drillReducer(prompt, { type: 'READY_CONFIRMED' })).toBe(prompt);
+  });
+
+  it('the begin response starts the lead-in with its own timer, then the prompt as before (L-03)', () => {
+    const beginning = drillReducer(gate(), { type: 'READY_CONFIRMED' });
+    let state = asPhase(
+      drillReducer(beginning, {
+        type: 'WINDOW_BEGUN',
+        response: windowStart({ timer_remaining_ms: BEGUN_TIMER_MS }),
+      }),
+      'lead_in',
+    );
+    expect(state.window.shownUcis).toEqual([]);
+    expect(state.timerMs).toBe(BEGUN_TIMER_MS);
+    for (let shown = 1; shown <= LEAD_IN.length; shown++) {
+      state = asPhase(drillReducer(state, { type: 'LEAD_IN_TICK' }), 'lead_in');
+      expect(state.window.shownUcis).toEqual(LEAD_IN.slice(0, shown));
+    }
+    const prompt = asPhase(drillReducer(state, { type: 'LEAD_IN_TICK' }), 'prompt');
+    expect(prompt.timerMs).toBe(BEGUN_TIMER_MS);
+  });
+
+  it('a begin response that already has answers (another tab) resumes on the prompt', () => {
+    const answered = [
+      {
+        move_index: 1,
+        move_uci: 'b8c6',
+        reply_uci: 'f1b5',
+        result: 'correct_safe' as const,
+        points_awarded: 1,
+        points_forfeited: 0,
+      },
+    ];
+    const beginning = drillReducer(gate(), { type: 'READY_CONFIRMED' });
+    const state = asPhase(
+      drillReducer(beginning, {
+        type: 'WINDOW_BEGUN',
+        response: windowStart({
+          answered,
+          prompt: { move_index: 2, move_uci: 'a7a6' },
+          timer_remaining_ms: RESUMED_TIMER_MS,
+        }),
+      }),
+      'prompt',
+    );
+    expect(state.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+    expect(state.timerMs).toBe(RESUMED_TIMER_MS);
+  });
+
+  it('a begin response that is still the gate is a broken payload', () => {
+    const beginning = drillReducer(gate(), { type: 'READY_CONFIRMED' });
+    const state = drillReducer(beginning, {
+      type: 'WINDOW_BEGUN',
+      response: windowStart({ awaiting_ready: true }),
+    });
+    expect(state.phase).toBe('error');
   });
 });
 
@@ -253,7 +370,7 @@ describe('answering', () => {
     expect(drillReducer(grading, { type: 'ANSWER_SUBMITTED', answer: 'timeout' })).toBe(grading);
     const feedback = drillReducer(grading, { type: 'ANSWER_GRADED', response: graded() });
     expect(drillReducer(feedback, { type: 'ANSWER_SUBMITTED', answer: 'timeout' })).toBe(feedback);
-    const leadIn = loaded();
+    const leadIn = begun();
     expect(drillReducer(leadIn, { type: 'ANSWER_SUBMITTED', answer: 'safe' })).toBe(leadIn);
   });
 
@@ -372,6 +489,13 @@ describe('answering', () => {
     expect(feedback.sessionPoints).toBe(2);
   });
 
+  it('a timeout on a good move flashes its one-point forfeit, or a neutral +0 on an empty pot', () => {
+    const penalised = graded({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 1 });
+    expect(flashFor(penalised)).toEqual({ amount: 1, variant: 'forfeit' });
+    const response = graded({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 0 });
+    expect(flashFor(response)).toEqual({ amount: 0, variant: 'neutral' });
+  });
+
   it('ignores a grade that arrives outside the grading phase', () => {
     const prompt = atPrompt();
     expect(drillReducer(prompt, { type: 'ANSWER_GRADED', response: graded() })).toBe(prompt);
@@ -453,6 +577,23 @@ describe('window end and session end', () => {
     expect(next.position).toBe(1);
     expect(next.sessionPoints).toBe(7);
     expect(next.session.sessionId).toBe(SESSION_ID);
+  });
+
+  it('every window gates (L-01): the next window loads on its Ready gate', () => {
+    const over = run(
+      [{ type: 'FEEDBACK_DONE' }, { type: 'SOLUTION_LOADED', solution: FALSE_ALARM_SOLUTION }],
+      ended,
+    );
+    const next = drillReducer(over, { type: 'NEXT_WINDOW' });
+    const gate = asPhase(
+      drillReducer(next, {
+        type: 'WINDOW_LOADED',
+        response: windowStart({ position: 1, awaiting_ready: true }),
+      }),
+      'ready_gate',
+    );
+    expect(gate.window.position).toBe(1);
+    expect(gate.window.shownUcis).toEqual([]);
   });
 
   it('NEXT_WINDOW after the last window finishes the session, SESSION_FINISHED ends it', () => {

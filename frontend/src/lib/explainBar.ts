@@ -140,8 +140,8 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
   if (!isGameMode || fastForwardRunning) return { kind: 'hidden' };
   // (1b) Got it (D-06): the board is in an open line. Following findFocusedFlaw semantics,
   // that covers the grafted subtree (including free moves played off a PV node), a missed
-  // line's fork (ply-1) after stepping Back out, an allowed line's fork (the flaw node
-  // itself) and a deep-link auto-opened line.
+  // line's fork (ply-1) after stepping Back out and an allowed line's fork (the flaw node
+  // itself).
   const openLine = gotItLine(inputs);
   if (openLine === null) return explainState(inputs);
   // Bug fix (Phase 245 review WR-01): a missed line for P forks at mainLine[P-1]. When the
@@ -159,7 +159,7 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
 /** Rules (2)-(6): the Best / Punish offer for the landing ply, or hidden. */
 function explainState(inputs: ExplainBarInputs): ExplainBarState {
   const { flawMarkers, landingPly, pendingFlaw, tacticLines, tacticLinesPly } = inputs;
-  // (2) An unrelated chip or deep-link open is in flight.
+  // (2) An unrelated chip open is in flight.
   if (pendingFlaw != null && pendingFlaw.ply !== landingPly) return { kind: 'hidden' };
   // (3) Not on an eligible flaw ply (covers sidelines, the root and inaccuracies).
   const headline = explainHeadline(flawMarkers, landingPly);

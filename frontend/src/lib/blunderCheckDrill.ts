@@ -1,9 +1,10 @@
 /**
  * blunderCheckDrill: the pure state machine of the blunder-check drill (Phase 249).
  *
- * One window runs: loading -> lead-in replay -> prompt -> grading -> feedback ->
- * (move + reply -> next prompt) ... -> window ended. A caught blunder then asks for a
- * better move (better_move -> grading -> feedback); every ended window ends on its
+ * One window runs: loading -> Ready gate -> lead-in replay -> prompt -> grading -> feedback ->
+ * (move + reply -> next prompt) ... -> window ended. The Ready gate is untimed: the server
+ * issues the first prompt and starts its clock only at begin (L-05). A caught blunder then asks
+ * for a better move (better_move -> grading -> feedback); every ended window ends on its
  * solution screen (solution_loading -> solution). After the last window the session is
  * finished. The reducer is pure: no timers, no I/O. The component that hosts it
  * (BlunderCheckTab and the drill under it) schedules the ticks with the constants
@@ -29,7 +30,7 @@ import type {
   WindowStartResponse,
 } from '@/types/blunderCheck';
 
-/** Delay before the first lead-in ply is replayed after a window loads. */
+/** Delay before the first lead-in ply is replayed once the server has begun the window (Ready). */
 export const LEAD_IN_START_DELAY_MS = 400;
 /** Gap between two lead-in plies; the last gap hands over to the prompt. */
 export const LEAD_IN_PLY_INTERVAL_MS = 700;
@@ -85,13 +86,18 @@ export interface DrillWindow {
   leadInUcis: readonly string[];
   /** Every UCI already played on the board, in order, starting from `startFen`. */
   shownUcis: readonly string[];
+  /** The game move that led to `startFen`: the last-move highlight while nothing is shown yet. */
+  priorUci: string | null;
   windowPoints: number;
 }
 
-/** The points flash after a graded answer: a forfeit when points were taken away, else a gain. */
+/**
+ * The points flash after a graded answer: a forfeit when points were taken away, a neutral
+ * "+0" for a timeout on a good move with nothing in the pot to take, else a gain.
+ */
 export interface FeedbackFlash {
   amount: number;
-  variant: 'gain' | 'forfeit';
+  variant: 'gain' | 'forfeit' | 'neutral';
 }
 
 /** Fields every in-window phase carries. */
@@ -111,6 +117,10 @@ interface WindowEnded extends InWindow {
 export type DrillState =
   | { phase: 'idle' }
   | { phase: 'loading_window'; session: DrillSession; position: number; sessionPoints: number }
+  // Start position shown, waiting for Ready: nothing plays and nothing is answerable.
+  | ({ phase: 'ready_gate'; prompt: Prompt; timerMs: number } & InWindow)
+  // Ready pressed, the begin request is in flight.
+  | ({ phase: 'beginning'; prompt: Prompt; timerMs: number } & InWindow)
   | ({ phase: 'lead_in'; prompt: Prompt; timerMs: number } & InWindow)
   | ({ phase: 'prompt'; prompt: Prompt; timerMs: number } & InWindow)
   | ({ phase: 'grading'; prompt: Prompt } & InWindow)
@@ -139,6 +149,8 @@ export type DrillState =
 export type DrillEvent =
   | { type: 'SESSION_READY'; session: BlunderCheckSessionResponse }
   | { type: 'WINDOW_LOADED'; response: WindowStartResponse }
+  | { type: 'READY_CONFIRMED' }
+  | { type: 'WINDOW_BEGUN'; response: WindowStartResponse }
   | { type: 'LEAD_IN_TICK' }
   | { type: 'ANSWER_SUBMITTED'; answer: AnswerKind }
   | { type: 'ANSWER_GRADED'; response: AnswerResponse }
@@ -221,6 +233,7 @@ function betterMoveResumed(
       leadInUcis: response.lead_in_ucis,
       // The caught blunder itself was never played on the board.
       shownUcis: [...response.lead_in_ucis, ...answeredUcis(response.answered.slice(0, -1))],
+      priorUci: response.prior_uci,
       windowPoints: response.window_points,
     },
     prompt: response.prompt,
@@ -230,33 +243,60 @@ function betterMoveResumed(
 }
 
 /**
- * The window just loaded. A resume goes straight to the prompt, a fresh window replays its
- * lead-in. A reload during grading (the server answered 409 stale_prompt, so its state wins)
- * also goes straight to the prompt: a replay would burn the user's real countdown time.
+ * The window as the server describes it. A reload during the better-move step goes back into
+ * it. A fresh window (`awaiting_ready`) waits on its Ready gate with nothing shown. After Ready
+ * (or a reload past it) the window resumes: with answers, or after a stale_prompt from grading
+ * (the server's state wins), it goes straight to the prompt, because a replay would burn the
+ * user's real countdown time; with none answered it replays its lead-in.
  */
-function windowLoaded(state: DrillState, response: WindowStartResponse): DrillState {
-  if (state.phase !== 'loading_window' && state.phase !== 'grading') return state;
+function windowFromServer(
+  session: DrillSession,
+  response: WindowStartResponse,
+  forceResume: boolean,
+): DrillState {
   if (response.better_move !== null) {
-    return betterMoveResumed(state.session, response, response.better_move);
+    return betterMoveResumed(session, response, response.better_move);
   }
-  const resumed = response.answered.length > 0 || state.phase === 'grading';
+  const resumed = !response.awaiting_ready && (response.answered.length > 0 || forceResume);
   const window: DrillWindow = {
     position: response.position,
     startFen: response.start_fen,
     orientation: response.orientation,
     leadInUcis: response.lead_in_ucis,
     shownUcis: resumed ? [...response.lead_in_ucis, ...answeredUcis(response.answered)] : [],
+    priorUci: response.prior_uci,
     windowPoints: response.window_points,
   };
   const common = {
-    session: state.session,
+    session,
     sessionPoints: response.session_points,
     window,
     prompt: response.prompt,
     // D-18: the server's remaining time, never topped up on a resume.
     timerMs: response.timer_remaining_ms,
   };
+  if (response.awaiting_ready) return { phase: 'ready_gate', ...common };
   return resumed ? { phase: 'prompt', ...common } : { phase: 'lead_in', ...common };
+}
+
+/** The window just loaded (from loading, or re-fetched after a stale_prompt during grading). */
+function windowLoaded(state: DrillState, response: WindowStartResponse): DrillState {
+  if (state.phase !== 'loading_window' && state.phase !== 'grading') return state;
+  return windowFromServer(state.session, response, state.phase === 'grading');
+}
+
+/** Ready pressed on the gate: the begin request goes out (a repeat press changes nothing). */
+function readyConfirmed(state: DrillState): DrillState {
+  if (state.phase !== 'ready_gate') return state;
+  return { ...state, phase: 'beginning' };
+}
+
+/** The server began the window: its clock runs from now, so the lead-in replays. */
+function windowBegun(state: DrillState, response: WindowStartResponse): DrillState {
+  if (state.phase !== 'beginning') return state;
+  // A begin response on the gate again would loop forever: treat it as a broken payload.
+  if (response.awaiting_ready) return { phase: 'error', message: UNEXPECTED_RESPONSE_MESSAGE };
+  return windowFromServer(state.session, response, false);
 }
 
 /** One lead-in step: show the next ply, or hand over to the prompt once all are shown. */
@@ -282,6 +322,9 @@ export function flashFor(response: AnswerResponse): FeedbackFlash {
   if (response.points_forfeited > 0) {
     return { amount: response.points_forfeited, variant: 'forfeit' };
   }
+  // A timeout on a good move with an empty pot moves no points: it is still shown, so the
+  // move does not pass silently.
+  if (response.result === 'timeout_safe') return { amount: 0, variant: 'neutral' };
   return { amount: response.points_awarded, variant: 'gain' };
 }
 
@@ -435,8 +478,8 @@ export const BANK_HOLD_MS = 1200;
 
 /**
  * What just happened to the pot, for the progress row's animation: points dropped in, the
- * pot was lost (a missed blunder or a timeout), or the pot was banked into the total (on
- * Next, see `bankingProgress`).
+ * pot lost points (all of them for a blunder let through, one for a timeout on a good move),
+ * or the pot was banked into the total (on Next, see `bankingProgress`).
  */
 export interface PotEvent {
   kind: 'gain' | 'bust' | 'bank';
@@ -571,6 +614,10 @@ export function drillReducer(state: DrillState, event: DrillEvent): DrillState {
       return state.phase === 'idle' ? sessionReady(event.session) : state;
     case 'WINDOW_LOADED':
       return windowLoaded(state, event.response);
+    case 'READY_CONFIRMED':
+      return readyConfirmed(state);
+    case 'WINDOW_BEGUN':
+      return windowBegun(state, event.response);
     case 'LEAD_IN_TICK':
       return leadInTick(state);
     case 'ANSWER_SUBMITTED':

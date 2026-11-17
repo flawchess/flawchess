@@ -39,7 +39,11 @@ from app.services.blunder_check_grading import (
     uci_at,
     window_ucis,
 )
-from app.services.blunder_check_rules import BLUNDER_POINTS, SAFE_POINTS
+from app.services.blunder_check_rules import (
+    BLUNDER_POINTS,
+    SAFE_POINTS,
+    SAFE_TIMEOUT_PENALTY_POINTS,
+)
 from app.services.train_pool import ServerGradedMove
 
 _START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -89,19 +93,28 @@ def test_grade_correct_safe_on_last_judged_move_clears() -> None:
     assert grade == AnswerGrade("correct_safe", SAFE_POINTS, 0, True, "cleared", False)
 
 
-def test_grade_timeout_on_safe_forfeits_and_continues() -> None:
+def test_grade_timeout_on_safe_costs_the_penalty_and_continues() -> None:
     grade = _grade("timeout", blunder=False)
-    assert grade == AnswerGrade("timeout_safe", 0, _WINDOW_POINTS, False, None, False)
+    assert grade == AnswerGrade("timeout_safe", 0, SAFE_TIMEOUT_PENALTY_POINTS, False, None, False)
 
 
-def test_grade_timeout_on_last_safe_move_forfeits_and_clears() -> None:
+def test_grade_timeout_on_last_safe_move_costs_the_penalty_and_clears() -> None:
     grade = _grade("timeout", blunder=False, last=True)
-    assert grade == AnswerGrade("timeout_safe", 0, _WINDOW_POINTS, True, "cleared", False)
+    assert grade == AnswerGrade(
+        "timeout_safe", 0, SAFE_TIMEOUT_PENALTY_POINTS, True, "cleared", False
+    )
+
+
+def test_grade_timeout_on_safe_never_takes_the_pot_below_zero() -> None:
+    assert _grade("timeout", blunder=False, points=0).points_forfeited == 0
 
 
 def test_grade_forfeit_equals_the_points_passed_in() -> None:
     assert _grade("safe", blunder=True, points=5).points_forfeited == 5
-    assert _grade("timeout", blunder=False, points=0).points_forfeited == 0
+    assert _grade("timeout", blunder=True, points=5).points_forfeited == 5
+    assert _grade("timeout", blunder=False, points=5).points_forfeited == (
+        SAFE_TIMEOUT_PENALTY_POINTS
+    )
 
 
 def test_effective_answer_at_the_ceiling_stays_and_one_ms_later_times_out() -> None:

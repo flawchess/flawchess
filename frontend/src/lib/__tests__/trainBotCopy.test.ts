@@ -12,6 +12,7 @@ import { scorePuzzle } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import {
   BLUNDER_CHECK_RATIONALES,
+  blunderCheckReadyCopy,
   blunderCheckScoreBubbleCopy,
   BY_TEMPERAMENT,
   GRADING_COPY,
@@ -1000,6 +1001,33 @@ describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
       const noGamesGuest = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST });
       expect(noGames).toEqual(hasGames);
       expect(noGamesGuest).toEqual(hasGames);
+    }
+  });
+});
+
+describe('blunderCheckReadyCopy', () => {
+  it('names the side and says it is the opponent\'s turn when the opponent moves first', () => {
+    expect(blunderCheckReadyCopy('white', 'black')).toBe(
+      "Check out the position, you play white. It's your opponent's turn.",
+    );
+    expect(blunderCheckReadyCopy('black', 'white')).toBe(
+      "Check out the position, you play black. It's your opponent's turn.",
+    );
+  });
+
+  it('says it is the user\'s turn when the start FEN has the user to move', () => {
+    expect(blunderCheckReadyCopy('white', 'white')).toBe(
+      "Check out the position, you play white. It's your turn.",
+    );
+  });
+
+  it('never says "your move" and has no em-dash', () => {
+    for (const side of ['white', 'black'] as const) {
+      for (const toMove of ['white', 'black'] as const) {
+        const copy = blunderCheckReadyCopy(side, toMove);
+        expect(copy).not.toMatch(/your move/i);
+        expect(copy).not.toContain('\u2014');
+      }
     }
   });
 });

@@ -21,11 +21,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Train: the red dot now clears when you start a training session, not when you open Train.
+- Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
 - Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.
 - Openings: the sidebar no longer shows a red dot on Bookmarks. Existing accounts start with the new route already complete.
 - Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
 - Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
 - Library filters: the Tags panel now starts with Best Moves, followed by Flaws and the Facepalm Score, with a divider after Best Moves and after the Facepalm Score.
+- Blunder check (beta): running out of time on a good move now costs one point from the sequence's pot instead of the whole pot (a gray +0 when the pot is empty). Running out of time on the blunder still counts as missing it.
 - Blunder check (beta): blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
 - Blunder check (beta): the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
 - Facepalm score: computed on the fly from the stored facts, so the blunder check and the library always use the current model (no visible change yet).
@@ -33,6 +35,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Facepalm score: refitted on more of your labelled blunders. It now weighs the material a blunder loses or misses over the whole engine line, earlier moves counting most, instead of at one point three moves in, so missed wins count for more. Scores change for every blunder (the library chip, the Facepalm Score filter and the blunder-check selection all follow), and a blunder that loses no material and whose best move's likelihood is unknown no longer gets a score.
 - Internal: removed the stored facepalm score and the old line-loss columns; the score is computed from the stored facts.
 - Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
+- Blunder check (beta): every sequence now opens paused on its starting position with the last played move highlighted, and the host tells you which side you play and whose turn it is. Press Ready when you have looked at the position: the opponent's move and the 10-second timer only start then.
 
 ### Fixed
 

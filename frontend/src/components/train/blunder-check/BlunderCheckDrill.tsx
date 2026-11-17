@@ -2,7 +2,9 @@
  * BlunderCheckDrill: the board loop of one blunder-check window (Phase 249, D-12, D-13, D-18).
  *
  * Renders the pure drill reducer's window phases (`lib/blunderCheckDrill.ts`) and runs
- * the effects that feed it: the window start request, the lead-in replay ticks, the
+ * the effects that feed it. A window first waits on its Ready gate (start position, host
+ * bubble, Ready button); the lead-in, the countdown and everything after start only after
+ * Ready. The effects: the window start request, the begin request on Ready, the lead-in replay ticks, the
  * feedback hold, the move + reply ticks and the per-move countdown. The window replays its
  * lead-in at a fixed pace, then shows the judged move as an arrow (the piece still on its
  * source square) and asks "Good move or blunder?". The move and the opponent's reply are only
@@ -67,7 +69,8 @@ import { uciToSquares } from '@/lib/sanToSquares';
 import { playSound } from '@/lib/sounds';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, ZONE_DANGER } from '@/lib/theme';
 import { TRAIN_PLAYED_MOVE_ARROW_WIDTH } from '@/lib/trainArrows';
-import { pickPuzzleHost } from '@/lib/trainBotCopy';
+import { sideToMoveFromFen } from '@/lib/liveFlaw';
+import { blunderCheckReadyCopy, pickPuzzleHost } from '@/lib/trainBotCopy';
 import type { RevealTreeSnapshot } from '@/lib/trainRevealLines';
 import type { AnswerKind, AnswerResponse } from '@/types/blunderCheck';
 
@@ -80,12 +83,13 @@ const STALE_PROMPT_DETAIL = 'stale_prompt';
 
 type BlunderCheckSession = ReturnType<typeof useBlunderCheckSession>;
 type StartWindowAsync = BlunderCheckSession['startWindow']['mutateAsync'];
+type BeginWindowAsync = BlunderCheckSession['beginWindow']['mutateAsync'];
 type AnswerAsync = BlunderCheckSession['answer']['mutateAsync'];
 type DrillDispatch = Dispatch<DrillEvent>;
-/** The phases that play the window's board loop (lead-in, prompt, grading, feedback, move + reply). */
+/** The phases that play the window's board loop (Ready gate, lead-in, prompt, grading, feedback, move + reply). */
 type InWindowState = Extract<
   DrillState,
-  { phase: 'lead_in' | 'prompt' | 'grading' | 'feedback' | 'advancing' }
+  { phase: 'ready_gate' | 'beginning' | 'lead_in' | 'prompt' | 'grading' | 'feedback' | 'advancing' }
 >;
 type SolutionAsync = BlunderCheckSession['solution']['mutateAsync'];
 
@@ -94,14 +98,16 @@ type SolutionAsync = BlunderCheckSession['solution']['mutateAsync'];
  * source square until the move is applied to the board (after a correct "Good").
  */
 function showsPromptArrow(state: InWindowState): boolean {
-  if (state.phase === 'lead_in') return false;
+  if (state.phase === 'ready_gate' || state.phase === 'beginning' || state.phase === 'lead_in') {
+    return false;
+  }
   return !(state.phase === 'advancing' && state.step === 1);
 }
 
 /**
  * The server's grade as a sound (D-12). A catch gets the Train full-score sound; a lost pot
- * (a missed blunder or a timeout that forfeits points) gets the pot's own tumble; a wrong
- * answer where no points moved, the 0-points sound. A "Good" call is silent here: its sound is
+ * (a blunder let through) gets the pot's own tumble; a wrong answer where no points moved
+ * and a timeout on a good move (the pot survives it), the 0-points sound. A "Good" call is silent here: its sound is
  * the coin, played as its point lands in the pot (BlunderCheckScore), like every gain's. The
  * "Good" call that clears a herring (every move called good) gets the full-score sound too, but
  * only once that last point's coin has sounded (Phase 249 UAT): the two used to play over
@@ -109,13 +115,15 @@ function showsPromptArrow(state: InWindowState): boolean {
  */
 function playAnswerSound(response: AnswerResponse): void {
   if (response.result === 'caught') playSound('score-full');
-  else if (response.outcome === 'cleared') {
+  // A timeout on a herring's last move also clears it, but earned nothing: no fanfare.
+  else if (response.outcome === 'cleared' && response.result === 'correct_safe') {
     // Without motion nothing flies, so the coin plays at once (BlunderCheckScore).
     const delay = prefersReducedMotion() ? COIN_SOUND_MS : CLEARED_SOUND_DELAY_MS;
     setTimeout(() => playSound('score-full'), delay);
   } else if (response.result === 'correct_safe') return;
-  else if (response.points_forfeited > 0) playSound('pot-bust');
-  else playSound('game-loss');
+  else if (response.points_forfeited > 0 && response.result !== 'timeout_safe') {
+    playSound('pot-bust');
+  } else playSound('game-loss');
 }
 
 /** The pot being banked: a few coins dropping into the total, each overlapping the last. */
@@ -171,7 +179,7 @@ function useBankOnNext(
 function flashOf(state: InWindowState): FeedbackFlash | null {
   if (state.phase !== 'feedback' && state.phase !== 'advancing') return null;
   const flash = flashFor(state.graded);
-  return flash.amount > 0 ? flash : null;
+  return flash.amount > 0 || flash.variant === 'neutral' ? flash : null;
 }
 
 function isStalePromptError(error: unknown): boolean {
@@ -235,6 +243,35 @@ function useWindowLoader(
       cancelled = true;
     };
   }, [loading, sessionId, position, startWindow, dispatch]);
+}
+
+/**
+ * Sends the begin request once Ready is pressed: the server issues the first prompt and starts
+ * its clock. Begin is idempotent server-side, so a repeated effect run is harmless.
+ */
+function useWindowBeginner(
+  state: DrillState,
+  dispatch: DrillDispatch,
+  beginWindow: BeginWindowAsync,
+): void {
+  const beginning = state.phase === 'beginning';
+  const sessionId = state.phase === 'beginning' ? state.session.sessionId : 0;
+  const position = state.phase === 'beginning' ? state.window.position : 0;
+  useEffect(() => {
+    if (!beginning) return;
+    let cancelled = false;
+    beginWindow({ sessionId, position }).then(
+      (response) => {
+        if (!cancelled) dispatch({ type: 'WINDOW_BEGUN', response });
+      },
+      () => {
+        if (!cancelled) dispatch({ type: 'FAILED', message: 'Failed to start the sequence' });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [beginning, sessionId, position, beginWindow, dispatch]);
 }
 
 /**
@@ -412,7 +449,7 @@ function SolutionLoadingView({
     () => applyUcis(window.startFen, window.shownUcis),
     [window.startFen, window.shownUcis],
   );
-  const lastUci = window.shownUcis[window.shownUcis.length - 1];
+  const lastUci = window.shownUcis[window.shownUcis.length - 1] ?? window.priorUci;
   return (
     <BlunderCheckStage
       progress={progress}
@@ -433,18 +470,62 @@ function SolutionLoadingView({
   );
 }
 
+/**
+ * The Ready gate's host bubble (L-02): which side the user plays and whose turn it is, with the
+ * single Ready button. Untimed: no countdown is rendered and nothing starts on its own.
+ */
+function ReadyGateBubble({
+  persona,
+  orientation,
+  startFen,
+  beginning,
+  onReady,
+}: {
+  persona: Persona;
+  orientation: 'white' | 'black';
+  startFen: string;
+  beginning: boolean;
+  onReady: () => void;
+}): ReactElement {
+  return (
+    <div data-testid="blunder-check-ready-gate">
+      <TrainBotBubble
+        persona={persona}
+        state="prompt"
+        actions={
+          <Button
+            variant="default"
+            className={TRAIN_BUTTON_CLASS}
+            disabled={beginning}
+            onClick={onReady}
+            data-testid="blunder-check-btn-ready"
+          >
+            Ready
+          </Button>
+        }
+      >
+        <p data-testid="blunder-check-ready-copy">
+          {blunderCheckReadyCopy(orientation, sideToMoveFromFen(startFen))}
+        </p>
+      </TrainBotBubble>
+    </div>
+  );
+}
+
 function WindowView({
   state,
   progress,
   persona,
   remainingMs,
   onAnswer,
+  onReady,
 }: {
   state: InWindowState;
   progress: DrillProgress;
   persona: Persona;
   remainingMs: number;
   onAnswer: (answer: AnswerKind) => void;
+  onReady: () => void;
 }): ReactElement {
   const { window, prompt } = state;
   useMoveSounds(window);
@@ -452,8 +533,10 @@ function WindowView({
     () => applyUcis(window.startFen, window.shownUcis),
     [window.startFen, window.shownUcis],
   );
-  const lastUci = window.shownUcis[window.shownUcis.length - 1];
-  const lastMove = uciToSquares(lastUci ?? null);
+  // Before any window move is shown (the Ready gate, the lead-in's first beat) the highlight is
+  // the game move that led to the start position, as on any board.
+  const lastUci = window.shownUcis[window.shownUcis.length - 1] ?? window.priorUci;
+  const lastMove = uciToSquares(lastUci);
   // Null once the prompted move is on the board (and for a malformed UCI): no arrow, no badge.
   const promptSquares = showsPromptArrow(state) ? uciToSquares(prompt.move_uci) : null;
   const arrows: BoardArrow[] = promptSquares !== null
@@ -516,19 +599,30 @@ function WindowView({
         </>
       )}
     >
-      {/* The question, the countdown and the answer buttons in the host's speech bubble
-          (the personalized-puzzle chat row). */}
-      <TrainBotBubble
-        persona={persona}
-        state={nudged ? 'drop-nudge' : 'prompt'}
-        nudgeNonce={nudgeNonce}
-        actions={<AnswerButtons answerable={state.phase === 'prompt'} onAnswer={onAnswer} />}
-      >
-        <div className="flex items-center justify-between gap-3" data-testid="blunder-check-prompt">
-          <p>Good move or blunder?</p>
-          <MoveTimer remainingMs={remainingMs} visible={timerVisible} />
-        </div>
-      </TrainBotBubble>
+      {state.phase === 'ready_gate' || state.phase === 'beginning' ? (
+        // Rendered inside WindowView so the board stays mounted from the gate into the lead-in.
+        <ReadyGateBubble
+          persona={persona}
+          orientation={window.orientation}
+          startFen={window.startFen}
+          beginning={state.phase === 'beginning'}
+          onReady={onReady}
+        />
+      ) : (
+        // The question, the countdown and the answer buttons in the host's speech bubble
+        // (the personalized-puzzle chat row).
+        <TrainBotBubble
+          persona={persona}
+          state={nudged ? 'drop-nudge' : 'prompt'}
+          nudgeNonce={nudgeNonce}
+          actions={<AnswerButtons answerable={state.phase === 'prompt'} onAnswer={onAnswer} />}
+        >
+          <div className="flex items-center justify-between gap-3" data-testid="blunder-check-prompt">
+            <p>Good move or blunder?</p>
+            <MoveTimer remainingMs={remainingMs} visible={timerVisible} />
+          </div>
+        </TrainBotBubble>
+      )}
     </BlunderCheckStage>
   );
 }
@@ -658,11 +752,13 @@ export function BlunderCheckDrill({
   );
 
   useWindowLoader(state, dispatch, startWindowAsync);
+  useWindowBeginner(state, dispatch, session.beginWindow.mutateAsync);
   useLeadInTicks(state, dispatch);
   useAfterAnswerTicks(state, dispatch);
   const { remainingMs, handleAnswer } = useAnswering(state, dispatch, api);
   const solutionLoader = useSolutionLoader(state, dispatch, session.solution.mutateAsync);
   const { banking, handleNext } = useBankOnNext(state, dispatch);
+  const handleReady = useCallback((): void => dispatch({ type: 'READY_CONFIRMED' }), [dispatch]);
 
   // A random bot hosts each window (the personalized-puzzle host draw, without the tour's
   // narrator); it asks the question, takes the better move and gives the solution.
@@ -699,6 +795,8 @@ export function BlunderCheckDrill({
           </p>
         </BlunderCheckStageMessage>
       );
+    case 'ready_gate':
+    case 'beginning':
     case 'lead_in':
     case 'prompt':
     case 'grading':
@@ -711,6 +809,7 @@ export function BlunderCheckDrill({
           persona={persona}
           remainingMs={remainingMs}
           onAnswer={handleAnswer}
+          onReady={handleReady}
         />
       );
     case 'better_move':

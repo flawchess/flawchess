@@ -14,6 +14,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactElement } from 'react';
 import axios from 'axios';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
@@ -37,6 +38,8 @@ const HTTP_CONFLICT = 409;
 const IMMERSIVE_PHASES: ReadonlySet<DrillState['phase']> = new Set([
   // loading_window is immersive too, so the tab bar does not flash between two windows.
   'loading_window',
+  'ready_gate',
+  'beginning',
   'lead_in',
   'prompt',
   'grading',
@@ -75,13 +78,18 @@ function StartScreen({
       className="mx-auto flex w-full max-w-md flex-col gap-4"
       data-testid="blunder-check-start-screen"
     >
-      <h2 className="text-lg font-semibold">Blunder check</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">Blunder Check</h2>
+        <Badge
+          variant="default"
+          className="px-2.5 text-sm font-semibold uppercase tracking-wide"
+          data-testid="blunder-check-beta-badge"
+        >
+          Beta
+        </Badge>
+      </div>
       <p className="text-sm text-muted-foreground">
         Check each move before it is played: Good move or blunder?
-      </p>
-      <p className="text-sm text-muted-foreground" data-testid="blunder-check-pot-rule">
-        Every correct Good call adds a point to the pot. Miss the blunder, or run out of time,
-        and the pot is lost.
       </p>
       {openSession?.current_position != null && (
         <p className="text-sm" data-testid="blunder-check-open-session">
@@ -110,6 +118,33 @@ function StartScreen({
           {openSession !== null ? 'Resume' : 'Start'}
         </Button>
       )}
+      <p className="text-sm text-muted-foreground" data-testid="blunder-check-idea">
+        Most games are decided by blunders, not brilliancies. Strong players avoid them by
+        checking every move before they play it. This drill turns that check into a habit.
+      </p>
+      <ul
+        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
+        data-testid="blunder-check-how-it-works"
+      >
+        <li>
+          You replay short sequences from real games, your own and those of similarly rated
+          players. Each of your moves is shown as an arrow, and you judge it against the clock.
+        </li>
+        <li>
+          The blunders are ones a player at your level should spot, including missed chances to
+          punish the opponent.
+        </li>
+        <li>Some sequences have no blunder at all, so you can never tell when one is coming.</li>
+      </ul>
+      <ul
+        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
+        data-testid="blunder-check-pot-rule"
+      >
+        <li>Every correct Good call adds a point to the sequence's pot.</li>
+        <li>Catch the blunder for bonus points, then find a better move for more.</li>
+        <li>Miss the blunder and the pot is lost. Running out of time on a good move costs a point.</li>
+        <li>A false alarm ends the sequence, but you keep the pot.</li>
+      </ul>
     </div>
   );
 }

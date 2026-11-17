@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 256
 status: completed
 stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-16T22:09:56.116Z"
+last_updated: "2026-11-17T19:52:23.723Z"
 last_activity: 2026-11-16
 last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: "0ba78fa1d78f06580b4da39a649fec79806c1007"
+state_head: bca5a9b4db8d5e9fb5775371b9d729b6abe5a212
 progress:
   total_phases: 10
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-16 -- Phase 256 shipped (squash-merged to main as b2a66e3b7)
+Last activity: 2026-11-17 - Completed quick task 261117-sfh: Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready
 
 Open threads carried forward (not blockers):
 
@@ -1142,6 +1142,7 @@ None active.
 | 261116-ar3 | Feature route: complete the Import step when games exist, not on visit (overrules 255 D-14) | 2026-11-16 | 272206481 | [261116-ar3-feature-route-complete-the-import-step-w](./quick/261116-ar3-feature-route-complete-the-import-step-w/) |
 | 261116-mco | Facepalm label set 8: disagreement sampler in miss_labels.py, 60 blind prod rows appended to facepalm-labels.tsv | 2026-11-16 | 6f4d484e8 | [261116-mco-facepalm-label-set-8-sampler-disagreemen](./quick/261116-mco-facepalm-label-set-8-sampler-disagreemen/) |
 | 261116-spc | Maia columns for opponent blunders: full-mode hook plus --mode opponent backfill (SEED-261114-iuv Part A) | 2026-11-16 | f58d8e90f | [261116-spc-maia-columns-for-opponent-blunders-full-](./quick/261116-spc-maia-columns-for-opponent-blunders-full-/) |
+| 261117-sfh | Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready | 2026-11-17 | bca5a9b4d | [261117-sfh-blunder-check-ready-gate-show-the-start-](./quick/261117-sfh-blunder-check-ready-gate-show-the-start-/) |
 
 ## Deferred Items
 

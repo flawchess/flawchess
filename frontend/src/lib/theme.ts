@@ -639,6 +639,8 @@ export const TRAIN_RATING_BAND_COLOR: Record<TrainRatingBand, string> = {
 // the correct-contrast text explicitly rather than a single compromise gray.
 export const TRAIN_POINTS_FG_ON_DARK = 'oklch(0.98 0 0)'; // near-white, for the 3 dark tiers
 export const TRAIN_POINTS_FG_ON_LIGHT = 'oklch(0.20 0 0)'; // near-black, for the light yellow tier
+// Blunder-check "+0" badge (a timeout on a good move with an empty pot): a neutral gray, neither gain nor loss.
+export const TRAIN_POINTS_NEUTRAL_BG = 'oklch(0.45 0 0)';
 
 // Train reveal-board best-move arrow — blue marks the engine's BEST move (matching what blue means
 // everywhere else in the app: an engine/analysis pointer), never the user's

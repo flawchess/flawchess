@@ -351,9 +351,7 @@ export interface VariationTreeProps {
    */
   variant?: 'responsive' | 'vertical' | 'wrap';
   /**
-   * Game-mode ply the board first lands on (the URL `ply` param, defaulting to 0 — or the
-   * tactic fork ply when the entry ply auto-opens a tactic line: decision board `ply-1` for
-   * missed, flaw ply for allowed). When set, the desktop move list aligns
+   * Game-mode ply the board first lands on (the URL `ply` param, defaulting to 0). When set, the desktop move list aligns
    * the move at this ply to the TOP of the scroller on first open instead of minimal-
    * scrolling it to the bottom. Omitted / null in free play, where
    * the initial-align is skipped.

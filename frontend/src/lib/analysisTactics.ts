@@ -32,7 +32,7 @@ export type TacticRef = { ply: number; orientation: 'missed' | 'allowed' };
 /**
  * A tactic line awaiting its PV fetch. `enter: true` marks an Explain open (D-05): the
  * graft effect then lands on the first grafted move instead of parking at the fork.
- * Tactic chips and the deep-link auto-open omit it and keep parking at the fork.
+ * Tactic chips omit it and keep parking at the fork.
  */
 export type PendingFlaw = TacticRef & { enter?: boolean };
 
@@ -90,7 +90,7 @@ export function bestSanFromPv(baseFen: string, uci: string | null): string | nul
  * satisfies it.
  *
  * Checks pendingFlaw first (its fork node always matches BEFORE any previously-focused
- * line would, since handlePvChipClick / the auto-open effect navigate there immediately),
+ * line would, since handlePvChipClick navigates there immediately),
  * then every open line: match by fork-node equality OR subtree containment (walk parentId
  * up from currentNodeId until it reaches the line's rootNodeId).
  */

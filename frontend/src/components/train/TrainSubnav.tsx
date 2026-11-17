@@ -21,6 +21,9 @@ import { RouteDot } from '@/components/feature-route/RouteDot';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import type { TrainTab } from '@/lib/trainRoute';
+import { cn } from '@/lib/utils';
+
+const TAB_ICON_CLASS = 'mr-1.5 h-4 w-4';
 
 function isTrainTab(value: string): value is TrainTab {
   return Object.hasOwn(TRAIN_TAB_PATHS, value);
@@ -56,26 +59,31 @@ export function TrainSubnav({
     window.scrollTo({ top: 0 });
   }
 
+  // Four tabs with icons overflow a phone-width row. With the fourth tab shown, mobile drops
+  // the icons and sizes each tab to its label instead of an equal quarter.
+  const iconClass = cn(TAB_ICON_CLASS, showBlunderCheck && 'max-md:hidden');
+  const triggerClass = cn('flex-1', showBlunderCheck && 'max-md:flex-auto');
+
   return (
     <Tabs value={active} onValueChange={handleValueChange}>
       <TabsList variant="brand" className="w-full max-md:!h-10 max-md:!p-0" data-testid="train-tabs">
-        <TabsTrigger value="today" className="flex-1" data-testid="tab-train-today">
-          <CalendarCheck className="mr-1.5 h-4 w-4" />
+        <TabsTrigger value="today" className={triggerClass} data-testid="tab-train-today">
+          <CalendarCheck className={iconClass} />
           Today
           {showTodayRouteDot && <RouteDot testid="train-today-notification-dot" variant="corner" />}
         </TabsTrigger>
-        <TabsTrigger value="leaderboard" className="flex-1" data-testid="tab-train-leaderboard">
-          <Trophy className="mr-1.5 h-4 w-4" />
+        <TabsTrigger value="leaderboard" className={triggerClass} data-testid="tab-train-leaderboard">
+          <Trophy className={iconClass} />
           Leaderboard
         </TabsTrigger>
-        <TabsTrigger value="archive" className="flex-1" data-testid="tab-train-archive">
-          <Archive className="mr-1.5 h-4 w-4" />
+        <TabsTrigger value="archive" className={triggerClass} data-testid="tab-train-archive">
+          <Archive className={iconClass} />
           Archive
         </TabsTrigger>
         {showBlunderCheck && (
-          <TabsTrigger value="blunder-check" className="flex-1" data-testid="tab-train-blunder-check">
-            <ShieldCheck className="mr-1.5 h-4 w-4" />
-            Blunder check
+          <TabsTrigger value="blunder-check" className={triggerClass} data-testid="tab-train-blunder-check">
+            <ShieldCheck className={iconClass} />
+            Blunder Check
           </TabsTrigger>
         )}
       </TabsList>
