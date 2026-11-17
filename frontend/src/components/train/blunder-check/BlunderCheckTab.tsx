@@ -37,6 +37,8 @@ const HTTP_CONFLICT = 409;
 const IMMERSIVE_PHASES: ReadonlySet<DrillState['phase']> = new Set([
   // loading_window is immersive too, so the tab bar does not flash between two windows.
   'loading_window',
+  'ready_gate',
+  'beginning',
   'lead_in',
   'prompt',
   'grading',

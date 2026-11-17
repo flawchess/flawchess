@@ -834,6 +834,19 @@ export const BLUNDER_CHECK_RATIONALES: readonly string[] = [
   'Spotting the blunder here is easy to do slowly, and the reps are what make it fast enough for a real game.',
 ];
 
+/**
+ * The blunder-check Ready gate bubble (L-02): which side the user plays and whose turn it is.
+ * The turn sentence follows the start FEN, so a window with no lead-in ply (the first judged
+ * move is also the first ply) does not claim the opponent moves first.
+ */
+export function blunderCheckReadyCopy(
+  side: 'white' | 'black',
+  sideToMove: 'white' | 'black',
+): string {
+  const turn = sideToMove === side ? "It's your turn." : "It's your opponent's turn.";
+  return `Check out the position, you play ${side}. ${turn}`;
+}
+
 /** The blunder-check end screen's bubble: the band opener and a random training
  * rationale, as one line. Blunder check has no schedule or reminders yet (Phase 251), so there is
  * no "See you ..." or reminder ask. `rng` is injectable per the `pickBot` convention. */

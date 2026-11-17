@@ -52,6 +52,7 @@ const LOAD_ERROR_COPY =
 const getOpenSession = vi.fn(async (): Promise<BlunderCheckSessionResponse | null> => null);
 const composeOrResumeSession = vi.fn(async (): Promise<BlunderCheckSessionResponse> => SESSION);
 const startWindow = vi.fn<(sessionId: number, position: number) => Promise<WindowStartResponse>>();
+const beginWindow = vi.fn<(sessionId: number, position: number) => Promise<WindowStartResponse>>();
 const finishSession = vi.fn<(sessionId: number) => Promise<SessionResultResponse>>();
 const answer = vi.fn<
   (sessionId: number, position: number, body: AnswerRequest) => Promise<AnswerResponse>
@@ -69,6 +70,7 @@ vi.mock('@/api/client', async () => {
       getOpenSession: () => getOpenSession(),
       composeOrResumeSession: () => composeOrResumeSession(),
       startWindow: (sessionId: number, position: number) => startWindow(sessionId, position),
+      beginWindow: (sessionId: number, position: number) => beginWindow(sessionId, position),
       answer: (sessionId: number, position: number, body: AnswerRequest) =>
         answer(sessionId, position, body),
       submitBetterMove: (sessionId: number, position: number, body: BetterMoveRequest) =>
@@ -219,6 +221,14 @@ beforeEach(() => {
   startWindow.mockReset();
   // Never resolves by default: a test that needs a window supplies its own response.
   startWindow.mockImplementation(() => new Promise(() => {}));
+  // Mirrors the server: Ready answers with the latest start payload past the gate. It never
+  // touches the startWindow mock, whose call counts several tests assert.
+  beginWindow.mockReset();
+  beginWindow.mockImplementation(async () => {
+    const lastStart = startWindow.mock.results[startWindow.mock.results.length - 1];
+    if (lastStart === undefined || lastStart.type !== 'return') return new Promise(() => {});
+    return { ...(await lastStart.value), awaiting_ready: false };
+  });
   answer.mockReset();
   submitBetterMove.mockReset();
   getSolution.mockReset();
@@ -436,6 +446,8 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     window_points: 0,
     session_points: 0,
     better_move: null,
+    // What start returns for a fresh window: paused on the Ready gate.
+    awaiting_ready: true,
     ...overrides,
   };
 }
@@ -477,12 +489,19 @@ function buttonDisabled(testId: string): boolean {
   return (screen.getByTestId(testId) as HTMLButtonElement).disabled;
 }
 
-/** Starts a session and plays the lead-in so the first prompt is open. */
+/** Presses Ready on the gate and lets the begin request resolve. */
+async function pressReady(): Promise<void> {
+  fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
+  await advance(50);
+}
+
+/** Starts a session, presses Ready and plays the lead-in so the first prompt is open. */
 async function reachFirstPrompt(): Promise<void> {
   renderTab();
   await advance(50);
   fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
   await advance(50);
+  await pressReady();
   // One advance per tick: each tick's timer is scheduled by an effect after a render, which
   // only happens when the act scope of the previous advance closes.
   await advance(LEAD_IN_START_DELAY_MS);
@@ -508,6 +527,14 @@ describe('window loop', () => {
     await advance(50);
 
     expect(startWindow).toHaveBeenCalledWith(7, 0);
+    // Ready gate: the start position, no arrow, no timer, no answering, only Ready.
+    expect(boardFen()).toBe(START_FEN);
+    expect(boardArrows()).toBe('');
+    expect(buttonDisabled('blunder-check-btn-ready')).toBe(false);
+    expect(screen.queryByTestId('blunder-check-btn-safe')).toBeNull();
+    expect(screen.queryByTestId('blunder-check-timer')).toBeNull();
+
+    await pressReady();
     // Lead-in: nothing played yet, no arrow, no answering.
     expect(boardFen()).toBe(START_FEN);
     expect(boardArrows()).toBe('');
@@ -628,6 +655,7 @@ describe('window loop', () => {
     await advance(50);
     fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
+    await pressReady();
     await advance(LEAD_IN_START_DELAY_MS);
     expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
     await advance(LEAD_IN_PLY_INTERVAL_MS);
@@ -647,9 +675,85 @@ describe('window loop', () => {
   });
 
   it('never says "your move" during the drill (D-09)', async () => {
-    await reachFirstPrompt();
+    renderTab();
+    await advance(50);
+    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
+    await advance(50);
+    // The Ready gate is up.
+    expect(screen.getByTestId('blunder-check-btn-ready')).not.toBeNull();
+    expect(document.body.textContent?.toLowerCase()).not.toContain('your move');
+    await pressReady();
+    await advance(LEAD_IN_START_DELAY_MS);
+    for (let ply = 0; ply < LEAD_IN.length; ply += 1) {
+      await advance(LEAD_IN_PLY_INTERVAL_MS);
+    }
     expect(document.body.textContent?.toLowerCase()).not.toContain('your move');
   });
+
+  it('a fresh window waits on its start position until Ready, untimed (L-02)', async () => {
+    // A realistic window: one lead-in ply by the opponent, the user (white) judges the next move.
+    const startFen = applyUcis(START_FEN, ['e2e4']);
+    startWindow.mockImplementation(async () =>
+      windowStart({ start_fen: startFen, lead_in_ucis: ['e7e5'], orientation: 'white' }),
+    );
+    renderTab();
+    await advance(50);
+    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
+    await advance(50);
+
+    expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
+      "Check out the position, you play white. It's your opponent's turn.",
+    );
+    expect(boardFen()).toBe(startFen);
+    // However long the user studies, nothing starts and nothing is sent.
+    await advance(60_000);
+    expect(boardFen()).toBe(startFen);
+    expect(boardArrows()).toBe('');
+    expect(beginWindow).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+    expect(document.body.textContent?.toLowerCase()).not.toContain('your move');
+
+    await pressReady();
+    expect(beginWindow).toHaveBeenCalledTimes(1);
+    expect(beginWindow).toHaveBeenCalledWith(7, 0);
+    // L-03: the lead-in runs as before after Ready.
+    expect(boardFen()).toBe(startFen);
+    await advance(LEAD_IN_START_DELAY_MS);
+    expect(boardFen()).toBe(applyUcis(startFen, ['e7e5']));
+    await advance(LEAD_IN_PLY_INTERVAL_MS);
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
+    expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);
+  });
+
+  it('a double click on Ready sends one begin request', async () => {
+    beginWindow.mockImplementation(() => new Promise(() => {}));
+    renderTab();
+    await advance(50);
+    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
+    await advance(50);
+
+    fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
+    fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
+    await advance(50);
+
+    expect(beginWindow).toHaveBeenCalledTimes(1);
+    expect(buttonDisabled('blunder-check-btn-ready')).toBe(true);
+  });
+
+  it('a failed begin ends on the error screen', async () => {
+    beginWindow.mockImplementation(async () => {
+      throw new Error('begin failed');
+    });
+    renderTab();
+    await advance(50);
+    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
+    await advance(50);
+    fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
+    await advance(50);
+
+    expect(screen.getByTestId('blunder-check-error')).not.toBeNull();
+  });
+
 });
 
 describe('timer, timeouts and points', () => {
@@ -893,6 +997,7 @@ describe('timer, timeouts and points', () => {
     startWindow.mockImplementation(async () =>
       windowStart({
         answered: ANSWERED_FIRST_MOVE,
+        awaiting_ready: false,
         prompt: { move_index: 2, move_uci: NEXT_PROMPT_UCI },
         timer_remaining_ms: 6_000,
       }),
@@ -921,6 +1026,7 @@ describe('timer, timeouts and points', () => {
     startWindow.mockImplementation(async () =>
       windowStart({
         answered: ANSWERED_FIRST_MOVE,
+        awaiting_ready: false,
         prompt: { move_index: 2, move_uci: NEXT_PROMPT_UCI },
         timer_remaining_ms: 0,
       }),
@@ -947,6 +1053,7 @@ describe('timer, timeouts and points', () => {
     startWindow.mockImplementation(async () =>
       windowStart({
         answered: ANSWERED_FIRST_MOVE,
+        awaiting_ready: false,
         prompt: { move_index: 2, move_uci: NEXT_PROMPT_UCI },
         timer_remaining_ms: 9_000,
         session_points: 6,
@@ -1369,6 +1476,7 @@ describe('session end screen (D-14)', () => {
 
   /** Plays one window to its outcome panel and clicks Next. */
   async function finishWindowWithBlunderCall(): Promise<void> {
+    await pressReady();
     await advance(LEAD_IN_START_DELAY_MS);
     for (let ply = 0; ply < LEAD_IN.length; ply += 1) {
       await advance(LEAD_IN_PLY_INTERVAL_MS);
