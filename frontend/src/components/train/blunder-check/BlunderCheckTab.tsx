@@ -81,10 +81,6 @@ function StartScreen({
       <p className="text-sm text-muted-foreground">
         Check each move before it is played: Good move or blunder?
       </p>
-      <p className="text-sm text-muted-foreground" data-testid="blunder-check-pot-rule">
-        Every correct Good call adds a point to the pot. Miss the blunder, or run out of time,
-        and the pot is lost.
-      </p>
       {openSession?.current_position != null && (
         <p className="text-sm" data-testid="blunder-check-open-session">
           Session in progress: sequence {openSession.current_position + 1} of{' '}
@@ -112,6 +108,33 @@ function StartScreen({
           {openSession !== null ? 'Resume' : 'Start'}
         </Button>
       )}
+      <p className="text-sm text-muted-foreground" data-testid="blunder-check-idea">
+        Puzzles tell you that something is up. Real games don't. Blunder check trains the habit
+        of checking a move before you play it.
+      </p>
+      <ul
+        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
+        data-testid="blunder-check-how-it-works"
+      >
+        <li>
+          You replay short sequences from real games, your own and those of similarly rated
+          players. Each of your moves is shown as an arrow, and you judge it against the clock.
+        </li>
+        <li>
+          The blunders are ones a player at your level should spot, including missed chances to
+          punish the opponent.
+        </li>
+        <li>Some sequences have no blunder at all, so you can never tell when one is coming.</li>
+      </ul>
+      <ul
+        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
+        data-testid="blunder-check-pot-rule"
+      >
+        <li>Every correct Good call adds a point to the sequence's pot.</li>
+        <li>Catch the blunder for bonus points, then find a better move for more.</li>
+        <li>Miss the blunder and the pot is lost. Running out of time on a good move costs a point.</li>
+        <li>A false alarm ends the sequence, but you keep the pot.</li>
+      </ul>
     </div>
   );
 }
