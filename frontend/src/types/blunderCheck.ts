@@ -55,7 +55,7 @@ export interface AnsweredMove {
   points_forfeited: number;
 }
 
-/** Window start (or reload): the lead-in, the answered moves so far and the single open prompt. */
+/** Window start (or reload) and begin: the lead-in, the answered moves so far and the single open prompt. */
 export interface WindowStartResponse {
   position: number;
   start_fen: string;
@@ -72,6 +72,12 @@ export interface WindowStartResponse {
    * then ends with the caught move and `prompt` repeats it.
    */
   better_move: BetterMoveTask | null;
+  /**
+   * True while the window waits on its Ready gate (start was called, no prompt is issued yet,
+   * so no clock runs): `prompt` is then the first judged move and `timer_remaining_ms` the
+   * full countdown it will get. False on begin and on reloads after Ready.
+   */
+  awaiting_ready: boolean;
 }
 
 /** One answer to the open prompt; the server grades it. */

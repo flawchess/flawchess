@@ -1,5 +1,5 @@
 /**
- * useBlunderCheckSession: the open-session query and the drill's six mutations.
+ * useBlunderCheckSession: the open-session query and the drill's seven mutations.
  *
  * Thin transport only. The drill state machine (`lib/blunderCheckDrill.ts`) owns what
  * happens next, and every grade and point total comes from the server (Pitfall 13), so
@@ -54,6 +54,10 @@ export function useBlunderCheckSession() {
     mutationFn: ({ sessionId, position }) => blunderCheckApi.startWindow(sessionId, position),
   });
 
+  const beginWindow = useMutation<WindowStartResponse, Error, WindowRef>({
+    mutationFn: ({ sessionId, position }) => blunderCheckApi.beginWindow(sessionId, position),
+  });
+
   const answer = useMutation<AnswerResponse, Error, AnswerVariables>({
     mutationFn: ({ sessionId, position, body }) =>
       blunderCheckApi.answer(sessionId, position, body),
@@ -80,6 +84,7 @@ export function useBlunderCheckSession() {
     refreshOpenSession,
     compose,
     startWindow,
+    beginWindow,
     answer,
     betterMove,
     solution,

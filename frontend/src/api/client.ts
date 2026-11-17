@@ -388,10 +388,18 @@ export const blunderCheckApi = {
   /** Resumes the open session, else composes a new one (409 when nothing is composable). */
   composeOrResumeSession: () =>
     apiClient.post<BlunderCheckSessionResponse>('/blunder-check/sessions').then(r => r.data),
-  /** Starts (or reloads) one window; returns the lead-in, answered moves and the open prompt. */
+  /**
+   * Starts (or reloads) one window; returns the lead-in, answered moves and the open prompt.
+   * A fresh window comes back paused on its Ready gate (`awaiting_ready`), with no clock running.
+   */
   startWindow: (sessionId: number, position: number) =>
     apiClient
       .post<WindowStartResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/start`)
+      .then(r => r.data),
+  /** Ready: issues the first prompt and starts its clock. Idempotent, a repeat reports the real time left. */
+  beginWindow: (sessionId: number, position: number) =>
+    apiClient
+      .post<WindowStartResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/begin`)
       .then(r => r.data),
   /** Answers the open prompt; 409 `stale_prompt` means re-fetch the window via startWindow. */
   answer: (sessionId: number, position: number, data: AnswerRequest) =>
