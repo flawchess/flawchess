@@ -7,13 +7,13 @@
  * (Analysis.tsx) already uses for a smaller cluster, promoted here to a
  * sibling file since this cluster is large enough to warrant its own module.
  *
- * Scope note: `initialTactic`, `initialAlignPly` and `autoOrientation` stay in
- * `Analysis.tsx` rather than moving into this hook. They need `gameData` —
+ * Scope note: `autoOrientation` stays in `Analysis.tsx` rather than moving
+ * into this hook. It needs `gameData` —
  * the result of `useLibraryGame(gameId, ...)`, itself gated on `gameId`/
  * `isGameMode` (owned by THIS hook) — and `gameId` is ALSO read, before
  * `gameData` exists, by `useTacticLines`/`useLibraryGame` itself and the
  * `findFocusedFlaw` memo (all positioned earlier in `Analysis()` than where
- * `gameData` becomes available). Moving those three fields in here would
+ * `gameData` becomes available). Moving that field in here would
  * force this hook to be called either before `useLibraryGame` (so `gameData`
  * would always be exactly one render stale — a real, if subtle, regression:
  * the board's auto-flip would land one paint later than today) or after it

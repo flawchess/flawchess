@@ -147,7 +147,6 @@ function useHarness(game: GameFlawCard, initialPly: number) {
     lineSans: [],
     rootFenSeed: null,
     autoOrientation: null,
-    initialTactic: null,
     gameData: game,
     pendingFlaw,
     contextualTacticData: data,
@@ -228,6 +227,23 @@ afterEach(() => {
 });
 
 describe('useExplainBar harness', () => {
+  it('a deep link to a ply with a user tactic chip lands on the game move and opens no line', () => {
+    // Regression: the seeding effect used to open the chip's line on its own, parking the
+    // board at the missed line's fork (ply - 1) with a sideline grafted.
+    const card = makeCard();
+    card.flaw_markers = [
+      { ...marker(BLUNDER_PLY, 'Qh5', true, 'blunder'), missed_tactic_motif: 'fork' },
+      marker(MISTAKE_PLY, 'Nc6', false, 'mistake'),
+    ];
+    const h = renderHook(() => useHarness(card, BLUNDER_PLY));
+
+    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, BLUNDER_PLY));
+    expect(currentSan(h)).toBe('Qh5');
+    expect(h.result.current.pendingFlaw).toBeNull();
+    expect(h.result.current.openLines.size).toBe(0);
+    expect(h.result.current.explain.state.kind).toBe('explain');
+  });
+
   it('Best on the owner blunder grafts the missed line and lands on its first move', () => {
     const h = renderHarness(BLUNDER_PLY);
     expect(h.result.current.explain.state).toMatchObject({
@@ -420,7 +436,7 @@ describe('useExplainBar harness', () => {
     const h = renderHarness(BLUNDER_PLY);
     openAndSettle(h, 'missed');
     const blunderLine = h.result.current.openLines.get('2:missed');
-    // A second line opened the way the deep-link auto-open does (no enter flag, no close).
+    // A second line opened the way a tactic chip does (no enter flag, no close).
     act(() => {
       h.result.current.setPendingFlaw({ ply: MISTAKE_PLY, orientation: 'allowed' });
       h.result.current.board.goToNode(mainLineId(h, MISTAKE_PLY)!);

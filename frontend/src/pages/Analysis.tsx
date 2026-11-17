@@ -74,7 +74,7 @@ import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/l
 import type { FlawSeverity } from '@/types/library';
 import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
-import { lineHasVisibleMotif, tacticOrientationAtPly } from '@/lib/tacticOrientation';
+import { lineHasVisibleMotif } from '@/lib/tacticOrientation';
 import { TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
@@ -318,9 +318,8 @@ export default function Analysis() {
   const navigate = useNavigate();
 
   // Everything the page learns from the URL alone (useAnalysisRouteParams.ts).
-  // initialTactic/initialAlignPly/autoOrientation
-  // stay local below — they need gameData, which needs gameId from THIS
-  // hook, see useAnalysisRouteParams.ts's header for the ordering reason.
+  // autoOrientation stays local below — it needs gameData, which needs gameId
+  // from THIS hook, see useAnalysisRouteParams.ts's header for the ordering reason.
   const { lineSans, rootFenSeed, urlOrientation, gameId, initialPly, isGameMode } =
     useAnalysisRouteParams();
 
@@ -392,7 +391,7 @@ export default function Analysis() {
   //
   // openLines — every currently GRAFTED tactic line, keyed by flawKey(ply, orientation).
   // pendingFlaw — the line currently being opened, awaiting its PV fetch. Only one
-  // open action is in flight at a time (clicks/auto-opens are sequential); once its
+  // open action is in flight at a time (clicks are sequential); once its
   // fetch arrives, the graft effect below records it into openLines and clears this.
   const [openLines, setOpenLines] = useState<
     Map<string, { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' }>
@@ -491,7 +490,7 @@ export default function Analysis() {
   // focusedFlaw: the open (or pending) line the board is currently "in" — its subtree
   // contains currentNodeId, OR its fork node equals currentNodeId (so the depth arrow
   // shows while parked at a just-opened line's fork). pendingFlaw is checked first: as
-  // soon as it's set, handlePvChipClick/the auto-open effect also navigate to its fork
+  // soon as it's set, handlePvChipClick also navigates to its fork
   // node, so this always matches BEFORE any previously-focused line would.
   const focusedFlaw = useMemo(
     () => findFocusedFlaw(isGameMode, currentNodeId, pendingFlaw, openLines, mainLine, nodes),
@@ -734,23 +733,12 @@ export default function Analysis() {
     extraRootMoves,
   });
 
-  // The tactic (if any) the board auto-opens to when the entry ply carries
-  // a user tactic chip. Drives BOTH the initial navigation effect and the move-list top-align
-  // target, so the two stay in sync. Missed wins over allowed (see tacticOrientationAtPly).
-  const initialTactic = useMemo<{ ply: number; orientation: 'missed' | 'allowed' } | null>(() => {
-    if (!isGameMode) return null;
-    const ply = initialPly ?? 0;
-    const orientation = tacticOrientationAtPly(gameData?.flaw_markers, ply);
-    return orientation === null ? null : { ply, orientation };
-  }, [isGameMode, gameData?.flaw_markers, initialPly]);
-
-  // Ply the move list top-aligns on first open: the tactic fork ply when a tactic auto-opens
-  // (missed → decision board ply-1, allowed → flaw ply), else the plain entry ply. Keeps the
-  // scroller's initial top-align on the node the board actually navigates to.
-  const initialAlignPly =
-    initialTactic !== null
-      ? forkPlyForOrientation(initialTactic.ply, initialTactic.orientation)
-      : (initialPly ?? 0);
+  // Ply the move list top-aligns on first open: the plain entry ply, which is the node the
+  // board navigates to. A deep link never opens a tactic line on its own (it used to, when
+  // the entry ply carried a user tactic chip): that parked the board in a hypothetical
+  // sideline, one ply early for a missed tactic, so Back/Forward stepped through moves that
+  // were never played. Tactic lines now open only from a chip or the Explain bar.
+  const initialAlignPly = initialPly ?? 0;
 
   // Orient the board to the player's color once. ONE
   // orientation source for BOTH modes: game mode learns the player's colour
@@ -774,7 +762,6 @@ export default function Analysis() {
     lineSans,
     rootFenSeed,
     autoOrientation,
-    initialTactic,
     gameData,
     pendingFlaw,
     contextualTacticData,

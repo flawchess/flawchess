@@ -21,6 +21,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Train: the red dot now clears when you start a training session, not when you open Train.
+- Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
 - Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.
 - Openings: the sidebar no longer shows a red dot on Bookmarks. Existing accounts start with the new route already complete.
 - Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
