@@ -1,14 +1,15 @@
 /**
- * BlunderCheckPointsFlash: the "+N" gain and "-N" forfeit badge over the drill board
- * (Phase 249, D-12, D-13).
+ * BlunderCheckPointsFlash: the "+N" gain, "-N" forfeit and neutral "+0" badge over the
+ * drill board (Phase 249, D-12, D-13).
  *
  * A gain pops in over the board, then flies and shrinks into the pot badge of the progress
  * row, which adds it up as it lands (BlunderCheckScore). The flight's end point is measured
  * at mount, from this badge's own resting place to the pot badge. Without a pot badge to fly
  * to, or under prefers-reduced-motion, the gain falls back to Train's points pop in place.
- * A forfeit (points taken away by a timeout or a missed blunder) is a red badge that drops
- * and fades. All three end invisible, so no unmount timer is needed. The amount is always
- * the server's number.
+ * A forfeit (the pot taken away by a blunder let through, or the one point a timeout on a
+ * good move costs) is a red badge that drops and fades. A timeout on a good move with an
+ * empty pot is a gray "+0" that pops in place and fades. All of them end invisible, so no
+ * unmount timer is needed. The amount is always the server's number.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -16,7 +17,12 @@ import type { CSSProperties, ReactElement } from 'react';
 import { POINTS_FLIGHT_MS } from '@/lib/blunderCheckDrill';
 import type { FeedbackFlash } from '@/lib/blunderCheckDrill';
 import { prefersReducedMotion } from '@/lib/confetti';
-import { TRAIN_POINTS_FG_ON_DARK, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import {
+  TRAIN_POINTS_FG_ON_DARK,
+  TRAIN_POINTS_NEUTRAL_BG,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 
 /** The pot badge in the progress row, where a gain lands. */
 export const POT_BADGE_TEST_ID = 'blunder-check-pot';
@@ -56,6 +62,18 @@ export function BlunderCheckPointsFlash({ amount, variant }: FeedbackFlash): Rea
     setFlight(offset ?? 'none');
   }, [flies]);
 
+  if (variant === 'neutral') {
+    return (
+      <div
+        className={`animate-blunder-check-neutral ${BADGE_CLASS}`}
+        style={{ backgroundColor: TRAIN_POINTS_NEUTRAL_BG, color: TRAIN_POINTS_FG_ON_DARK }}
+        data-testid="blunder-check-points-flash"
+        data-flash-variant="neutral"
+      >
+        +{amount}
+      </div>
+    );
+  }
   if (!flies) {
     return (
       <div

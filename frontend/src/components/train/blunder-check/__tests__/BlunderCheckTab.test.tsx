@@ -674,7 +674,7 @@ describe('timer, timeouts and points', () => {
 
   it('a prompt left alone for 10 s posts a timeout once', async () => {
     answer.mockImplementation(async () =>
-      gradedAnswer({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 2 }),
+      gradedAnswer({ result: 'timeout_safe', points_awarded: 0 }),
     );
     await reachFirstPrompt();
 
@@ -688,14 +688,81 @@ describe('timer, timeouts and points', () => {
     expect(answer).toHaveBeenCalledTimes(1);
   });
 
-  it('a forfeit shows the discarded points, busts the pot and plays the pot-bust sound', async () => {
+  it('a timeout on a good move costs one point without the pot-bust sound', async () => {
     answer.mockImplementation(async () =>
       gradedAnswer({
         result: 'timeout_safe',
         points_awarded: 0,
+        points_forfeited: 1,
+        window_points: 1,
+        session_points: 4,
+      }),
+    );
+    await reachFirstPrompt();
+
+    await advance(FRESH_TIMER_MS);
+
+    expect(screen.getByTestId('blunder-check-points-flash').textContent).toBe('-1');
+    expect(playSound).not.toHaveBeenCalledWith('pot-bust');
+    expect(playSound).toHaveBeenCalledWith('game-loss');
+  });
+
+  it('a timeout on a good move with an empty pot shows a neutral +0', async () => {
+    answer.mockImplementation(async () =>
+      gradedAnswer({
+        result: 'timeout_safe',
+        points_awarded: 0,
+        points_forfeited: 0,
+        window_points: 0,
+        session_points: 3,
+      }),
+    );
+    await reachFirstPrompt();
+
+    await advance(FRESH_TIMER_MS);
+
+    const flash = screen.getByTestId('blunder-check-points-flash');
+    expect(flash.textContent).toBe('+0');
+    expect(flash.getAttribute('data-flash-variant')).toBe('neutral');
+    expect(screen.getByTestId('blunder-check-pot').getAttribute('data-pot-state')).not.toBe('bust');
+    expect(playSound).not.toHaveBeenCalledWith('pot-bust');
+    expect(playSound).toHaveBeenCalledWith('game-loss');
+  });
+
+  it('a timeout on the last good move clears the sequence without the full-score sound', async () => {
+    answer.mockImplementation(async () =>
+      gradedAnswer({
+        result: 'timeout_safe',
+        points_awarded: 0,
+        points_forfeited: 0,
+        window_ended: true,
+        outcome: 'cleared',
+        reply_uci: null,
+        next_prompt: null,
+        timer_remaining_ms: null,
+      }),
+    );
+    await reachFirstPrompt();
+
+    await advance(FRESH_TIMER_MS);
+    await advance(5_000);
+
+    expect(playSound).not.toHaveBeenCalledWith('score-full');
+  });
+
+  it('a forfeit shows the discarded points, busts the pot and plays the pot-bust sound', async () => {
+    answer.mockImplementation(async () =>
+      gradedAnswer({
+        result: 'timeout_blunder',
+        points_awarded: 0,
         points_forfeited: 2,
         window_points: 0,
         session_points: 3,
+        window_ended: true,
+        outcome: 'missed',
+        reply_uci: null,
+        next_prompt: null,
+        timer_remaining_ms: null,
       }),
     );
     await reachFirstPrompt();
@@ -831,7 +898,7 @@ describe('timer, timeouts and points', () => {
       }),
     );
     answer.mockImplementation(async () =>
-      gradedAnswer({ move_index: 2, result: 'timeout_safe', points_forfeited: 1 }),
+      gradedAnswer({ move_index: 2, result: 'timeout_safe', points_awarded: 0 }),
     );
     renderTab();
     await advance(50);
@@ -859,7 +926,7 @@ describe('timer, timeouts and points', () => {
       }),
     );
     answer.mockImplementation(async () =>
-      gradedAnswer({ move_index: 2, result: 'timeout_safe', points_forfeited: 1 }),
+      gradedAnswer({ move_index: 2, result: 'timeout_safe', points_awarded: 0 }),
     );
     renderTab();
     await advance(50);

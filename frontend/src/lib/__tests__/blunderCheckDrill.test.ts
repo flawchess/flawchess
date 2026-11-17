@@ -372,6 +372,13 @@ describe('answering', () => {
     expect(feedback.sessionPoints).toBe(2);
   });
 
+  it('a timeout on a good move flashes its one-point forfeit, or a neutral +0 on an empty pot', () => {
+    const penalised = graded({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 1 });
+    expect(flashFor(penalised)).toEqual({ amount: 1, variant: 'forfeit' });
+    const response = graded({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 0 });
+    expect(flashFor(response)).toEqual({ amount: 0, variant: 'neutral' });
+  });
+
   it('ignores a grade that arrives outside the grading phase', () => {
     const prompt = atPrompt();
     expect(drillReducer(prompt, { type: 'ANSWER_GRADED', response: graded() })).toBe(prompt);

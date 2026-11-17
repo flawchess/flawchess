@@ -22,7 +22,11 @@ import chess
 
 from app.models.blunder_check import AnswerKind, AnswerResult, WindowOutcome
 from app.models.drill_solve import DrillMoveQuality, DrillSource
-from app.services.blunder_check_rules import BLUNDER_POINTS, SAFE_POINTS
+from app.services.blunder_check_rules import (
+    BLUNDER_POINTS,
+    SAFE_POINTS,
+    SAFE_TIMEOUT_PENALTY_POINTS,
+)
 from app.services.train_score import MOVE_QUALITY_TIER, MoveTier
 from app.services.train_pool import (
     ServerGradedMove,
@@ -122,7 +126,9 @@ def grade_answer(
     """Grade one answer. `window_points` is what the window has accumulated before it.
 
     A false alarm ends the window and keeps the safe points; a timeout on a safe move
-    scores 0, forfeits the accumulated safe points and lets the window continue (D-13).
+    scores 0, takes `SAFE_TIMEOUT_PENALTY_POINTS` out of the accumulated safe points (never
+    below 0) and lets the window continue (D-13, revised). Only a blunder let through (a
+    "safe" call or a timeout on it) forfeits all of them.
     The window clears only when the last judged move of a herring is answered.
     """
     if is_blunder_move:
@@ -131,7 +137,12 @@ def grade_answer(
         return AnswerGrade("false_alarm", 0, 0, True, "false_alarm", False)
     outcome: OutcomeName | None = "cleared" if is_last_judged_move else None
     if answer == "timeout":
-        return AnswerGrade("timeout_safe", 0, window_points, is_last_judged_move, outcome, False)
+        # Fix: a timeout on a safe move used to forfeit the whole accumulated pot, so a slow
+        # answer on a herring's last move scored 0 for the sequence while a wrong "blunder"
+        # call kept the pot. It costs a fixed penalty now, so not deciding is still worse
+        # than deciding.
+        penalty = min(SAFE_TIMEOUT_PENALTY_POINTS, window_points)
+        return AnswerGrade("timeout_safe", 0, penalty, is_last_judged_move, outcome, False)
     return AnswerGrade("correct_safe", SAFE_POINTS, 0, is_last_judged_move, outcome, False)
 
 

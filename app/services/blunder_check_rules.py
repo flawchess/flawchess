@@ -157,6 +157,8 @@ BLUNDER_CHECK_SESSION_WINDOWS: int = 6
 # move graded like personalized puzzles (249 D-17), so its full value is the good tier's points.
 SAFE_POINTS: int = 1
 BLUNDER_POINTS: int = 3
+# A timeout on a good move takes this many points out of the sequence's pot (never below 0).
+SAFE_TIMEOUT_PENALTY_POINTS: int = 1
 BETTER_MOVE_POINTS: int = MOVE_TIER_POINTS["good"]
 
 MissCase = Literal["allowed", "pure_miss", "mixed", "unclassified"]

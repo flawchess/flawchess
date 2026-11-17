@@ -88,10 +88,13 @@ export interface DrillWindow {
   windowPoints: number;
 }
 
-/** The points flash after a graded answer: a forfeit when points were taken away, else a gain. */
+/**
+ * The points flash after a graded answer: a forfeit when points were taken away, a neutral
+ * "+0" for a timeout on a good move with nothing in the pot to take, else a gain.
+ */
 export interface FeedbackFlash {
   amount: number;
-  variant: 'gain' | 'forfeit';
+  variant: 'gain' | 'forfeit' | 'neutral';
 }
 
 /** Fields every in-window phase carries. */
@@ -282,6 +285,9 @@ export function flashFor(response: AnswerResponse): FeedbackFlash {
   if (response.points_forfeited > 0) {
     return { amount: response.points_forfeited, variant: 'forfeit' };
   }
+  // A timeout on a good move with an empty pot moves no points: it is still shown, so the
+  // move does not pass silently.
+  if (response.result === 'timeout_safe') return { amount: 0, variant: 'neutral' };
   return { amount: response.points_awarded, variant: 'gain' };
 }
 
@@ -435,8 +441,8 @@ export const BANK_HOLD_MS = 1200;
 
 /**
  * What just happened to the pot, for the progress row's animation: points dropped in, the
- * pot was lost (a missed blunder or a timeout), or the pot was banked into the total (on
- * Next, see `bankingProgress`).
+ * pot lost points (all of them for a blunder let through, one for a timeout on a good move),
+ * or the pot was banked into the total (on Next, see `bankingProgress`).
  */
 export interface PotEvent {
   kind: 'gain' | 'bust' | 'bank';

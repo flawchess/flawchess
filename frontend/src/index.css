@@ -428,6 +428,13 @@
   animation: blunder-check-forfeit 1.2s ease-in forwards;
 }
 
+/* Blunder-check neutral chip (BlunderCheckPointsFlash): the gray "+0" of a timeout on a good
+   move with an empty pot. Train's points pop in place, shortened to fit the answer feedback (the screen swaps
+   after a window's last answer). */
+.animate-blunder-check-neutral {
+  animation: train-points-pop 0.85s ease-in-out forwards;
+}
+
 /* Blunder-check pot chip and banked total (BlunderCheckScore). These elements sit in the
    progress row's normal flow, so the keyframes carry no centring translate. The component
    omits the classes under prefers-reduced-motion.

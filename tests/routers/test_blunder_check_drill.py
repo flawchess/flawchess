@@ -405,7 +405,7 @@ async def test_missed_blunder_forfeits_the_window_safe_points(test_engine, clock
 
 
 @pytest.mark.asyncio
-async def test_timeout_on_safe_forfeits_and_the_window_continues(test_engine, clock) -> None:
+async def test_timeout_on_safe_costs_one_point_and_the_window_continues(test_engine, clock) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         await _started(s)
         await _ok(s, 1, "safe")

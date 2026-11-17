@@ -100,8 +100,8 @@ function showsPromptArrow(state: InWindowState): boolean {
 
 /**
  * The server's grade as a sound (D-12). A catch gets the Train full-score sound; a lost pot
- * (a missed blunder or a timeout that forfeits points) gets the pot's own tumble; a wrong
- * answer where no points moved, the 0-points sound. A "Good" call is silent here: its sound is
+ * (a blunder let through) gets the pot's own tumble; a wrong answer where no points moved
+ * and a timeout on a good move (the pot survives it), the 0-points sound. A "Good" call is silent here: its sound is
  * the coin, played as its point lands in the pot (BlunderCheckScore), like every gain's. The
  * "Good" call that clears a herring (every move called good) gets the full-score sound too, but
  * only once that last point's coin has sounded (Phase 249 UAT): the two used to play over
@@ -109,13 +109,15 @@ function showsPromptArrow(state: InWindowState): boolean {
  */
 function playAnswerSound(response: AnswerResponse): void {
   if (response.result === 'caught') playSound('score-full');
-  else if (response.outcome === 'cleared') {
+  // A timeout on a herring's last move also clears it, but earned nothing: no fanfare.
+  else if (response.outcome === 'cleared' && response.result === 'correct_safe') {
     // Without motion nothing flies, so the coin plays at once (BlunderCheckScore).
     const delay = prefersReducedMotion() ? COIN_SOUND_MS : CLEARED_SOUND_DELAY_MS;
     setTimeout(() => playSound('score-full'), delay);
   } else if (response.result === 'correct_safe') return;
-  else if (response.points_forfeited > 0) playSound('pot-bust');
-  else playSound('game-loss');
+  else if (response.points_forfeited > 0 && response.result !== 'timeout_safe') {
+    playSound('pot-bust');
+  } else playSound('game-loss');
 }
 
 /** The pot being banked: a few coins dropping into the total, each overlapping the last. */
@@ -171,7 +173,7 @@ function useBankOnNext(
 function flashOf(state: InWindowState): FeedbackFlash | null {
   if (state.phase !== 'feedback' && state.phase !== 'advancing') return null;
   const flash = flashFor(state.graded);
-  return flash.amount > 0 ? flash : null;
+  return flash.amount > 0 || flash.variant === 'neutral' ? flash : null;
 }
 
 function isStalePromptError(error: unknown): boolean {
