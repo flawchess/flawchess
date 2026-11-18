@@ -32,6 +32,8 @@ from __future__ import annotations
 import datetime
 import random
 
+import pytest
+
 from app.models.drill_item import DrillStatus
 from app.services.train_scheduler import (
     ALL_WEEKDAYS_MASK,
@@ -45,6 +47,7 @@ from app.services.train_scheduler import (
     TickSnapshot,
     _judge_one_day,
     apply_result,
+    day_is_complete,
     is_scheduled_day,
     is_session_expired,
     local_hour,
@@ -720,3 +723,42 @@ class TestTickDaysStreakResetNotice:
             pool_eligible_since=_TODAY,
         )
         assert view.streak_reset_notice is False
+
+
+@pytest.mark.parametrize(
+    ("puzzles_done", "bc_done", "puzzles_size", "bc_size", "expected"),
+    [
+        # Both modes on: both must be done.
+        (True, True, 6, 6, True),
+        (True, False, 6, 6, False),
+        (False, True, 6, 6, False),
+        # Blunder check off (size 0): it is not part of the day, puzzles alone complete it.
+        (True, False, 6, 0, True),
+        (False, False, 6, 0, False),
+        # Puzzles off (size 0): blunder check alone completes the day.
+        (False, True, 0, 6, True),
+        (True, False, 0, 6, False),
+        # Nothing done is never complete, even when a mode is off.
+        (False, False, 6, 6, False),
+        (False, False, 0, 6, False),
+        # A done mode at size 0 alone completes the day (a leftover session after the user
+        # switched both modes off), and a done mode at 0 never blocks the other.
+        (True, False, 0, 0, True),
+        (False, True, 0, 0, True),
+        (True, True, 0, 6, True),
+        (False, True, 6, 0, False),
+    ],
+)
+def test_day_is_complete_truth_table(
+    puzzles_done: bool, bc_done: bool, puzzles_size: int, bc_size: int, expected: bool
+) -> None:
+    """D-02: every mode with a size above 0 must be done; a mode at 0 is not part of the day."""
+    assert (
+        day_is_complete(
+            puzzles_done=puzzles_done,
+            bc_done=bc_done,
+            puzzles_size=puzzles_size,
+            bc_size=bc_size,
+        )
+        is expected
+    )

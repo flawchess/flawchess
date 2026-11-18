@@ -19,7 +19,10 @@ WHAT IT DELETES / RESETS (for ONE user)
       loses only spaced-repetition progress, never game/flaw data.
     - ``train_settings`` — the per-day tick snapshot columns
       (``streak_count``, ``shield_level``, ``streak_settled_through``,
-      ``pool_eligible_since``) reset to 0/0/NULL/NULL. The watermark is
+      ``pool_eligible_since``, ``streak_credited_on``) reset to 0/0/NULL/NULL/NULL.
+      ``streak_credited_on`` (Phase 251) is the per-day idempotency key of the
+      eager streak credit; left behind, a dev account reset mid-day could never
+      be credited for that day again, breaking repeatable UAT. The watermark is
       derived state, not a user setting, so a clean slate must clear it too
       — leaving a stale ``pool_eligible_since`` behind would let a
       time-travelled run silently treat "the OLD material-discovery date" as
@@ -201,6 +204,8 @@ async def _reset(session: AsyncSession, user_id: int, *, reset_settings: bool) -
                 shield_level=0,
                 streak_settled_through=None,
                 pool_eligible_since=None,
+                # Phase 251: the per-day credit key is part of the tick snapshot.
+                streak_credited_on=None,
                 # Phase 222 (TRAINBOT-05, D-13/RESEARCH Finding I): without
                 # clearing these, a dev account can see each onboarding
                 # stepper exactly once, ever, making iterative UAT of the

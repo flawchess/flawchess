@@ -553,10 +553,18 @@ def _new_window(position: int, item: _Filled) -> NewWindow | None:
 
 
 async def compose_windows(
-    session: AsyncSession, *, user_id: int, rng: random.Random
+    session: AsyncSession,
+    *,
+    user_id: int,
+    rng: random.Random,
+    count: int = BLUNDER_CHECK_SESSION_WINDOWS,
 ) -> list[NewWindow]:
-    """Compose up to BLUNDER_CHECK_SESSION_WINDOWS windows for the user (250 D-12..D-16)."""
-    plans = {slot: draw_slot_plan(rng) for slot in range(BLUNDER_CHECK_SESSION_WINDOWS)}
+    """Compose up to `count` windows for the user (250 D-12..D-16).
+
+    `count` is the user's `blunder_check_per_session` (Phase 251 D-04); the constant stays as
+    the documented default for direct callers.
+    """
+    plans = {slot: draw_slot_plan(rng) for slot in range(count)}
     own, foreign = _Pool(), _Pool()
     filled: dict[int, _Filled] = {}
     await _fill_from_source(

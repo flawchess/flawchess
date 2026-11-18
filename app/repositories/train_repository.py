@@ -38,6 +38,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
+from app.models.blunder_check import BlunderCheckSession
 from app.models.drill_item import DrillItem, DrillStatus
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillGuess, DrillMoveQuality, DrillSolve, DrillSource
@@ -89,17 +90,20 @@ from app.services.train_pool import (
     vetted_moves_from_pv_node,
 )
 from app.services.train_scheduler import (
+    DEFAULT_BLUNDER_CHECK_PER_SESSION,
     DEFAULT_PUZZLES_PER_SESSION,
     DEFAULT_REMINDER_ENABLED,
     DEFAULT_REMINDER_HOUR,
     DEFAULT_TIMEZONE,
     DEFAULT_WEEKDAY_MASK,
     DayOutcome,
+    BlunderCheckLevel,
     ItemState,
     TickSnapshot,
     TickView,
     _judge_one_day,
     apply_result,
+    day_is_complete,
     is_scheduled_day,
     is_session_expired,
     local_today,
@@ -195,6 +199,18 @@ class TrainSettingsRow:
     intro_seen_at: datetime.datetime | None
     sr_explained_at: datetime.datetime | None
     reveal_tour_stage: int
+    # Phase 251 two-mode Train. Defaults sit at the end so a hand-built row keeps compiling;
+    # every reader below passes all five explicitly.
+    # `blunder_check_per_session` is the blunder-check session size (0 = mode off, D-02: a mode
+    # at 0 is not part of the day). `blunder_check_streak_from` is the local launch day: days
+    # before it keep the old puzzle-only rule (D-18); NULL on rows created after launch (the
+    # both-modes rule always applies). `streak_credited_on` is the idempotency key of the eager
+    # day credit (`apply_day_completion`).
+    blunder_check_per_session: int = DEFAULT_BLUNDER_CHECK_PER_SESSION
+    blunder_check_level: BlunderCheckLevel | None = None
+    blunder_check_notice_from: datetime.datetime | None = None
+    blunder_check_streak_from: datetime.date | None = None
+    streak_credited_on: datetime.date | None = None
 
 
 @dataclass(frozen=True)
@@ -333,6 +349,11 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
         intro_seen_at=row.intro_seen_at,
         sr_explained_at=row.sr_explained_at,
         reveal_tour_stage=row.reveal_tour_stage,
+        blunder_check_per_session=row.blunder_check_per_session,
+        blunder_check_level=cast("BlunderCheckLevel | None", row.blunder_check_level),
+        blunder_check_notice_from=row.blunder_check_notice_from,
+        blunder_check_streak_from=row.blunder_check_streak_from,
+        streak_credited_on=row.streak_credited_on,
     )
 
 
@@ -379,6 +400,10 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         intro_seen_at=None,
         sr_explained_at=None,
         reveal_tour_stage=0,
+        # D-03: a row created after the deploy gets the default blunder-check size; the other
+        # four Phase 251 columns stay NULL so the row never sees the launch notice and the
+        # both-modes rule applies from its first day.
+        blunder_check_per_session=DEFAULT_BLUNDER_CHECK_PER_SESSION,
     )
     # ON CONFLICT DO NOTHING: a concurrent first-touch may have already
     # inserted the row between the get_settings check above and this insert;
@@ -400,6 +425,11 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         intro_seen_at=None,
         sr_explained_at=None,
         reveal_tour_stage=0,
+        blunder_check_per_session=DEFAULT_BLUNDER_CHECK_PER_SESSION,
+        blunder_check_level=None,
+        blunder_check_notice_from=None,
+        blunder_check_streak_from=None,
+        streak_credited_on=None,
     )
 
 
@@ -529,6 +559,12 @@ async def upsert_settings(
         TrainSettings.intro_seen_at,
         TrainSettings.sr_explained_at,
         TrainSettings.reveal_tour_stage,
+        # The Phase 251 columns are likewise never written by this UPSERT, so read them back.
+        TrainSettings.blunder_check_per_session,
+        TrainSettings.blunder_check_level,
+        TrainSettings.blunder_check_notice_from,
+        TrainSettings.blunder_check_streak_from,
+        TrainSettings.streak_credited_on,
     )
     result = await session.execute(stmt)
     (
@@ -540,6 +576,11 @@ async def upsert_settings(
         intro_seen_at,
         sr_explained_at,
         reveal_tour_stage,
+        blunder_check_per_session,
+        blunder_check_level,
+        blunder_check_notice_from,
+        blunder_check_streak_from,
+        streak_credited_on,
     ) = result.one()
     return TrainSettingsRow(
         timezone=timezone,
@@ -556,6 +597,11 @@ async def upsert_settings(
         intro_seen_at=intro_seen_at,
         sr_explained_at=sr_explained_at,
         reveal_tour_stage=reveal_tour_stage,
+        blunder_check_per_session=blunder_check_per_session,
+        blunder_check_level=blunder_check_level,
+        blunder_check_notice_from=blunder_check_notice_from,
+        blunder_check_streak_from=blunder_check_streak_from,
+        streak_credited_on=streak_credited_on,
     )
 
 
@@ -844,7 +890,9 @@ async def _stamp_pool_eligibility(
             a session may additionally OR in `sharp_filler_available()` — a
             filler-only session is still a real, completable session, so the
             eligibility floor `tick_days` reads must exist for a warm-up-only
-            user too.
+            user too. Both callers also OR in `blunder_check_per_session > 0`
+            (Phase 251): blunder check always has foreign supply, so a user
+            with it on has material from day one.
 
     Returns:
         `settings_row.pool_eligible_since` unchanged when already set;
@@ -953,6 +1001,112 @@ async def stamp_onboarding_step(
     return refreshed
 
 
+def _bc_size_for_day(day: datetime.date, settings_row: TrainSettingsRow) -> int:
+    """The blunder-check size that applies to `day`: 0 before the launch day (D-18).
+
+    Days before `blunder_check_streak_from` keep the old puzzle-only rule, so pre-launch days
+    stay as judged and the "N of M this week" caption does not drop on launch day. NULL (a row
+    created after launch) means the current size always applies.
+    """
+    streak_from = settings_row.blunder_check_streak_from
+    if streak_from is not None and day < streak_from:
+        return 0
+    return settings_row.blunder_check_per_session
+
+
+async def complete_days_for(
+    session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow
+) -> list[datetime.date]:
+    """Every local day that is complete for the streak (D-02), feeding `tick_days`.
+
+    Reads the dates of the user's completed puzzle sessions and completed blunder-check
+    sessions (two sequential awaits, never `asyncio.gather`) and keeps the days for which
+    `day_is_complete` holds with the CURRENT per-mode sizes. A mode at size 0 is not part of
+    the day, and days before `blunder_check_streak_from` ignore blunder check (D-18).
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        settings_row: The user's current `TrainSettingsRow` (sizes and launch day).
+    """
+    puzzle_days = {
+        row[0]
+        for row in (
+            await session.execute(
+                select(DrillSession.session_date).where(
+                    DrillSession.user_id == user_id, DrillSession.status == "completed"
+                )
+            )
+        ).all()
+    }
+    bc_days = {
+        row[0]
+        for row in (
+            await session.execute(
+                select(BlunderCheckSession.session_date).where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                )
+            )
+        ).all()
+    }
+    return sorted(
+        day
+        for day in puzzle_days | bc_days
+        if day_is_complete(
+            puzzles_done=day in puzzle_days,
+            bc_done=day in bc_days,
+            puzzles_size=settings_row.puzzles_per_session,
+            bc_size=_bc_size_for_day(day, settings_row),
+        )
+    )
+
+
+async def day_complete_on(
+    session: AsyncSession, *, user_id: int, day: datetime.date, settings_row: TrainSettingsRow
+) -> bool:
+    """The same rule as `complete_days_for` for one day (two EXISTS reads).
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        day: The local day to test.
+        settings_row: The user's current `TrainSettingsRow` (sizes and launch day).
+    """
+    puzzles_done = (
+        await session.execute(
+            select(
+                select(DrillSession.id)
+                .where(
+                    DrillSession.user_id == user_id,
+                    DrillSession.session_date == day,
+                    DrillSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    bc_done = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.session_date == day,
+                    BlunderCheckSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return day_is_complete(
+        puzzles_done=puzzles_done,
+        bc_done=bc_done,
+        puzzles_size=settings_row.puzzles_per_session,
+        bc_size=_bc_size_for_day(day, settings_row),
+    )
+
+
 async def settle_streak_snapshot(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> TickView:
@@ -960,9 +1114,10 @@ async def settle_streak_snapshot(
     persist the advance.
 
     THE SINGLE settlement entry point, shared by `GET /train/progress` (here)
-    and `PUT /train/settings` (settle-before-mutate). Reads the user's
-    `status='completed'` `drill_sessions.session_date` values (order-
-    insensitive — `tick_days` buckets internally), builds the input
+    and `PUT /train/settings` (settle-before-mutate). Reads the user's complete
+    days (`complete_days_for`: the both-modes rule over completed puzzle and
+    blunder-check sessions, order-insensitive — `tick_days` buckets
+    internally), builds the input
     `TickSnapshot` from `settings_row`'s three snapshot fields, calls
     `tick_days` (passing `settings_row.pool_eligible_since` as the eligibility
     watermark), and persists the advanced snapshot IF AND ONLY IF
@@ -987,12 +1142,9 @@ async def settle_streak_snapshot(
             from `_stamp_pool_eligibility` in the SAME transaction).
         today: The local calendar day (from `local_today`).
     """
-    dates_result = await session.execute(
-        select(DrillSession.session_date).where(
-            DrillSession.user_id == user_id, DrillSession.status == "completed"
-        )
+    completed_session_dates = await complete_days_for(
+        session, user_id=user_id, settings_row=settings_row
     )
-    completed_session_dates = [row[0] for row in dates_result.all()]
 
     snapshot = TickSnapshot(
         streak_count=settings_row.streak_count,
@@ -1057,7 +1209,12 @@ async def get_progress(
     today = local_today(settings_row.timezone, now_utc)
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
-    has_material = has_drill_items or has_pool_candidates
+    # Blunder check always has foreign supply, so a user with it switched on has trainable
+    # material from day one (Phase 251, RESEARCH Pitfall 3). Without this a blunder-check-only
+    # user keeps a NULL watermark and every scheduled day resolves neutral.
+    has_material = (
+        has_drill_items or has_pool_candidates or settings_row.blunder_check_per_session > 0
+    )
     stamped_pool_eligible_since = await _stamp_pool_eligibility(
         session,
         user_id=user_id,
@@ -1066,22 +1223,7 @@ async def get_progress(
         has_material=has_material,
     )
     if stamped_pool_eligible_since != settings_row.pool_eligible_since:
-        settings_row = TrainSettingsRow(
-            timezone=settings_row.timezone,
-            weekday_mask=settings_row.weekday_mask,
-            puzzles_per_session=settings_row.puzzles_per_session,
-            streak_count=settings_row.streak_count,
-            shield_level=settings_row.shield_level,
-            streak_settled_through=settings_row.streak_settled_through,
-            pool_eligible_since=stamped_pool_eligible_since,
-            reminder_enabled=settings_row.reminder_enabled,
-            reminder_hour=settings_row.reminder_hour,
-            reminder_last_sent_on=settings_row.reminder_last_sent_on,
-            reminder_intent_at=settings_row.reminder_intent_at,
-            intro_seen_at=settings_row.intro_seen_at,
-            sr_explained_at=settings_row.sr_explained_at,
-            reveal_tour_stage=settings_row.reveal_tour_stage,
-        )
+        settings_row = replace(settings_row, pool_eligible_since=stamped_pool_eligible_since)
 
     view = await settle_streak_snapshot(
         session, user_id=user_id, settings_row=settings_row, today=today
@@ -2843,7 +2985,12 @@ async def compose_and_materialize_session(
         user_id=user_id,
         settings_row=settings_row,
         today=today,
-        has_material=has_drill_items or has_pool_candidates or sharp_filler_available(),
+        has_material=(
+            has_drill_items
+            or has_pool_candidates
+            or sharp_filler_available()
+            or settings_row.blunder_check_per_session > 0
+        ),
     )
 
     await expire_stale_sessions(session, user_id=user_id, today=today)
@@ -3467,12 +3614,17 @@ async def _mark_session_complete_if_done(
     return remaining == 0
 
 
-async def _apply_completion_tick(
-    session: AsyncSession, *, user_id: int, session_id: int, now_utc: datetime.datetime
-) -> None:
-    """Tick the shield/count IMMEDIATELY when a session completes,
+async def apply_day_completion(
+    session: AsyncSession, *, user_id: int, day: datetime.date, now_utc: datetime.datetime
+) -> bool:
+    """Credit `day` to the streak IMMEDIATELY when it becomes complete (D-02),
     correctly composed with the lazy miss walk so neither path can
     double-count or skip a scheduled day.
+
+    THE single eager entry point: a puzzle session's last solve (`record_solve`)
+    and a blunder-check finish both call it, and the call that completes the
+    LAST required mode for `day` is the one that credits. Returns True when it
+    credited, False when it wrote nothing.
 
     Both branches below route through `_judge_one_day` — the SAME shared
     primitive `tick_days`'s lazy walk uses — so this function derives NO
@@ -3483,11 +3635,10 @@ async def _apply_completion_tick(
     Order of operations, all sequential awaits on this ONE `AsyncSession`
     (CLAUDE.md — never `asyncio.gather`):
 
-    1. Resolve `session_date` scoped by `(id, user_id)` together (IDOR
-       guard) — a foreign or invented `session_id` resolves to nothing
-       and this function returns without writing.
-    2. `get_or_create_settings` + `local_today` for the current settings row.
-    3. `settle_streak_snapshot` FIRST — the lazy walk runs before the
+    1. `get_or_create_settings` + `local_today` for the current settings row.
+       `day` comes from a session row the caller already resolved scoped by
+       `(id, user_id)` (IDOR guard), never from the client.
+    2. `settle_streak_snapshot` FIRST — the lazy walk runs before the
        completion is applied, so every scheduled day whose window has
        already closed is judged before this write, and a completion on a
        later day can never let an earlier missed scheduled day escape
@@ -3495,10 +3646,13 @@ async def _apply_completion_tick(
        strictly after `today`, so today's own scheduled day is never judged
        by this walk — there is no conflict between the two paths on the
        current day.
+    3. Return False without writing when `day_complete_on(day)` is False (a
+       required mode is still pending) or `streak_credited_on == day` (see the
+       bug-fix paragraph below).
     4. Choose exactly ONE `DayOutcome` from the POST-settle snapshot
        (`view.settled`), never a stale pre-settle one:
-       `"fulfilled"` when `session_date` is scheduled AND
-       (`settled_through` is None OR `session_date > settled_through`);
+       `"fulfilled"` when `day` is scheduled AND
+       (`settled_through` is None OR `day > settled_through`);
        otherwise `"credit_only"` — an off-day session or a late
        completion of an already-frozen day. `"credit_only"` returns
        `streak_count`/`settled_through`
@@ -3510,33 +3664,29 @@ async def _apply_completion_tick(
        write keeps the same compare-and-set guard `settle_streak_snapshot`
        uses (so a concurrent settler cannot be overwritten with an older
        boundary); the credit-only write needs no boundary guard because it
-       never moves the boundary.
+       never moves the boundary. Both also set `streak_credited_on = day`.
 
-    An abandoned session needs no code here: only `status='completed'`
-    sessions ever reach this function (the caller gates on the claim that
-    just completed the session), so a started-and-abandoned session is judged
-    by the lazy walk as a plain missed scheduled day, never by this eager
-    path.
+    Bug fix: two completion events per day are now normal (puzzles, then
+    blunder check), and a day's completeness depends on the CURRENT sizes. A
+    `was_complete_before` guard computed from the current sizes misses the
+    sequence "puzzles done with blunder check at 0 -> day credited -> blunder
+    check raised -> blunder check done", which would mint a second freeze. The
+    stored `streak_credited_on` ("last credited day") is the idempotency key:
+    a day already credited is never credited again, and both UPDATEs are
+    guarded on `streak_credited_on IS DISTINCT FROM day` so a concurrent
+    duplicate cannot credit twice either.
+
+    An abandoned session needs no code here: only completed sessions ever
+    complete a day (the callers gate on the claim that just completed the
+    session), so a started-and-abandoned session is judged by the lazy walk as
+    a plain missed scheduled day, never by this eager path.
 
     Args:
         session: AsyncSession. Caller commits.
         user_id: Authenticated user's internal PK (V4: never client-supplied).
-        session_id: The `drill_sessions.id` that just completed (untrusted
-            client input upstream — resolved only in combination with
-            `user_id`).
+        day: The local day (`session_date`) of the session that just completed.
         now_utc: The current UTC instant.
     """
-    session_date_row = (
-        await session.execute(
-            select(DrillSession.session_date).where(
-                DrillSession.id == session_id, DrillSession.user_id == user_id
-            )
-        )
-    ).scalar_one_or_none()
-    if session_date_row is None:
-        return
-    session_date: datetime.date = session_date_row
-
     settings_row = await get_or_create_settings(session, user_id=user_id)
     today = local_today(settings_row.timezone, now_utc)
 
@@ -3545,18 +3695,25 @@ async def _apply_completion_tick(
     )
     settled = view.settled
 
-    fulfilled = is_scheduled_day(session_date, settings_row.weekday_mask) and (
-        settled.settled_through is None or session_date > settled.settled_through
+    if settings_row.streak_credited_on == day:
+        return False
+    if not await day_complete_on(session, user_id=user_id, day=day, settings_row=settings_row):
+        return False
+
+    fulfilled = is_scheduled_day(day, settings_row.weekday_mask) and (
+        settled.settled_through is None or day > settled.settled_through
     )
     outcome: DayOutcome = "fulfilled" if fulfilled else "credit_only"
-    judged = _judge_one_day(settled, day=session_date, outcome=outcome)
+    judged = _judge_one_day(settled, day=day, outcome=outcome)
 
+    not_yet_credited = TrainSettings.streak_credited_on.is_distinct_from(day)
     if outcome == "fulfilled":
         new_settled_through = judged.settled_through
-        await session.execute(
+        result = await session.execute(
             update(TrainSettings)
             .where(
                 TrainSettings.user_id == user_id,
+                not_yet_credited,
                 or_(
                     TrainSettings.streak_settled_through.is_(None),
                     TrainSettings.streak_settled_through < new_settled_through,
@@ -3566,14 +3723,16 @@ async def _apply_completion_tick(
                 streak_count=judged.streak_count,
                 shield_level=judged.shield_level,
                 streak_settled_through=new_settled_through,
+                streak_credited_on=day,
             )
         )
     else:
-        await session.execute(
+        result = await session.execute(
             update(TrainSettings)
-            .where(TrainSettings.user_id == user_id)
-            .values(shield_level=judged.shield_level)
+            .where(TrainSettings.user_id == user_id, not_yet_credited)
+            .values(shield_level=judged.shield_level, streak_credited_on=day)
         )
+    return result.rowcount > 0  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
 
 
 def _merged_telemetry(patch: dict[str, object]) -> ColumnElement[Any]:
@@ -3688,7 +3847,7 @@ async def record_solve(
        every call, win or lose — idempotent via the `status = 'open'` guard.
     6. When THIS call's claim (`solved_at IS NULL` -> now
        set) is what just completed the session, call
-       `_apply_completion_tick` inside the SAME transaction — a rollback can
+       `apply_day_completion` inside the SAME transaction — a rollback can
        never leave a half-applied tick. Gated on `claimed AND
        session_complete`, not `session_complete` alone: a lost-claim
        re-submit of an already-solved final puzzle also sees
@@ -3883,9 +4042,17 @@ async def record_solve(
     # (the acceptance test this guards: re-submitting an already-solved
     # final puzzle must not grant another shield credit).
     if claimed and session_complete:
-        await _apply_completion_tick(
-            session, user_id=user_id, session_id=session_id, now_utc=now_utc
-        )
+        # Resolve the session day scoped by (id, user_id) (IDOR guard): a foreign or invented
+        # session_id resolves to nothing and credits nothing.
+        session_date = (
+            await session.execute(
+                select(DrillSession.session_date).where(
+                    DrillSession.id == session_id, DrillSession.user_id == user_id
+                )
+            )
+        ).scalar_one_or_none()
+        if session_date is not None:
+            await apply_day_completion(session, user_id=user_id, day=session_date, now_utc=now_utc)
 
     return RecordedSolve(
         correct_guess=stored_correct_guess,
@@ -4123,8 +4290,11 @@ __all__ = [
     "RecordedSolve",
     "RevealedPuzzle",
     "TrainSettingsRow",
+    "apply_day_completion",
+    "complete_days_for",
     "completed_session_in_window",
     "compose_and_materialize_session",
+    "day_complete_on",
     "expire_stale_sessions",
     "get_or_create_settings",
     "get_progress",

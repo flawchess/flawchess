@@ -204,10 +204,14 @@ async def compose_or_resume(
 ) -> SessionProgress | None:
     """The user's open session, composing and persisting a new one when there is none.
 
-    Returns None when nothing could be composed (no usable supply). A lost race against a
-    concurrent start (the one-open-session index fired) resumes the winner's session.
+    Returns None when nothing could be composed (no usable supply), and before any write when
+    the user has switched blunder check off (`blunder_check_per_session` is 0, D-04). A lost
+    race against a concurrent start (the one-open-session index fired) resumes the winner's
+    session.
     """
     settings = await train_repository.get_or_create_settings(session, user_id=user_id)
+    if settings.blunder_check_per_session == 0:
+        return None
     today = local_today(settings.timezone, now_utc)
     await blunder_check_repository.expire_stale_sessions(session, user_id=user_id, today=today)
     existing = await blunder_check_repository.open_session_progress(
@@ -223,7 +227,10 @@ async def compose_or_resume(
     if done is not None:
         return done
     windows = await blunder_check_selection.compose_windows(
-        session, user_id=user_id, rng=blunder_check_selection.new_session_rng()
+        session,
+        user_id=user_id,
+        rng=blunder_check_selection.new_session_rng(),
+        count=settings.blunder_check_per_session,
     )
     if not windows:
         return None
@@ -641,7 +648,21 @@ async def finish_session(
         raise BlunderCheckNotFoundError
     if any(window.outcome is None for window in windows):
         raise BlunderCheckConflictError("windows_open")
-    await blunder_check_repository.complete_session(session, session_id=session_id, now_utc=now_utc)
+    moved = await blunder_check_repository.complete_session(
+        session, session_id=session_id, now_utc=now_utc
+    )
+    if moved:
+        # Only the call that moved the session from open to completed credits the day, so a
+        # repeated finish never re-triggers it. The day is read scoped by (session id, user id)
+        # (T-251-32): a foreign id resolves to nothing and credits nothing. No extra refusal for
+        # a session past its expires_on, mirroring record_solve.
+        session_date = await blunder_check_repository.get_session_date(
+            session, user_id=user_id, session_id=session_id
+        )
+        if session_date is not None:
+            await train_repository.apply_day_completion(
+                session, user_id=user_id, day=session_date, now_utc=now_utc
+            )
     points = sum(window.points_scored for window in windows)
     possible = sum(window.points_possible for window in windows)
     return SessionResult(
