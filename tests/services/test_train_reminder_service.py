@@ -1,10 +1,11 @@
 """Tests for the Train reminder scheduler.
 
 Covers:
-- TestListReminderCandidateUserIds / TestClaimReminderDay /
-  TestHasCompletedSessionOn (Task 1): app.repositories.train_reminder_repository's
-  SQL, using the ordinary rollback-scoped `db_session` fixture (no cross-
-  connection visibility needed for these).
+- TestListReminderCandidateUserIds / TestClaimReminderDay (Task 1):
+  app.repositories.train_reminder_repository's SQL, using the ordinary rollback-scoped
+  `db_session` fixture (no cross-connection visibility needed for these).
+- TestAlreadyTrained: the both-modes day rule (Phase 251, D-02) -- the nudge fires while any
+  required mode is pending and stays quiet once the day is complete.
 - Everything below TestTickInterval (Task 2): app.services.train_reminder_service's
   per-candidate eligibility loop, settle-before-copy, and claim-then-send
   fan-out, using a REAL (non-savepoint) session maker patched onto
@@ -291,65 +292,6 @@ class TestReleaseReminderClaim:
             db_session, user_id=_USER_ID, today=_TODAY
         )
         assert released is False
-
-
-class TestHasCompletedSessionOn:
-    async def test_true_for_completed_session_same_date(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY,
-                status="completed",
-                puzzle_count=1,
-                expires_on=_TODAY + datetime.timedelta(days=1),
-                completed_at=datetime.datetime.now(datetime.timezone.utc),
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is True
-
-    async def test_false_when_completed_at_null(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY,
-                status="open",
-                puzzle_count=1,
-                expires_on=_TODAY + datetime.timedelta(days=1),
-                completed_at=None,
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is False
-
-    async def test_false_when_date_differs(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY - datetime.timedelta(days=1),
-                status="completed",
-                puzzle_count=1,
-                expires_on=_TODAY,
-                completed_at=datetime.datetime.now(datetime.timezone.utc),
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is False
 
 
 # ---------------------------------------------------------------------------
