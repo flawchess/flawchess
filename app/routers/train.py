@@ -671,4 +671,24 @@ async def stamp_onboarding_step(
     return await _settings_response(session, settings_row, user_id=user.id)
 
 
+@router.post("/blunder-check-notice/dismiss", status_code=204)
+async def dismiss_blunder_check_notice(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    """Dismiss the one-time "blunder check is now a Train mode" launch notice (D-21).
+
+    No body, idempotent: it clears only the caller's own stamp (user id from
+    `current_active_user`, never client-supplied) and answers 204 whether or not a stamp was set.
+    """
+    try:
+        await train_repository.dismiss_blunder_check_notice(session, user_id=user.id)
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user.id)})
+        sentry_sdk.capture_exception()
+        raise
+
+
 __all__ = ["router"]
