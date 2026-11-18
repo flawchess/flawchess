@@ -890,7 +890,9 @@ async def _stamp_pool_eligibility(
             a session may additionally OR in `sharp_filler_available()` — a
             filler-only session is still a real, completable session, so the
             eligibility floor `tick_days` reads must exist for a warm-up-only
-            user too.
+            user too. Both callers also OR in `blunder_check_per_session > 0`
+            (Phase 251): blunder check always has foreign supply, so a user
+            with it on has material from day one.
 
     Returns:
         `settings_row.pool_eligible_since` unchanged when already set;
@@ -1207,7 +1209,12 @@ async def get_progress(
     today = local_today(settings_row.timezone, now_utc)
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
-    has_material = has_drill_items or has_pool_candidates
+    # Blunder check always has foreign supply, so a user with it switched on has trainable
+    # material from day one (Phase 251, RESEARCH Pitfall 3). Without this a blunder-check-only
+    # user keeps a NULL watermark and every scheduled day resolves neutral.
+    has_material = (
+        has_drill_items or has_pool_candidates or settings_row.blunder_check_per_session > 0
+    )
     stamped_pool_eligible_since = await _stamp_pool_eligibility(
         session,
         user_id=user_id,
@@ -2978,7 +2985,12 @@ async def compose_and_materialize_session(
         user_id=user_id,
         settings_row=settings_row,
         today=today,
-        has_material=has_drill_items or has_pool_candidates or sharp_filler_available(),
+        has_material=(
+            has_drill_items
+            or has_pool_candidates
+            or sharp_filler_available()
+            or settings_row.blunder_check_per_session > 0
+        ),
     )
 
     await expire_stale_sessions(session, user_id=user_id, today=today)
