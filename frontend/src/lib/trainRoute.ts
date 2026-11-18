@@ -14,13 +14,12 @@
 
 import type { ArchiveList } from '@/types/train';
 
-export type TrainTab = 'today' | 'leaderboard' | 'archive' | 'blunder-check';
+export type TrainTab = 'today' | 'leaderboard' | 'archive';
 
 export type TrainRoute =
   | { tab: 'today' }
   | { tab: 'leaderboard' }
-  | { tab: 'archive'; list: ArchiveList }
-  | { tab: 'blunder-check' };
+  | { tab: 'archive'; list: ArchiveList };
 
 /** Canonical path of each tab. Bookmarks, reminders and Umami pageview history
  * all key on these, so they are settled and must not change. */
@@ -28,21 +27,19 @@ export const TRAIN_TAB_PATHS: Record<TrainTab, string> = {
   today: '/train',
   leaderboard: '/train/leaderboard',
   archive: '/train/archive',
-  'blunder-check': '/train/blunder-check',
 };
 
 /** Path of the Parked list; Mastered is the Archive tab's own path. */
 const ARCHIVE_PARKED_PATH = `${TRAIN_TAB_PATHS.archive}/parked`;
 
-/** Returns the route for a pathname, or null for an unknown /train/* path. The parser is
- * beta-agnostic: the page redirects non-beta users away from the blunder-check tab. */
+/** Returns the route for a pathname, or null for an unknown /train/* path. The retired
+ * /train/blunder-check path (Phase 251 D-11) is unknown too, so an old link lands on Today. */
 export function parseTrainRoute(pathname: string): TrainRoute | null {
   const path = pathname.replace(/\/+$/, '');
   if (path === TRAIN_TAB_PATHS.today) return { tab: 'today' };
   if (path === TRAIN_TAB_PATHS.leaderboard) return { tab: 'leaderboard' };
   if (path === TRAIN_TAB_PATHS.archive) return { tab: 'archive', list: 'mastered' };
   if (path === ARCHIVE_PARKED_PATH) return { tab: 'archive', list: 'parked' };
-  if (path === TRAIN_TAB_PATHS['blunder-check']) return { tab: 'blunder-check' };
   return null;
 }
 

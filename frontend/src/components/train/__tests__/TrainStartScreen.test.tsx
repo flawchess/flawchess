@@ -5,6 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
 import { MemoryRouter } from 'react-router';
 import { GUEST_SIGNUP_ASK_SCORE, IMPORT_ASK_LANDING, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
@@ -27,6 +30,7 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   pool_state: 'available',
   next_due_date: null,
   badge_visible: false,
+  ...PHASE_251_PROGRESS_FIELDS,
 };
 
 let trainProgressMock: {
@@ -257,11 +261,24 @@ const EMPTY_SESSION: TrainSessionResponse = {
   blob_pending_count: 0,
 };
 
+/** Router plus the Today actions the streak card's Blunder Check Start calls. */
+function TestWrapper({ children }: { children: ReactNode }) {
+  return (
+    <MemoryRouter>
+      <TrainTodayActionsContext.Provider
+        value={{ startPuzzles: vi.fn(), startBlunderCheck: vi.fn() }}
+      >
+        {children}
+      </TrainTodayActionsContext.Provider>
+    </MemoryRouter>
+  );
+}
+
 function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {}) {
   const onEnterLoop = vi.fn();
   const onSettingsSaved = vi.fn();
   render(
-    <MemoryRouter>
+    <TestWrapper>
       <TrainStartScreen
         session={BASE_SESSION}
         isLoading={false}
@@ -276,7 +293,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         showRouteDot={false}
         {...props}
       />
-    </MemoryRouter>,
+    </TestWrapper>,
   );
   return { onEnterLoop, onSettingsSaved };
 }
@@ -296,25 +313,25 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       showRouteDot: false,
     };
     const { rerender } = render(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={true} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(false);
@@ -934,17 +951,17 @@ describe('TrainStartScreen: isVisible gates the one-shot landing children', () =
       showRouteDot: false,
     };
     const { rerender } = render(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isVisible={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     const hiddenNode = screen.getByTestId('train-schedule-settings');
     expectNoOneShotChildren();
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isVisible={true} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('train-schedule-settings')).toBe(hiddenNode);
     expect(screen.getByTestId('train-landing-host')).not.toBeNull();

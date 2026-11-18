@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
@@ -41,9 +42,14 @@ import { FREEZE_CAP, readStreakLastSeen, writeStreakLastSeen } from '@/lib/strea
 import type {
   LeaderboardViewer,
   LeaderboardVisibility,
+  TrainBlunderCheckModeProgress,
   TrainLeaderboardResponse,
   TrainProgressResponse,
 } from '@/types/train';
+import {
+  BLUNDER_CHECK_MODE,
+  PHASE_251_PROGRESS_FIELDS,
+} from '@/components/train/__tests__/trainProgressFixtures';
 
 const OWNER = 'user@example.com';
 
@@ -64,6 +70,7 @@ afterEach(() => {
   vi.mocked(trainApi.getProgress).mockReset();
   vi.mocked(trainApi.getLeaderboard).mockReset();
   vi.mocked(trackFeature).mockReset();
+  startBlunderCheck.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -71,13 +78,17 @@ function LocationProbe(): ReactNode {
   return <span data-testid="location-probe">{useLocation().pathname}</span>;
 }
 
+const startBlunderCheck = vi.fn();
+
 function renderWithClient(action?: ReactNode, pointsToday?: { total: number; max: number }): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={['/train']}>
-          {children}
+          <TrainTodayActionsContext.Provider value={{ startPuzzles: vi.fn(), startBlunderCheck }}>
+            {children}
+          </TrainTodayActionsContext.Provider>
           <LocationProbe />
         </MemoryRouter>
       </QueryClientProvider>
@@ -98,6 +109,7 @@ const BASE: TrainProgressResponse = {
   pool_state: 'available',
   next_due_date: null,
   badge_visible: false,
+  ...PHASE_251_PROGRESS_FIELDS,
 };
 
 async function renderPopulated(
@@ -407,6 +419,50 @@ describe('TrainStreakCard', () => {
 
       expect(screen.queryByTestId('train-streak-extinguish')).toBeNull();
       expect(screen.getByTestId('train-streak-count').textContent).toBe('0');
+    });
+  });
+  describe('Blunder Check row (Phase 251 D-18)', () => {
+    async function renderWithBlunderCheck(
+      mode: Partial<TrainBlunderCheckModeProgress>,
+    ): Promise<void> {
+      await renderPopulated({
+        modes: {
+          ...PHASE_251_PROGRESS_FIELDS.modes,
+          blunder_check: { ...BLUNDER_CHECK_MODE, ...mode },
+        },
+      });
+    }
+
+    it('pending: names the sequences left and starts the drill from the card', async () => {
+      await renderWithBlunderCheck({ state: 'pending', remaining: 6 });
+
+      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe('6 sequences left');
+      const button = screen.getByTestId('btn-train-blunder-check-start');
+      expect(button.textContent).toBe('Start');
+      fireEvent.click(button);
+      expect(startBlunderCheck).toHaveBeenCalledTimes(1);
+    });
+
+    it('in progress: offers Resume', async () => {
+      await renderWithBlunderCheck({ state: 'in_progress', remaining: 4 });
+
+      expect(screen.getByTestId('btn-train-blunder-check-start').textContent).toBe('Resume');
+      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe('4 sequences left');
+    });
+
+    it('done: shows the points recap and no button', async () => {
+      await renderWithBlunderCheck({ state: 'done', remaining: 0, points_today: 17 });
+
+      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe(
+        'Done today, 17 points',
+      );
+      expect(screen.queryByTestId('btn-train-blunder-check-start')).toBeNull();
+    });
+
+    it('off: the row is left out', async () => {
+      await renderWithBlunderCheck({ state: 'off', size: 0, remaining: 0 });
+
+      expect(screen.queryByTestId('train-blunder-check-row')).toBeNull();
     });
   });
 });

@@ -18,11 +18,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router';
+import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
+import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { FreezeMeter } from '@/components/train/FreezeMeter';
 import { StreakFlame } from '@/components/train/StreakFlame';
+import { useTrainTodayActions } from '@/components/train/trainTodayActions';
 import { useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -36,7 +39,7 @@ import {
 import type { StreakArrival } from '@/lib/streakArrival';
 import { trackFeature } from '@/lib/analytics';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
-import type { TrainProgressResponse } from '@/types/train';
+import type { TrainBlunderCheckModeProgress, TrainProgressResponse } from '@/types/train';
 
 /** A freeze earned together with a streak tick pops in once the ignite settles. */
 const EARNED_AFTER_IGNITE_DELAY_MS = 1300;
@@ -165,6 +168,46 @@ function buildStreakVisuals({
   };
 }
 
+/**
+ * The Blunder Check row: Start or Resume while the mode has work, a recap once done, nothing
+ * when it is off (plan 251-13 builds the full launcher rows, including "Turn on", around this
+ * button and keeps its testid). The tap calls the page's action so audio unlocks inside the
+ * gesture and the drill mounts under Today.
+ */
+function BlunderCheckStartRow({
+  mode,
+}: {
+  mode: TrainBlunderCheckModeProgress;
+}): ReactElement | null {
+  const { startBlunderCheck } = useTrainTodayActions();
+  if (mode.state === 'off') return null;
+  return (
+    <div
+      className="col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+      data-testid="train-blunder-check-row"
+    >
+      <div className="flex min-w-0 flex-col">
+        <span className="text-sm font-semibold">Blunder Check</span>
+        <span className="text-sm text-muted-foreground" data-testid="train-blunder-check-status">
+          {mode.state === 'done'
+            ? `Done today, ${mode.points_today} points`
+            : `${mode.remaining} sequences left`}
+        </span>
+      </div>
+      {mode.state !== 'done' && (
+        <Button
+          variant="default"
+          className={TRAIN_CTA_BUTTON_CLASS}
+          onClick={startBlunderCheck}
+          data-testid="btn-train-blunder-check-start"
+        >
+          {mode.state === 'in_progress' ? 'Resume' : 'Start'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export interface TrainStreakCardProps {
   /** The Start/Resume button, in the states where a session is startable. */
   action?: ReactNode;
@@ -249,6 +292,7 @@ export function TrainStreakCard({ action, pointsToday }: TrainStreakCardProps): 
           {details}
         </div>
         {action !== undefined && <div className="col-span-2 sm:col-span-1 sm:col-start-2">{action}</div>}
+        {data !== undefined && <BlunderCheckStartRow mode={data.modes.blunder_check} />}
       </CardBody>
     </Card>
   );
