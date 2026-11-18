@@ -16,11 +16,12 @@ judged game (committed rows, deleted in `finally`).
 from __future__ import annotations
 
 import datetime
+import itertools
 import random
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.blunder_check import (
@@ -343,6 +344,44 @@ async def test_cooldown_puzzle_serve_hides_bc_own_blunder(
             async with maker() as session:
                 async with session.begin():
                     await session.execute(
-                        DrillSession.__table__.delete().where(DrillSession.id == drill_session_id)
+                        delete(DrillSession).where(DrillSession.id == drill_session_id)
                     )
     assert (progress is not None) is expect_window
+
+
+@pytest.mark.asyncio
+async def test_cooldown_cooled_blunder_not_composed_through_a_herring_round(
+    test_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After the blunder pick comes back empty, the plain herring pick reloads the game: the judge
+    must still treat the cooled blunder as served, or it would fill the blunder slot with it."""
+    blunder_shape, herring_shape = WindowShape(3, 1), WindowShape(3, None)
+    plans = itertools.cycle([SlotPlan("own", blunder_shape), SlotPlan("own", herring_shape)])
+    monkeypatch.setattr(blunder_check_selection, "draw_slot_plan", lambda rng: next(plans))
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: blunder_shape)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: herring_shape)
+    user_id, _ = await register_user("bc-cooldown-herring", beta=False, test_engine=test_engine)
+    evals = with_user_blunder(flat_evals(_BC_ROWS, 0), _BC_BLUNDER_PLY, _BC_DROP_CP)
+    game_id = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=_BC_BLUNDER_PLY)],
+    )
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            control = await blunder_check_selection.compose_windows(
+                session, user_id=user_id, rng=random.Random(1), count=2
+            )
+            cooled = await blunder_check_selection.compose_windows(
+                session,
+                user_id=user_id,
+                rng=random.Random(1),
+                count=2,
+                cooled_pairs=[(game_id, _BC_BLUNDER_PLY)],
+            )
+    finally:
+        await delete_games(test_engine, [game_id])
+    assert [w.blunder_ply for w in control] == [_BC_BLUNDER_PLY]
+    assert all(w.blunder_ply != _BC_BLUNDER_PLY for w in cooled)

@@ -316,13 +316,20 @@ async def _load_batch(
     game_ids: Sequence[int],
     is_own: bool,
     elo_window: tuple[float, float] | None,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> list[_Batch]:
-    """Load and judge games (sequential awaits on the one session)."""
+    """Load and judge games (sequential awaits on the one session).
+
+    `cooled_pairs` (D-16) are the user's flaws served as puzzles inside the cooldown; they count
+    as served for the Python judge, so such a blunder is never composed.
+    """
     games = await repo.load_candidate_games(session, game_ids)
     ids = [game.game_id for game in games]
     positions = await repo.load_positions(session, ids)
     flaws = await repo.load_blunder_flaws(session, ids)
-    served = await repo.served_for_games(session, user_id=user_id, game_ids=ids)
+    served = await repo.served_for_games(
+        session, user_id=user_id, game_ids=ids, cooled_pairs=cooled_pairs
+    )
     batches: list[_Batch] = []
     for game in games:
         elo = mover_pinned_elo(game)
@@ -353,10 +360,16 @@ async def _load_into_pool(
     game_ids: Sequence[int],
     is_own: bool,
     elo_window: tuple[float, float] | None,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> None:
     pool.seen_ids.extend(game_ids)
     for batch in await _load_batch(
-        session, user_id=user_id, game_ids=game_ids, is_own=is_own, elo_window=elo_window
+        session,
+        user_id=user_id,
+        game_ids=game_ids,
+        is_own=is_own,
+        elo_window=elo_window,
+        cooled_pairs=cooled_pairs,
     ):
         pool.batches[batch.game.game_id] = batch
 
@@ -406,9 +419,11 @@ class _Source:
     max_rounds: int
     elo_window: tuple[float, float] | None
     pick: _PickFn
+    # D-16: flaws served as puzzles inside the cross-mode cooldown (the user's own, never foreign).
+    cooled_pairs: Sequence[tuple[int, int]] = ()
 
 
-def _own_source(user_id: int) -> _Source:
+def _own_source(user_id: int, cooled_pairs: Sequence[tuple[int, int]] = ()) -> _Source:
     async def pick(
         session: AsyncSession, require_facepalm: bool, exclude_ids: Sequence[int]
     ) -> list[int]:
@@ -418,9 +433,10 @@ def _own_source(user_id: int) -> _Source:
             limit=OWN_BATCH_GAMES,
             exclude_ids=exclude_ids,
             require_facepalm=require_facepalm,
+            cooled_pairs=cooled_pairs,
         )
 
-    return _Source("own", MAX_OWN_BATCHES, None, pick)
+    return _Source("own", MAX_OWN_BATCHES, None, pick, cooled_pairs)
 
 
 async def _foreign_source(
@@ -492,6 +508,7 @@ async def _fill_from_source(
             game_ids=ids,
             is_own=source.origin == "own",
             elo_window=source.elo_window,
+            cooled_pairs=source.cooled_pairs,
         )
         _fill_from_pool(_empty_shapes(plans, filled, source.origin), pool, filled, rng=rng)
 
@@ -578,12 +595,14 @@ async def compose_windows(
     rng: random.Random,
     count: int = BLUNDER_CHECK_SESSION_WINDOWS,
     fallback_level_elo: float = DEFAULT_USER_LEVEL_ELO,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> list[NewWindow]:
     """Compose up to `count` windows for the user (250 D-12..D-16).
 
     `count` is the user's `blunder_check_per_session` (Phase 251 D-04); the constant stays as
     the documented default for direct callers. `fallback_level_elo` is the stored level's Elo, used
-    only when the user has no rated games (D-17).
+    only when the user has no rated games (D-17). `cooled_pairs` are the user's own flaws
+    served as puzzles inside the cross-mode cooldown (D-16): they are not composed as own blunders.
     """
     plans = {slot: draw_slot_plan(rng) for slot in range(count)}
     own, foreign = _Pool(), _Pool()
@@ -591,7 +610,7 @@ async def compose_windows(
     await _fill_from_source(
         session,
         user_id=user_id,
-        source=_own_source(user_id),
+        source=_own_source(user_id, cooled_pairs),
         plans=plans,
         pool=own,
         filled=filled,
