@@ -3,18 +3,28 @@
  *
  * The personalized-puzzle score screen's own view (`TrainScoreScreenView`, Phase 249 UAT):
  * a bot bubble, the Score % ring with "Points: x/y" beside it, and a full-width Done. A
- * short per-outcome summary of the sequences takes the rank lines' slot. Blunder check has no schedule, leaderboard
- * or reminders yet (Phase 251), so the next-session line and the reminder row are absent.
+ * short per-outcome summary of the sequences takes the rank lines' slot, followed by a
+ * "See the leaderboard" link (Phase 251, D-24) that remembers the Blunder check mode and opens the
+ * leaderboard tab on the Blunder check boards. The ranks themselves are not shown here: the
+ * boards are one tap away. Blunder check has no schedule or reminders on this screen, so the
+ * next-session line and the reminder row are absent.
  * Every number is the finish endpoint's (Pitfall 13); nothing is derived from local state.
- * "Done" returns to the start screen. No Umami event (D-19).
+ * "Done" returns to the start screen. The link sends one nav-click through trackFeature (an
+ * internal router navigation, so an event call and no Umami data attribute); Done sends no event (D-19).
  */
 
 import { useEffect, useMemo } from 'react';
 import type { ReactElement } from 'react';
+import { useNavigate } from 'react-router';
+import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainScoreScreenView } from '@/components/train/TrainScoreScreen';
+import { Button } from '@/components/ui/button';
+import { trackFeature } from '@/lib/analytics';
 import { WINDOW_OUTCOME_LABELS } from '@/lib/blunderCheckDrill';
 import { prefersReducedMotion } from '@/lib/confetti';
 import { blunderCheckScoreBubbleCopy, pickBot } from '@/lib/trainBotCopy';
+import { writeLeaderboardMode } from '@/lib/trainLeaderboard';
+import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { resolveRatingBand } from '@/lib/trainScore';
 import { celebrateScore } from '@/lib/trainScoreCelebration';
 import type { SessionResultResponse, WindowOutcome, WindowResultItem } from '@/types/blunderCheck';
@@ -57,6 +67,27 @@ function SequenceSummary({ windows }: { windows: WindowResultItem[] }): ReactEle
   );
 }
 
+/** Opens the leaderboard tab straight on the Blunder check boards (D-24). */
+function LeaderboardLink(): ReactElement {
+  const navigate = useNavigate();
+  function handleClick(): void {
+    // Browser-only memory, read by the leaderboard card on mount.
+    writeLeaderboardMode('blunder_check');
+    trackFeature('nav-click', { target: 'train', value: 'blunder-check-score-screen' });
+    navigate(TRAIN_TAB_PATHS.leaderboard);
+  }
+  return (
+    <Button
+      variant="brand-outline"
+      className={TRAIN_BUTTON_CLASS}
+      onClick={handleClick}
+      data-testid="btn-blunder-check-leaderboard"
+    >
+      See the leaderboard
+    </Button>
+  );
+}
+
 export function BlunderCheckEndScreen({
   result,
   onDone,
@@ -85,7 +116,12 @@ export function BlunderCheckEndScreen({
         persona={bot}
         bubbleLines={bubbleLines}
         bubbleActions={undefined}
-        rankLines={<SequenceSummary windows={result.windows} />}
+        rankLines={
+          <div className="flex flex-col items-start gap-3">
+            <SequenceSummary windows={result.windows} />
+            <LeaderboardLink />
+          </div>
+        }
         reminderControl={null}
         reminderBelowRow={null}
         reducedMotion={reducedMotion}

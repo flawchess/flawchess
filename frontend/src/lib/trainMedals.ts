@@ -27,10 +27,16 @@ export const LAST_WEEK_PODIUM_LABEL = 'Last week:';
 /** Display order of medal types in a tally: best first. */
 export const MEDAL_KIND_ORDER: readonly MedalKind[] = ['gold', 'silver', 'bronze'];
 
-/** Board name used in the tally's accessible label. */
+/**
+ * Board name with its mode, used in the tally's accessible label and the claim
+ * dialog's entries (D-15: one dialog holds medals of both modes, so each entry
+ * names its mode and board).
+ */
 export const BOARD_LABEL: Record<LeaderboardBoardKind, string> = {
-  points: 'Points',
-  accuracy: 'Accuracy',
+  points: 'Puzzles Points',
+  accuracy: 'Puzzles Accuracy',
+  blunder_check_points: 'Blunder check Points',
+  blunder_check_score: 'Blunder check Score %',
 };
 
 /** Non-zero medal counts in gold, silver, bronze order; empty when the user has no medals. */
@@ -62,7 +68,7 @@ export function medalDialogTitle(count: number): string {
   return count === 1 ? 'You won a medal!' : `You won ${count} medals!`;
 }
 
-/** 'Gold, Points' / 'Gold, Points (shared)' when another user holds the same medal. */
+/** 'Gold, Puzzles Points' / 'Gold, Blunder check Score % (shared)' when another user holds the same medal. */
 export function medalEntryLabel(medal: MedalKind, board: LeaderboardBoardKind, shared: boolean): string {
   return `${MEDAL_LABEL[medal]}, ${BOARD_LABEL[board]}${shared ? ' (shared)' : ''}`;
 }
@@ -79,4 +85,29 @@ export function weekOfLabel(weekStart: string): string {
 /** The (week_start, board) keys of the shown medals, in order: the claim POST body. */
 export function medalKeys(medals: readonly UnclaimedMedal[]): MedalKey[] {
   return medals.map((entry) => ({ week_start: entry.week_start, board: entry.board }));
+}
+
+/** One week's unclaimed medals, in the order the API sent them. */
+export interface MedalWeekGroup {
+  /** ISO date of the week's Monday (UTC). */
+  weekStart: string;
+  medals: UnclaimedMedal[];
+}
+
+/**
+ * Groups unclaimed medals by week for the single claim dialog (D-15): newest
+ * week first, and inside a week the API's board order (points, accuracy,
+ * blunder-check points, blunder-check score). ISO dates sort as strings, so no
+ * date parsing is needed; the sort is stable, so equal weeks keep API order.
+ */
+export function groupMedalsByWeek(medals: readonly UnclaimedMedal[]): MedalWeekGroup[] {
+  const byWeek = new Map<string, UnclaimedMedal[]>();
+  for (const entry of medals) {
+    const group = byWeek.get(entry.week_start);
+    if (group === undefined) byWeek.set(entry.week_start, [entry]);
+    else group.push(entry);
+  }
+  return [...byWeek.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([weekStart, weekMedals]) => ({ weekStart, medals: weekMedals }));
 }

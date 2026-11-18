@@ -1,13 +1,15 @@
 /**
  * TrainLeaderboardCard — the one "This week" card on the Train Leaderboard tab
- * under Points | Accuracy filter pills (the choice is remembered in
- * localStorage), the top 5 plus the viewer's own row (highlighted) and its
+ * under a Puzzles | Blunder check mode switch (D-14) and that mode's two board pills
+ * (Points | Accuracy, or Points | Score %). Both choices are remembered in
+ * localStorage only (D-24). Shows the top 5 plus the viewer's own row (highlighted) and its
  * neighbours with a gap marker between the two (and a trailing one when lower
  * ranks are cut), a hint line under the board for a viewer not on it yet, a "Not yet qualified
- * (20+ puzzles)" divider before the first unranked (tentative) Accuracy row,
- * and for guests a "Sign up to claim your spot" nudge. Each row's puzzle count
- * is a Puzzle icon plus the number, and an info popover next to the title
- * explains what each board rewards.
+ * (20+ puzzles)" divider before the first unranked (tentative) Accuracy row
+ * ("18+ sequences" on Score %), and for guests a "Sign up to claim your spot"
+ * nudge (guests see the Blunder check standings like the puzzle ones, D-25). Each
+ * row's count is an icon plus the number (puzzles, or sequences on Blunder check),
+ * and an info popover next to the title explains what each board rewards.
  *
  * Each board has the "Last week:" line below it (the podium plus the viewer's
  * own finish) and a lifetime medal tally in every row's name block.
@@ -23,7 +25,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Puzzle, Settings as SettingsIcon } from 'lucide-react';
+import { Puzzle, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
@@ -37,28 +40,36 @@ import { TRAIN_LEADERBOARD_QUERY_KEY, useTrainLeaderboard } from '@/hooks/useTra
 import { trackFeature } from '@/lib/analytics';
 import type { LeaderboardTabId } from '@/lib/analytics';
 import {
-  ACCURACY_EMPTY_COPY,
+  BOARD_TAB_LABEL,
   COUNTDOWN_TICK_MS,
-  EMPTY_WEEK_COPY,
+  EMPTY_BOARD_COPY,
   GUEST_CLAIM_SPOT_COPY,
   GUEST_ROW_LABEL,
   HIDDEN_FROM_OTHERS_LABEL,
   LEADERBOARD_INFO_ACCURACY_COPY,
+  LEADERBOARD_INFO_BLUNDER_CHECK_POINTS_COPY,
+  LEADERBOARD_INFO_BLUNDER_CHECK_SCORE_COPY,
   LEADERBOARD_INFO_MEDALS_COPY,
   LEADERBOARD_INFO_POINTS_COPY,
-  NOT_YET_QUALIFIED_DIVIDER_COPY,
+  MODE_LABEL,
   ROLLOVER_MAX_RETRIES,
   ROLLOVER_RETRY_MS,
+  boardCountLabel,
+  boardKindFor,
   boardValueLabel,
   firstUnrankedRowIndex,
   formatCountdown,
+  parseLeaderboardMode,
   parseLeaderboardTab,
-  puzzleCountLabel,
+  qualifyDividerCopy,
+  readLeaderboardMode,
   readLeaderboardTab,
   remainingSeconds,
   viewerHint,
+  writeLeaderboardMode,
   writeLeaderboardTab,
 } from '@/lib/trainLeaderboard';
+import type { LeaderboardMode, LeaderboardTab } from '@/lib/trainLeaderboard';
 import { cn } from '@/lib/utils';
 import type { LeaderboardBoardKind, LeaderboardRow, TrainLeaderboardResponse } from '@/types/train';
 
@@ -66,11 +77,34 @@ import type { LeaderboardBoardKind, LeaderboardRow, TrainLeaderboardResponse } f
 const LEADERBOARD_TAB_TARGET: Record<LeaderboardBoardKind, LeaderboardTabId> = {
   points: 'leaderboard-points',
   accuracy: 'leaderboard-accuracy',
+  blunder_check_points: 'leaderboard-blunder-check-points',
+  blunder_check_score: 'leaderboard-blunder-check-score',
 };
 
-const EMPTY_BOARD_COPY: Record<LeaderboardBoardKind, string> = {
-  points: EMPTY_WEEK_COPY,
-  accuracy: ACCURACY_EMPTY_COPY,
+/** Umami `tab-switch` target per mode. */
+const LEADERBOARD_MODE_TARGET: Record<LeaderboardMode, LeaderboardTabId> = {
+  puzzles: 'leaderboard-mode-puzzles',
+  blunder_check: 'leaderboard-mode-blunder-check',
+};
+
+/** Slug used in the testid of each board tab; the mode switch items carry their full testid. */
+const BOARD_TESTID_SLUG: Record<LeaderboardBoardKind, string> = {
+  points: 'points',
+  accuracy: 'accuracy',
+  blunder_check_points: 'blunder-check-points',
+  blunder_check_score: 'blunder-check-score',
+};
+const MODE_TESTID: Record<LeaderboardMode, string> = {
+  puzzles: 'train-leaderboard-mode-puzzles',
+  blunder_check: 'train-leaderboard-mode-blunder-check',
+};
+
+/** Row count icon: a puzzle piece for puzzles, the Blunder check tab's shield for sequences. */
+const BOARD_COUNT_ICON: Record<LeaderboardBoardKind, LucideIcon> = {
+  points: Puzzle,
+  accuracy: Puzzle,
+  blunder_check_points: ShieldCheck,
+  blunder_check_score: ShieldCheck,
 };
 
 export interface TrainLeaderboardCardProps {
@@ -105,6 +139,7 @@ function LeaderboardRowItem({
   index,
   qualifyDividerBefore,
 }: LeaderboardRowItemProps): ReactElement {
+  const CountIcon = BOARD_COUNT_ICON[kind];
   return (
     <>
       {row.gap_before && <LeaderboardGap testId="train-leaderboard-gap" />}
@@ -115,7 +150,7 @@ function LeaderboardRowItem({
           data-testid="train-leaderboard-qualify-divider"
           className="mt-1 border-t border-border px-2 pt-1.5 text-sm text-muted-foreground"
         >
-          {NOT_YET_QUALIFIED_DIVIDER_COPY}
+          {qualifyDividerCopy(kind)}
         </li>
       )}
       <li
@@ -149,14 +184,14 @@ function LeaderboardRowItem({
             SVG in an items-baseline row has no text baseline and gets lifted). */}
         <span
           role="img"
-          aria-label={puzzleCountLabel(row.puzzles)}
+          aria-label={boardCountLabel(kind, row.puzzles)}
           data-testid={`train-leaderboard-row-${index}-puzzles`}
           // Bug fix: the width followed the digit count, so the values to its left
           // lost their right alignment between rows (424 pts vs 178 pts). Fixed width,
           // icon left and count right, keeps both columns straight.
           className="inline-flex w-12 shrink-0 items-baseline justify-between text-muted-foreground"
         >
-          <Puzzle aria-hidden="true" className="size-3.5 self-center" />
+          <CountIcon aria-hidden="true" className="size-3.5 self-center" />
           <span className="tabular-nums">{row.puzzles}</span>
         </span>
       </li>
@@ -190,12 +225,49 @@ function LeaderboardRows({
   );
 }
 
-interface LeaderboardTabsProps {
-  tab: LeaderboardBoardKind;
+interface LeaderboardModeSwitchProps {
+  mode: LeaderboardMode;
   onChange: (next: string) => void;
 }
 
-function LeaderboardTabs({ tab, onChange }: LeaderboardTabsProps): ReactElement {
+/** Puzzles | Blunder check: which game's boards the card shows (D-14). */
+function LeaderboardModeSwitch({ mode, onChange }: LeaderboardModeSwitchProps): ReactElement {
+  return (
+    <ToggleGroup
+      type="single"
+      value={mode}
+      onValueChange={onChange}
+      variant="outline"
+      size="sm"
+      spacing={TRAIN_FILTER_PILL_SPACING}
+      className="mb-2"
+      aria-label="Leaderboard mode"
+      data-testid="train-leaderboard-mode"
+    >
+      {(Object.keys(MODE_LABEL) as LeaderboardMode[]).map((value) => (
+        <ToggleGroupItem
+          key={value}
+          value={value}
+          data-testid={MODE_TESTID[value]}
+          className={TRAIN_FILTER_PILL_CLASS}
+        >
+          {MODE_LABEL[value]}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
+
+const LEADERBOARD_TABS: readonly LeaderboardTab[] = ['points', 'accuracy'];
+
+interface LeaderboardTabsProps {
+  mode: LeaderboardMode;
+  tab: LeaderboardTab;
+  onChange: (next: string) => void;
+}
+
+/** The mode's two board pills: Points | Accuracy, or Points | Score %. */
+function LeaderboardTabs({ mode, tab, onChange }: LeaderboardTabsProps): ReactElement {
   return (
     <ToggleGroup
       type="single"
@@ -208,32 +280,31 @@ function LeaderboardTabs({ tab, onChange }: LeaderboardTabsProps): ReactElement 
       aria-label="Leaderboard"
       data-testid="train-leaderboard-tabs"
     >
-      <ToggleGroupItem
-        value="points"
-        data-testid="train-leaderboard-tab-points"
-        className={TRAIN_FILTER_PILL_CLASS}
-      >
-        Points
-      </ToggleGroupItem>
-      <ToggleGroupItem
-        value="accuracy"
-        data-testid="train-leaderboard-tab-accuracy"
-        className={TRAIN_FILTER_PILL_CLASS}
-      >
-        Accuracy
-      </ToggleGroupItem>
+      {LEADERBOARD_TABS.map((value) => {
+        const kind = boardKindFor(mode, value);
+        return (
+          <ToggleGroupItem
+            key={value}
+            value={value}
+            data-testid={`train-leaderboard-tab-${BOARD_TESTID_SLUG[kind]}`}
+            className={TRAIN_FILTER_PILL_CLASS}
+          >
+            {BOARD_TAB_LABEL[kind]}
+          </ToggleGroupItem>
+        );
+      })}
     </ToggleGroup>
   );
 }
 
 function LeaderboardHint({
-  tab,
+  kind,
   data,
 }: {
-  tab: LeaderboardBoardKind;
+  kind: LeaderboardBoardKind;
   data: TrainLeaderboardResponse;
 }): ReactElement | null {
-  const hint = viewerHint(tab, data);
+  const hint = viewerHint(kind, data);
   if (hint === null) return null;
   return (
     <p data-testid={`train-leaderboard-${hint.id}`} className="mt-2 text-sm text-muted-foreground">
@@ -243,28 +314,28 @@ function LeaderboardHint({
 }
 
 function LeaderboardBoardView({
-  tab,
+  kind,
   data,
   isGuest,
 }: {
-  tab: LeaderboardBoardKind;
+  kind: LeaderboardBoardKind;
   data: TrainLeaderboardResponse;
   isGuest: boolean;
 }): ReactElement {
-  const rows = data[tab].rows;
+  const rows = data[kind].rows;
   return (
     <>
       {rows.length === 0 ? (
         <p data-testid="train-leaderboard-empty" className="text-sm text-muted-foreground">
-          {EMPTY_BOARD_COPY[tab]}
+          {EMPTY_BOARD_COPY[kind]}
         </p>
       ) : (
-        <LeaderboardRows rows={rows} kind={tab} />
+        <LeaderboardRows rows={rows} kind={kind} />
       )}
-      <LeaderboardHint tab={tab} data={data} />
+      <LeaderboardHint kind={kind} data={data} />
       {/* The sign-up nudge is about this week's board, so it sits above last week's line. */}
       {isGuest && <LeaderboardGuestCta />}
-      <LastWeekPodium lastWeek={data[tab].last_week} />
+      <LastWeekPodium lastWeek={data[kind].last_week} />
     </>
   );
 }
@@ -338,7 +409,9 @@ export interface TrainLeaderboardCardViewProps {
   isError: boolean;
   /** Seconds to the deadline, or null before data arrives (header countdown). */
   secondsRemaining: number | null;
-  tab: LeaderboardBoardKind;
+  mode: LeaderboardMode;
+  tab: LeaderboardTab;
+  onModeChange: (value: string) => void;
   onTabChange: (value: string) => void;
   isGuest: boolean;
 }
@@ -354,7 +427,9 @@ export function TrainLeaderboardCardView({
   isPending,
   isError,
   secondsRemaining,
+  mode,
   tab,
+  onModeChange,
   onTabChange,
   isGuest,
 }: TrainLeaderboardCardViewProps): ReactElement {
@@ -364,14 +439,24 @@ export function TrainLeaderboardCardView({
 
   return (
     <>
-      {showTabs && <LeaderboardTabs tab={tab} onChange={onTabChange} />}
+      {showTabs && <LeaderboardModeSwitch mode={mode} onChange={onModeChange} />}
+      {showTabs && <LeaderboardTabs mode={mode} tab={tab} onChange={onTabChange} />}
       <Card as="section" className="w-full" data-testid="train-leaderboard-card">
         <CardHeader as="h2">
           This week
           <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
             <div className="space-y-1">
-              <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
-              <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+              {mode === 'puzzles' ? (
+                <>
+                  <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
+                  <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+                </>
+              ) : (
+                <>
+                  <p>{LEADERBOARD_INFO_BLUNDER_CHECK_POINTS_COPY}</p>
+                  <p>{LEADERBOARD_INFO_BLUNDER_CHECK_SCORE_COPY}</p>
+                </>
+              )}
               <p>{LEADERBOARD_INFO_MEDALS_COPY}</p>
               {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
               {!isGuest && (
@@ -400,7 +485,9 @@ export function TrainLeaderboardCardView({
           {!isPending && (isError || data === undefined) && (
             <LoadError resource="the leaderboard" variant="inline" data-testid="train-leaderboard-error" />
           )}
-          {data !== undefined && <LeaderboardBoardView tab={tab} data={data} isGuest={isGuest} />}
+          {data !== undefined && (
+            <LeaderboardBoardView kind={boardKindFor(mode, tab)} data={data} isGuest={isGuest} />
+          )}
         </CardBody>
       </Card>
     </>
@@ -410,17 +497,28 @@ export function TrainLeaderboardCardView({
 export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): ReactElement {
   const { data, isPending, isError, dataUpdatedAt } = useTrainLeaderboard();
   const remaining = useLeaderboardCountdown(data, dataUpdatedAt);
-  const [tab, setTab] = useState<LeaderboardBoardKind>(readLeaderboardTab);
+  const [mode, setMode] = useState<LeaderboardMode>(readLeaderboardMode);
+  const [tab, setTab] = useState<LeaderboardTab>(readLeaderboardTab);
+
+  const handleModeChange = (value: string): void => {
+    // Radix single-select emits '' when the active item is re-tapped: keep the
+    // current mode and fire nothing (no write, no Umami event).
+    if (value === '') return;
+    const next = parseLeaderboardMode(value);
+    if (next === mode) return;
+    setMode(next);
+    writeLeaderboardMode(next);
+    trackFeature('tab-switch', { target: LEADERBOARD_MODE_TARGET[next] });
+  };
 
   const handleTabChange = (value: string): void => {
-    // Radix single-select emits '' when the active item is re-tapped: keep the
-    // current tab and fire nothing (no write, no Umami event).
+    // Same re-tap rule as the mode switch: '' keeps the tab and fires nothing.
     if (value === '') return;
     const next = parseLeaderboardTab(value);
     if (next === tab) return;
     setTab(next);
     writeLeaderboardTab(next);
-    trackFeature('tab-switch', { target: LEADERBOARD_TAB_TARGET[next] });
+    trackFeature('tab-switch', { target: LEADERBOARD_TAB_TARGET[boardKindFor(mode, next)] });
   };
 
   return (
@@ -429,7 +527,9 @@ export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): Re
       isPending={isPending}
       isError={isError}
       secondsRemaining={remaining}
+      mode={mode}
       tab={tab}
+      onModeChange={handleModeChange}
       onTabChange={handleTabChange}
       isGuest={isGuest}
     />

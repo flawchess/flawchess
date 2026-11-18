@@ -1578,6 +1578,7 @@ describe('D-19: no Umami event for blunder check', () => {
   // Built from parts so this file does not contain the strings it forbids elsewhere.
   const ANALYTICS_IMPORT = ['@/lib', 'analytics'].join('/');
   const UMAMI_ATTRIBUTE = ['data-umami', 'event'].join('-');
+  const END_SCREEN_FILE = 'BlunderCheckEndScreen.tsx';
 
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -1586,7 +1587,7 @@ describe('D-19: no Umami event for blunder check', () => {
     });
   }
 
-  it('no blunder-check source imports the analytics module or sets an Umami attribute', () => {
+  it('no blunder-check source imports the analytics module (bar the end screen link) or sets an Umami attribute', () => {
     const files = [
       ...sourceFiles(join(SRC, 'components/train/blunder-check')),
       join(SRC, 'hooks/useBlunderCheckSession.ts'),
@@ -1596,7 +1597,9 @@ describe('D-19: no Umami event for blunder check', () => {
     expect(files.length).toBeGreaterThan(3);
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
-      expect(source, file).not.toContain(ANALYTICS_IMPORT);
+      // Phase 251 (D-24): the end screen's "See the leaderboard" link is a browser-only navigation,
+      // not a DB-held fact, so it alone may send a nav-click. The data-attribute rule still holds.
+      if (!file.endsWith(END_SCREEN_FILE)) expect(source, file).not.toContain(ANALYTICS_IMPORT);
       expect(source, file).not.toContain(UMAMI_ATTRIBUTE);
     }
   });

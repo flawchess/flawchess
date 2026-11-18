@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_LEADERBOARD_MODE,
   DEFAULT_LEADERBOARD_TAB,
+  LEADERBOARD_MODE_STORAGE_KEY,
   LEADERBOARD_TAB_STORAGE_KEY,
   ACCURACY_NOT_ENTERED_LINE,
+  BLUNDER_CHECK_NOT_YET_QUALIFIED_DIVIDER_COPY,
+  BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS,
+  boardCountLabel,
+  boardKindFor,
   boardValueLabel,
   firstUnrankedRowIndex,
+  parseLeaderboardMode,
   parseLeaderboardTab,
+  qualifyDividerCopy,
+  readLeaderboardMode,
+  sequenceCountLabel,
+  writeLeaderboardMode,
   formatCountdown,
   NOT_YET_QUALIFIED_DIVIDER_COPY,
   puzzleCountLabel,
@@ -147,6 +158,8 @@ function response(points: Partial<LeaderboardBoard>, accuracy: Partial<Leaderboa
     seconds_remaining: 1000,
     points: { ...EMPTY_BOARD, ...points },
     accuracy: { ...EMPTY_BOARD, ...accuracy },
+    blunder_check_points: EMPTY_BOARD,
+    blunder_check_score: EMPTY_BOARD,
   };
 }
 
@@ -338,5 +351,92 @@ describe('scoreRankLines, not-entered and hidden rules', () => {
 
   it('a public viewer gets no hidden line', () => {
     expect(scoreRankLines(response({ viewer: VIEWER }, {})).some((l) => l.id === 'hidden')).toBe(false);
+  });
+});
+
+describe('Blunder check board helpers (Phase 251)', () => {
+  it('boardValueLabel: points boards read pts, percent boards read %', () => {
+    expect(boardValueLabel('blunder_check_points', 96)).toBe('96 pts');
+    expect(boardValueLabel('blunder_check_score', 91)).toBe('91%');
+  });
+
+  it('count labels name puzzles on puzzle boards and sequences on Blunder check boards', () => {
+    expect(sequenceCountLabel(1)).toBe('1 sequence');
+    expect(sequenceCountLabel(23)).toBe('23 sequences');
+    expect(boardCountLabel('points', 2)).toBe('2 puzzles');
+    expect(boardCountLabel('accuracy', 1)).toBe('1 puzzle');
+    expect(boardCountLabel('blunder_check_points', 2)).toBe('2 sequences');
+    expect(boardCountLabel('blunder_check_score', 1)).toBe('1 sequence');
+  });
+
+  it('boardKindFor maps (mode, slot) to the board', () => {
+    expect(boardKindFor('puzzles', 'points')).toBe('points');
+    expect(boardKindFor('puzzles', 'accuracy')).toBe('accuracy');
+    expect(boardKindFor('blunder_check', 'points')).toBe('blunder_check_points');
+    expect(boardKindFor('blunder_check', 'accuracy')).toBe('blunder_check_score');
+  });
+
+  it('mirrors the backend 18-window Score % threshold (BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS)', () => {
+    // Parity with app/services/train_leaderboard.py, pinned there by
+    // test_bc_board_qualify_constant_is_eighteen_windows: change both or neither.
+    expect(BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS).toBe(18);
+    expect(BLUNDER_CHECK_NOT_YET_QUALIFIED_DIVIDER_COPY).toBe('Not yet qualified (18+ sequences)');
+  });
+
+  it('qualifyDividerCopy: puzzles say puzzles, Score % says sequences', () => {
+    expect(qualifyDividerCopy('accuracy')).toBe(NOT_YET_QUALIFIED_DIVIDER_COPY);
+    expect(qualifyDividerCopy('blunder_check_score')).toBe(BLUNDER_CHECK_NOT_YET_QUALIFIED_DIVIDER_COPY);
+  });
+
+  it('viewerHint: Blunder check boards get their own invitation, and none once the viewer is on the board', () => {
+    const empty = response({}, {});
+    expect(viewerHint('blunder_check_points', empty)?.text).toContain('Blunder check');
+    expect(viewerHint('blunder_check_score', empty)?.id).toBe('enter-hint');
+    const onBoard = { ...empty, blunder_check_points: { ...EMPTY_BOARD, viewer: VIEWER } };
+    expect(viewerHint('blunder_check_points', onBoard)).toBeNull();
+    // A puzzle-board viewer never changes the Blunder check hint.
+    const puzzleOnly = response({ viewer: VIEWER }, { viewer: VIEWER });
+    expect(viewerHint('blunder_check_score', puzzleOnly)?.id).toBe('enter-hint');
+  });
+});
+
+describe('parseLeaderboardMode / readLeaderboardMode / writeLeaderboardMode', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it.each(['puzzles', 'blunder_check'] as const)('passes %s through', (mode) => {
+    expect(parseLeaderboardMode(mode)).toBe(mode);
+  });
+
+  it.each([null, '', 'Puzzles', 'blunder-check', 'points', ' puzzles'])('falls back to puzzles for %j', (value) => {
+    expect(parseLeaderboardMode(value)).toBe('puzzles');
+    expect(DEFAULT_LEADERBOARD_MODE).toBe('puzzles');
+  });
+
+  it('round-trips under the documented key, separate from the tab key', () => {
+    expect(readLeaderboardMode()).toBe('puzzles');
+    writeLeaderboardMode('blunder_check');
+    expect(LEADERBOARD_MODE_STORAGE_KEY).toBe('flawchess_train_leaderboard_mode');
+    expect(localStorage.getItem(LEADERBOARD_MODE_STORAGE_KEY)).toBe('blunder_check');
+    expect(localStorage.getItem(LEADERBOARD_TAB_STORAGE_KEY)).toBeNull();
+    expect(readLeaderboardMode()).toBe('blunder_check');
+  });
+
+  it('returns puzzles for an unknown stored value and when getItem throws', () => {
+    localStorage.setItem(LEADERBOARD_MODE_STORAGE_KEY, 'chess960');
+    expect(readLeaderboardMode()).toBe('puzzles');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(readLeaderboardMode()).toBe('puzzles');
+  });
+
+  it('swallows a throwing setItem', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    expect(() => writeLeaderboardMode('blunder_check')).not.toThrow();
   });
 });
