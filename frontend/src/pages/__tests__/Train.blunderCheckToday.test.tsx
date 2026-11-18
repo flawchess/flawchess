@@ -11,6 +11,7 @@ import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing
 import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
+import { apiClient } from '@/api/client';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
 import type { BlunderCheckSessionResponse, SessionResultResponse } from '@/types/blunderCheck';
@@ -32,9 +33,16 @@ const PROFILE = {
   feature_route: null,
 } as unknown as UserProfile;
 
+// Mutable so the D-21 cases can put the discovery dot on the Blunder Check Start.
+const profileState = vi.hoisted(() => ({ featureRoute: null as UserProfile['feature_route'] }));
+
 vi.mock('@/hooks/useUserProfile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/hooks/useUserProfile')>()),
-  useUserProfile: () => ({ data: PROFILE, isPending: false, isError: false }),
+  useUserProfile: () => ({
+    data: { ...PROFILE, feature_route: profileState.featureRoute },
+    isPending: false,
+    isError: false,
+  }),
   hasImportedGames: () => true,
 }));
 
@@ -241,6 +249,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  profileState.featureRoute = null;
+  vi.restoreAllMocks();
   cleanup();
   vi.unstubAllGlobals();
   sessionStorage.clear();
@@ -294,5 +304,55 @@ describe('Train: blunder check from the Today card (D-11, D-18, D-20)', () => {
     fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
 
     await waitFor(() => expect(screen.getByTestId('btn-train-blunder-check-start')).not.toBeNull());
+  });
+});
+
+describe('Train: blunder-check discovery dot (D-21)', () => {
+  // Every step before blunder-check resolved, so the dot sits on the Blunder Check Start.
+  const ROUTE_BEFORE_BLUNDER_CHECK = [
+    'import',
+    'train',
+    'bots',
+    'openings',
+    'openings-played-as',
+    'openings-filters',
+    'openings-stats',
+    'endgames',
+    'library-stats',
+  ];
+
+  function routeWithBlunderCheckPending(): UserProfile['feature_route'] {
+    return {
+      steps: Object.fromEntries(
+        ROUTE_BEFORE_BLUNDER_CHECK.map((id) => [id, { status: 'done', date: '2026-11-15', with_dot: false }]),
+      ),
+      current: { step: 'blunder-check', since_days: 1 },
+    } as UserProfile['feature_route'];
+  }
+
+  it('shows the dot on the Blunder Check Start and records the step as done on press', async () => {
+    profileState.featureRoute = routeWithBlunderCheckPending();
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: null });
+    renderTrainPage();
+
+    const start = await screen.findByTestId('btn-train-blunder-check-start');
+    expect(start.querySelector('[data-testid="train-blunder-check-notification-dot"]')).not.toBeNull();
+    fireEvent.click(start);
+
+    expect(post).toHaveBeenCalledWith('/users/me/feature-route', { action: 'done', step: 'blunder-check' });
+    await waitFor(() => expect(screen.getByTestId('blunder-check-session')).not.toBeNull());
+  });
+
+  it('shows no dot and posts nothing while the route is elsewhere', async () => {
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: null });
+    renderTrainPage();
+
+    const start = await screen.findByTestId('btn-train-blunder-check-start');
+    expect(screen.queryByTestId('train-blunder-check-notification-dot')).toBeNull();
+    fireEvent.click(start);
+    expect(post).not.toHaveBeenCalledWith(
+      '/users/me/feature-route',
+      expect.objectContaining({ step: 'blunder-check' }),
+    );
   });
 });
