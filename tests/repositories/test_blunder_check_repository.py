@@ -19,6 +19,7 @@ import datetime
 
 import pytest
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -691,6 +692,154 @@ async def test_foreign_pick_uses_drill_expression(test_engine) -> None:
         assert set(picked) & set(seeded) == {games["above"]}
     finally:
         await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_own_pick_gates_drill_to_owner_side(test_engine) -> None:
+    """L-01: the same high-scoring blunder row qualifies a white-owner game but not a black-owner one.
+
+    Plies are even (White's moves): the owner's blunder in the white game, the OPPONENT's row
+    in the black game, where it carries a full set of facts and the same drill score.
+    """
+    ply = _TRACER_PLIES[1]
+    user_id, _ = await register_user("bc-own-gate", beta=True, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    white_game = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        user_color="white",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    black_game = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        user_color="black",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            required = await repo.pick_own_game_ids(
+                session, user_id=user_id, limit=10, exclude_ids=[], require_facepalm=True
+            )
+            # The black game's row really scores high, so only the parity gate excludes it.
+            opponent_score = (
+                await session.execute(
+                    select(facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
+                        GameFlaw.game_id == black_game, GameFlaw.ply == ply
+                    )
+                )
+            ).scalar_one()
+        assert opponent_score >= FACEPALM_SCORE_MIN
+        assert set(required) == {white_game}
+    finally:
+        await delete_games(test_engine, [white_game, black_game])
+
+
+@pytest.mark.asyncio
+async def test_foreign_pick_gates_drill_to_owner_side(test_engine) -> None:
+    """L-01: the gate is on the game OWNER's color, never the requester's.
+
+    The caller (a different user) still gets the white-owner game whose OWNER blunder
+    qualifies, and never the black-owner game whose only high-scoring blunder is the opponent's.
+    """
+    ply = _TRACER_PLIES[1]
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-fpg-caller")
+    owner_id, _ = await register_user("bc-fpg-owner", beta=False, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    white_game = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        user_color="white",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    black_game = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        user_color="black",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    seeded = [caller_game, white_game, black_game]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            picked = await repo.pick_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                raw_low=1400,
+                raw_high=1600,
+                limit=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+                require_facepalm=True,
+            )
+        assert set(picked) & set(seeded) == {white_game}
+    finally:
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_load_blunder_flaws_gates_to_owner_side(test_engine) -> None:
+    """L-01: an opponent blunder scoring >= FACEPALM_SCORE_MIN is never loaded; the owner control is."""
+    ply = _TRACER_PLIES[1]
+    user_id, _ = await register_user("bc-load-gate", beta=True, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    white_game = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        user_color="white",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    black_game = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        user_color="black",
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=ply)],
+    )
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            flaws = await repo.load_blunder_flaws(session, [white_game, black_game])
+            opponent_score = (
+                await session.execute(
+                    select(facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
+                        GameFlaw.game_id == black_game, GameFlaw.ply == ply
+                    )
+                )
+            ).scalar_one()
+        assert opponent_score >= FACEPALM_SCORE_MIN
+        assert black_game not in flaws
+        assert [f.ply for f in flaws[white_game]] == [ply]
+        assert flaws[white_game][0].facepalm_score == pytest.approx(
+            SEED_FACEPALM_SCORE, abs=SEED_FACEPALM_TOLERANCE
+        )
+    finally:
+        await delete_games(test_engine, [white_game, black_game])
+
+
+def test_unserved_exists_shape_keeps_one_games_reference_and_owner_pin() -> None:
+    """L-01 / T-261118v32-03: the EXISTS gets a parity gate without a second games join.
+
+    The own pick's selective game_flaws.user_id pin stays, and the games table appears in
+    exactly one FROM (the outer select), never inside the EXISTS.
+    """
+    stmt = select(Game.id).where(
+        repo._unserved_qualifying_blunder_exists(Game.id, Game.user_color, 1, flaw_owner_id=1)
+    )
+    sql = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "game_flaws.user_id =" in sql
+    # The parity gate reads the OUTER games row's color (correlated, not joined in).
+    assert "game_flaws.ply %%" in sql
+    assert "games.user_color = " in sql
+    assert sql.count("FROM games") == 1
+    assert "JOIN games" not in sql
+    assert "game_flaws.game_id = games.id" in sql
 
 
 @pytest.mark.asyncio

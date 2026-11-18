@@ -14,9 +14,10 @@ Pipeline for one game, with no AsyncSession open during inference:
    per scorable blunder of EITHER side (the post-blunder position at the blunderer's own pinned
    Elo, which yields the Phase 250 reply spread; opponent blunders were added by SEED-261114-iuv
    Part A). The line facts (``line_facts`` on the stored line at ply + 1, ``best_line_facts`` on
-   the best line at the flaw ply, Phase 254 D-09) are derived for user-side blunders only: the
-   drill reader and the library reader have no side gate and rely on opponent rows scoring NULL in
-   ``facepalm_expr``, so opponent rows keep the four line facts NULL. No score is stored (254
+   the best line at the flaw ply, Phase 254 D-09) are derived for blunders of EITHER side with the
+   same derivation (SEED-261114-iuv Part A step 4), so opponent blunders get a facepalm score in
+   ``facepalm_expr`` too; every reader that selects or displays the score gates on the game
+   owner's side (``player_only_gate``). No score is stored (254
    D-02); the report's scored count is computed in memory. The same flaw-position policy also
    yields the two pre-blunder inputs (Phase 254 D-08): ``maia_best_prob`` (the probability of the
    best move) and ``maia_pre_spread`` (the effective number of moves there), so the inference
@@ -32,13 +33,13 @@ The stamps ``games.maia_flaws_completed_at``, ``games.facepalm_spread_completed_
 ``games.facepalm_line_completed_at`` and ``games.facepalm_pre_completed_at`` are only ever set
 together in full mode, when a Maia
 session was loaded AND the pass completed without an exception (D-05 / D-09 guardrail, decided
-from ``is_maia_available()``, never from row counts). Games with zero user-side blunders are
+from ``is_maia_available()``, never from row counts). Games with zero blunders are
 stamped too.
 
-Phase 250 adds two backfill-only modes (D-08, D-18) that touch user-side blunders only: spread
-mode (one post-blunder inference per blunder; writes the facepalm keys from the STORED
-``maia_played_prob``) and line mode (no Maia at all; recomputes the line keys from the stored
-lines). The facepalm keys are the five fact columns of ``FACEPALM_COLUMNS`` (reply spread, the
+Phase 250 adds two backfill-only modes (D-08, D-18): spread mode (user-side blunders only; one
+post-blunder inference per blunder; writes the facepalm keys from the STORED
+``maia_played_prob``) and line mode (blunders of BOTH sides since SEED-261114-iuv Part A step 4; no
+Maia at all; recomputes the line keys from the stored lines). The facepalm keys are the five fact columns of ``FACEPALM_COLUMNS`` (reply spread, the
 played line's mate ply, both signed material arrays and the best line's mate ply); the stored score
 and the five legacy line-loss columns are no longer written (254 D-02, D-19), the score lives only
 in the query-time expression.
@@ -52,7 +53,8 @@ SEED-261114-iuv Part A adds a fourth backfill-only mode, opponent: it fills the 
 (reply spread, best-move probability, pre spread) on opponent-blunder rows the hook wrote before
 opponent blunders were scored. Rows are selected by row (stored played probability set, reply
 spread NULL), one pre-blunder plus one post-blunder inference each at the mover's pinned Elo; it
-writes only those three columns and stamps nothing.
+writes only those three columns and stamps nothing. The line facts of opponent blunders come from
+full mode and the line pass, never from opponent mode.
 """
 
 from __future__ import annotations
@@ -121,11 +123,12 @@ _PV_SEPARATOR: str = " "
 
 ScoringSource = Literal["full_eval_drain", "remote_eval_worker", "flaw_blob_submit", "backfill"]
 GameOutcome = Literal["stamped", "fingerprint_changed", "already_stamped", "game_missing"]
-# "full": the base value, the facepalm keys and the two pre-blunder keys per flaw, plus the four
-# stamps. "spread" (Phase 250 D-08): the facepalm keys of user-side blunders from one post-blunder
+# "full": the base value, the facepalm keys (line facts for blunders of either side) and the two
+# pre-blunder keys per flaw, plus the four stamps.
+# "spread" (Phase 250 D-08): the facepalm keys of user-side blunders from one post-blunder
 # inference each, reading the stored maia_played_prob; stamps the spread and line stamps.
-# "line" (Phase 250 D-18): the line keys of user-side blunders from the stored lines; no Maia,
-# stamps only the line stamp (cutoff-aware).
+# "line" (Phase 250 D-18): the line keys of blunders of BOTH sides from the stored lines
+# (SEED-261114-iuv Part A step 4); no Maia, stamps only the line stamp (cutoff-aware).
 # "pre" (Phase 254 D-08): the two pre-blunder Maia keys of user-side blunders from one inference at
 # the pre-blunder position; stamps only the pre stamp. Neither spread nor line writes the pre keys.
 # "opponent" (SEED-261114-iuv Part A): opponent blunders only, the three Maia keys (reply spread,
@@ -211,8 +214,8 @@ class GameMaiaScore:
     reasons: Counter[MaiaReason]
     # Counts over in-scope (user-side blunder) flaws, for the backfill report.
     user_blunders: int = 0
-    # Rows that carry a reply spread / whose facts score non-None in memory with the Python twin at
-    # FACEPALM_DRILL_LAMBDA (spread, line and full modes; no score is stored, 254 D-01, D-02).
+    # User rows that carry a reply spread / whose facts score non-None in memory with the Python twin
+    # at FACEPALM_DRILL_LAMBDA (spread, line and full modes; no score is stored, 254 D-01, D-02).
     spreads_scored: int = 0
     scores_set: int = 0
     # Rows that carry a pre-blunder spread (254 D-08; full and pre modes).
@@ -222,6 +225,9 @@ class GameMaiaScore:
     opponent_blunders: int = 0
     opponent_spreads_scored: int = 0
     opponent_pre_scored: int = 0
+    # Opponent rows whose facts score non-None in memory at FACEPALM_DRILL_LAMBDA (full and line
+    # modes; the opponent counterpart of `scores_set`, which counts user rows only).
+    opponent_scores_set: int = 0
     # Decides which keys `rows` carry and which stamps the write sets.
     mode: ScoringMode = "full"
 
@@ -422,16 +428,21 @@ def _mover_elo(inputs: GameMaiaInputs, board: chess.Board) -> float | None:
     )
 
 
+def _is_blunder(flaw: FlawMaiaInput) -> bool:
+    """A blunder (severity 2) of either side, never a mistake."""
+    return flaw.severity == _SEVERITY_INT["blunder"]
+
+
 def _is_user_blunder(inputs: GameMaiaInputs, flaw: FlawMaiaInput) -> bool:
     """D-03: a blunder (severity 2) played by the game's user, never an opponent or a mistake."""
-    if flaw.severity != _SEVERITY_INT["blunder"]:
+    if not _is_blunder(flaw):
         return False
     return mover_is_white_at_ply(flaw.ply) == (inputs.user_color == "white")
 
 
 def _is_opponent_blunder(inputs: GameMaiaInputs, flaw: FlawMaiaInput) -> bool:
     """SEED-261114-iuv Part A: a blunder (severity 2) played by the game's opponent."""
-    return flaw.severity == _SEVERITY_INT["blunder"] and not _is_user_blunder(inputs, flaw)
+    return _is_blunder(flaw) and not _is_user_blunder(inputs, flaw)
 
 
 def _derive_reply_spread(
@@ -485,7 +496,7 @@ def _facepalm_values(
     flaw: FlawMaiaInput,
     spread: float | None,
 ) -> FacepalmStats:
-    """The facepalm columns of one user blunder (250 D-05, 254 D-09).
+    """The facepalm columns of one blunder of either side (250 D-05, 254 D-09).
 
     Line facts come from the pre-blunder board and the stored lines alone (no rating, no
     inference), so they are set whenever a line is usable: the played line (`line_facts` on the
@@ -508,7 +519,7 @@ def _flaw_board(flaw: FlawMaiaInput, boards: BoardsByPly) -> tuple[chess.Board, 
     """The (pre-push board, played UCI) of a flaw, else the reason it has none.
 
     The ply / fen guards, all run before any inference. They need no rating, so the line
-    facts of a user blunder can be derived from this alone.
+    facts of a blunder can be derived from this alone.
     """
     entry = boards.get(flaw.ply)
     if entry is None:
@@ -520,17 +531,16 @@ def _flaw_board(flaw: FlawMaiaInput, boards: BoardsByPly) -> tuple[chess.Board, 
 
 
 def _scope_facepalm(
-    inputs: GameMaiaInputs,
     flaw: FlawMaiaInput,
     board: chess.Board,
     played_uci: str,
     spread: float | None,
 ) -> FacepalmStats:
-    """D-06: facepalm values for a user-side blunder, all-None for every other flaw.
+    """D-06: facepalm values for a blunder of either side, all-None for every mistake.
 
     Used where the Maia pass produced nothing (no rating, no base stats), so the spread is NULL.
     """
-    if not _is_user_blunder(inputs, flaw):
+    if not _is_blunder(flaw):
         return null_facepalm_stats()
     return _facepalm_values(board, played_uci, flaw, spread)
 
@@ -571,11 +581,9 @@ def _opponent_maia_values(
 
     `elo` is the mover's (the opponent's) pinned Elo and `probs` the policy at the pre-blunder
     board. One extra inference (`_derive_reply_spread`, the post-blunder board) yields
-    maia_reply_spread; the two pre inputs come from `probs` for free. The four line facts stay
-    None on purpose: the drill reader (`load_blunder_flaws` and the unserved-blunder EXISTS in
-    app/repositories/blunder_check_repository.py) and the library reader
-    (`fetch_page_facepalm_scores` in app/repositories/library_repository.py) have no side gate and
-    rely on opponent rows scoring NULL in `facepalm_expr`.
+    maia_reply_spread; the two pre inputs come from `probs` for free. Only these three columns are
+    returned, because opponent mode writes only them: the four line facts of opponent blunders come
+    from full mode (`_derive_flaw_values`) and the line pass (`_line_row`), never from here.
     """
     spread, post_reasons = _derive_reply_spread(board, played_uci, elo)
     pre, pre_reasons = _pre_inputs(flaw, probs)
@@ -589,16 +597,15 @@ def _derive_flaw_values(
     flaw: FlawMaiaInput,
     boards: BoardsByPly,
 ) -> _FlawValues:
-    """Derive the base value plus, for a blunder, the facepalm and pre-blunder values.
+    """Derive the base value plus, for a blunder of either side, the facepalm and pre-blunder values.
 
     Exactly one full_policy call per scorable flaw (D-04) plus one per scorable blunder of either
     side (the post-blunder position): the guards that make a flaw unscorable all run
     before any inference. The board / fen guards run once and feed every output. The pre-blunder
     Maia inputs (254 D-08) come from the policy of the first call, so they cost no inference. A
-    user blunder with a board but no rating or no base stats still gets its line facts (they need
-    neither); the spread, the pre inputs and the score need the Maia pass. An opponent blunder gets
-    the spread and the pre inputs at the opponent's own Elo, never line facts (SEED-261114-iuv
-    Part A, `_opponent_maia_values`).
+    blunder with a board but no rating or no base stats still gets its line facts (they need
+    neither); the spread, the pre inputs and the score need the Maia pass. Opponent blunders take
+    the same path as user blunders, at the mover's own pinned Elo (SEED-261114-iuv Part A step 4).
     """
     entry = _flaw_board(flaw, boards)
     if isinstance(entry, str):
@@ -606,17 +613,14 @@ def _derive_flaw_values(
     board, played_uci = entry
     elo = _mover_elo(inputs, board)
     if elo is None:
-        facepalm = _scope_facepalm(inputs, flaw, board, played_uci, None)
+        facepalm = _scope_facepalm(flaw, board, played_uci, None)
         return _FlawValues(None, facepalm, null_maia_pre_stats(), ["no_rating"])
     probs = full_policy(board.fen(), elo)
     if probs is None:
         raise MaiaInferenceUnavailableError("full_policy returned None with Maia available")
     stats, reasons = compute_maia_flaw_stats(probs, played_uci=played_uci)
-    if stats is not None and _is_opponent_blunder(inputs, flaw):
-        facepalm, pre, opponent_reasons = _opponent_maia_values(flaw, board, played_uci, elo, probs)
-        return _FlawValues(stats, facepalm, pre, reasons + opponent_reasons)
-    if stats is None or not _is_user_blunder(inputs, flaw):
-        facepalm = _scope_facepalm(inputs, flaw, board, played_uci, None)
+    if stats is None or not _is_blunder(flaw):
+        facepalm = _scope_facepalm(flaw, board, played_uci, None)
         return _FlawValues(stats, facepalm, null_maia_pre_stats(), reasons)
     spread, post_reasons = _derive_reply_spread(board, played_uci, elo)
     pre, pre_reasons = _pre_inputs(flaw, probs)
@@ -639,8 +643,8 @@ def _flaw_row(
     its reasons.
 
     Mistakes and unscorable flaws carry NULL facepalm and pre values, so a full re-score also
-    clears stale values on a row since downgraded from blunder (D-08 precedent, 250 D-06). An
-    opponent blunder carries the spread and the pre keys but NULL line facts (`_opponent_maia_values`).
+    clears stale values on a row since downgraded from blunder (D-08 precedent, 250 D-06). A
+    blunder of either side carries the spread, the pre keys and the four line facts.
     """
     values = _FlawValues(None, null_facepalm_stats(), null_maia_pre_stats(), [])
     if game_reason is not None:
@@ -822,7 +826,7 @@ def _line_row(
     game_reason: MaiaReason | None,
     reasons: Counter[MaiaReason],
 ) -> dict[str, Any]:
-    """One line-mode row for a user-side blunder: PK plus the line fact keys (D-18).
+    """One line-mode row for a blunder of either side: PK plus the line fact keys (D-18).
 
     No Maia, no rating: the line facts come from the replayed board and the stored line. A flaw
     whose board cannot be rebuilt gets NULL line keys (the stored values would describe a
@@ -841,8 +845,9 @@ def _line_row(
     return row
 
 
-# Row builders of the user-blunder-only modes (full mode scores every flaw via `_flaw_row`).
-_USER_BLUNDER_ROW_BUILDERS = {
+# Row builders of the scoped modes (full mode scores every flaw via `_flaw_row`): spread and pre
+# score user blunders, line scores blunders of both sides (see `_scope_flaws`).
+_SCOPED_ROW_BUILDERS = {
     "spread": _spread_row,
     "line": _line_row,
     "pre": _pre_row,
@@ -887,23 +892,26 @@ def _score_rows(
     reasons: Counter[MaiaReason],
 ) -> tuple[list[FlawMaiaInput], list[dict[str, Any]]]:
     """(flaws in scope, one row per in-scope flaw): every flaw in full mode, the opponent blunders
-    to fill in opponent mode, user blunders only in the spread, line and pre modes."""
+    to fill in opponent mode, blunders of both sides in line mode, user blunders only in the spread
+    and pre modes."""
     flaws = _scope_flaws(inputs, mode)
     if mode == "full":
         return flaws, [_flaw_row(inputs, f, boards, game_reason, reasons) for f in flaws]
     if mode == "opponent":
         return flaws, [_opponent_row(inputs, f, boards, game_reason, reasons) for f in flaws]
-    build = _USER_BLUNDER_ROW_BUILDERS[mode]
+    build = _SCOPED_ROW_BUILDERS[mode]
     return flaws, [build(inputs, f, boards, game_reason, reasons) for f in flaws]
 
 
 def _scope_flaws(inputs: GameMaiaInputs, mode: ScoringMode) -> list[FlawMaiaInput]:
     """The flaws a mode scores: every flaw in full mode, the opponent blunders still to fill in
-    opponent mode, user-side blunders in the other modes."""
+    opponent mode, blunders of both sides in line mode, user-side blunders in spread and pre mode."""
     if mode == "full":
         return list(inputs.flaws)
     if mode == "opponent":
         return [f for f in inputs.flaws if _is_opponent_target(inputs, f)]
+    if mode == "line":
+        return [f for f in inputs.flaws if _is_blunder(f)]
     return [f for f in inputs.flaws if _is_user_blunder(inputs, f)]
 
 
@@ -921,12 +929,12 @@ def score_game(
 
     Full mode: every flaw yields a row carrying every key (the base value, the facepalm keys and
     the two pre keys; None for an unscorable or out-of-scope value), so a re-score never leaves
-    a stale value (D-08). Blunders of either side carry the reply spread and the pre keys; only
-    user-side blunders carry line facts (SEED-261114-iuv Part A).
+    a stale value (D-08). Blunders of either side carry the reply spread, the pre keys and the
+    line facts (SEED-261114-iuv Part A step 4); mistakes carry none.
     Spread mode (250 D-08): user-side blunders only, rows carry the facepalm keys; one
     post-blunder inference each (a game with none replays nothing and runs no inference, and
-    the PGN replay covers only the blunder plies). Line mode (250 D-18): user-side blunders
-    only, rows carry the line fact keys; never calls Maia. Pre mode (254 D-08):
+    the PGN replay covers only the blunder plies). Line mode (250 D-18): blunders of both sides,
+    rows carry the line fact keys; never calls Maia. Pre mode (254 D-08):
     user-side blunders only, rows carry the two pre-blunder keys; one pre-blunder inference each.
     Opponent mode (SEED-261114-iuv Part A): opponent blunders with a stored played probability and
     no stored reply spread only; rows carry the three Maia keys of `OPPONENT_ROW_COLUMNS` from one
@@ -942,8 +950,9 @@ def score_game(
     reasons: Counter[MaiaReason] = Counter()
     scope_flaws, rows = _score_rows(inputs, boards, game_reason, mode, reasons)
     pairs = list(zip(scope_flaws, rows, strict=True))
-    # Full mode rows of opponent blunders now carry the spread keys too, so the user counters
-    # count only user-blunder rows (the report's user numbers must not change).
+    # Full mode rows of opponent blunders carry spread, pre and line keys too, so the user counters
+    # count only user-blunder rows (the report's user numbers must not change); opponent rows go
+    # to their own counters.
     user_pairs = [(f, r) for f, r in pairs if _is_user_blunder(inputs, f)]
     opponent_pairs = [(f, r) for f, r in pairs if _is_opponent_blunder(inputs, f)]
     return GameMaiaScore(
@@ -954,11 +963,14 @@ def score_game(
         reasons=reasons,
         user_blunders=len(user_pairs),
         spreads_scored=_count_set(user_pairs, "maia_reply_spread"),
-        scores_set=sum(1 for flaw, row in pairs if _row_score(flaw, row) is not None),
+        scores_set=sum(1 for flaw, row in user_pairs if _row_score(flaw, row) is not None),
         pre_scored=_count_set(user_pairs, "maia_pre_spread"),
         opponent_blunders=len(opponent_pairs),
         opponent_spreads_scored=_count_set(opponent_pairs, "maia_reply_spread"),
         opponent_pre_scored=_count_set(opponent_pairs, "maia_pre_spread"),
+        opponent_scores_set=sum(
+            1 for flaw, row in opponent_pairs if _row_score(flaw, row) is not None
+        ),
         mode=mode,
     )
 

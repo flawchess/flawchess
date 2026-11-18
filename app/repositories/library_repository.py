@@ -1379,17 +1379,24 @@ async def fetch_page_facepalm_scores(
     Returns game_id -> {ply: score}; games without a scored row are absent. The score is the
     query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01, D-04: the eval-chart tooltip and
     the analysis move-list markers use the library lambda, never a Python computation). Rows
-    whose expression is NULL (unscored) are skipped. Both movers' rows are returned, like
-    fetch_page_game_flaws_both_colors, because the chart marks opponent plies too; callers gate
+    whose expression is NULL (unscored) are skipped. Returns owner-side plies only
+    (`player_only_gate` on the game's own user_color): opponent rows carry facts and score in
+    SQL since SEED-261114-iuv Part A step 4, but opponent markers keep a null facepalm score
+    because showing opponent scores is an open product decision (Part B). Callers still gate
     on severity. User-scoped via GameFlaw.user_id == user_id (IDOR).
     """
     if not game_ids:
         return {}
     score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
-    stmt = select(GameFlaw.game_id, GameFlaw.ply, score).where(
-        GameFlaw.user_id == user_id,
-        GameFlaw.game_id.in_(game_ids),
-        score.isnot(None),
+    stmt = (
+        select(GameFlaw.game_id, GameFlaw.ply, score)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.game_id.in_(game_ids),
+            player_only_gate(GameFlaw.ply, Game.user_color),  # owner side only
+            score.isnot(None),
+        )
     )
     result: dict[int, dict[int, float]] = {}
     for game_id, ply, value in (await session.execute(stmt)).all():

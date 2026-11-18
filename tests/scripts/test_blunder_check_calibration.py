@@ -113,6 +113,8 @@ HOLD_CP = 100
 GIFT_CP = 500
 OPPONENT_BLUNDER_PLY = 7
 USER_BLUNDER_PLY = 8
+# Drill score of the opponent row's facts: high, so only the parity gate can exclude it.
+OPPONENT_SEEDED_SCORE = 0.95
 SEEDED_PLAYED_PROB = 0.04
 SEEDED_SPREAD = 2.5
 SEEDED_PLAYED_3 = -3
@@ -222,6 +224,21 @@ async def make_game(
             await session.flush()
             for ply, is_miss in ((OPPONENT_BLUNDER_PLY, False), (USER_BLUNDER_PLY, True)):
                 is_user_ply = ply == USER_BLUNDER_PLY
+                # The opponent row carries a full scoring set of facts too (the scorer writes them
+                # since SEED-261114-iuv Part A step 4); only the owner-side parity gate in the
+                # sampler keeps it out of the batch.
+                facts: dict[str, Any] = (
+                    {
+                        "maia_played_prob": SEEDED_PLAYED_PROB,
+                        "maia_reply_spread": SEEDED_SPREAD,
+                        "played_line_material": _material(SEEDED_PLAYED_3),
+                        "best_line_material": _material(SEEDED_BEST_3),
+                        "maia_best_prob": SEEDED_BEST_PROB,
+                        "maia_pre_spread": SEEDED_PRE_SPREAD,
+                    }
+                    if is_user_ply
+                    else facepalm_fact_columns(OPPONENT_SEEDED_SCORE, lam=FACEPALM_DRILL_LAMBDA)
+                )
                 session.add(
                     GameFlaw(
                         user_id=user_id,
@@ -235,12 +252,7 @@ async def make_game(
                         is_reversed=False,
                         is_squandered=False,
                         fen="",
-                        maia_played_prob=SEEDED_PLAYED_PROB if is_user_ply else None,
-                        maia_reply_spread=SEEDED_SPREAD if is_user_ply else None,
-                        played_line_material=_material(SEEDED_PLAYED_3) if is_user_ply else None,
-                        best_line_material=_material(SEEDED_BEST_3) if is_user_ply else None,
-                        maia_best_prob=SEEDED_BEST_PROB if is_user_ply else None,
-                        maia_pre_spread=SEEDED_PRE_SPREAD if is_user_ply else None,
+                        **facts,
                     )
                 )
             await session.commit()

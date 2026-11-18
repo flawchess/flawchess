@@ -38,7 +38,8 @@ from app.repositories.game_flaws_repository import (
 from app.services.eval_apply import _classify_and_fill_oracle
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.best_move_candidates import pinned_elo_for_mover
-from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
+from app.repositories.library_repository import fetch_page_facepalm_scores
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_LIBRARY_LAMBDA
 from app.services.facepalm_score import FacepalmFacts, facepalm_expr, facepalm_score
 from app.services.line_material import LineFacts, best_line_facts, line_facts
 from app.services.maia_flaw_scoring import (
@@ -514,7 +515,7 @@ async def test_spread_scope_black_user_scores_only_own_blunders(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
     """D-03 for a black user: ply 3 and 7 (black blunders) get a spread; ply 4 (the opponent's
-    blunder) gets the spread too but never line facts (SEED-261114-iuv Part A)."""
+    blunder) gets the spread and its own line facts too (SEED-261114-iuv Part A)."""
     game_id = await make_game(flaw_plies=(3, 4, 7), user_color="black")
     replayed = _replayed(_PGN)
     assert await _score(session_factory, game_id)
@@ -526,7 +527,7 @@ async def test_spread_scope_black_user_scores_only_own_blunders(
         assert rows[ply]["maia_reply_spread"] == pytest.approx(
             reply_spread(fake_full_policy(post.fen(), 0.0)), rel=_REAL_RELATIVE_TOLERANCE
         )
-    _assert_opponent_spread_only(rows[4])
+    _assert_opponent_blunder_facts(rows[4], 4)
 
 
 @pytest.mark.parametrize(
@@ -538,7 +539,7 @@ async def test_spread_scope_black_user_scores_only_own_blunders(
         ("black", (3, 4, 7), 3, 4, 7),
     ],
 )
-async def test_spread_scope_mistakes_and_opponent_stay_null(
+async def test_spread_scope_mistakes_stay_null_opponent_blunder_is_scored(
     session_factory: async_sessionmaker[AsyncSession],
     make_game: MakeGame,
     user_color: Literal["white", "black"],
@@ -547,7 +548,7 @@ async def test_spread_scope_mistakes_and_opponent_stay_null(
     opponent_ply: int,
     scored_ply: int,
 ) -> None:
-    """D-03: mistakes never receive a spread; an opponent blunder gets the spread but no line
+    """D-03: mistakes never receive a spread; an opponent blunder gets the spread and its line
     facts (SEED-261114-iuv Part A), for both colors."""
     game_id = await make_game(
         flaw_plies=flaw_plies, user_color=user_color, severities={mistake_ply: 1}
@@ -555,7 +556,7 @@ async def test_spread_scope_mistakes_and_opponent_stay_null(
     assert await _score(session_factory, game_id)
     rows = await _facepalm_rows(session_factory, game_id)
     assert rows[mistake_ply] == _ALL_NULL_FACEPALM
-    _assert_opponent_spread_only(rows[opponent_ply])
+    _assert_opponent_blunder_facts(rows[opponent_ply], opponent_ply)
     assert rows[scored_ply]["maia_reply_spread"] is not None
 
 
@@ -704,7 +705,7 @@ async def test_game_without_user_blunders_stamped_with_opponent_calls_only(
     assert len(calls) == 3
     rows = await _facepalm_rows(session_factory, game_id)
     assert rows[2] == _ALL_NULL_FACEPALM
-    _assert_opponent_spread_only(rows[5])
+    _assert_opponent_blunder_facts(rows[5], 5)
     assert all(stamp is not None for stamp in (await _stamps(session_factory, game_id)).values())
 
 
@@ -748,15 +749,33 @@ async def test_severity_change_is_fingerprint_changed(
 # ---------------------------------------------------------------------------
 
 _ALL_NULL_FACEPALM: dict[str, None] = dict.fromkeys(FACEPALM_COLUMNS)
-# The four line-fact columns: user-side blunders only, an opponent row keeps them NULL.
+# The four line-fact columns: written for blunders of either side (SEED-261114-iuv Part A step 4).
 _LINE_FACT_COLUMNS: tuple[str, ...] = tuple(c for c in FACEPALM_COLUMNS if c != "maia_reply_spread")
 
 
-def _assert_opponent_spread_only(row: dict[str, Any]) -> None:
-    """An opponent blunder row: the reply spread set, the four line facts NULL."""
+def _expected_line_facts(
+    pgn: str, ply: int, stored_line: str | None, best_line: str | None = None
+) -> dict[str, Any]:
+    """The four line facts the module's own derivation yields for one blunder (NULLs without lines)."""
+    pre, played = _replayed(pgn)[ply]
+    played_facts = line_facts(pre, played, stored_line)
+    best_facts = best_line_facts(pre, best_line)
+    best_material = best_facts.material_array()
+    return {
+        **_fact_columns(played_facts),
+        "best_line_material": None if all(v is None for v in best_material) else best_material,
+        "best_line_mate_ply": best_facts.opponent_mate_ply,
+    }
+
+
+def _assert_opponent_blunder_facts(
+    row: dict[str, Any], ply: int, lines: dict[int, str] | None = None, pgn: str = _PGN
+) -> None:
+    """An opponent blunder row: the reply spread set and the four line facts equal the derivation
+    from the stored lines (`lines`, keyed by game_positions ply; NULL facts where none is stored)."""
     assert row["maia_reply_spread"] is not None
-    for column in _LINE_FACT_COLUMNS:
-        assert row[column] is None, column
+    expected = _expected_line_facts(pgn, ply, (lines or {}).get(ply + 1), (lines or {}).get(ply))
+    assert {column: row[column] for column in _LINE_FACT_COLUMNS} == expected
 
 
 # Exact binary fractions: the REAL columns round-trip equal.
@@ -784,12 +803,12 @@ async def _scotch_user_blunder(
     return game_id, pv
 
 
-async def test_facepalm_scope_non_user_rows_null(
+async def test_facepalm_scope_mistake_rows_null_blunders_of_both_sides_scored(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """D-06: a user mistake carries NULL in all eight columns and an opponent blunder carries NULL
-    line facts, even with a stored line and stale values on them (the opponent's stale spread is
-    replaced by the freshly computed one); the user blunder is scored."""
+    """D-06: a user mistake carries NULL in all eight columns (even with a stored line and stale
+    values on it); an opponent blunder gets freshly derived line facts and a fresh spread, replacing
+    the stale ones (SEED-261114-iuv Part A step 4); the user blunder is scored."""
     lines = {
         ply + 1: _mainline_line(_PGN, ply, _PGN_LAST_PLY - ply)
         for ply in (2, 4, 5)  # lines exist after every flaw, so a broken scope would score them
@@ -805,8 +824,9 @@ async def test_facepalm_scope_non_user_rows_null(
     assert await _score(session_factory, game_id)
     rows = await _facepalm_rows(session_factory, game_id)
     assert rows[2] == _ALL_NULL_FACEPALM, "user mistake"
-    _assert_opponent_spread_only(rows[5])
+    _assert_opponent_blunder_facts(rows[5], 5, lines)
     assert rows[5]["maia_reply_spread"] != _STALE_FACEPALM["maia_reply_spread"]
+    assert rows[5]["played_line_material"] != _STALE_FACEPALM["played_line_material"]
     pre, played = _replayed(_PGN)[4]
     assert rows[4]["maia_reply_spread"] is not None
     for column, value in _fact_columns(line_facts(pre, played, lines[5])).items():
@@ -907,6 +927,7 @@ _STORED_PLAYED_PROB = 0.0123
 # probability: a stored one keeps the row scored (254 WR-01 / 256 D-04).
 _STORED_BEST_PROB = 0.3
 _STORED_SPREAD = 3.5
+_STORED_PRE_SPREAD = 6.5
 
 
 async def _store_base_values(
@@ -1044,25 +1065,29 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
     make_game: MakeGame,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D-18: no full_policy call (a raising one proves it), no rating needed, rows are user blunders
-    only with PK + the line fact keys and never maia_reply_spread."""
+    """D-18: no full_policy call (a raising one proves it), no rating needed, rows are blunders of
+    BOTH sides (SEED-261114-iuv Part A step 4) with PK + the line fact keys and never
+    maia_reply_spread; a mistake gets no row."""
     pv = _mainline_line(_SCOTCH_PGN, _SCOTCH_FLAW_PLY, _STORED_LINE_PLIES)
+    opponent_ply = _SCOTCH_FLAW_PLY + 1
+    opponent_pv = _mainline_line(_SCOTCH_PGN, opponent_ply, _STORED_LINE_PLIES)
     game_id = await make_game(
         pgn=_SCOTCH_PGN,
-        flaw_plies=(2, _SCOTCH_FLAW_PLY, 5),
+        flaw_plies=(2, _SCOTCH_FLAW_PLY, opponent_ply),
         severities={2: 1},
         white_rating=None,
         black_rating=None,
-        pv={_SCOTCH_FLAW_PLY + 1: pv},
+        pv={_SCOTCH_FLAW_PLY + 1: pv, opponent_ply + 1: opponent_pv},
     )
-    await _store_base_values(
-        session_factory,
-        game_id,
-        _SCOTCH_FLAW_PLY,
-        maia_played_prob=_STORED_PLAYED_PROB,
-        maia_reply_spread=_STORED_SPREAD,
-        maia_best_prob=_STORED_BEST_PROB,
-    )
+    for stored_ply in (_SCOTCH_FLAW_PLY, opponent_ply):
+        await _store_base_values(
+            session_factory,
+            game_id,
+            stored_ply,
+            maia_played_prob=_STORED_PLAYED_PROB,
+            maia_reply_spread=_STORED_SPREAD,
+            maia_best_prob=_STORED_BEST_PROB,
+        )
 
     def _must_not_run(fen: str, elo: float) -> dict[str, float]:
         raise AssertionError("line mode must never run Maia")
@@ -1072,15 +1097,20 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
     score = score_game(await _inputs(session_factory, game_id), None, "line")
 
     assert score.mode == "line"
-    assert [row["ply"] for row in score.rows] == [_SCOTCH_FLAW_PLY]
-    row = score.rows[0]
-    assert set(row) == _PK_KEYS | _LINE_ROW_KEYS
-    assert "maia_reply_spread" not in row
+    assert [row["ply"] for row in score.rows] == [_SCOTCH_FLAW_PLY, opponent_ply]
+    row, opponent_row = score.rows
+    for each in score.rows:
+        assert set(each) == _PK_KEYS | _LINE_ROW_KEYS
+        assert "maia_reply_spread" not in each
+        _assert_no_dropped_keys(each)
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
     facts = line_facts(pre, played, pv)
     for column, value in _fact_columns(facts).items():
         assert row[column] == value, column
-    _assert_no_dropped_keys(row)
+    # The opponent row carries the same derivation over its own stored line.
+    # (game_positions.pv at the opponent's own ply is the user's stored line, hence the best line.)
+    opponent_expected = _expected_line_facts(_SCOTCH_PGN, opponent_ply, opponent_pv, pv)
+    assert {c: opponent_row[c] for c in _LINE_FACT_COLUMNS} == opponent_expected
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
@@ -1092,8 +1122,12 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
         lam=FACEPALM_DRILL_LAMBDA,
     )
     assert expected is not None
+    # The user counters count the user row only; the opponent row has its own counter.
     assert score.scores_set == 1
     assert score.spreads_scored == 0
+    assert (score.user_blunders, score.opponent_blunders) == (1, 1)
+    assert score.opponent_scores_set == 1
+    assert score.opponent_spreads_scored == 0 and score.opponent_pre_scored == 0
 
 
 async def test_line_mode_blunder_without_stored_spread_gets_facts_but_no_score(
@@ -1177,6 +1211,40 @@ async def test_write_line_mode_cutoff_decides_already_stamped(
     assert stamps_after["facepalm_line_completed_at"] > stamps_before["facepalm_line_completed_at"]
     assert stamps_after["maia_flaws_completed_at"] is None
     assert stamps_after["facepalm_spread_completed_at"] is None
+
+
+async def test_write_line_mode_writes_opponent_line_facts_never_maia_columns(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """A line write over an opponent blunder sets its four line facts and only the line stamp; the
+    base value, the spread and both pre keys keep their stored values."""
+    game_id = await _opponent_game(make_game)
+    stored = {
+        "maia_played_prob": _STORED_PLAYED_PROB,
+        "maia_reply_spread": _STORED_SPREAD,
+        "maia_best_prob": _STORED_BEST_PROB,
+        "maia_pre_spread": _STORED_PRE_SPREAD,
+    }
+    await _store_base_values(session_factory, game_id, _OPPONENT_PLY, **stored)
+    outcomes = await _write_line_scores(
+        session_factory,
+        game_id,
+        require_unstamped=True,
+        line_cutoff=datetime(2026, 11, 10, tzinfo=timezone.utc),
+    )
+    assert outcomes == {game_id: "stamped"}
+    row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
+    expected = _expected_line_facts(
+        _PGN, _OPPONENT_PLY, _mainline_line(_PGN, _OPPONENT_PLY, 3), _OPPONENT_BEST_MOVE
+    )
+    assert {c: getattr(row, c) for c in _LINE_FACT_COLUMNS} == expected
+    for column, value in stored.items():
+        assert getattr(row, column) == pytest.approx(value, rel=_REAL_RELATIVE_TOLERANCE), column
+    stamps = await _stamps(session_factory, game_id)
+    assert stamps["facepalm_line_completed_at"] is not None
+    assert stamps["maia_flaws_completed_at"] is None
+    assert stamps["facepalm_spread_completed_at"] is None
+    assert stamps["facepalm_pre_completed_at"] is None
 
 
 async def test_write_spread_mode_sets_spread_and_line_stamps_only(
@@ -2178,7 +2246,7 @@ async def test_spread_and_line_rows_never_carry_pre_inputs(
 
 
 # ---------------------------------------------------------------------------
-# Opponent blunders (SEED-261114-iuv Part A): the three Maia columns, never line facts
+# Opponent blunders (SEED-261114-iuv Part A): the three Maia columns and, since step 4, line facts
 # ---------------------------------------------------------------------------
 
 # Ply 5 of _PGN is Black's a7a6 at the Ruy Lopez decision position; g8f6 is legal there.
@@ -2200,11 +2268,12 @@ async def _seed_stale_facepalm(
     await _store_base_values(maker, game_id, ply, **_STALE_FACEPALM)
 
 
-async def test_full_mode_opponent_blunder_gets_three_maia_columns_no_line_facts(
+async def test_full_mode_opponent_blunder_gets_three_maia_columns_and_line_facts(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """Stored lines and stale values are present, yet the opponent row gets the spread, the best
-    probability and the pre spread, and its four line facts end up NULL."""
+    """Stored lines and stale values are present: the opponent row gets the spread, the best
+    probability and the pre spread, and its four line facts are freshly derived from the stored
+    lines (the same derivation as a user blunder), replacing the stale values."""
     game_id = await _opponent_game(make_game)
     await _seed_stale_facepalm(session_factory, game_id, _OPPONENT_PLY)
     assert await _score(session_factory, game_id)
@@ -2223,9 +2292,47 @@ async def test_full_mode_opponent_blunder_gets_three_maia_columns_no_line_facts(
     assert row.maia_best_prob == pytest.approx(
         pre_policy[_OPPONENT_BEST_MOVE], rel=_REAL_RELATIVE_TOLERANCE
     )
-    for column in _LINE_FACT_COLUMNS:
-        assert getattr(row, column) is None, column
+    expected = _expected_line_facts(
+        _PGN, _OPPONENT_PLY, _mainline_line(_PGN, _OPPONENT_PLY, 3), _OPPONENT_BEST_MOVE
+    )
+    assert any(v is not None for v in expected.values()), "the fixture lines must settle a fact"
+    assert {column: getattr(row, column) for column in _LINE_FACT_COLUMNS} == expected
+    assert row.played_line_material != _STALE_FACEPALM["played_line_material"]
     assert all(stamp is not None for stamp in (await _stamps(session_factory, game_id)).values())
+
+
+async def test_full_mode_opponent_blunder_without_rating_keeps_line_facts_only(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """Mirror of the user-side no-rating test: the opponent mover (Black) has no rating, so the
+    spread and the pre keys stay NULL but the line facts come from the board and the stored lines."""
+    game_id = await _opponent_game(make_game, black_rating=None)
+    assert await _score(session_factory, game_id)
+    row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
+    expected = _expected_line_facts(
+        _PGN, _OPPONENT_PLY, _mainline_line(_PGN, _OPPONENT_PLY, 3), _OPPONENT_BEST_MOVE
+    )
+    assert any(v is not None for v in expected.values())
+    assert {column: getattr(row, column) for column in _LINE_FACT_COLUMNS} == expected
+    assert row.maia_reply_spread is None
+    assert row.maia_best_prob is None
+    assert row.maia_pre_spread is None
+    inputs_score = score_game(await _inputs(session_factory, game_id), None)
+    assert inputs_score.reasons["no_rating"] >= 1
+
+
+async def test_full_mode_opponent_blunder_with_unrebuildable_board_is_all_null(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """A fen that does not match the replayed board: no facts of any kind, stale values cleared."""
+    game_id = await _opponent_game(
+        make_game, fen_override={_OPPONENT_PLY: "8/8/8/8/8/8/8/8"}, stale_plies=(_OPPONENT_PLY,)
+    )
+    await _seed_stale_facepalm(session_factory, game_id, _OPPONENT_PLY)
+    assert await _score(session_factory, game_id)
+    row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
+    for column in (*FACEPALM_COLUMNS, *FACEPALM_PRE_COLUMNS):
+        assert getattr(row, column) is None, column
 
 
 async def test_full_mode_opponent_calls_use_the_opponents_elo(
@@ -2300,50 +2407,52 @@ async def test_full_mode_user_output_unchanged_by_opponent_blunders(
         user_only.opponent_blunders,
         user_only.opponent_spreads_scored,
         user_only.opponent_pre_scored,
-    ) == (0, 0, 0)
+        user_only.opponent_scores_set,
+    ) == (0, 0, 0, 0)
+    opponent_row = next(r for r in with_opponent.rows if r["ply"] == _OPPONENT_PLY)
+    opponent_flaw = next(f for f in inputs.flaws if f.ply == _OPPONENT_PLY)
+    in_memory = maia_flaw_scoring._row_score(opponent_flaw, opponent_row)
+    assert in_memory is not None, "the opponent fixture row must score in memory"
     assert (
         with_opponent.opponent_blunders,
         with_opponent.opponent_spreads_scored,
         with_opponent.opponent_pre_scored,
-    ) == (1, 1, 1)
+        with_opponent.opponent_scores_set,
+    ) == (1, 1, 1, 1)
 
 
-async def test_facepalm_expr_stays_null_on_opponent_rows(
+async def test_facepalm_expr_scores_opponent_row_and_gated_reader_still_omits_it(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """The readers have no side gate: facepalm_expr is NULL on the opponent row although its three
-    Maia columns and maia_played_prob are set. Control: with a played-line fact the same row scores,
-    so the NULL comes from the missing line facts alone."""
+    """End to end: full-mode scoring (no hand-seeded facts) leaves the opponent row with facts that
+    score in SQL, while the owner-side gate of `fetch_page_facepalm_scores` still omits it."""
     game_id = await _opponent_game(make_game)
     await _seed_stale_facepalm(session_factory, game_id, _OPPONENT_PLY)
     assert await _score(session_factory, game_id)
+    row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
+    # The fixture line must settle the depth-3 slot, or the row stays unscored by construction.
+    assert row.played_line_material is not None
+    assert row.played_line_material[2] is not None, "the line must settle the depth-3 slot first"
 
-    async def _expr_by_ply() -> dict[int, float | None]:
+    async def _expr_by_ply(lam: float) -> dict[int, float | None]:
         async with session_factory() as session:
             rows = (
                 await session.execute(
-                    select(GameFlaw.ply, facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
-                        GameFlaw.game_id == game_id
-                    )
+                    select(GameFlaw.ply, facepalm_expr(lam)).where(GameFlaw.game_id == game_id)
                 )
             ).all()
         return {ply: value for ply, value in rows}
 
-    row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
-    assert None not in (
-        row.maia_played_prob,
-        row.maia_reply_spread,
-        row.maia_best_prob,
-        row.maia_pre_spread,
-    )
-    assert (await _expr_by_ply())[_OPPONENT_PLY] is None
-    await _store_base_values(
-        session_factory,
-        game_id,
-        _OPPONENT_PLY,
-        played_line_material=_STALE_FACEPALM["played_line_material"],
-    )
-    assert (await _expr_by_ply())[_OPPONENT_PLY] is not None
+    drill = await _expr_by_ply(FACEPALM_DRILL_LAMBDA)
+    library = await _expr_by_ply(FACEPALM_LIBRARY_LAMBDA)
+    async with session_factory() as session:
+        markers = await fetch_page_facepalm_scores(session, _TEST_USER_ID, [game_id])
+    assert drill[_OPPONENT_PLY] is not None
+    assert library[_OPPONENT_PLY] is not None
+    # White user: ply 5 is Black's move, the opponent's. The owner-side reader omits it.
+    assert _OPPONENT_PLY not in markers.get(game_id, {})
+    scored_user_plies = {ply for ply, value in library.items() if value is not None}
+    assert set(markers.get(game_id, {})) == scored_user_plies - {_OPPONENT_PLY}
 
 
 # ---------------------------------------------------------------------------

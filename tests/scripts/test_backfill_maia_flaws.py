@@ -1004,6 +1004,121 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
     assert saved["scores_set"] + saved["scores_null"] == 2
 
 
+# Ply 5 is Black's a6, the opponent's blunder in the white-user fixture game; its stored line is the
+# game's own continuation after it (plies 6..8).
+_OPPONENT_PLY = 5
+_LINE_AFTER_PLY_5 = " ".join(_boards_by_ply(_PGN)[ply][1] for ply in range(6, 9))
+_OPPONENT_LINE_KEYS = (
+    "played_line_material",
+    "line_mate_ply",
+    "best_line_material",
+    "best_line_mate_ply",
+)
+
+
+def _expected_opponent_line_columns(line: str) -> dict[str, Any]:
+    """The four line facts the module's own derivation yields for the opponent's ply 5 (no best line)."""
+    pre, played = _boards_by_ply(_PGN)[_OPPONENT_PLY]
+    best_material = best_line_facts(pre, None).material_array()
+    return {
+        **_fact_columns(line_facts(pre, played, line)),
+        "best_line_material": None if all(v is None for v in best_material) else best_material,
+        "best_line_mate_ply": best_line_facts(pre, None).opponent_mate_ply,
+    }
+
+
+async def _opponent_line_game(maker: async_sessionmaker[AsyncSession], make_game: MakeGame) -> int:
+    """A spread-stamped game whose opponent blunder (ply 5) has a stored line and stored Maia values."""
+    game_id = await _spread_stamped_game(maker, make_game, line_stamp=_BEFORE_CUTOFF)
+    await _set_line(maker, game_id, _OPPONENT_PLY + 1, _LINE_AFTER_PLY_5)
+    await _set_flaw(
+        maker,
+        game_id,
+        _OPPONENT_PLY,
+        maia_reply_spread=_STORED_SPREAD,
+        maia_best_prob=_SEEDED_PRE["maia_best_prob"],
+        maia_pre_spread=_SEEDED_PRE["maia_pre_spread"],
+    )
+    return game_id
+
+
+@pytest.mark.asyncio
+async def test_line_mode_writes_opponent_line_facts_without_maia(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEED-261114-iuv Part A step 4: the line pass also writes the opponent blunder's four line
+    facts (equal to the derivation), leaves every Maia and pre value alone, moves only the line
+    stamp, and never calls Maia; the user ply keeps the existing expectation."""
+    game_id = await _opponent_line_game(session_factory, make_game)
+    expected_opponent = _expected_opponent_line_columns(_LINE_AFTER_PLY_5)
+    assert any(v is not None for v in expected_opponent.values())
+    base_before = await _flaw_values(session_factory, game_id)
+    pre_before = await _pre_values(session_factory, game_id)
+    spread_stamp_before = (await _facepalm_stamps(session_factory, game_id))[0]
+
+    def _must_not_infer(fen: str, elo: float) -> dict[str, float]:
+        raise AssertionError("line mode must not run inference")
+
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _must_not_infer)
+    started: list[object] = []
+    monkeypatch.setattr(maia_engine, "start_maia", lambda **kw: started.append(kw))
+
+    report = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+
+    assert started == []
+    assert report.games_stamped == 1
+    rows = await _facepalm_values(session_factory, game_id)
+    assert {c: rows[_OPPONENT_PLY][c] for c in expected_opponent} == expected_opponent
+    user_expected = _expected_line_columns(_LINE_AFTER_PLY_2)
+    assert {c: rows[2][c] for c in user_expected} == user_expected
+    # The spread, the base value and the pre keys of every row are untouched.
+    assert rows[_OPPONENT_PLY]["maia_reply_spread"] == _STORED_SPREAD
+    assert await _flaw_values(session_factory, game_id) == base_before
+    assert await _pre_values(session_factory, game_id) == pre_before
+    spread_stamp, line_stamp = await _facepalm_stamps(session_factory, game_id)
+    assert spread_stamp == spread_stamp_before
+    assert line_stamp >= _CUTOFF
+
+
+@pytest.mark.asyncio
+async def test_reports_carry_opponent_score_counters_and_keep_user_counters(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """Line run report: user counters as before (2 user blunders), the opponent blunder in its own
+    opponent_scores_set / opponent_scores_null pair; the opponent spread and pre counters stay 0 in
+    line mode. A full-mode report carries the same two keys."""
+    await _opponent_line_game(session_factory, make_game)
+
+    report = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+
+    saved = json.loads((tmp_path / f"dev-line-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["scores_set"] + saved["scores_null"] == 2
+    assert saved["spreads_scored"] == 0
+    assert saved["opponent_scores_set"] + saved["opponent_scores_null"] == 1
+    assert saved["opponent_scores_set"] == report.opponent_scores_set
+    assert saved["opponent_spreads_scored"] == saved["opponent_spreads_null"] == 0
+    assert saved["opponent_pre_scored"] == saved["opponent_pre_null"] == 0
+
+    # A full-mode run (one unstamped game, one opponent blunder) carries the same two keys.
+    await make_game()
+    await _run(session_factory, tmp_path, mode="full")
+    full = json.loads((tmp_path / f"dev-full-{_RUN_STAMP}-shard0.json").read_text())
+    assert full["opponent_scores_set"] + full["opponent_scores_null"] == 1
+
+
+def test_combined_total_line_includes_opponent_score_counters() -> None:
+    reports = [
+        {"opponent_scores_set": 2, "opponent_scores_null": 1},
+        {"opponent_scores_set": 3, "opponent_scores_null": 0},
+    ]
+    line = backfill._combined_total_line(reports)
+    assert "opponent_scores_set=5" in line
+    assert "opponent_scores_null=1" in line
+
+
 @pytest.mark.asyncio
 async def test_line_mode_blunder_without_a_line_gets_one_later(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
@@ -1165,7 +1280,9 @@ async def test_line_status_counts(
 ) -> None:
     """Line status: games done since the cutoff, games pending, and the score counts."""
     for _ in range(2):
-        await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+        game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+        # A stored line after the opponent blunder (ply 5), so the run can give it line facts.
+        await _set_line(session_factory, game_id, _OPPONENT_PLY + 1, _LINE_AFTER_PLY_5)
     await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF, limit=1)
 
     counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "line", _CUTOFF)
@@ -1175,6 +1292,22 @@ async def test_line_status_counts(
     assert counts["user_blunders_total"] == 4
     assert counts["user_blunders_with_score"] == 1
     assert list(counts)[:2] == ["line_done_since_cutoff", "line_pending_games"]
+    # The unchanged user keys come first, then the opponent counts (line facts of both sides).
+    assert list(counts) == [
+        "line_done_since_cutoff",
+        "line_pending_games",
+        "user_blunders_total",
+        "user_blunders_with_score",
+        "user_blunders_qualifying",
+        "opponent_blunders_total",
+        "opponent_blunders_with_line_facts",
+        "opponent_blunders_with_score",
+    ]
+    # Two games with one opponent blunder (ply 5) each; the run (limit=1) covered one game, so one
+    # opponent blunder holds line facts. Its score is NULL here: the fixture row has no Maia values.
+    assert counts["opponent_blunders_total"] == 2
+    assert counts["opponent_blunders_with_line_facts"] == 1
+    assert counts["opponent_blunders_with_score"] == 0
     test_url = test_engine.url.render_as_string(hide_password=False)
     monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
     await backfill._print_status("dev", _TEST_USER_ID, "line", _CUTOFF)
