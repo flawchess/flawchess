@@ -24,7 +24,7 @@ from app.models.blunder_check import (
     WindowOutcome,
 )
 from app.models.drill_solve import DrillMoveQuality
-from app.repositories import blunder_check_repository
+from app.repositories import blunder_check_repository, train_repository
 from app.repositories.blunder_check_repository import GameInfoRow, SessionProgress
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services import blunder_check_selection
@@ -56,6 +56,7 @@ from app.services.blunder_check_grading import (
     window_ucis,
 )
 from app.services.train_pool import ServerGradedMove
+from app.services.train_scheduler import local_today, session_window
 from app.services.blunder_check_rules import BLUNDER_POINTS
 from app.services.train_score import MOVE_QUALITY_TIER, MOVE_TIER_POINTS
 
@@ -206,6 +207,8 @@ async def compose_or_resume(
     Returns None when nothing could be composed (no usable supply). A lost race against a
     concurrent start (the one-open-session index fired) resumes the winner's session.
     """
+    settings = await train_repository.get_or_create_settings(session, user_id=user_id)
+    today = local_today(settings.timezone, now_utc)
     existing = await blunder_check_repository.open_session_progress(session, user_id=user_id)
     if existing is not None:
         return existing
@@ -216,7 +219,12 @@ async def compose_or_resume(
         return None
     # Result ignored: None means the race loser, and either way the open session is readable.
     await blunder_check_repository.insert_session(
-        session, user_id=user_id, windows=windows, now_utc=now_utc
+        session,
+        user_id=user_id,
+        windows=windows,
+        now_utc=now_utc,
+        session_date=today,
+        expires_on=session_window(today, settings.weekday_mask),
     )
     return await blunder_check_repository.open_session_progress(session, user_id=user_id)
 

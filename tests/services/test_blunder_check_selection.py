@@ -146,6 +146,8 @@ async def _insert_prior_window(
                 window_count=1,
                 started_at=_TS,
                 completed_at=_TS,
+                session_date=_TS.date(),
+                expires_on=_TS.date() + datetime.timedelta(days=1),
             )
             session.add(header)
             await session.flush()

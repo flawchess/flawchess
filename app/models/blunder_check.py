@@ -33,6 +33,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -91,7 +92,10 @@ class BlunderCheckSession(Base):
 
     __tablename__ = "blunder_check_sessions"
     __table_args__ = (
-        CheckConstraint("status IN ('open', 'completed')", name="ck_blunder_check_sessions_status"),
+        # Phase 251: 'expired' joins the set, like drill_sessions (a session past its window).
+        CheckConstraint(
+            "status IN ('open', 'completed', 'expired')", name="ck_blunder_check_sessions_status"
+        ),
         CheckConstraint("window_count >= 1", name="ck_blunder_check_sessions_window_count"),
         # At most one OPEN session per user: partial unique index so completed history
         # rows are unrestricted (precedent: uq_drill_sessions_user_open).
@@ -101,12 +105,18 @@ class BlunderCheckSession(Base):
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
+        # Phase 251: the per-day lookups (completed session on a local day, streak days).
+        Index("ix_blunder_check_sessions_user_date", "user_id", "session_date"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # TEXT + CHECK (low-volume domain column), no native ENUM.
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
+    # Phase 251: the user's local day the session was composed on and the first local day it is
+    # no longer current (`train_scheduler.session_window`), the same window model as drill_sessions.
+    session_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    expires_on: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     window_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     started_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -152,6 +162,12 @@ class BlunderCheckWindow(Base):
         ),
         # D-10 lookups: which plies of a game has this solver already been served.
         Index("ix_blunder_check_windows_user_game", "user_id", "game_id"),
+        # Phase 251: feeds the weekly board aggregate (mirrors ix_drill_solves_solved_at).
+        Index(
+            "ix_blunder_check_windows_ended_at",
+            "ended_at",
+            postgresql_where=text("ended_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.core.dev_clock import dev_now_utc
 from app.main import app
 from app.models.blunder_check import (
     BlunderCheckSession,
@@ -28,10 +29,12 @@ from app.models.blunder_check import (
     WindowCase,
     WindowOutcome,
 )
+from app.models.train_settings import TrainSettings
 from app.models.user import User
 from app.services import blunder_check_selection
 from app.services.blunder_check_candidates import points_possible
 from app.services.blunder_check_rules import BLUNDER_CHECK_SESSION_WINDOWS, SlotPlan, WindowShape
+from app.services.train_scheduler import session_window
 from tests.blunder_check_seed import (
     SeedBlunder,
     delete_blunder_check_sessions,
@@ -78,7 +81,14 @@ async def _insert_session(
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with maker() as session:
         async with session.begin():
-            header = BlunderCheckSession(user_id=user_id, window_count=len(outcomes))
+            # GET /open runs on the real clock here, so date the row with the real UTC day.
+            today = datetime.datetime.now(datetime.timezone.utc).date()
+            header = BlunderCheckSession(
+                user_id=user_id,
+                window_count=len(outcomes),
+                session_date=today,
+                expires_on=today + datetime.timedelta(days=1),
+            )
             session.add(header)
             await session.flush()
             for position, (outcome, scored) in enumerate(zip(outcomes, points, strict=True)):
@@ -300,6 +310,50 @@ async def test_start_session_composes_six_own_windows(test_engine, monkeypatch) 
             board = _board_at_ply(window, window.blunder_ply)
             assert window.key_uci is not None
             assert chess.Move.from_uci(window.key_uci) in board.legal_moves
+
+
+_AUCKLAND_TZ = "Pacific/Auckland"
+# 20:00 UTC on Nov 10 is already Nov 11 in Auckland (UTC+13 in southern summer).
+_AUCKLAND_NOW_UTC = datetime.datetime(2026, 11, 10, 20, 0, tzinfo=datetime.timezone.utc)
+_AUCKLAND_LOCAL_DAY = datetime.date(2026, 11, 11)
+
+
+@pytest.mark.asyncio
+async def test_start_session_dated_local_today(test_engine, monkeypatch) -> None:
+    """Phase 251 tracer: a started session carries the user's LOCAL day and its window."""
+    _force_own_blunder_slots(monkeypatch)
+    monkeypatch.setattr(
+        blunder_check_selection, "new_session_rng", lambda: random.Random(_RNG_SEED)
+    )
+    user_id, token = await _register("bc-start-dated", beta=True, test_engine=test_engine)
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        async with session.begin():
+            session.add(TrainSettings(user_id=user_id, timezone=_AUCKLAND_TZ))
+    game_ids = await _seed_own_games(test_engine, user_id, _SEED_GAMES)
+    session_id: int | None = None
+    app.dependency_overrides[dev_now_utc] = lambda: _AUCKLAND_NOW_UTC
+    try:
+        resp = await _post(token)
+        assert resp.status_code == 200, resp.text
+        session_id = resp.json()["session_id"]
+        async with maker() as session:
+            header = (
+                await session.execute(
+                    select(BlunderCheckSession).where(BlunderCheckSession.id == session_id)
+                )
+            ).scalar_one()
+            weekday_mask = (
+                await session.execute(
+                    select(TrainSettings.weekday_mask).where(TrainSettings.user_id == user_id)
+                )
+            ).scalar_one()
+    finally:
+        app.dependency_overrides.pop(dev_now_utc, None)
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, game_ids)
+    assert header.session_date == _AUCKLAND_LOCAL_DAY  # the local day, not the UTC day
+    assert header.expires_on == session_window(_AUCKLAND_LOCAL_DAY, weekday_mask)
 
 
 @pytest.mark.asyncio

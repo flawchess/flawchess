@@ -202,7 +202,12 @@ async def _setup(test_engine, specs: list[_Spec], *, user_id_token: tuple[int, s
         async with maker() as session:
             async with session.begin():
                 session_id = await insert_session(
-                    session, user_id=user_id, windows=windows, now_utc=_T0
+                    session,
+                    user_id=user_id,
+                    windows=windows,
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
                 )
         assert session_id is not None
         yield _Setup(user_id, token, session_id, [w.game_id for w in windows])

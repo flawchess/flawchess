@@ -141,8 +141,13 @@ async def insert_session(
     user_id: int,
     windows: Sequence[NewWindow],
     now_utc: datetime.datetime,
+    session_date: datetime.date,
+    expires_on: datetime.date,
 ) -> int | None:
     """Insert an open session with its frozen windows; return the new id.
+
+    `session_date` is the user's local day (`train_scheduler.local_today`) and `expires_on` the
+    first local day the session is no longer current (`train_scheduler.session_window`).
 
     Returns None when a concurrent request already holds the user's open session (the
     partial unique index fired inside the SAVEPOINT); the caller resumes that session.
@@ -150,7 +155,12 @@ async def insert_session(
     try:
         async with session.begin_nested():
             header = BlunderCheckSession(
-                user_id=user_id, status="open", window_count=len(windows), started_at=now_utc
+                user_id=user_id,
+                status="open",
+                window_count=len(windows),
+                started_at=now_utc,
+                session_date=session_date,
+                expires_on=expires_on,
             )
             session.add(header)
             # Surfaces uq_blunder_check_sessions_user_open here if a concurrent request won.

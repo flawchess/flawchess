@@ -10,6 +10,7 @@ Coverage (this module grows task by task):
 from __future__ import annotations
 
 import asyncio
+import datetime
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -566,7 +567,12 @@ async def _foreign_setup(test_engine, spec: _Spec):
         async with maker() as session:
             async with session.begin():
                 session_id = await insert_session(
-                    session, user_id=solver_id, windows=[window], now_utc=_T0
+                    session,
+                    user_id=solver_id,
+                    windows=[window],
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
                 )
         assert session_id is not None
         yield _Setup(solver_id, token, session_id, [window.game_id])
