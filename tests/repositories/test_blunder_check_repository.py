@@ -110,7 +110,12 @@ async def _insert(test_engine, user_id: int, windows: list[NewWindow]) -> int:
     async with maker() as session:
         async with session.begin():
             session_id = await repo.insert_session(
-                session, user_id=user_id, windows=windows, now_utc=_NOW
+                session,
+                user_id=user_id,
+                windows=windows,
+                now_utc=_NOW,
+                session_date=_NOW.date(),
+                expires_on=_NOW.date() + datetime.timedelta(days=1),
             )
     assert session_id is not None
     return session_id
@@ -296,7 +301,12 @@ async def test_insert_session_second_open_returns_none(test_engine) -> None:
         async with maker() as session:
             async with session.begin():
                 second = await repo.insert_session(
-                    session, user_id=user_id, windows=[_window(game_id)], now_utc=_NOW
+                    session,
+                    user_id=user_id,
+                    windows=[_window(game_id)],
+                    now_utc=_NOW,
+                    session_date=_NOW.date(),
+                    expires_on=_NOW.date() + datetime.timedelta(days=1),
                 )
         assert second is None
         async with maker() as session:

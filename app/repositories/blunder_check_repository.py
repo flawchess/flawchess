@@ -12,7 +12,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, exists, func, not_, select, tablesample, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    not_,
+    select,
+    tablesample,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,18 +76,10 @@ class SessionProgress:
     windows: list[WindowProgressRow]
 
 
-async def open_session_progress(session: AsyncSession, *, user_id: int) -> SessionProgress | None:
-    """The user's open session with its window progress, or None when there is none."""
-    header = (
-        await session.execute(
-            select(BlunderCheckSession.id, BlunderCheckSession.window_count).where(
-                BlunderCheckSession.user_id == user_id,
-                BlunderCheckSession.status == "open",
-            )
-        )
-    ).one_or_none()
-    if header is None:
-        return None
+async def _progress_for_header(
+    session: AsyncSession, *, user_id: int, session_id: int, window_count: int
+) -> SessionProgress:
+    """The session's windows as progress rows, ordered by position."""
     rows = (
         await session.execute(
             select(
@@ -87,7 +90,7 @@ async def open_session_progress(session: AsyncSession, *, user_id: int) -> Sessi
                 BlunderCheckWindow.better_move_tier,
             )
             .where(
-                BlunderCheckWindow.session_id == header.id,
+                BlunderCheckWindow.session_id == session_id,
                 BlunderCheckWindow.user_id == user_id,
             )
             .order_by(BlunderCheckWindow.position)
@@ -105,7 +108,115 @@ async def open_session_progress(session: AsyncSession, *, user_id: int) -> Sessi
         )
         for row in rows
     ]
-    return SessionProgress(session_id=header.id, window_count=header.window_count, windows=windows)
+    return SessionProgress(session_id=session_id, window_count=window_count, windows=windows)
+
+
+async def open_session_progress(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> SessionProgress | None:
+    """The user's open session with its window progress, or None when there is none.
+
+    An open row whose window has elapsed (`expires_on <= today`) is not current: the read path
+    ignores it and never writes (the compose path expires it, see `expire_stale_sessions`).
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count).where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "open",
+                BlunderCheckSession.expires_on > today,
+            )
+        )
+    ).one_or_none()
+    if header is None:
+        return None
+    return await _progress_for_header(
+        session, user_id=user_id, session_id=header.id, window_count=header.window_count
+    )
+
+
+async def completed_session_in_window(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> SessionProgress | None:
+    """The user's newest completed session still inside its window, or None.
+
+    Bug fix: finishing a session flips it to 'completed', so the open-session lookup stopped
+    seeing it and a second Start on an already finished day composed a brand-new session. A done
+    day must show its recap until the next session day starts, so compose returns this session
+    instead of composing (same rule as the puzzle twin `train_repository.completed_session_in_window`).
+
+    In-window means `expires_on > today`; `expire_stale_sessions` never touches completed rows,
+    so this date predicate is the only window authority.
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "completed",
+                BlunderCheckSession.expires_on > today,
+            )
+            .order_by(BlunderCheckSession.id.desc())
+            .limit(1)
+        )
+    ).one_or_none()
+    if header is None:
+        return None
+    return await _progress_for_header(
+        session, user_id=user_id, session_id=header.id, window_count=header.window_count
+    )
+
+
+async def expire_stale_sessions(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> None:
+    """Close out the user's open sessions whose window has elapsed (`expires_on <= today`).
+
+    Flips them to 'expired', then deletes their windows that were never started (A9): a blunder
+    the user was never shown goes back to the pool. Windows that were shown stay stored (D-01),
+    so a shown blunder is never served again (the served-set lookup reads them).
+    """
+    expired_ids = (
+        (
+            await session.execute(
+                update(BlunderCheckSession)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "open",
+                    BlunderCheckSession.expires_on <= today,
+                )
+                .values(status="expired")
+                .returning(BlunderCheckSession.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not expired_ids:
+        return
+    await session.execute(
+        delete(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id.in_(expired_ids),
+            BlunderCheckWindow.user_id == user_id,
+            BlunderCheckWindow.started_at.is_(None),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def get_session_date(
+    session: AsyncSession, *, user_id: int, session_id: int
+) -> datetime.date | None:
+    """The local day the user's session was composed on; None for an unknown or foreign id."""
+    return (
+        await session.execute(
+            select(BlunderCheckSession.session_date).where(
+                BlunderCheckSession.id == session_id,
+                BlunderCheckSession.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +252,13 @@ async def insert_session(
     user_id: int,
     windows: Sequence[NewWindow],
     now_utc: datetime.datetime,
+    session_date: datetime.date,
+    expires_on: datetime.date,
 ) -> int | None:
     """Insert an open session with its frozen windows; return the new id.
+
+    `session_date` is the user's local day (`train_scheduler.local_today`) and `expires_on` the
+    first local day the session is no longer current (`train_scheduler.session_window`).
 
     Returns None when a concurrent request already holds the user's open session (the
     partial unique index fired inside the SAVEPOINT); the caller resumes that session.
@@ -150,7 +266,12 @@ async def insert_session(
     try:
         async with session.begin_nested():
             header = BlunderCheckSession(
-                user_id=user_id, status="open", window_count=len(windows), started_at=now_utc
+                user_id=user_id,
+                status="open",
+                window_count=len(windows),
+                started_at=now_utc,
+                session_date=session_date,
+                expires_on=expires_on,
             )
             session.add(header)
             # Surfaces uq_blunder_check_sessions_user_open here if a concurrent request won.
@@ -731,14 +852,22 @@ async def windows_for_session(
 
 async def complete_session(
     session: AsyncSession, *, session_id: int, now_utc: datetime.datetime
-) -> None:
-    """Mark an open session completed; a completed session is left untouched."""
-    await session.execute(
-        update(BlunderCheckSession)
-        .where(BlunderCheckSession.id == session_id, BlunderCheckSession.status == "open")
-        .values(status="completed", completed_at=now_utc)
-        .execution_options(synchronize_session=False)
-    )
+) -> bool:
+    """Mark an open session completed; True only for the call that moved it from open.
+
+    A completed session is left untouched and reports False, so the caller (the streak credit)
+    acts exactly once per session however often finish is repeated.
+    """
+    moved = (
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.status == "open")
+            .values(status="completed", completed_at=now_utc)
+            .returning(BlunderCheckSession.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    return moved is not None
 
 
 # ---------------------------------------------------------------------------

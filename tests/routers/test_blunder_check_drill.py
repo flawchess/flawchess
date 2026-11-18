@@ -22,7 +22,7 @@ from typing import Any
 import chess.pgn
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.dev_clock import dev_now_utc
@@ -30,6 +30,7 @@ from app.main import app
 from app.models.blunder_check import (
     AnswerResult,
     BlunderCheckAnswer,
+    BlunderCheckSession,
     BlunderCheckWindow,
     WindowCase,
     WindowOutcome,
@@ -85,6 +86,7 @@ _ANSWER_KEYS = {
     "better_move",
 }
 _BASE = "/api/blunder-check/sessions"
+_SECONDS_PER_DAY = 24 * 60 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +204,12 @@ async def _setup(test_engine, specs: list[_Spec], *, user_id_token: tuple[int, s
         async with maker() as session:
             async with session.begin():
                 session_id = await insert_session(
-                    session, user_id=user_id, windows=windows, now_utc=_T0
+                    session,
+                    user_id=user_id,
+                    windows=windows,
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
                 )
         assert session_id is not None
         yield _Setup(user_id, token, session_id, [w.game_id for w in windows])
@@ -260,6 +267,18 @@ async def _window_row(test_engine, session_id: int, position: int) -> BlunderChe
                     BlunderCheckWindow.session_id == session_id,
                     BlunderCheckWindow.position == position,
                 )
+            )
+        ).scalar_one()
+
+
+async def _session_count(test_engine, user_id: int) -> int:
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(func.count())
+                .select_from(BlunderCheckSession)
+                .where(BlunderCheckSession.user_id == user_id)
             )
         ).scalar_one()
 
@@ -719,10 +738,10 @@ async def test_finish_idor_and_unknown_session_answer_404(test_engine, clock) ->
 
 
 @pytest.mark.asyncio
-async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
+async def test_finish_then_start_returns_done_session_until_next_day(
     test_engine, clock, monkeypatch
 ) -> None:
-    # The fresh session needs the leftover herring runs of the own game: force own herrings.
+    # The next-day session needs the leftover herring runs of the own game: force own herrings.
     _force_own_shape(monkeypatch, WindowShape(3, None))
     async with _setup(test_engine, [_HERRING_3, _BLUNDER_AT_THREE]) as s:
         await _play_cleared_and_false_alarm(s)
@@ -732,11 +751,19 @@ async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
         ) as client:
             headers = {"Authorization": f"Bearer {s.token}"}
             open_after = await client.get(f"{_BASE}/open", headers=headers)
-        fresh = await _call(s.token, _BASE)
-        fresh_id = fresh.json()["session_id"] if fresh.status_code == 200 else None
+        # Same session day: Start returns the finished session and composes nothing.
+        same_day = await _call(s.token, _BASE)
+        sessions_after_same_day = await _session_count(test_engine, s.user_id)
+        # Past the session's expires_on: Start composes a fresh session.
+        clock.advance(_SECONDS_PER_DAY)
+        next_day = await _call(s.token, _BASE)
+        fresh_id = next_day.json()["session_id"] if next_day.status_code == 200 else None
         try:
             assert open_after.status_code == 200 and open_after.json() is None
-            assert fresh.status_code == 200, fresh.text
+            assert same_day.status_code == 200, same_day.text
+            assert same_day.json()["session_id"] == s.session_id
+            assert sessions_after_same_day == 1
+            assert next_day.status_code == 200, next_day.text
             assert fresh_id != s.session_id
         finally:
             await delete_blunder_check_sessions(test_engine, [fresh_id] if fresh_id else [])

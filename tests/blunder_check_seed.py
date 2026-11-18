@@ -25,7 +25,12 @@ from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
-from app.models.blunder_check import BlunderCheckSession
+from app.models.blunder_check import (
+    BlunderCheckSession,
+    BlunderCheckWindow,
+    WindowCase,
+    WindowOutcome,
+)
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
@@ -309,3 +314,65 @@ async def delete_blunder_check_sessions(test_engine, session_ids: list[int]) -> 
             await session.execute(
                 delete(BlunderCheckSession).where(BlunderCheckSession.id.in_(session_ids))
             )
+
+
+_SEED_SESSION_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+_SEED_SESSION_HOUR_UTC = 12
+_SEED_WINDOW_LENGTH = 3
+# Possible points of the one seeded window: never below what was scored.
+_SEED_MIN_POINTS_POSSIBLE = 3
+
+
+async def seed_completed_blunder_check_session(
+    test_engine, *, user_id: int, session_date: datetime.date, points: int
+) -> int:
+    """A completed one-window blunder-check session on the user's local `session_date`.
+
+    The header is `completed` with `expires_on = session_date + 1`; its single herring window
+    is ended (outcome CLEARED, started and ended at noon UTC of that day) and carries `points`
+    scored. Returns the session id; the caller deletes it via `delete_blunder_check_sessions`.
+    """
+    instant = datetime.datetime(
+        session_date.year,
+        session_date.month,
+        session_date.day,
+        _SEED_SESSION_HOUR_UTC,
+        tzinfo=datetime.timezone.utc,
+    )
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        async with session.begin():
+            header = BlunderCheckSession(
+                user_id=user_id,
+                status="completed",
+                window_count=1,
+                started_at=instant,
+                completed_at=instant,
+                session_date=session_date,
+                expires_on=session_date + datetime.timedelta(days=1),
+            )
+            session.add(header)
+            await session.flush()
+            session.add(
+                BlunderCheckWindow(
+                    session_id=header.id,
+                    position=0,
+                    user_id=user_id,
+                    game_id=None,
+                    is_own=True,
+                    window_length=_SEED_WINDOW_LENGTH,
+                    blunder_position=None,
+                    first_ply=10,
+                    blunder_ply=None,
+                    window_case=int(WindowCase.HERRING),
+                    start_fen=_SEED_SESSION_START_FEN,
+                    move_ucis="e2e4 e7e5 g1f3",
+                    lead_in_plies=0,
+                    points_possible=max(points, _SEED_MIN_POINTS_POSSIBLE),
+                    points_scored=points,
+                    outcome=int(WindowOutcome.CLEARED),
+                    started_at=instant,
+                    ended_at=instant,
+                )
+            )
+            return header.id
