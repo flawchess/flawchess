@@ -60,6 +60,7 @@ from app.services.train_medals import (
     finalize_due_weeks,
     get_unclaimed_medals,
 )
+from app.services.train_settings_service import TrainSettingsInvalidError, apply_settings_update
 from app.users import current_active_user
 
 router = APIRouter(prefix="/train", tags=["train"])
@@ -536,6 +537,8 @@ async def _settings_response(
         timezone=settings_row.timezone,
         weekday_mask=settings_row.weekday_mask,
         puzzles_per_session=settings_row.puzzles_per_session,
+        blunder_check_per_session=settings_row.blunder_check_per_session,
+        blunder_check_level=settings_row.blunder_check_level,
         reminder_enabled=settings_row.reminder_enabled,
         reminder_hour=settings_row.reminder_hour,
         reminder_intent_at=settings_row.reminder_intent_at,
@@ -582,6 +585,11 @@ async def update_train_settings(
     who reschedules after inactive days has those days judged by the schedule
     that was in force.
 
+    The handler delegates to `train_settings_service.apply_settings_update`: both session sizes
+    (puzzles 0-50, blunder check 0-30) are editable at any time and the change acts on today's
+    open sessions and today's streak in the same request (Phase 251 D-04, D-06). A body that
+    would leave both sizes at 0 answers 422 (D-05).
+
     This endpoint also round-trips `reminder_enabled`/`reminder_hour`.
 
     Also round-trips `reminder_intent_at`. It is required-but-nullable on
@@ -589,17 +597,25 @@ async def update_train_settings(
     silently clearing a previously-recorded install intent -- the full-replace contract's
     loud-failure guarantee.
     """
-    settings_row = await train_repository.upsert_settings(
-        session,
-        user_id=user.id,
-        timezone=body.timezone,
-        weekday_mask=body.weekday_mask,
-        puzzles_per_session=body.puzzles_per_session,
-        reminder_enabled=body.reminder_enabled,
-        reminder_hour=body.reminder_hour,
-        reminder_intent_at=body.reminder_intent_at,
-        now_utc=now_utc,
-    )
+    try:
+        settings_row = await apply_settings_update(
+            session,
+            user_id=user.id,
+            timezone=body.timezone,
+            weekday_mask=body.weekday_mask,
+            puzzles_per_session=body.puzzles_per_session,
+            blunder_check_per_session=body.blunder_check_per_session,
+            blunder_check_level=body.blunder_check_level,
+            reminder_enabled=body.reminder_enabled,
+            reminder_hour=body.reminder_hour,
+            reminder_intent_at=body.reminder_intent_at,
+            now_utc=now_utc,
+        )
+    except TrainSettingsInvalidError as exc:
+        # Both modes off (D-05) once the optional fields are resolved against the stored row:
+        # expected user input, so no Sentry capture. Nothing was written (the check runs first).
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     await session.commit()
     return await _settings_response(session, settings_row, user_id=user.id)
 

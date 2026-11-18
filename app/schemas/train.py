@@ -36,7 +36,13 @@ from pydantic import (
 )
 
 from app.schemas.normalization import TimeControlBucket
-from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
+from app.services.train_scheduler import (
+    BLUNDER_CHECK_PER_SESSION_MAX,
+    PUZZLES_PER_SESSION_MAX,
+    REMINDER_HOUR_MAX,
+    REMINDER_HOUR_MIN,
+    BlunderCheckLevel,
+)
 
 
 class ServerGradedMove(BaseModel):
@@ -731,6 +737,10 @@ class TrainSettingsResponse(BaseModel):
     timezone: str
     weekday_mask: int
     puzzles_per_session: int
+    # Phase 251: the second mode's size (0 = off) and the stored level a user without rated
+    # games composes at (None until chosen).
+    blunder_check_per_session: int
+    blunder_check_level: BlunderCheckLevel | None
     reminder_enabled: bool
     reminder_hour: int
     reminder_intent_at: datetime | None
@@ -755,14 +765,36 @@ class TrainSettingsUpdate(BaseModel):
     field would let a payload that omits the key silently clear a
     previously-recorded install intent. Omitting the key must 422 loudly
     instead. No bound validator: a timestamp has no injection surface.
+
+    `blunder_check_per_session` and `blunder_check_level` are the documented exception to
+    the full-replace rule: both are optional and an absent (or null) value keeps the stored
+    one. Pre-release PWA bundles PUT without them and must keep saving instead of 422ing
+    (RESEARCH Pitfall 6); a defaulted value here would silently overwrite the stored size
+    with the default. Either session size may be 0 (mode off), but never both (D-05).
     """
 
     timezone: str
     weekday_mask: int = Field(ge=0, le=127)
-    puzzles_per_session: int = Field(ge=1, le=50)
+    puzzles_per_session: int = Field(ge=0, le=PUZZLES_PER_SESSION_MAX)
+    blunder_check_per_session: int | None = Field(
+        default=None, ge=0, le=BLUNDER_CHECK_PER_SESSION_MAX
+    )
+    blunder_check_level: BlunderCheckLevel | None = None
     reminder_enabled: bool
     reminder_hour: int = Field(ge=REMINDER_HOUR_MIN, le=REMINDER_HOUR_MAX)
     reminder_intent_at: datetime | None
+
+    @model_validator(mode="after")
+    def _reject_both_modes_off(self) -> TrainSettingsUpdate:
+        """422 when the body switches both modes off (D-05); the DB CHECK is only the backstop.
+
+        Only an explicit 0 in both fields is caught here. A body that omits
+        `blunder_check_per_session` keeps the stored size, so the service re-checks the
+        RESOLVED pair against the stored row.
+        """
+        if self.puzzles_per_session == 0 and self.blunder_check_per_session == 0:
+            raise ValueError("At least one of puzzles and blunder check must stay on")
+        return self
 
     @field_validator("timezone")
     @classmethod

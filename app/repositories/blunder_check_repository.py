@@ -248,6 +248,30 @@ class NewWindow:
     prior_uci: str | None = None
 
 
+def _window_row(*, session_id: int, user_id: int, window: NewWindow) -> BlunderCheckWindow:
+    """The frozen window row for a composed `NewWindow` (shared by insert and extension)."""
+    return BlunderCheckWindow(
+        session_id=session_id,
+        position=window.position,
+        user_id=user_id,
+        game_id=window.game_id,
+        is_own=window.is_own,
+        window_length=window.window_length,
+        blunder_position=window.blunder_position,
+        first_ply=window.first_ply,
+        blunder_ply=window.blunder_ply,
+        window_case=int(window.window_case),
+        mover_elo=window.mover_elo,
+        start_fen=window.start_fen,
+        move_ucis=window.move_ucis,
+        lead_in_plies=window.lead_in_plies,
+        prior_uci=window.prior_uci,
+        key_uci=window.key_uci,
+        refutation_uci=window.refutation_uci,
+        points_possible=window.points_possible,
+    )
+
+
 async def insert_session(
     session: AsyncSession,
     *,
@@ -279,28 +303,7 @@ async def insert_session(
             # Surfaces uq_blunder_check_sessions_user_open here if a concurrent request won.
             await session.flush()
             for w in windows:
-                session.add(
-                    BlunderCheckWindow(
-                        session_id=header.id,
-                        position=w.position,
-                        user_id=user_id,
-                        game_id=w.game_id,
-                        is_own=w.is_own,
-                        window_length=w.window_length,
-                        blunder_position=w.blunder_position,
-                        first_ply=w.first_ply,
-                        blunder_ply=w.blunder_ply,
-                        window_case=int(w.window_case),
-                        mover_elo=w.mover_elo,
-                        start_fen=w.start_fen,
-                        move_ucis=w.move_ucis,
-                        lead_in_plies=w.lead_in_plies,
-                        prior_uci=w.prior_uci,
-                        key_uci=w.key_uci,
-                        refutation_uci=w.refutation_uci,
-                        points_possible=w.points_possible,
-                    )
-                )
+                session.add(_window_row(session_id=header.id, user_id=user_id, window=w))
             await session.flush()
             return header.id
     except IntegrityError as exc:
@@ -923,6 +926,152 @@ async def complete_session(
         )
     ).scalar_one_or_none()
     return moved is not None
+
+
+# ---------------------------------------------------------------------------
+# Resize of an open session (Phase 251 D-06)
+# ---------------------------------------------------------------------------
+
+ResizeOutcome = Literal["none", "expired", "completed", "shortened", "needs_extension"]
+
+
+async def _delete_unstarted_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, from_position: int = 0
+) -> None:
+    """Delete the session's windows at `from_position` or later that were never shown.
+
+    Only `started_at IS NULL` rows go: a shown window stays stored so its blunder is never
+    served again (D-01, A9). The rows were never shown, so no outcome or points exist to lose.
+    """
+    await session.execute(
+        delete(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id == session_id,
+            BlunderCheckWindow.user_id == user_id,
+            BlunderCheckWindow.position >= from_position,
+            BlunderCheckWindow.started_at.is_(None),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def _count_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, ended_only: bool = False
+) -> int:
+    """How many windows the session holds, optionally only the ended ones (outcome set)."""
+    stmt = (
+        select(func.count())
+        .select_from(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id == session_id,
+            BlunderCheckWindow.user_id == user_id,
+        )
+    )
+    if ended_only:
+        stmt = stmt.where(BlunderCheckWindow.outcome.isnot(None))
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def resize_open_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    new_size: int,
+    now_utc: datetime.datetime,
+) -> ResizeOutcome:
+    """Apply the D-06 resize rules to the user's open, unexpired session for a new size.
+
+    The session is locked (SELECT ... FOR UPDATE, scoped by `user_id`, never a client-supplied
+    session id, T-251-15). With `ended` = windows that have an outcome:
+
+    - `new_size == 0`: the session is marked 'expired' (the mode is not required today, A4) and
+      its never-started windows are deleted; points on ended windows stay. -> "expired".
+    - `0 < new_size <= ended`: never-started windows are deleted, `window_count` becomes the
+      number of rows left (a shown-but-unended window stays, D-01) and the session is completed
+      now via `complete_session`. -> "completed" (the caller credits the day).
+    - `ended < new_size < window_count`: windows at position >= new_size (all never started,
+      windows run in order) are deleted and `window_count` becomes `new_size`. -> "shortened".
+    - `new_size > window_count`: nothing is written; the service composes the extra windows and
+      appends them. -> "needs_extension".
+    - `new_size == window_count`, or no open session: nothing to do. -> "none".
+
+    A completed session is never found here (only `status = 'open'` rows are), so it never
+    reopens. No outcome or points value is ever written to an existing window.
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "open",
+                BlunderCheckSession.expires_on > today,
+            )
+            .with_for_update()
+        )
+    ).one_or_none()
+    if header is None:
+        return "none"
+    session_id, window_count = header.id, header.window_count
+    if new_size == 0:
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(status="expired")
+            .execution_options(synchronize_session=False)
+        )
+        await _delete_unstarted_windows(session, user_id=user_id, session_id=session_id)
+        return "expired"
+    ended = await _count_windows(session, user_id=user_id, session_id=session_id, ended_only=True)
+    if new_size <= ended:
+        await _delete_unstarted_windows(session, user_id=user_id, session_id=session_id)
+        remaining = await _count_windows(session, user_id=user_id, session_id=session_id)
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(window_count=remaining)
+            .execution_options(synchronize_session=False)
+        )
+        await complete_session(session, session_id=session_id, now_utc=now_utc)
+        return "completed"
+    if new_size < window_count:
+        await _delete_unstarted_windows(
+            session, user_id=user_id, session_id=session_id, from_position=new_size
+        )
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(window_count=new_size)
+            .execution_options(synchronize_session=False)
+        )
+        return "shortened"
+    if new_size > window_count:
+        return "needs_extension"
+    return "none"
+
+
+async def append_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, windows: Sequence[NewWindow]
+) -> None:
+    """Insert extra composed windows into the user's session and raise `window_count` to match.
+
+    The windows come from `compose_windows(start_position=<current window_count>)`, so their
+    positions continue after the existing ones. `window_count` is set to the number of rows the
+    session now holds, so a short extension (thin supply) leaves a consistent header. Scoped by
+    `user_id`: another user's session id updates nothing.
+    """
+    if not windows:
+        return
+    for window in windows:
+        session.add(_window_row(session_id=session_id, user_id=user_id, window=window))
+    await session.flush()
+    total = await _count_windows(session, user_id=user_id, session_id=session_id)
+    await session.execute(
+        update(BlunderCheckSession)
+        .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+        .values(window_count=total)
+        .execution_options(synchronize_session=False)
+    )
 
 
 # ---------------------------------------------------------------------------

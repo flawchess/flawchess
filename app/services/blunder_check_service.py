@@ -204,6 +204,86 @@ class AnswerOutcome:
     better_move: BetterMoveData | None
 
 
+async def _compose_for_user(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings: train_repository.TrainSettingsRow,
+    today: datetime.date,
+    count: int,
+    start_position: int = 0,
+) -> list[blunder_check_repository.NewWindow]:
+    """Compose `count` windows with the user's level fallback and cross-mode cooldown.
+
+    Shared by a fresh session (`compose_or_resume`) and the extension of an open one
+    (`resize_for_settings`), so both apply the same fallback level (D-17) and cooldown (D-16).
+    """
+    # Cross-mode cooldown (D-16): flaws served as puzzles in the last CROSS_MODE_COOLDOWN_DAYS local
+    # days are not composed as own blunders.
+    cooled_pairs = await blunder_check_repository.puzzle_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
+    return await blunder_check_selection.compose_windows(
+        session,
+        user_id=user_id,
+        rng=blunder_check_selection.new_session_rng(),
+        count=count,
+        fallback_level_elo=blunder_check_selection.level_fallback_elo(settings.blunder_check_level),
+        cooled_pairs=cooled_pairs,
+        start_position=start_position,
+    )
+
+
+async def resize_for_settings(
+    session: AsyncSession, *, user_id: int, new_size: int, now_utc: datetime.datetime
+) -> bool:
+    """Apply a new blunder-check size to today's open session (D-04, D-06); True when it completed.
+
+    Runs after the new size is persisted and before the day completion check. The repository
+    applies the shrink, complete and expire rules; for a larger size this composes
+    `new_size - window_count` extra windows (same fallback level and cooldown as a fresh session)
+    and appends them after the existing ones. Extension never re-serves a blunder already shown:
+    `compose_windows` reads every window of the user, this session's included (D-01).
+    """
+    settings = await train_repository.get_or_create_settings(session, user_id=user_id)
+    today = local_today(settings.timezone, now_utc)
+    outcome = await blunder_check_repository.resize_open_session(
+        session, user_id=user_id, today=today, new_size=new_size, now_utc=now_utc
+    )
+    if outcome == "needs_extension":
+        await _extend_open_session(
+            session, user_id=user_id, settings=settings, today=today, new_size=new_size
+        )
+    return outcome == "completed"
+
+
+async def _extend_open_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings: train_repository.TrainSettingsRow,
+    today: datetime.date,
+    new_size: int,
+) -> None:
+    """Compose and append the windows an open session lacks to reach `new_size`."""
+    progress = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+    if progress is None:
+        return
+    windows = await _compose_for_user(
+        session,
+        user_id=user_id,
+        settings=settings,
+        today=today,
+        count=new_size - progress.window_count,
+        start_position=progress.window_count,
+    )
+    await blunder_check_repository.append_windows(
+        session, user_id=user_id, session_id=progress.session_id, windows=windows
+    )
+
+
 async def compose_or_resume(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> SessionProgress | None:
@@ -231,18 +311,12 @@ async def compose_or_resume(
     )
     if done is not None:
         return done
-    # Cross-mode cooldown (D-16): flaws served as puzzles in the last CROSS_MODE_COOLDOWN_DAYS local
-    # days are not composed as own blunders.
-    cooled_pairs = await blunder_check_repository.puzzle_cooled_pairs(
-        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
-    )
-    windows = await blunder_check_selection.compose_windows(
+    windows = await _compose_for_user(
         session,
         user_id=user_id,
-        rng=blunder_check_selection.new_session_rng(),
+        settings=settings,
+        today=today,
         count=settings.blunder_check_per_session,
-        fallback_level_elo=blunder_check_selection.level_fallback_elo(settings.blunder_check_level),
-        cooled_pairs=cooled_pairs,
     )
     if not windows:
         return None
