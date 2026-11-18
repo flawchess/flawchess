@@ -87,16 +87,16 @@ const LEADERBOARD_MODE_TARGET: Record<LeaderboardMode, LeaderboardTabId> = {
   blunder_check: 'leaderboard-mode-blunder-check',
 };
 
-/** Slug used in the testid of each board tab and mode item. */
+/** Slug used in the testid of each board tab; the mode switch items carry their full testid. */
 const BOARD_TESTID_SLUG: Record<LeaderboardBoardKind, string> = {
   points: 'points',
   accuracy: 'accuracy',
   blunder_check_points: 'blunder-check-points',
   blunder_check_score: 'blunder-check-score',
 };
-const MODE_TESTID_SLUG: Record<LeaderboardMode, string> = {
-  puzzles: 'puzzles',
-  blunder_check: 'blunder-check',
+const MODE_TESTID: Record<LeaderboardMode, string> = {
+  puzzles: 'train-leaderboard-mode-puzzles',
+  blunder_check: 'train-leaderboard-mode-blunder-check',
 };
 
 /** Row count icon: a puzzle piece for puzzles, the Blunder check tab's shield for sequences. */
@@ -248,7 +248,7 @@ function LeaderboardModeSwitch({ mode, onChange }: LeaderboardModeSwitchProps): 
         <ToggleGroupItem
           key={value}
           value={value}
-          data-testid={`train-leaderboard-mode-${MODE_TESTID_SLUG[value]}`}
+          data-testid={MODE_TESTID[value]}
           className={TRAIN_FILTER_PILL_CLASS}
         >
           {MODE_LABEL[value]}

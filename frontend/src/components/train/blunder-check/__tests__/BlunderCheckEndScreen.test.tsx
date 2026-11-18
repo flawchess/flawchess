@@ -4,17 +4,16 @@
  * leaderboard (Phase 251, D-24). The sound and confetti celebration is mocked so
  * nothing plays under jsdom.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 
 vi.mock('@/lib/trainScoreCelebration', () => ({ celebrateScore: vi.fn() }));
 
-const trackFeature = vi.fn();
-vi.mock('@/lib/analytics', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
-  return { ...actual, trackFeature: (...args: unknown[]) => trackFeature(...args) };
-});
+// The tracker is observed at the Umami global, so this file imports no analytics module and
+// carries no Umami data attribute (BlunderCheckTab.test.tsx scans this directory for both).
+const track = vi.fn();
+const UMAMI_ATTRIBUTE = ['data-umami', 'event'].join('-');
 
 import { BlunderCheckEndScreen } from '@/components/train/blunder-check/BlunderCheckEndScreen';
 import { LEADERBOARD_MODE_STORAGE_KEY } from '@/lib/trainLeaderboard';
@@ -46,9 +45,15 @@ function renderEndScreen(onDone: () => void = () => undefined): void {
   );
 }
 
+beforeEach(() => {
+  window.history.pushState({}, '', '/train/blunder-check');
+  window.umami = { track } as unknown as typeof window.umami;
+});
+
 afterEach(() => {
   cleanup();
-  trackFeature.mockReset();
+  track.mockReset();
+  delete window.umami;
   localStorage.clear();
 });
 
@@ -69,10 +74,11 @@ describe('BlunderCheckEndScreen leaderboard link', () => {
   it('sends one nav-click with the score-screen source, as an event call not a data attribute', () => {
     renderEndScreen();
     const link = screen.getByTestId('btn-blunder-check-leaderboard');
-    expect(link.getAttribute('data-umami-event')).toBeNull();
+    expect(link.getAttribute(UMAMI_ATTRIBUTE)).toBeNull();
     fireEvent.click(link);
-    expect(trackFeature).toHaveBeenCalledTimes(1);
-    expect(trackFeature).toHaveBeenCalledWith('nav-click', {
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('nav-click', {
+      page: 'train',
       target: 'train',
       value: 'blunder-check-score-screen',
     });
