@@ -13,16 +13,23 @@ Coverage, the D-06 resize of an open blunder-check session (`-k resize`):
 - test_resize_after_completion_applies_next_session: a completed session is never reopened
 - test_resize_extend_never_reserves_shown_blunder  : no extension window repeats a served blunder
 
+Coverage, puzzles switched off (`-k puzzles_off`):
+- test_puzzles_off_compose_writes_nothing          : size 0 composes nothing and discards nothing
+- test_puzzles_off_waiting_count_zero              : the waiting count is 0 at size 0
+- test_puzzles_off_closes_open_session             : an open puzzle session is expired, solves stay
+- test_puzzles_off_bc_done_ticks                   : blunder check alone completes the day once
+
 Every seeded game and session is deleted in `finally` (eval lottery isolation).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 
 import pytest
-from sqlalchemy import delete, select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.blunder_check import (
     BlunderCheckSession,
@@ -30,12 +37,21 @@ from app.models.blunder_check import (
     WindowCase,
     WindowOutcome,
 )
+from app.models.drill_item import DrillItem, DrillStatus
 from app.models.drill_session import DrillSession
+from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
 from app.services import blunder_check_selection, blunder_check_service
 from app.services.train_scheduler import ALL_WEEKDAYS_MASK
 from app.services.train_settings_service import apply_settings_update
+from tests.conftest import ensure_test_user
+from tests.repositories.test_train_repository import (
+    _TODAY,
+    _USER_ID,
+    _seed_flaw_game,
+    _seed_open_session_with_solves,
+)
 from tests.blunder_check_seed import (
     SeedBlunder,
     delete_blunder_check_sessions,
@@ -439,3 +455,183 @@ async def test_resize_after_completion_applies_next_session(
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id, *new_session_ids])
         await delete_games(test_engine, all_game_ids)
+
+
+# ---------------------------------------------------------------------------
+# Puzzles switched off (size 0)
+# ---------------------------------------------------------------------------
+
+
+async def _set_puzzles_size(test_engine, user_id: int, size: int) -> None:
+    async with _maker(test_engine)() as session, session.begin():
+        await session.execute(
+            update(TrainSettings)
+            .where(TrainSettings.user_id == user_id)
+            .values(puzzles_per_session=size)
+        )
+
+
+async def _seed_open_puzzle_session(
+    test_engine, user_id: int, *, puzzle_count: int, solved: int
+) -> int:
+    """An open puzzle session dated `_DAY` with sharp-filler puzzles, the first `solved` solved."""
+    async with _maker(test_engine)() as session, session.begin():
+        header = DrillSession(
+            user_id=user_id,
+            session_date=_DAY,
+            status="open",
+            puzzle_count=puzzle_count,
+            requested_count=puzzle_count,
+            expires_on=_DAY + datetime.timedelta(days=1),
+        )
+        session.add(header)
+        await session.flush()
+        for position in range(puzzle_count):
+            session.add(
+                DrillSolve(
+                    session_id=header.id,
+                    position=position,
+                    user_id=user_id,
+                    game_id=None,
+                    ply=0,
+                    source=int(DrillSource.SHARP_FILLER),
+                    sharp_puzzle_id=f"sharp-off-{position}",
+                    solved_at=_NOW if position < solved else None,
+                )
+            )
+        return header.id
+
+
+async def _drill_session_rows(test_engine, user_id: int) -> list[tuple[int, str]]:
+    async with _maker(test_engine)() as session:
+        rows = await session.execute(
+            select(DrillSession.id, DrillSession.status).where(DrillSession.user_id == user_id)
+        )
+        return [(row.id, row.status) for row in rows]
+
+
+async def _solved_count(test_engine, session_id: int) -> int:
+    async with _maker(test_engine)() as session:
+        return int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(DrillSolve)
+                    .where(DrillSolve.session_id == session_id, DrillSolve.solved_at.isnot(None))
+                )
+            ).scalar_one()
+        )
+
+
+@pytest.mark.asyncio
+async def test_puzzles_off_compose_writes_nothing(test_engine) -> None:
+    """At size 0 composition returns an empty session, writes no row and discards nothing."""
+    user_id, _ = await register_user("puzzles-off-compose", beta=False, test_engine=test_engine)
+    await _seed_holder(test_engine, user_id)
+    await _set_puzzles_size(test_engine, user_id, 0)
+    # An untouched open session whose frozen size no longer matches the setting: at a size above
+    # 0 composition would discard it and recompose; at 0 it must be left alone.
+    open_id = await _seed_open_puzzle_session(test_engine, user_id, puzzle_count=6, solved=0)
+    try:
+        async with _maker(test_engine)() as session, session.begin():
+            composed = await train_repository.compose_and_materialize_session(
+                session, user_id=user_id, now_utc=_NOW
+            )
+
+        assert composed.session_id is None
+        assert composed.puzzle_count == 0
+        assert composed.puzzles == []
+        assert await _drill_session_rows(test_engine, user_id) == [(open_id, "open")]
+    finally:
+        await _delete_drill_sessions(test_engine, [open_id])
+
+
+@pytest.mark.asyncio
+async def test_puzzles_off_waiting_count_zero(db_session: AsyncSession) -> None:
+    """get_waiting_puzzle_count reports 0 at size 0 even with a due item (and 1 at size 6)."""
+    await ensure_test_user(db_session, _USER_ID)
+    row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+    game_id = await _seed_flaw_game(db_session, _USER_ID, "puzzles-off-wait")
+    db_session.add(
+        DrillItem(
+            user_id=_USER_ID,
+            game_id=game_id,
+            ply=2,
+            status=DrillStatus.ACTIVE,
+            streak=0,
+            due_date=_TODAY,
+            fail_count=0,
+            ever_correct=False,
+        )
+    )
+    await db_session.flush()
+
+    on_count = await train_repository.get_waiting_puzzle_count(
+        db_session, user_id=_USER_ID, settings_row=row, today=_TODAY
+    )
+    assert on_count > 0, "positive control: the due item must count while puzzles are on"
+
+    off_count = await train_repository.get_waiting_puzzle_count(
+        db_session,
+        user_id=_USER_ID,
+        settings_row=dataclasses.replace(row, puzzles_per_session=0),
+        today=_TODAY,
+    )
+    assert off_count == 0
+
+    # A touched open session would report its unsolved remainder (4 of 6); at size 0 the badge
+    # must still read 0 (the settings PUT closes such a session, this guards the read itself).
+    await _seed_open_session_with_solves(
+        db_session,
+        _USER_ID,
+        "puzzles-off-open",
+        puzzle_count=6,
+        solved_count=2,
+        expires_on=_TODAY + datetime.timedelta(days=1),
+        requested_count=6,
+    )
+    with_open_count = await train_repository.get_waiting_puzzle_count(
+        db_session,
+        user_id=_USER_ID,
+        settings_row=dataclasses.replace(row, puzzles_per_session=0),
+        today=_TODAY,
+    )
+    assert with_open_count == 0
+
+
+@pytest.mark.asyncio
+async def test_puzzles_off_closes_open_session(test_engine) -> None:
+    """Setting puzzles to 0 expires the open session; its solved rows stay."""
+    user_id, _ = await register_user("puzzles-off-close", beta=False, test_engine=test_engine)
+    await _seed_holder(test_engine, user_id)
+    session_id = await _seed_open_puzzle_session(test_engine, user_id, puzzle_count=6, solved=2)
+    try:
+        await _apply(test_engine, user_id, bc_size=_BC_SIZE, puzzles=0)
+
+        assert await _drill_session_rows(test_engine, user_id) == [(session_id, "expired")]
+        assert await _solved_count(test_engine, session_id) == 2
+    finally:
+        await _delete_drill_sessions(test_engine, [session_id])
+
+
+@pytest.mark.asyncio
+async def test_puzzles_off_bc_done_ticks(test_engine) -> None:
+    """Blunder check done today, then puzzles set to 0: the day completes and the streak ticks once."""
+    user_id, _ = await register_user("puzzles-off-tick", beta=False, test_engine=test_engine)
+    await _seed_holder(test_engine, user_id)
+    bc_id = await seed_completed_blunder_check_session(
+        test_engine, user_id=user_id, session_date=_DAY, points=_WINDOW_POINTS
+    )
+    try:
+        assert (await _settings(test_engine, user_id)).streak_count == _STARTING_STREAK
+
+        await _apply(test_engine, user_id, bc_size=_BC_SIZE, puzzles=0)
+
+        row = await _settings(test_engine, user_id)
+        assert row.streak_count == _STARTING_STREAK + 1
+        assert row.streak_credited_on == _DAY
+        # A repeat PUT never credits again.
+        await _apply(test_engine, user_id, bc_size=_BC_SIZE, puzzles=0)
+        assert (await _settings(test_engine, user_id)).streak_count == _STARTING_STREAK + 1
+    finally:
+        await delete_blunder_check_sessions(test_engine, [bc_id])
