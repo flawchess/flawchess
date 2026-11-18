@@ -34,6 +34,14 @@ const THREE_KEYS = [
   { week_start: '2026-09-28', board: 'points' },
 ];
 
+// Two weeks across a puzzle board and the Blunder check boards, in API order.
+const MIXED_MODES: UnclaimedMedal[] = [
+  { week_start: '2026-10-05', board: 'points', medal: 'gold', value: 412, shared: false },
+  { week_start: '2026-10-05', board: 'blunder_check_score', medal: 'silver', value: 87, shared: true },
+  { week_start: '2026-09-28', board: 'accuracy', medal: 'bronze', value: 90, shared: false },
+  { week_start: '2026-09-28', board: 'blunder_check_points', medal: 'gold', value: 64, shared: false },
+];
+
 afterEach(() => {
   cleanup();
   unlockAudio.mockReset();
@@ -58,22 +66,58 @@ function renderDialog(overrides: Partial<MedalClaimDialogProps> = {}) {
 }
 
 describe('MedalClaimDialog content', () => {
-  it('lists every medal in the given order with label, week and value', () => {
+  it('lists every medal in the given order with label and value, one section per week', () => {
     renderDialog();
     expect(screen.getByTestId('train-medal-dialog')).not.toBeNull();
     expect(screen.getByText('You won 3 medals!')).not.toBeNull();
     const list = screen.getByTestId('train-medal-dialog-list');
-    expect(list.children).toHaveLength(3);
+    expect(list.querySelectorAll('[data-testid^="train-medal-dialog-entry-"]')).toHaveLength(3);
+    expect(list.querySelectorAll('[data-testid^="train-medal-dialog-week-"]')).toHaveLength(2);
 
     const first = screen.getByTestId('train-medal-dialog-entry-0');
     expect(within(first).getByText('Gold, Puzzles Points')).not.toBeNull();
-    expect(within(first).getByText('Week of Oct 5 · 412 pts')).not.toBeNull();
+    expect(within(first).getByText('412 pts')).not.toBeNull();
     const second = screen.getByTestId('train-medal-dialog-entry-1');
     expect(within(second).getByText('Silver, Puzzles Accuracy (shared)')).not.toBeNull();
-    expect(within(second).getByText('Week of Oct 5 · 87%')).not.toBeNull();
+    expect(within(second).getByText('87%')).not.toBeNull();
     const third = screen.getByTestId('train-medal-dialog-entry-2');
     expect(within(third).getByText('Bronze, Puzzles Points')).not.toBeNull();
-    expect(within(third).getByText('Week of Sep 28 · 55 pts')).not.toBeNull();
+    expect(within(third).getByText('55 pts')).not.toBeNull();
+  });
+
+  it('groups medals of both modes under one heading per week, newest first, each labelled with mode and board', () => {
+    renderDialog({ medals: MIXED_MODES });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByText('You won 4 medals!')).not.toBeNull();
+
+    const newest = screen.getByTestId('train-medal-dialog-week-0');
+    const older = screen.getByTestId('train-medal-dialog-week-1');
+    expect(within(newest).getByRole('heading').textContent).toBe('Week of Oct 5');
+    expect(within(older).getByRole('heading').textContent).toBe('Week of Sep 28');
+    expect(newest.compareDocumentPosition(older) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(within(newest).getAllByTestId(/^train-medal-dialog-entry-/)).toHaveLength(2);
+    expect(within(newest).getByText('Gold, Puzzles Points')).not.toBeNull();
+    expect(within(newest).getByText('Silver, Blunder check Score % (shared)')).not.toBeNull();
+    expect(within(older).getByText('Bronze, Puzzles Accuracy')).not.toBeNull();
+    expect(within(older).getByText('Gold, Blunder check Points')).not.toBeNull();
+    expect(within(older).getByText('64 pts')).not.toBeNull();
+    expect(within(newest).getByText('87%')).not.toBeNull();
+  });
+
+  it('shows one heading even when a week holds several medals, and numbers entries across weeks', () => {
+    renderDialog({ medals: MIXED_MODES });
+    expect(screen.getAllByRole('heading', { name: /^Week of/ })).toHaveLength(2);
+    // Global entry index: the pop-in stagger runs across the whole dialog.
+    expect(screen.getByTestId('train-medal-dialog-entry-3').textContent).toContain('Gold, Blunder check Points');
+  });
+
+  it('puts a week that the server sent out of order back newest first', () => {
+    const shuffled = [MIXED_MODES[2]!, MIXED_MODES[0]!];
+    renderDialog({ medals: shuffled });
+    expect(within(screen.getByTestId('train-medal-dialog-week-0')).getByRole('heading').textContent).toBe(
+      'Week of Oct 5',
+    );
   });
 
   it('uses the singular title for one medal', () => {
@@ -88,6 +132,18 @@ describe('MedalClaimDialog content', () => {
 });
 
 describe('MedalClaimDialog Claim path', () => {
+  it('one Claim posts the keys of every shown medal across weeks and modes, in shown order', () => {
+    const { onClaim } = renderDialog({ medals: MIXED_MODES });
+    fireEvent.click(screen.getByTestId('btn-train-medal-claim'));
+    expect(onClaim).toHaveBeenCalledTimes(1);
+    expect(onClaim).toHaveBeenCalledWith([
+      { week_start: '2026-10-05', board: 'points' },
+      { week_start: '2026-10-05', board: 'blunder_check_score' },
+      { week_start: '2026-09-28', board: 'accuracy' },
+      { week_start: '2026-09-28', board: 'blunder_check_points' },
+    ]);
+  });
+
   it('unlocks audio before the chime, plays it once for three medals, fires confetti, reports the keys', () => {
     const { onClaim, onDismiss } = renderDialog();
     fireEvent.click(screen.getByTestId('btn-train-medal-claim'));
