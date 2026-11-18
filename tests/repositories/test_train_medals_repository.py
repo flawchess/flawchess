@@ -41,6 +41,7 @@ from app.repositories.train_medals_repository import (
     mark_celebrated,
 )
 from app.schemas.train import LeaderboardBoardKind
+from app.services.train_leaderboard import MedalTally, fold_medal_tallies
 from tests.conftest import ensure_test_user
 
 # Monday of the k=0 week; every test adds its own k weeks.
@@ -247,3 +248,90 @@ async def test_tally_rows_group_by_board_user_and_medal(db_session: AsyncSession
         TallyCount("points", _USER_B, Medal.SILVER, 1),
     ]
     assert await fetch_medal_tallies(db_session, user_ids=[]) == []
+
+
+# --- blunder-check boards (Phase 251, D-14 / D-15 / D-23) ---------------------
+#
+# k table, blunder-check tests (k=29 onwards, within this module's 20-39 range):
+# - k=29 test_unclaimed_orders_four_boards (older week)
+# - k=30 test_unclaimed_orders_four_boards (newer week)
+# - k=31 test_bc_medal_tally_isolated
+# - k=32 test_claim_bc_medal
+
+
+@pytest.mark.asyncio
+async def test_unclaimed_orders_four_boards(db_session: AsyncSession) -> None:
+    """Newest week first, then points, accuracy, blunder-check points, blunder-check score."""
+    await ensure_test_user(db_session, _USER_A)
+    # Inserted in reverse board order so the result order can only come from the query.
+    older = await _seed_week(
+        db_session,
+        29,
+        [
+            _standing("blunder_check_score", _USER_A, rank=1, value=75, medal=Medal.GOLD),
+            _standing("blunder_check_points", _USER_A, rank=2, value=40, medal=Medal.SILVER),
+            _standing("accuracy", _USER_A, rank=3, value=60, medal=Medal.BRONZE),
+            _standing("points", _USER_A, rank=1, value=9, medal=Medal.GOLD),
+        ],
+    )
+    newer = await _seed_week(
+        db_session,
+        30,
+        [_standing("blunder_check_score", _USER_A, rank=3, value=50, medal=Medal.BRONZE)],
+    )
+
+    rows = await fetch_unclaimed(db_session, user_id=_USER_A, limit=10)
+
+    assert rows == [
+        UnclaimedRow(newer, "blunder_check_score", Medal.BRONZE, 50, False),
+        UnclaimedRow(older, "points", Medal.GOLD, 9, False),
+        UnclaimedRow(older, "accuracy", Medal.BRONZE, 60, False),
+        UnclaimedRow(older, "blunder_check_points", Medal.SILVER, 40, False),
+        UnclaimedRow(older, "blunder_check_score", Medal.GOLD, 75, False),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bc_medal_tally_isolated(db_session: AsyncSession) -> None:
+    """D-23: a blunder-check gold shows on the blunder-check tally and on no puzzle board's."""
+    await ensure_test_user(db_session, _USER_A)
+    await ensure_test_user(db_session, _USER_B)
+    await _seed_week(
+        db_session,
+        31,
+        [
+            _standing("blunder_check_points", _USER_A, rank=1, value=40, medal=Medal.GOLD),
+            _standing("points", _USER_B, rank=1, value=9, medal=Medal.GOLD),
+        ],
+    )
+
+    folded = fold_medal_tallies(await fetch_medal_tallies(db_session, user_ids=[_USER_A, _USER_B]))
+
+    assert folded["blunder_check_points"] == {_USER_A: MedalTally(gold=1, silver=0, bronze=0)}
+    assert folded["points"] == {_USER_B: MedalTally(gold=1, silver=0, bronze=0)}
+    assert _USER_A not in folded["points"]
+    assert _USER_A not in folded["accuracy"]
+    assert folded["blunder_check_score"] == {}
+
+
+@pytest.mark.asyncio
+async def test_claim_bc_medal(db_session: AsyncSession) -> None:
+    """Claiming a blunder-check board key stamps that medal only, not the week's other boards."""
+    await ensure_test_user(db_session, _USER_A)
+    week = await _seed_week(
+        db_session,
+        32,
+        [
+            _standing("blunder_check_points", _USER_A, rank=1, value=40, medal=Medal.GOLD),
+            _standing("blunder_check_score", _USER_A, rank=1, value=75, medal=Medal.GOLD),
+        ],
+    )
+    key: tuple[datetime.date, LeaderboardBoardKind] = (week, "blunder_check_score")
+
+    assert await mark_celebrated(db_session, user_id=_USER_A, keys=[key], now_utc=_NOW) == 1
+
+    assert await _celebrated_at(db_session, week, "blunder_check_score", _USER_A) == _NOW
+    assert await _celebrated_at(db_session, week, "blunder_check_points", _USER_A) is None
+    assert await fetch_unclaimed(db_session, user_id=_USER_A, limit=10) == [
+        UnclaimedRow(week, "blunder_check_points", Medal.GOLD, 40, False)
+    ]
