@@ -42,6 +42,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.dev_clock import dev_now_utc
 from app.main import app
+from app.models.blunder_check import (
+    BlunderCheckSession,
+    BlunderCheckWindow,
+    WindowCase,
+    WindowOutcome,
+)
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillMoveQuality, DrillSolve, DrillSource
 from app.models.user import User
@@ -266,11 +272,20 @@ async def test_response_key_set_has_no_user_ids(
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert set(body) == {"week_start", "week_end", "seconds_remaining", "points", "accuracy"}
-        for board_name in ("points", "accuracy"):
+        assert set(body) == {
+            "week_start",
+            "week_end",
+            "seconds_remaining",
+            "points",
+            "accuracy",
+            "blunder_check_points",
+            "blunder_check_score",
+        }
+        for board_name in ("points", "accuracy", "blunder_check_points", "blunder_check_score"):
             board = body[board_name]
             assert set(board) == {"rows", "viewer", "last_week"}
-            assert len(board["rows"]) == 2
+            # Only the puzzle boards have rows: this test seeds no blunder-check windows.
+            assert len(board["rows"]) == (2 if board_name in ("points", "accuracy") else 0)
             for row in board["rows"]:
                 assert set(row) == {
                     "rank",
@@ -285,13 +300,17 @@ async def test_response_key_set_has_no_user_ids(
                     "medals",
                 }
                 assert set(row["medals"]) == {"gold", "silver", "bronze"}
-            assert set(board["viewer"]) == {
-                "rank",
-                "rank_without_session",
-                "tentative",
-                "puzzles_to_qualify",
-                "visibility",
-            }
+            if board_name in ("points", "accuracy"):
+                assert set(board["viewer"]) == {
+                    "rank",
+                    "rank_without_session",
+                    "tentative",
+                    "puzzles_to_qualify",
+                    "visibility",
+                }
+            else:
+                # The viewer has no blunder-check window this week, so no standing there.
+                assert board["viewer"] is None
 
         def walk(node: Any) -> None:
             if isinstance(node, dict):
@@ -598,5 +617,191 @@ async def test_profile_opt_out_hides_user_from_other_viewers(
         v_after = (await _get_leaderboard(v_token)).json()
         assert x_name in names(v_after)
         assert v_after["points"]["viewer"]["rank"] == 2
+    finally:
+        await _delete_users(test_engine, user_ids)
+
+
+# --- blunder-check boards (Phase 251, D-14 / D-22 / D-25) --------------------
+#
+# k table, blunder-check tests: k=18 test_bc_boards_rank_ended_windows_of_this_week,
+# k=17 and k=19 owned by test_bc_boards_rank_ended_windows_of_this_week (previous and next-week rows),
+# k=20 test_bc_boards_guest_viewer_private_row_and_hidden_user_invisible.
+
+_BC_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+_BC_WINDOW_LENGTH = 3
+
+# (points_scored, points_possible, ended): ended False seeds a started but never ended window.
+BcWindowSpec = tuple[int, int, bool]
+
+
+async def _seed_bc_windows(
+    test_engine: Any,
+    user_id: int,
+    ended_at: datetime.datetime,
+    windows: Sequence[BcWindowSpec],
+    *,
+    status: str = "completed",
+) -> int:
+    """Insert one blunder-check session with one herring window per spec; return its id.
+
+    Ended windows get outcome CLEARED and `ended_at`; an unended one keeps outcome and
+    ended_at NULL. `status` lets a test prove the boards ignore the session's status.
+    """
+    day = ended_at.astimezone(datetime.UTC).date()
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            header = BlunderCheckSession(
+                user_id=user_id,
+                status=status,
+                window_count=len(windows),
+                started_at=ended_at,
+                session_date=day,
+                expires_on=day + datetime.timedelta(days=1),
+            )
+            session.add(header)
+            await session.flush()
+            for position, (scored, possible, ended) in enumerate(windows):
+                session.add(
+                    BlunderCheckWindow(
+                        session_id=header.id,
+                        position=position,
+                        user_id=user_id,
+                        game_id=None,
+                        is_own=True,
+                        window_length=_BC_WINDOW_LENGTH,
+                        blunder_position=None,
+                        first_ply=10,
+                        blunder_ply=None,
+                        window_case=int(WindowCase.HERRING),
+                        start_fen=_BC_START_FEN,
+                        move_ucis="e2e4 e7e5 g1f3",
+                        lead_in_plies=0,
+                        points_possible=possible,
+                        points_scored=scored,
+                        outcome=int(WindowOutcome.CLEARED) if ended else None,
+                        started_at=ended_at,
+                        ended_at=ended_at if ended else None,
+                    )
+                )
+            return header.id
+
+
+@pytest.mark.asyncio
+async def test_bc_boards_rank_ended_windows_of_this_week(
+    test_engine: Any, pin_now: Callable[[datetime.datetime], None]
+) -> None:
+    """Tracer (k=18): both blunder-check boards computed from ended windows by ended_at.
+
+    A started but unended window, windows ended just outside the half-open week and a
+    guest and an opted-out user must all stay off the viewer's boards, while an ended window
+    of an expired session still counts (the boards ignore the session status, A5).
+    """
+    pin_now(_wednesday_noon(18))
+    ended_at = _week_monday(18) + datetime.timedelta(days=1)
+    tag = uuid.uuid4().hex[:8]
+    a_name = f"bc_alpha_{tag}"
+    b_name = f"bc_bravo_{tag}"
+    user_ids: list[int] = []
+    try:
+        a_id, _ = await _register_and_login(f"bc-a-{tag}@example.com")
+        b_id, _ = await _register_and_login(f"bc-b-{tag}@example.com")
+        v_id, v_token = await _register_and_login(f"bc-v-{tag}@example.com")
+        g_id, _ = await _register_and_login(f"bc-g-{tag}@example.com")
+        h_id, _ = await _register_and_login(f"bc-h-{tag}@example.com")
+        user_ids = [a_id, b_id, v_id, g_id, h_id]
+        await _set_user_fields(test_engine, a_id, lichess_username=a_name)
+        await _set_user_fields(test_engine, b_id, chess_com_username=b_name)
+        await _set_user_fields(test_engine, g_id, is_guest=True, lichess_username="bc_guest")
+        await _set_user_fields(
+            test_engine, h_id, leaderboard_hidden=True, lichess_username="bc_hidden"
+        )
+
+        # a: 18 ended windows (3 of 4 each) = 54 points, 75 percent, plus an unended window.
+        await _seed_bc_windows(test_engine, a_id, ended_at, [(3, 4, True)] * 18 + [(4, 4, False)])
+        # a: ended just outside the week on both sides (half-open [Monday, next Monday)).
+        await _seed_bc_windows(test_engine, a_id, _week_monday(19), [(40, 40, True)])
+        await _seed_bc_windows(
+            test_engine,
+            a_id,
+            _week_monday(18) - datetime.timedelta(microseconds=1),
+            [(40, 40, True)],
+        )
+        # b: 3 ended windows of an expired session = 12 points, 100 percent, tentative.
+        await _seed_bc_windows(test_engine, b_id, ended_at, [(4, 4, True)] * 3, status="expired")
+        await _seed_bc_windows(test_engine, v_id, ended_at, [(1, 4, True)])
+        await _seed_bc_windows(test_engine, g_id, ended_at, [(50, 50, True)] * 3)
+        await _seed_bc_windows(test_engine, h_id, ended_at, [(50, 50, True)] * 3)
+
+        resp = await _get_leaderboard(v_token)
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert _rows(body["blunder_check_points"]) == [
+            (1, a_name, 54, 18, False),
+            (2, b_name, 12, 3, False),
+            (3, "Anonymous", 1, 1, True),
+        ]
+        assert _rows(body["blunder_check_score"]) == [
+            (1, a_name, 75, 18, False),
+            (None, b_name, 100, 3, False),
+            (None, "Anonymous", 25, 1, True),
+        ]
+        assert [r["tentative"] for r in body["blunder_check_score"]["rows"]] == [False, True, True]
+        score_viewer = body["blunder_check_score"]["viewer"]
+        assert score_viewer["rank"] is None
+        assert score_viewer["tentative"] is True
+        assert score_viewer["puzzles_to_qualify"] == 17
+        assert body["blunder_check_points"]["viewer"]["rank"] == 3
+        assert body["blunder_check_points"]["viewer"]["puzzles_to_qualify"] == 0
+        assert body["blunder_check_points"]["viewer"]["rank_without_session"] is None
+        # Nobody solved a puzzle this week: the puzzle boards stay empty.
+        assert body["points"]["rows"] == []
+        assert body["accuracy"]["rows"] == []
+        all_names = {
+            r["name"]
+            for board in ("blunder_check_points", "blunder_check_score")
+            for r in body[board]["rows"]
+        }
+        assert "bc_guest" not in all_names
+        assert "bc_hidden" not in all_names
+    finally:
+        await _delete_users(test_engine, user_ids)
+
+
+@pytest.mark.asyncio
+async def test_bc_boards_guest_viewer_private_row_and_hidden_user_invisible(
+    test_engine: Any, pin_now: Callable[[datetime.datetime], None]
+) -> None:
+    """Guest viewer (k=20): a private would-be row on the blunder-check boards, D-25."""
+    pin_now(_wednesday_noon(20))
+    ended_at = _week_monday(20) + datetime.timedelta(days=1)
+    tag = uuid.uuid4().hex[:8]
+    g_name = f"bc_ghost_g_{tag}"
+    user_ids: list[int] = []
+    try:
+        a_id, _ = await _register_and_login(f"bc-ghost-a-{tag}@example.com")
+        g_id, g_token = await _register_and_login(f"bc-ghost-g-{tag}@example.com")
+        v_id, v_token = await _register_and_login(f"bc-ghost-v-{tag}@example.com")
+        user_ids = [a_id, g_id, v_id]
+        await _set_user_fields(test_engine, a_id, lichess_username=f"bc_ghost_a_{tag}")
+        await _set_user_fields(test_engine, g_id, is_guest=True, lichess_username=g_name)
+        await _seed_bc_windows(test_engine, a_id, ended_at, [(2, 4, True)] * 2)
+        await _seed_bc_windows(test_engine, g_id, ended_at, [(4, 4, True)] * 5)
+        await _seed_bc_windows(test_engine, v_id, ended_at, [(1, 4, True)])
+
+        guest_body = (await _get_leaderboard(g_token)).json()
+        other_body = (await _get_leaderboard(v_token)).json()
+
+        own_rows = [r for r in guest_body["blunder_check_points"]["rows"] if r["name"] == g_name]
+        assert len(own_rows) == 1
+        assert own_rows[0]["is_viewer"] is True
+        assert own_rows[0]["visibility"] == "guest"
+        assert guest_body["blunder_check_points"]["viewer"]["visibility"] == "guest"
+        # 20 points against 4 and 1: the guest's private row is ranked first among visible users.
+        assert guest_body["blunder_check_points"]["viewer"]["rank"] == 1
+        for board in ("blunder_check_points", "blunder_check_score"):
+            assert g_name not in {r["name"] for r in other_body[board]["rows"]}
+        assert other_body["blunder_check_points"]["viewer"]["rank"] == 2
     finally:
         await _delete_users(test_engine, user_ids)

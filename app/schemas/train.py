@@ -889,7 +889,9 @@ class TrainArchiveResponse(BaseModel):
     total: int
 
 
-LeaderboardBoardKind = Literal["points", "accuracy"]
+# Two puzzle boards plus two blunder-check boards (Phase 251, D-14). The stored values of
+# `train_weekly_standings.board`: one-way names, never renamed (installed PWAs cache them).
+LeaderboardBoardKind = Literal["points", "accuracy", "blunder_check_points", "blunder_check_score"]
 LeaderboardVisibility = Literal["public", "hidden", "guest"]
 MedalKind = Literal["gold", "silver", "bronze"]
 
@@ -933,11 +935,14 @@ class LeaderboardRow(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int | None  # None marks a tentative Accuracy entry (listed below every qualified row)
+    rank: int | None  # None marks a tentative Accuracy / Score % entry (below every qualified row)
     name: str
-    value: int  # points (Points board) or floored accuracy percent (Accuracy board)
-    puzzles: int  # all solves (Points) or non-filler solves (Accuracy)
-    tentative: bool  # Accuracy only: puzzles < 20; always False on Points
+    value: int  # points (Points boards) or floored percent (Accuracy and Score % boards)
+    # All solves (Points) or non-filler solves (Accuracy); on the blunder-check boards the
+    # number of ended windows.
+    puzzles: int
+    # Accuracy: puzzles < 20; blunder-check Score %: windows < 18. Always False on Points boards.
+    tentative: bool
     is_viewer: bool
     # "public" on every row except the viewer's own hidden/guest row.
     visibility: LeaderboardVisibility
@@ -951,13 +956,16 @@ class LeaderboardViewer(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int | None  # None while the viewer is a tentative Accuracy entry (unranked)
+    rank: int | None  # None while the viewer is a tentative Accuracy / Score % entry (unranked)
     # Rank without the current session's solves. Null when no session_id
     # was supplied, the viewer had no entry before the session, or the viewer is
-    # tentative with or without the session (no delta across the cutoff).
+    # tentative with or without the session (no delta across the cutoff). Always null on the
+    # blunder-check boards (the blunder-check score screen links to the boards instead, D-24).
     rank_without_session: int | None
     tentative: bool
-    puzzles_to_qualify: int  # 0 on Points and once qualified
+    # Puzzles still needed on Accuracy, windows still needed on blunder-check Score %;
+    # 0 on the Points boards and once qualified.
+    puzzles_to_qualify: int
     visibility: LeaderboardVisibility
 
 
@@ -974,8 +982,9 @@ class LeaderboardBoard(BaseModel):
 
 
 class TrainLeaderboardResponse(BaseModel):
-    """Response for GET /train/leaderboard: both weekly boards for the viewer.
+    """Response for GET /train/leaderboard: the four weekly boards for the viewer.
 
+    The two blunder-check boards are additive (Phase 251): installed PWAs ignore unknown fields.
     No user ids or emails, by design; rows key only by position.
     """
 
@@ -986,6 +995,8 @@ class TrainLeaderboardResponse(BaseModel):
     seconds_remaining: int
     points: LeaderboardBoard
     accuracy: LeaderboardBoard
+    blunder_check_points: LeaderboardBoard
+    blunder_check_score: LeaderboardBoard
 
 
 # About a year of both boards. Caps the unclaimed read and the claim body, so a dialog's
