@@ -22,10 +22,12 @@ import chess
 from sqlalchemy import (
     ColumnElement,
     and_,
+    case,
     delete,
     exists,
     func,
     literal,
+    null,
     true,
     Select,
     or_,
@@ -447,6 +449,8 @@ async def upsert_settings(
     reminder_hour: int,
     reminder_intent_at: datetime.datetime | None,
     now_utc: datetime.datetime,
+    blunder_check_per_session: int | None = None,
+    blunder_check_level: BlunderCheckLevel | None = None,
 ) -> TrainSettingsRow:
     """Insert or update one user's `train_settings` row (PUT /train/settings).
 
@@ -502,7 +506,7 @@ async def upsert_settings(
         user_id: Authenticated user's internal PK (V4: never client-supplied).
         timezone: A validated IANA timezone string.
         weekday_mask: 7-bit scheduled-day mask, 0-127.
-        puzzles_per_session: Requested session size, 1-50.
+        puzzles_per_session: Requested puzzle session size, 0-50 (0 = puzzles off).
         reminder_enabled: Whether Train reminder push notifications are on.
         reminder_hour: The local hour (0-23) reminders fire at.
         reminder_intent_at: The instant the user last expressed install
@@ -511,16 +515,35 @@ async def upsert_settings(
         now_utc: The current UTC instant. Used ONLY to resolve `today` from
             the OLD (pre-mutation) timezone for the settle-before-mutate
             step — never converted against the NEW timezone being applied.
+        blunder_check_per_session: The blunder-check session size, 0-30 (0 = off). None keeps the
+            stored value (the PUT contract: pre-release PWA bodies omit it; it also keeps every
+            pre-251 direct caller valid). When the written size differs from the stored one the
+            same UPSERT clears `blunder_check_notice_from` (D-21: the launch notice's amount
+            claim is stale once the user picked a size).
+        blunder_check_level: The stored level a user without rated games composes at. None keeps
+            the stored value.
     """
     old_row = await get_or_create_settings(session, user_id=user_id)
     today = local_today(old_row.timezone, now_utc)
     await settle_streak_snapshot(session, user_id=user_id, settings_row=old_row, today=today)
 
+    # None keeps the stored value; the row always exists here (get_or_create above), so the
+    # resolved values are what both the INSERT clause and the UPDATE write.
+    resolved_bc_size = (
+        old_row.blunder_check_per_session
+        if blunder_check_per_session is None
+        else blunder_check_per_session
+    )
+    resolved_bc_level = (
+        old_row.blunder_check_level if blunder_check_level is None else blunder_check_level
+    )
     stmt = pg_insert(TrainSettings).values(
         user_id=user_id,
         timezone=timezone,
         weekday_mask=weekday_mask,
         puzzles_per_session=puzzles_per_session,
+        blunder_check_per_session=resolved_bc_size,
+        blunder_check_level=resolved_bc_level,
         reminder_enabled=reminder_enabled,
         reminder_hour=reminder_hour,
         reminder_intent_at=reminder_intent_at,
@@ -531,6 +554,19 @@ async def upsert_settings(
             "timezone": stmt.excluded.timezone,
             "weekday_mask": stmt.excluded.weekday_mask,
             "puzzles_per_session": stmt.excluded.puzzles_per_session,
+            # D-21: a changed blunder-check amount clears the launch notice. Evaluated in SQL
+            # against the stored size (SET expressions read the pre-update row), so it cannot
+            # race a concurrent write the way a Python-side compare could.
+            "blunder_check_notice_from": case(
+                (
+                    TrainSettings.blunder_check_per_session
+                    != stmt.excluded.blunder_check_per_session,
+                    null(),
+                ),
+                else_=TrainSettings.blunder_check_notice_from,
+            ),
+            "blunder_check_per_session": stmt.excluded.blunder_check_per_session,
+            "blunder_check_level": stmt.excluded.blunder_check_level,
             "reminder_enabled": stmt.excluded.reminder_enabled,
             "reminder_hour": stmt.excluded.reminder_hour,
             "reminder_intent_at": stmt.excluded.reminder_intent_at,
@@ -562,7 +598,8 @@ async def upsert_settings(
         TrainSettings.intro_seen_at,
         TrainSettings.sr_explained_at,
         TrainSettings.reveal_tour_stage,
-        # The Phase 251 columns are likewise never written by this UPSERT, so read them back.
+        # The size and level are written above; the notice is read back because the UPSERT may
+        # just have cleared it. The two launch-day stamps are never written here.
         TrainSettings.blunder_check_per_session,
         TrainSettings.blunder_check_level,
         TrainSettings.blunder_check_notice_from,
