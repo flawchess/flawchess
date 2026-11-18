@@ -3250,6 +3250,21 @@ async def _seed_pool_eligible_since(
     await db_session.flush()
 
 
+async def _set_blunder_check_size(db_session: AsyncSession, user_id: int, size: int) -> None:
+    """Set `blunder_check_per_session` (creating the settings row first).
+
+    Blunder check at the default 6 counts as trainable material (Phase 251), so the tests that
+    mean "a user with nothing to train at all" switch it off explicitly.
+    """
+    await train_repository.get_or_create_settings(db_session, user_id=user_id)
+    await db_session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == user_id)
+        .values(blunder_check_per_session=size)
+    )
+    await db_session.flush()
+
+
 async def _seed_drill_item_with_status(
     db_session: AsyncSession, user_id: int, label: str, *, status: DrillStatus
 ) -> None:
@@ -3579,6 +3594,8 @@ class TestStampPoolEligibility:
         self, db_session: AsyncSession
     ) -> None:
         await ensure_test_user(db_session, _USER_ID)
+        # "Nothing to train at all" includes blunder check being off (it is material when on).
+        await _set_blunder_check_size(db_session, _USER_ID, _PUZZLES_ONLY_BC_SIZE)
 
         await train_repository.get_progress(db_session, user_id=_USER_ID, now_utc=_PROGRESS_NOW)
 
@@ -3623,7 +3640,8 @@ class TestStampPoolEligibility:
         days have elapsed in wall-clock time, the shield never drains and
         the streak never gets a false start."""
         await ensure_test_user(db_session, _USER_ID)
-        await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+        # "Nothing to train at all" includes blunder check being off (it is material when on).
+        await _set_blunder_check_size(db_session, _USER_ID, _PUZZLES_ONLY_BC_SIZE)
 
         first = await train_repository.get_progress(
             db_session, user_id=_USER_ID, now_utc=_PROGRESS_NOW
