@@ -309,6 +309,7 @@ describe('feature-event registry', () => {
       analytics.REMINDER_ENABLE_SOURCES,
       analytics.REMINDER_ENABLE_OUTCOMES,
       analytics.TRAIN_PUZZLES_PER_SESSION_VALUES,
+      analytics.TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES,
       analytics.REMINDER_HOUR_VALUES,
     ];
     for (const list of lists) {
@@ -361,6 +362,17 @@ describe('feature-event registry', () => {
       source: 'resurface-banner',
       outcome: 'denied',
     });
+  });
+
+  it('registers the Phase 251 option and action targets, and the off (0) session size', () => {
+    expect(analytics.OPTION_TARGETS).toContain('train-blunder-check-per-session');
+    expect(analytics.OPTION_TARGETS).toContain('train-blunder-check-level');
+    expect(analytics.ACTION_TARGETS).toContain('train-mode-turn-on-puzzles');
+    expect(analytics.ACTION_TARGETS).toContain('train-mode-turn-on-blunder-check');
+    expect(analytics.ACTION_TARGETS).toContain('train-blunder-check-notice-dismiss');
+    // 0 is the mode off; blunder check steps 0 to 18 by 3.
+    expect(analytics.enumeratedValue(analytics.TRAIN_PUZZLES_PER_SESSION_VALUES, 0)).toBe('0');
+    expect([...analytics.TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES]).toEqual(['0', '3', '6', '9', '12', '15', '18']);
   });
 
   it('enumeratedValue returns the matching literal and null for off-list numbers', () => {
