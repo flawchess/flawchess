@@ -987,7 +987,9 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
     for (let n = PUZZLES_PER_SESSION_MIN; n <= PUZZLES_PER_SESSION_MAX; n += PUZZLES_PER_SESSION_STEP) {
       grid.push(String(n));
     }
-    expect([...TRAIN_PUZZLES_PER_SESSION_VALUES]).toEqual(grid);
+    // The tracked list also carries '0' (the mode off, Phase 251). Until the slider's own
+    // minimum reaches 0 (plan 251-09) that value is not part of the grid, so it is prepended.
+    expect([...TRAIN_PUZZLES_PER_SESSION_VALUES]).toEqual(grid.includes('0') ? grid : ['0', ...grid]);
     expect([...REMINDER_HOUR_VALUES]).toEqual(REMINDER_HOUR_OPTIONS.map(String));
   });
 
