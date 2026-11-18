@@ -9,6 +9,10 @@ Covers:
     today's puzzles while blunder check (size 6) is pending keeps the same streak_count.
   - test_day_completion_blunder_check_off_ticks_on_puzzles: the same flow with blunder check at
     0 ticks the streak by exactly one.
+  - test_bc_size_zero_composes_nothing: size 0 makes POST /blunder-check/sessions answer 409
+    and writes no session row.
+  - test_bc_compose_uses_settings_size: the composed session holds at most the configured number
+    of windows.
 
 Every non-guest Game insert is deleted in `finally` (the eval lottery is global).
 """
@@ -19,15 +23,16 @@ import datetime
 
 import httpx
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
+from app.models.blunder_check import BlunderCheckSession
 from app.models.drill_session import DrillSession
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
-from app.services import sharp_filler
+from app.services import blunder_check_selection, sharp_filler
 from app.services.sharp_filler import SharpPuzzle
 from app.services.train_scheduler import (
     ALL_WEEKDAYS_MASK,
@@ -35,13 +40,28 @@ from app.services.train_scheduler import (
     DEFAULT_PUZZLES_PER_SESSION,
     DEFAULT_TIMEZONE,
 )
-from tests.blunder_check_seed import register_user
+from tests.blunder_check_seed import (
+    SeedBlunder,
+    delete_blunder_check_sessions,
+    delete_games,
+    flat_evals,
+    register_user,
+    seed_judged_game,
+    with_user_blunder,
+)
 
 _SESSIONS = "/api/train/sessions"
 _PROGRESS = "/api/train/progress"
+_BC_SESSIONS = "/api/blunder-check/sessions"
 
 _STARTING_STREAK = 3
 _STARTING_SHIELD = 2
+_SEED_PLAYOUT_PLIES = 61
+_SEED_FLAT_CP = 0
+_SEED_BLUNDER_PLY = 20
+_SEED_BLUNDER_DROP_CP = 400
+_SEED_BC_GAMES = 8
+_CUSTOM_BC_SIZE = 3
 
 # A small deterministic sharp-filler fixture (sibling to tests/routers/test_train.py's), so a
 # user with no games composes a real warm-up session of DEFAULT_PUZZLES_PER_SESSION puzzles.
@@ -177,3 +197,86 @@ async def test_day_completion_blunder_check_off_ticks_on_puzzles(test_engine) ->
         assert progress["shield_level"] == _STARTING_SHIELD + 1
     finally:
         await _delete_drill_sessions(test_engine, session_ids)
+
+
+async def _seed_bc_supply(test_engine, user_id: int) -> list[int]:
+    """Seed enough own judged games that blunder-check composition has windows to pick."""
+    game_ids: list[int] = []
+    evals = with_user_blunder(
+        flat_evals(_SEED_PLAYOUT_PLIES, _SEED_FLAT_CP), _SEED_BLUNDER_PLY, _SEED_BLUNDER_DROP_CP
+    )
+    for _ in range(_SEED_BC_GAMES):
+        game_ids.append(
+            await seed_judged_game(
+                test_engine,
+                user_id=user_id,
+                evals_cp=evals,
+                blunders=[SeedBlunder(ply=_SEED_BLUNDER_PLY)],
+            )
+        )
+    return game_ids
+
+
+async def _bc_session_count(test_engine, user_id: int) -> int:
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(func.count())
+                .select_from(BlunderCheckSession)
+                .where(BlunderCheckSession.user_id == user_id)
+            )
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_bc_size_zero_composes_nothing(test_engine) -> None:
+    """D-04: at blunder_check_per_session = 0, Start answers 409 and writes no session row."""
+    user_id, token = await register_user("two-mode-bc0", beta=True, test_engine=test_engine)
+    await _seed_streak_holder(test_engine, user_id, bc_size=0)
+    game_ids = await _seed_bc_supply(test_engine, user_id)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(_BC_SESSIONS, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 409, resp.text
+        assert await _bc_session_count(test_engine, user_id) == 0
+    finally:
+        await delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_bc_compose_uses_settings_size(test_engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-04: the composed session holds at most the user's configured number of windows.
+
+    Thin test supply can fall short of the default 6 windows on its own, so the size handed to
+    the composer is also captured: a regression that ignores the settings row cannot hide
+    behind a short pool.
+    """
+    seen_counts: list[int | None] = []
+    original = blunder_check_selection.compose_windows
+
+    async def spy(*args: object, **kwargs: object):  # noqa: ANN202 - passthrough wrapper
+        count = kwargs.get("count")
+        seen_counts.append(count if isinstance(count, int) else None)
+        return await original(*args, **kwargs)  # ty: ignore[invalid-argument-type]
+
+    monkeypatch.setattr(blunder_check_selection, "compose_windows", spy)
+    user_id, token = await register_user("two-mode-bc3", beta=True, test_engine=test_engine)
+    await _seed_streak_holder(test_engine, user_id, bc_size=_CUSTOM_BC_SIZE)
+    game_ids = await _seed_bc_supply(test_engine, user_id)
+    session_ids: list[int] = []
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(_BC_SESSIONS, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        session_ids.append(int(body["session_id"]))
+        assert 0 < body["window_count"] <= _CUSTOM_BC_SIZE
+        assert seen_counts == [_CUSTOM_BC_SIZE]
+    finally:
+        await delete_blunder_check_sessions(test_engine, session_ids)
+        await delete_games(test_engine, game_ids)
