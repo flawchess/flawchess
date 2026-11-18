@@ -19,6 +19,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router';
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
@@ -27,7 +29,7 @@ import { StreakFlame } from '@/components/train/StreakFlame';
 import { TrainModeLauncherRow } from '@/components/train/TrainModeLauncherRow';
 import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
 import { useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
-import { useTrainProgress } from '@/hooks/useTrainProgress';
+import { useDismissBlunderCheckNotice, useTrainProgress } from '@/hooks/useTrainProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import {
   FREEZE_CAP,
@@ -38,7 +40,9 @@ import {
 } from '@/lib/streakArrival';
 import type { StreakArrival } from '@/lib/streakArrival';
 import { trackFeature } from '@/lib/analytics';
+import { LAUNCH_NOTICE_TINT_CLASS } from '@/lib/theme';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
+import { cn } from '@/lib/utils';
 import type { TrainModeProgress, TrainModeState, TrainProgressResponse } from '@/types/train';
 
 /** A freeze earned together with a streak tick pops in once the ignite settles. */
@@ -206,6 +210,39 @@ function puzzlesRowProgress(
   return { ...server, state: landing.state, remaining: landing.left };
 }
 
+/**
+ * The launch notice (D-21): tells existing streak holders that the streak now includes
+ * blunder check. The server decides when it shows (existing streak users, 14-day window, hidden
+ * after a blunder-check completion or amount change); dismissing hides it at once and tells the
+ * server.
+ */
+function BlunderCheckNotice(): ReactElement {
+  const dismiss = useDismissBlunderCheckNotice();
+  return (
+    <div
+      className={cn('col-span-2 flex items-start gap-2 rounded-md py-2 pl-3 pr-1', LAUNCH_NOTICE_TINT_CLASS)}
+      data-testid="train-blunder-check-notice"
+    >
+      <p className="flex-1 self-center text-sm">
+        Your streak now includes blunder check. Change the amount on the card.
+      </p>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="flex-shrink-0"
+        aria-label="Dismiss"
+        data-testid="btn-train-blunder-check-notice-dismiss"
+        onClick={() => {
+          trackFeature('action', { target: 'train-blunder-check-notice-dismiss' });
+          dismiss.mutate();
+        }}
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
+  );
+}
+
 /** The two launcher rows, the streak checklist (D-08). */
 function TrainLauncherRows({
   data,
@@ -302,6 +339,7 @@ export function TrainStreakCard({
           <TrainRankLine />
           {details}
         </div>
+        {data?.blunder_check_notice === true && <BlunderCheckNotice />}
         {data !== undefined && (
           <TrainLauncherRows
             data={data}

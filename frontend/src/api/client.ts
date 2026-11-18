@@ -350,6 +350,9 @@ export const trainApi = {
     apiClient.put<TrainSettingsResponse>('/train/settings', data).then(r => r.data),
   getProgress: () =>
     apiClient.get<TrainProgressResponse>('/train/progress').then(r => r.data),
+  /** Dismisses the blunder-check launch notice on the streak card (204, idempotent, caller-scoped). */
+  dismissBlunderCheckNotice: () =>
+    apiClient.post<void>('/train/blunder-check-notice/dismiss').then(() => undefined),
   /** Weekly Points + Accuracy boards. `sessionId` (score screen only)
    * asks the server to fill `rank_without_session`; omitted for the landing card. */
   getLeaderboard: (sessionId?: number) =>
