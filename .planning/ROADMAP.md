@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 2/13 plans executed
+**Plans:** 4/13 plans executed
 
 Plans:
 **Wave 1**
@@ -376,8 +376,8 @@ Plans:
 - [x] 251-12-PLAN.md — Streak needs every switched-on mode (D-02): day completion, pool eligibility, launch-day matrix
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 251-02-PLAN.md — Blunder-check Points and Score % boards with medals; owner decision on the stored board keys
-- [ ] 251-03-PLAN.md — Beta gate removed (D-18), stored level fallback (D-17), cross-mode cooldown (D-16), compose latency probe
+- [x] 251-02-PLAN.md — Blunder-check Points and Score % boards with medals; owner decision on the stored board keys
+- [x] 251-03-PLAN.md — Beta gate removed (D-18), stored level fallback (D-17), cross-mode cooldown (D-16), compose latency probe
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 251-04-PLAN.md — PUT /train/settings with per-mode sizes, never both 0 (D-05), open-session resize rules (D-06)
