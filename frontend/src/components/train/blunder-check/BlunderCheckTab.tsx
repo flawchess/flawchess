@@ -10,7 +10,12 @@
  * end screen's Done, the error and "nothing available" Back buttons, and a stale
  * restored solution).
  *
- * Nothing here tracks an Umami event: sessions live in the database (D-19).
+ * The only Umami event here is the level step's option-change: the level is a settings row
+ * overwritten in place, so the event is the only record of the change. Sessions live in the
+ * database and send nothing (D-19).
+ *
+ * One-time level step (D-20): when the progress says a level is needed, the host shows the level
+ * step instead of composing, saves the pick, and composes only after the save succeeded.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
@@ -21,18 +26,27 @@ import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { BlunderCheckDrill } from '@/components/train/blunder-check/BlunderCheckDrill';
 import { BlunderCheckEndScreen } from '@/components/train/blunder-check/BlunderCheckEndScreen';
+import { BlunderCheckLevelStep } from '@/components/train/blunder-check/BlunderCheckLevelStep';
 import { BlunderCheckStageMessage } from '@/components/train/blunder-check/BlunderCheckStage';
 import { useBlunderCheckSession } from '@/hooks/useBlunderCheckSession';
 import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import { useTrainProgress } from '@/hooks/useTrainProgress';
+import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { drillProgress, drillReducer, initialDrillState } from '@/lib/blunderCheckDrill';
 import {
   clearBlunderCheckSolutionCache,
   readBlunderCheckSolutionCache,
 } from '@/lib/blunderCheckSolutionCache';
+import { trackFeature } from '@/lib/analytics';
+import { unlockAudio } from '@/lib/sounds';
 import type { DrillEvent, DrillState } from '@/lib/blunderCheckDrill';
 import type { SessionResultResponse } from '@/types/blunderCheck';
+import type { BlunderCheckLevel } from '@/types/train';
 
 const HTTP_CONFLICT = 409;
+
+/** The level preselected on the one-time level step (D-20). */
+const DEFAULT_LEVEL: BlunderCheckLevel = 'intermediate';
 
 /** The phases that take over the page (the tab bar and medal host are hidden). */
 const IMMERSIVE_PHASES: ReadonlySet<DrillState['phase']> = new Set([
@@ -96,6 +110,78 @@ function ComposeStatus({ composeError, onExit }: ComposeStatusProps): ReactEleme
       </Button>
     </div>
   );
+}
+
+interface LevelGate {
+  /** The progress response is in: it is safe to choose between the level step and composing. */
+  ready: boolean;
+  /** The progress could not be loaded: composing blind could skip a needed level step. */
+  loadError: unknown;
+  awaitingLevel: boolean;
+  /** The level save, or the settings fetch it needs, is in flight. */
+  saving: boolean;
+  saveFailed: boolean;
+  confirm: (level: BlunderCheckLevel) => void;
+}
+
+/**
+ * The one-time level step's gate (D-20). The server says in `modes.blunder_check.needs_level`
+ * whether this user must pick a level before the first drill (no rated games, no stored level,
+ * guests included). The host waits for the progress response before composing, shows the step
+ * while a level is needed, and composes only once the level save succeeded, so the first session
+ * is built from the stored level (RESEARCH Pattern 8).
+ */
+function useLevelGate(): LevelGate {
+  const progress = useTrainProgress();
+  const {
+    data: settings,
+    isPending,
+    isError,
+    isSaving,
+    isSaveError,
+    save,
+    refetch,
+  } = useTrainSettings();
+  const [levelSaved, setLevelSaved] = useState(false);
+  const needsLevel = progress.data?.modes.blunder_check.needs_level ?? false;
+  const confirm = useCallback(
+    (level: BlunderCheckLevel): void => {
+      // Inside the tap, before the async save: the lead-in's move sounds play from timers.
+      unlockAudio();
+      // The PUT is a full replace of the schedule fields, so it needs the stored values.
+      if (settings === undefined) {
+        void refetch();
+        return;
+      }
+      save(
+        {
+          weekdayMask: settings.weekday_mask,
+          puzzlesPerSession: settings.puzzles_per_session,
+          reminderEnabled: settings.reminder_enabled,
+          reminderHour: settings.reminder_hour,
+          reminderIntentAt: settings.reminder_intent_at,
+          blunderCheckLevel: level,
+        },
+        {
+          onSuccess: () => {
+            // A settings row overwritten in place: the event is the only record of the change.
+            trackFeature('option-change', { target: 'train-blunder-check-level', value: level });
+            setLevelSaved(true);
+          },
+        },
+      );
+    },
+    [settings, save, refetch],
+  );
+  return {
+    ready: progress.data !== undefined,
+    loadError: progress.data === undefined && progress.isError ? progress.error : null,
+    awaitingLevel: needsLevel && !levelSaved,
+    // The settings fetch counts as saving: Start stays off until the values to send are known.
+    saving: isSaving || isPending,
+    saveFailed: isSaveError || isError,
+    confirm,
+  };
 }
 
 /**
@@ -173,6 +259,7 @@ export function BlunderCheckTab({
     (cached): DrillState => cached?.state ?? initialDrillState,
   );
   const session = useBlunderCheckSession();
+  const levelGate = useLevelGate();
   const { openSession, compose } = session;
   // The cache lives only while its solution is on screen: Next, a reset or an error drops it.
   const onSolution = state.phase === 'solution';
@@ -219,12 +306,13 @@ export function BlunderCheckTab({
       },
     });
   }, [composeSession]);
-  // Compose (or resume) on mount unless the host mounted into a restored solution. Audio was
-  // unlocked in the Start tap that mounted this host (the lead-in's move sounds play from
-  // timers, not from a tap), so nothing to unlock here.
+  // Compose (or resume) on mount unless the host mounted into a restored solution, once the
+  // progress says no level step is pending. Audio was unlocked in the Start tap that mounted this
+  // host, or in the level step's own Start (the lead-in's move sounds play from timers).
+  const { ready: levelGateReady, awaitingLevel } = levelGate;
   useEffect(() => {
-    if (restored === null) handleStart();
-  }, [restored, handleStart]);
+    if (restored === null && levelGateReady && !awaitingLevel) handleStart();
+  }, [restored, levelGateReady, awaitingLevel, handleStart]);
 
   if (state.phase === 'error') {
     return (
@@ -249,7 +337,18 @@ export function BlunderCheckTab({
   }
 
   if (state.phase === 'idle') {
-    return <ComposeStatus composeError={compose.error} onExit={onExit} />;
+    if (restored === null && levelGate.ready && levelGate.awaitingLevel) {
+      return (
+        <BlunderCheckLevelStep
+          initialLevel={DEFAULT_LEVEL}
+          saving={levelGate.saving}
+          error={levelGate.saveFailed}
+          onConfirm={levelGate.confirm}
+          onBack={onExit}
+        />
+      );
+    }
+    return <ComposeStatus composeError={compose.error ?? levelGate.loadError} onExit={onExit} />;
   }
 
   if (state.phase === 'session_end') {

@@ -38,6 +38,15 @@ import type {
   WindowSolution,
   WindowStartResponse,
 } from '@/types/blunderCheck';
+import type {
+  TrainProgressResponse,
+  TrainSettingsResponse,
+  TrainSettingsUpdate,
+} from '@/types/train';
+import {
+  BLUNDER_CHECK_MODE,
+  PHASE_251_PROGRESS_FIELDS,
+} from '@/components/train/__tests__/trainProgressFixtures';
 
 const SESSION: BlunderCheckSessionResponse = {
   session_id: 7,
@@ -46,6 +55,32 @@ const SESSION: BlunderCheckSessionResponse = {
   session_points: 5,
   windows: [],
 };
+const SETTINGS: TrainSettingsResponse = {
+  timezone: 'UTC',
+  weekday_mask: 127,
+  puzzles_per_session: 5,
+  reminder_enabled: true,
+  reminder_hour: 9,
+  reminder_intent_at: '2026-01-01T00:00:00Z',
+  intro_seen_at: '2026-01-01T00:00:00Z',
+  reveal_tour_stage: 3,
+  sr_explained_at: '2026-01-01T00:00:00Z',
+  has_mobile_subscription: false,
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
+};
+
+/** A progress payload whose blunder-check row does (or does not) still need the level step. */
+function progressWith(needsLevel: boolean): TrainProgressResponse {
+  return {
+    ...PHASE_251_PROGRESS_FIELDS,
+    modes: {
+      ...PHASE_251_PROGRESS_FIELDS.modes,
+      blunder_check: { ...BLUNDER_CHECK_MODE, needs_level: needsLevel },
+    },
+  } as TrainProgressResponse;
+}
+
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 const LOAD_ERROR_COPY =
@@ -63,11 +98,20 @@ const submitBetterMove = vi.fn<
   (sessionId: number, position: number, body: BetterMoveRequest) => Promise<BetterMoveResponse>
 >();
 const getSolution = vi.fn<(sessionId: number, position: number) => Promise<WindowSolution>>();
+const getProgress = vi.fn<() => Promise<TrainProgressResponse>>();
+const getSettings = vi.fn<() => Promise<TrainSettingsResponse>>();
+const updateSettings = vi.fn<(body: TrainSettingsUpdate) => Promise<TrainSettingsResponse>>();
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
     ...actual,
+    trainApi: {
+      ...actual.trainApi,
+      getProgress: () => getProgress(),
+      getSettings: () => getSettings(),
+      updateSettings: (body: TrainSettingsUpdate) => updateSettings(body),
+    },
     blunderCheckApi: {
       getOpenSession: () => getOpenSession(),
       composeOrResumeSession: () => composeOrResumeSession(),
@@ -81,6 +125,13 @@ vi.mock('@/api/client', async () => {
       finishSession: (sessionId: number) => finishSession(sessionId),
     },
   };
+});
+
+// The level step's option-change event (the host is the one blunder-check file allowed to track).
+const trackFeature = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analytics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
+  return { ...actual, trackFeature };
 });
 
 // One grading engine for the whole tab, scripted by the tests (no Worker in jsdom).
@@ -218,6 +269,16 @@ beforeEach(() => {
   getOpenSession.mockImplementation(async () => null);
   composeOrResumeSession.mockReset();
   composeOrResumeSession.mockImplementation(async () => SESSION);
+  getProgress.mockReset();
+  getProgress.mockImplementation(async () => progressWith(false));
+  getSettings.mockReset();
+  getSettings.mockImplementation(async () => SETTINGS);
+  updateSettings.mockReset();
+  updateSettings.mockImplementation(async (body) => ({
+    ...SETTINGS,
+    blunder_check_level: body.blunder_check_level ?? null,
+  }));
+  trackFeature.mockReset();
   startWindow.mockReset();
   // Never resolves by default: a test that needs a window supplies its own response.
   startWindow.mockImplementation(() => new Promise(() => {}));
@@ -304,6 +365,128 @@ describe('composing on mount', () => {
     expect(screen.queryByTestId('blunder-check-none-available')).toBeNull();
     fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('level step (D-20)', () => {
+  beforeEach(() => {
+    getProgress.mockImplementation(async () => progressWith(true));
+  });
+
+  it('shows the level step instead of composing when the server says a level is needed', async () => {
+    renderTab();
+
+    await screen.findByTestId('blunder-check-level-step');
+    expect(
+      screen.getByTestId('btn-blunder-check-level-intermediate').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('blunder-check-composing')).toBeNull();
+  });
+
+  it('saves the picked level first and composes only after the save succeeded', async () => {
+    renderTab();
+
+    await screen.findByTestId('blunder-check-level-step');
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('btn-blunder-check-level-start') as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-advanced'));
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    // The PUT carries the stored schedule values plus the picked level.
+    expect(updateSettings.mock.calls[0]?.[0]).toMatchObject({
+      weekday_mask: SETTINGS.weekday_mask,
+      puzzles_per_session: SETTINGS.puzzles_per_session,
+      reminder_enabled: SETTINGS.reminder_enabled,
+      reminder_hour: SETTINGS.reminder_hour,
+      reminder_intent_at: SETTINGS.reminder_intent_at,
+      blunder_check_level: 'advanced',
+    });
+    expect(updateSettings.mock.invocationCallOrder[0]).toBeLessThan(
+      composeOrResumeSession.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(trackFeature).toHaveBeenCalledWith('option-change', {
+      target: 'train-blunder-check-level',
+      value: 'advanced',
+    });
+  });
+
+  it('a failed level save shows the inline error with a retry and does not compose', async () => {
+    updateSettings.mockImplementationOnce(async () => {
+      throw httpError(HTTP_SERVER_ERROR);
+    });
+    renderTab();
+
+    await screen.findByTestId('blunder-check-level-step');
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('btn-blunder-check-level-start') as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+
+    await screen.findByTestId('blunder-check-level-error');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it('Back on the level step leaves the host without saving or composing', async () => {
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+
+    fireEvent.click(await screen.findByTestId('btn-blunder-check-level-back'));
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+  });
+
+  it('waits for the progress response before composing', async () => {
+    let resolveProgress: (progress: TrainProgressResponse) => void = () => {};
+    getProgress.mockImplementation(
+      () => new Promise<TrainProgressResponse>((resolve) => (resolveProgress = resolve)),
+    );
+    renderTab();
+
+    expect(screen.getByTestId('blunder-check-composing')).not.toBeNull();
+    await act(async () => {});
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+
+    await act(async () => resolveProgress(progressWith(false)));
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-level-step')).toBeNull();
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('a progress failure shows the load error with Back instead of composing blind', async () => {
+    getProgress.mockImplementation(async () => {
+      throw httpError(HTTP_SERVER_ERROR);
+    });
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+
+    await screen.findByTestId('blunder-check-compose-error');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('no level step when none is needed', () => {
+  it('composes on mount with no level screen and no settings write', async () => {
+    renderTab();
+
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-level-step')).toBeNull();
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 });
 
@@ -1536,7 +1719,9 @@ describe('D-19: no Umami event for blunder check', () => {
   // Built from parts so this file does not contain the strings it forbids elsewhere.
   const ANALYTICS_IMPORT = ['@/lib', 'analytics'].join('/');
   const UMAMI_ATTRIBUTE = ['data-umami', 'event'].join('-');
-  const END_SCREEN_FILE = 'BlunderCheckEndScreen.tsx';
+  // The end screen (leaderboard link) and the host (the level step's option-change, a settings
+  // row overwritten in place) are the only blunder-check files that may track an event.
+  const ANALYTICS_EXEMPT_FILES = ['BlunderCheckEndScreen.tsx', 'BlunderCheckTab.tsx'];
 
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -1545,7 +1730,7 @@ describe('D-19: no Umami event for blunder check', () => {
     });
   }
 
-  it('no blunder-check source imports the analytics module (bar the end screen link) or sets an Umami attribute', () => {
+  it('no blunder-check source imports the analytics module (bar the end screen link and the host level option) or sets an Umami attribute', () => {
     const files = [
       ...sourceFiles(join(SRC, 'components/train/blunder-check')),
       join(SRC, 'hooks/useBlunderCheckSession.ts'),
@@ -1557,7 +1742,11 @@ describe('D-19: no Umami event for blunder check', () => {
       const source = readFileSync(file, 'utf8');
       // Phase 251 (D-24): the end screen's "See the leaderboard" link is a browser-only navigation,
       // not a DB-held fact, so it alone may send a nav-click. The data-attribute rule still holds.
-      if (!file.endsWith(END_SCREEN_FILE)) expect(source, file).not.toContain(ANALYTICS_IMPORT);
+      // Test files may mock the analytics module (the host test asserts the level event).
+      const exempt = file.includes('__tests__') || ANALYTICS_EXEMPT_FILES.some((name) => file.endsWith(name));
+      if (!exempt) {
+        expect(source, file).not.toContain(ANALYTICS_IMPORT);
+      }
       expect(source, file).not.toContain(UMAMI_ATTRIBUTE);
     }
   });
