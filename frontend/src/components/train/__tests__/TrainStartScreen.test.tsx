@@ -89,6 +89,8 @@ let mockTrainSettingsData: {
   timezone: string;
   weekday_mask: number;
   puzzles_per_session: number;
+  blunder_check_per_session: number;
+  blunder_check_level: 'beginner' | 'intermediate' | 'advanced' | null;
   intro_seen_at: string | null;
   reveal_tour_stage: 0 | 1 | 2 | 3;
   sr_explained_at: string | null;
@@ -97,6 +99,8 @@ let mockTrainSettingsData: {
   timezone: 'UTC',
   weekday_mask: 127,
   puzzles_per_session: 6,
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
   intro_seen_at: null,
   reveal_tour_stage: 0,
   sr_explained_at: null,
@@ -113,13 +117,14 @@ const SESSION_COMPLETED = {
 
 const saveMock = vi.fn(
   (
-    body: { weekdayMask: number; puzzlesPerSession: number },
+    body: { weekdayMask: number; puzzlesPerSession: number; blunderCheckPerSession: number },
     opts?: { onSuccess?: () => void },
   ) => {
     mockTrainSettingsData = {
       ...mockTrainSettingsData,
       weekday_mask: body.weekdayMask,
       puzzles_per_session: body.puzzlesPerSession,
+      blunder_check_per_session: body.blunderCheckPerSession,
     };
     opts?.onSuccess?.();
   },
@@ -202,7 +207,7 @@ vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
 
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
-import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
+import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/hooks/useTrainSettingsDraft';
 import type { TrainProgressResponse, TrainPuzzle, TrainSessionResponse } from '@/types/train';
 
 afterEach(() => {
@@ -215,6 +220,8 @@ afterEach(() => {
     timezone: 'UTC',
     weekday_mask: 127,
     puzzles_per_session: 6,
+    blunder_check_per_session: 6,
+    blunder_check_level: null,
     intro_seen_at: null,
     reveal_tour_stage: 0,
     sr_explained_at: null,
@@ -1025,5 +1032,113 @@ describe('TrainStartScreen — route dot (D-21 / D-03)', () => {
   it('showRouteDot false renders no dot', () => {
     renderScreen({ showRouteDot: false });
     expect(screen.queryByTestId('train-start-notification-dot')).toBeNull();
+  });
+});
+
+describe('TrainStartScreen: mode settings rows, Turn on and the two-column layout (plan 251-09)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  function setModeOff(mode: 'puzzles' | 'blunder_check'): void {
+    const modes = DEFAULT_TRAIN_PROGRESS.modes;
+    trainProgressMock = {
+      data: {
+        ...DEFAULT_TRAIN_PROGRESS,
+        modes: { ...modes, [mode]: { ...modes[mode], state: 'off', size: 0, remaining: 0, pending: 0 } },
+      },
+      isPending: false,
+      isError: false,
+    };
+    mockTrainSettingsData = {
+      ...mockTrainSettingsData,
+      ...(mode === 'puzzles' ? { puzzles_per_session: 0 } : { blunder_check_per_session: 0 }),
+    };
+  }
+
+  async function waitPastDebounce(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, TRAIN_SETTINGS_SAVE_DEBOUNCE_MS + 100));
+    });
+  }
+
+  it('renders both collapsed mode rows between the Today card and the schedule card', () => {
+    renderScreen();
+    const card = screen.getByTestId('train-streak-card');
+    const puzzlesRow = screen.getByTestId('train-mode-settings-puzzles');
+    const blunderRow = screen.getByTestId('train-mode-settings-blunder-check');
+    const schedule = screen.getByTestId('train-schedule-settings');
+    expect(card.compareDocumentPosition(puzzlesRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(puzzlesRow.compareDocumentPosition(blunderRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(blunderRow.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Collapsed by default: no slider yet.
+    expect(screen.queryByTestId('filter-puzzles-per-session')).toBeNull();
+    expect(screen.queryByTestId('filter-blunder-check-per-session')).toBeNull();
+  });
+
+  it('Turn on in an off puzzles row sets the size to 6 through the draft (one PUT) and sends the action event', async () => {
+    setModeOff('puzzles');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+    expect(track.mock.calls).toEqual([['action', { page: 'train', target: 'train-mode-turn-on-puzzles' }]]);
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.puzzlesPerSession).toBe(6);
+    expect(body?.blunderCheckPerSession).toBe(6);
+  });
+
+  it('Turn on in an off blunder-check row sets that mode to 6 and leaves puzzles unchanged', async () => {
+    setModeOff('blunder_check');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-blunder-check'));
+    expect(track.mock.calls).toEqual([
+      ['action', { page: 'train', target: 'train-mode-turn-on-blunder-check' }],
+    ]);
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.blunderCheckPerSession).toBe(6);
+    expect(body?.puzzlesPerSession).toBe(6);
+  });
+
+  it('Turn on and a days edit in one burst ride the same PUT', async () => {
+    setModeOff('puzzles');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+    fireEvent.click(screen.getByTestId('filter-weekday-fr'));
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.puzzlesPerSession).toBe(6);
+    expect(body?.weekdayMask).toBe(127 ^ (1 << 4));
+  });
+
+  it('lays the landing out as a grid: one column on phones, the Today card and the settings side by side from lg', () => {
+    renderScreen();
+    const grid = screen.getByTestId('train-landing-grid');
+    expect(grid.className).toContain('grid-cols-1');
+    expect(grid.className).toContain('lg:grid-cols-2');
+    // Today card on the left, the settings rows on the right (DOM order in the grid).
+    expect(grid.contains(screen.getByTestId('train-streak-card'))).toBe(true);
+    expect(grid.contains(screen.getByTestId('train-mode-settings-puzzles'))).toBe(true);
+    expect(grid.contains(screen.getByTestId('train-schedule-settings'))).toBe(true);
+    // The host bubble stays above the grid, full width.
+    expect(grid.contains(screen.getByTestId('train-landing-host'))).toBe(false);
   });
 });

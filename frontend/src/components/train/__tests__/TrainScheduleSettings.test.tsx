@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /**
- * TrainScheduleSettings.test.tsx — coverage for the auto-saving weekday +
- * puzzles-per-session picker AND the master reminder toggle
- * and 24-hour picker.
+ * TrainScheduleSettings.test.tsx — coverage for the auto-saving weekday picker AND the
+ * master reminder toggle and 24-hour picker. The component takes the shared settings draft
+ * (`useTrainSettingsDraft`), so every test renders it through a small harness that owns the
+ * draft the way `TrainStartScreen` does. The session-size sliders live in
+ * TrainModeSettings.test.tsx.
  *
  * Mocks `@/api/client` (TrainProgressRow.test.tsx's precedent), wrapped in a
  * QueryClientProvider with `retry: false`.
@@ -72,13 +74,13 @@ vi.mock('@/hooks/useInstallPrompt', () => ({
 
 import { trainApi, pushApi } from '@/api/client';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import {
-  TrainScheduleSettings,
   PUZZLES_PER_SESSION_MAX,
   PUZZLES_PER_SESSION_MIN,
   PUZZLES_PER_SESSION_STEP,
-  TRAIN_SETTINGS_SAVE_DEBOUNCE_MS,
-} from '@/components/train/TrainScheduleSettings';
+} from '@/components/train/TrainModeSettings';
+import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS, useTrainSettingsDraft } from '@/hooks/useTrainSettingsDraft';
 import { QR_CAPTION } from '@/components/train/TrainInstallQr';
 import { REMINDER_HOUR_VALUES, TRAIN_PUZZLES_PER_SESSION_VALUES } from '@/lib/analytics';
 import { REMINDER_HOUR_OPTIONS } from '@/lib/push';
@@ -119,6 +121,8 @@ const BASE_SETTINGS: TrainSettingsResponse = {
   // echo-through assertion can distinguish "sent the real value" from "sent
   // undefined/null by accident".
   reminder_intent_at: '2026-08-02T12:00:00Z',
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
 };
 
 const VAPID_KEY = 'test-vapid-key';
@@ -164,6 +168,22 @@ function stubBrowserGlobals(options?: {
   return { subscriptionUnsubscribe };
 }
 
+/** Owns the shared settings draft the way TrainStartScreen does. */
+function Harness({
+  onSaved,
+  isGuest,
+  nextSessionDate,
+}: {
+  onSaved?: () => void;
+  isGuest: boolean;
+  nextSessionDate?: string;
+}) {
+  const settingsDraft = useTrainSettingsDraft({ onSaved });
+  return (
+    <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={isGuest} nextSessionDate={nextSessionDate} />
+  );
+}
+
 function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -171,7 +191,7 @@ function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  render(<TrainScheduleSettings onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
+  render(<Harness onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
   return client;
 }
 
@@ -205,14 +225,12 @@ afterEach(() => {
 });
 
 describe('TrainScheduleSettings', () => {
-  it('loading: every weekday chip and the puzzles slider render disabled', () => {
+  it('loading: every weekday chip renders disabled', () => {
     vi.mocked(trainApi.getSettings).mockReturnValue(new Promise(() => undefined));
     renderWithClient();
 
     expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(true);
     expect(screen.getByTestId('filter-weekday-su').hasAttribute('disabled')).toBe(true);
-    expect(screen.getByTestId('filter-puzzles-per-session').hasAttribute('data-disabled')).toBe(true);
-    expect(screen.queryByTestId('train-puzzles-per-session-value')).toBeNull();
   });
 
   it('populated: Mo and We chips are pressed, the other five are not (weekday_mask = 5)', async () => {
@@ -286,57 +304,6 @@ describe('TrainScheduleSettings', () => {
     const body = call?.[0] as TrainSettingsUpdate;
     expect(body.weekday_mask).toBe(0);
     expect(screen.queryByText(/required|invalid|must select/i)).toBeNull();
-  });
-
-  it('populated: the slider shows the saved value (12) and is enabled', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    renderWithClient();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
-    });
-    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
-    expect(thumb.getAttribute('aria-valuenow')).toBe('12');
-    expect(screen.getByTestId('filter-puzzles-per-session').hasAttribute('data-disabled')).toBe(false);
-  });
-
-  it('two ArrowRight steps on the slider issue ONE updateSettings call with puzzles_per_session: 18 (step 3)', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 18 });
-    renderWithClient();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
-    });
-    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
-    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
-    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
-    expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('18');
-    await advanceDebounce();
-
-    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
-    const call = vi.mocked(trainApi.updateSettings).mock.calls[0];
-    const body = call?.[0] as TrainSettingsUpdate;
-    expect(body.puzzles_per_session).toBe(18);
-  });
-
-  it('End on the slider saves the maximum (PUZZLES_PER_SESSION_MAX)', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    vi.mocked(trainApi.updateSettings).mockResolvedValue({
-      ...BASE_SETTINGS,
-      puzzles_per_session: PUZZLES_PER_SESSION_MAX,
-    });
-    renderWithClient();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
-    });
-    fireEvent.keyDown(screen.getByRole('slider', { name: 'Puzzles per session' }), { key: 'End' });
-    await advanceDebounce();
-
-    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
-    const body = vi.mocked(trainApi.updateSettings).mock.calls[0]?.[0] as TrainSettingsUpdate;
-    expect(body.puzzles_per_session).toBe(PUZZLES_PER_SESSION_MAX);
   });
 
   it('every captured updateSettings body carries a non-empty timezone, never rendered in the output', async () => {
@@ -916,9 +883,8 @@ describe('TrainScheduleSettings — guest visibility', () => {
     expect(screen.queryByText(QR_CAPTION)).toBeNull();
     expect(screen.queryByTestId('qr-handoff-settings')).toBeNull();
     // A guest loses only the reminder block and phone/QR section — the
-    // weekday cadence and puzzles-per-session controls stay for a guest.
+    // weekday cadence controls stay for a guest.
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
-    expect(screen.getByTestId('filter-puzzles-per-session')).not.toBeNull();
   });
 
   it('isGuest=true on a mobile install-eligible device: the Install FlawChess button is also absent (showPhoneSection gates both branches)', async () => {
@@ -945,11 +911,11 @@ describe('schedule card is always open', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <TrainScheduleSettings isGuest={false} nextSessionDate="2026-10-05" />
+        <Harness isGuest={false} nextSessionDate="2026-10-05" />
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12'));
+    await waitFor(() => expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false));
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-schedule-toggle')).toBeNull();
     expect(screen.queryByTestId('train-schedule-summary')).toBeNull();
@@ -1024,28 +990,6 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
 
     expect(track.mock.calls).toEqual([['toggle', { page: 'train', target: 'train-day-mon', value: 'off' }]]);
     await advanceDebounce();
-  });
-
-  it('a slider burst sends exactly one debounced option-change with the final grid value', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 18 });
-    renderWithClient();
-    await waitFor(() => {
-      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
-    });
-
-    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
-    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
-    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
-    // Pending, not sent yet.
-    expect(track.mock.calls).toEqual([]);
-
-    // Unmounting the card flushes the pending event.
-    cleanup();
-
-    expect(track.mock.calls).toEqual([
-      ['option-change', { page: 'train', target: 'train-puzzles-per-session', value: '18' }],
-    ]);
   });
 
   describe('reminder switch and hour', () => {
