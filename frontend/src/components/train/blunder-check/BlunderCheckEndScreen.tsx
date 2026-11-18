@@ -18,6 +18,7 @@ import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainScoreScreenView } from '@/components/train/TrainScoreScreen';
+import { useContinueAction } from '@/components/train/trainTodayActions';
 import { Button } from '@/components/ui/button';
 import { trackFeature } from '@/lib/analytics';
 import { WINDOW_OUTCOME_LABELS } from '@/lib/blunderCheckDrill';
@@ -102,6 +103,8 @@ export function BlunderCheckEndScreen({
   const bubbleLines = useMemo(() => blunderCheckScoreBubbleCopy(band).lines, [band]);
   // Read once per render so the badge animation and the confetti decision agree.
   const reducedMotion = prefersReducedMotion();
+  // D-12: finishing Blunder Check offers the puzzle session while it is still owed.
+  const continueAction = useContinueAction('puzzles');
   useEffect(() => {
     // The Train score screen's result sound and confetti, once per mount.
     celebrateScore(band, reducedMotion);
@@ -126,6 +129,7 @@ export function BlunderCheckEndScreen({
         reminderBelowRow={null}
         reducedMotion={reducedMotion}
         onDone={onDone}
+        continueAction={continueAction}
       />
     </div>
   );
