@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * BlunderCheckTab: the start screen states (start, resume, empty supply, failures), the
- * error phase's way back, the double-click guard (T-249-29) and the no-analytics guard (D-19).
+ * BlunderCheckTab: the host composing on mount (resume, empty supply, failures, the
+ * single-compose guard T-249-29 / T-251-22), the way out (`onExit`) and the no-analytics
+ * guard (D-19), plus the drill loop.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import type { AxiosResponse } from 'axios';
 import { act } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -189,27 +191,25 @@ function httpError(status: number, detail?: string): AxiosError {
   } as AxiosResponse);
 }
 
-function renderTab(onImmersiveChange: (immersive: boolean) => void = vi.fn()) {
+function renderTab(
+  onImmersiveChange: (immersive: boolean) => void = vi.fn(),
+  onExit: () => void = vi.fn(),
+  { strict = false }: { strict?: boolean } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const tree = (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-      <TooltipProvider>
-        <BlunderCheckTab onImmersiveChange={onImmersiveChange} />
-        <LocationProbe />
-      </TooltipProvider>
+        <TooltipProvider>
+          <BlunderCheckTab onImmersiveChange={onImmersiveChange} onExit={onExit} />
+          <LocationProbe />
+        </TooltipProvider>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-}
-
-/** The Start button once the open-session query has settled (it is disabled while loading). */
-async function enabledStartButton(): Promise<HTMLButtonElement> {
-  const button = (await screen.findByTestId('blunder-check-btn-start')) as HTMLButtonElement;
-  await waitFor(() => expect(button.disabled).toBe(false));
-  return button;
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 beforeEach(() => {
@@ -253,39 +253,19 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe('start screen', () => {
-  it('shows the intro and a Start button when there is no open session', async () => {
+describe('composing on mount', () => {
+  it('composes the session once on mount and shows a loading line meanwhile', async () => {
+    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
     renderTab();
 
-    const button = await enabledStartButton();
-    expect(button.textContent).toBe('Start');
-    expect(screen.getByText('Blunder Check')).not.toBeNull();
-    expect(
-      screen.getByText('Check each move before it is played: Good move or blunder?'),
-    ).not.toBeNull();
-    expect(screen.queryByTestId('blunder-check-open-session')).toBeNull();
+    expect(screen.getByTestId('blunder-check-composing')).not.toBeNull();
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-btn-back')).toBeNull();
   });
 
-  it('offers Resume and names the open window when a session is in progress', async () => {
+  it('a resumed session shows its open window and points', async () => {
     getOpenSession.mockImplementation(async () => SESSION);
     renderTab();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-btn-start').textContent).toBe('Resume'),
-    );
-    expect(screen.getByTestId('blunder-check-open-session').textContent).toBe(
-      'Session in progress: sequence 3 of 6',
-    );
-  });
-
-  it('Resume goes through the compose call and shows the open window and its points', async () => {
-    getOpenSession.mockImplementation(async () => SESSION);
-    renderTab();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-btn-start').textContent).toBe('Resume'),
-    );
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-window-counter').textContent).toBe('3 of 6'),
@@ -294,13 +274,12 @@ describe('start screen', () => {
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
   });
 
-  it('a 409 from compose says there are no windows yet', async () => {
+  it('a 409 from compose says there are no windows yet, and Back leaves the host', async () => {
     composeOrResumeSession.mockImplementation(async () => {
       throw httpError(HTTP_CONFLICT);
     });
-    renderTab();
-
-    fireEvent.click(await enabledStartButton());
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-none-available').textContent).toBe(
@@ -308,73 +287,58 @@ describe('start screen', () => {
       ),
     );
     expect(screen.queryByTestId('blunder-check-compose-error')).toBeNull();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 
-  it('a non-409 compose failure shows the generic load error', async () => {
+  it('a non-409 compose failure shows the generic load error with a Back button', async () => {
     composeOrResumeSession.mockImplementation(async () => {
       throw httpError(HTTP_SERVER_ERROR);
     });
-    renderTab();
-
-    fireEvent.click(await enabledStartButton());
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-compose-error').textContent).toBe(LOAD_ERROR_COPY),
     );
     expect(screen.queryByTestId('blunder-check-none-available')).toBeNull();
-  });
-
-  it('a failed open-session query shows the load error instead of the Start button', async () => {
-    getOpenSession.mockImplementation(async () => {
-      throw httpError(HTTP_SERVER_ERROR);
-    });
-    renderTab();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-load-error').textContent).toBe(LOAD_ERROR_COPY),
-    );
-    expect(screen.queryByTestId('blunder-check-btn-start')).toBeNull();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('double click (T-249-29)', () => {
-  it('sends one compose request while the first is pending', async () => {
+describe('single compose (T-249-29, T-251-22)', () => {
+  it('sends one compose request even when the mount effect runs twice (StrictMode)', async () => {
     composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
-    renderTab();
-
-    const button = await enabledStartButton();
-    fireEvent.click(button);
-    fireEvent.click(button);
+    renderTab(vi.fn(), vi.fn(), { strict: true });
 
     await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
-    expect((screen.getByTestId('blunder-check-btn-start') as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    await act(async () => {});
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('error phase', () => {
-  it('Back to start returns to the start screen', async () => {
+  it('Back leaves the host', async () => {
     drillStart.errored = true;
-    renderTab();
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     expect(screen.getByTestId('blunder-check-error').textContent).toContain(LOAD_ERROR_COPY);
     fireEvent.click(screen.getByTestId('blunder-check-btn-reset'));
 
-    await waitFor(() => expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull());
-    expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('immersive reporting', () => {
-  it('is not immersive on the start screen and clears on unmount', async () => {
+  it('is immersive from the first paint (composing) and clears on unmount', async () => {
+    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
     const onImmersiveChange = vi.fn();
     const { unmount } = renderTab(onImmersiveChange);
 
-    await screen.findByTestId('blunder-check-btn-start');
-    expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
-    expect(onImmersiveChange).not.toHaveBeenCalledWith(true);
+    await screen.findByTestId('blunder-check-composing');
+    expect(onImmersiveChange).toHaveBeenLastCalledWith(true);
     unmount();
     expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
   });
@@ -500,7 +464,6 @@ async function pressReady(): Promise<void> {
 async function reachFirstPrompt(): Promise<void> {
   renderTab();
   await advance(50);
-  fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
   await advance(50);
   await pressReady();
   // One advance per tick: each tick's timer is scheduled by an effect after a render, which
@@ -524,7 +487,6 @@ describe('window loop', () => {
   it('replays the lead-in, then shows the arrow with the piece still on its source square', async () => {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     expect(startWindow).toHaveBeenCalledWith(7, 0);
@@ -654,7 +616,6 @@ describe('window loop', () => {
     answer.mockImplementation(async () => gradedAnswer());
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await pressReady();
     await advance(LEAD_IN_START_DELAY_MS);
@@ -678,7 +639,6 @@ describe('window loop', () => {
   it('never says "your move" during the drill (D-09)', async () => {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     // The Ready gate is up.
     expect(screen.getByTestId('blunder-check-btn-ready')).not.toBeNull();
@@ -704,7 +664,6 @@ describe('window loop', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
@@ -739,7 +698,6 @@ describe('window loop', () => {
     beginWindow.mockImplementation(() => new Promise(() => {}));
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
@@ -756,7 +714,6 @@ describe('window loop', () => {
     });
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
     await advance(50);
@@ -1017,7 +974,6 @@ describe('timer, timeouts and points', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     // Straight to the prompt: the answered moves are on the board and the arrow is shown.
@@ -1046,7 +1002,6 @@ describe('timer, timeouts and points', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await advance(0);
 
@@ -1270,15 +1225,17 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     cleanup();
   }
 
-  it('Analyze then Back lands on the same solution, not the start screen', async () => {
+  it('Analyze then Back lands on the same solution, without composing a new session', async () => {
     await analyzeAndLeave();
+    composeOrResumeSession.mockClear();
     getOpenSession.mockImplementation(async () => TWO_WINDOW_SESSION);
     const onImmersiveChange = vi.fn();
 
     renderTab(onImmersiveChange);
 
-    // Restored from the first paint: no start screen, no window or solution refetch.
-    expect(screen.queryByTestId('blunder-check-start-screen')).toBeNull();
+    // Restored from the first paint: no compose, no window or solution refetch.
+    expect(screen.queryByTestId('blunder-check-composing')).toBeNull();
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
     expect(screen.getByTestId('blunder-check-solution-heading').textContent).toBe('Blunder caught');
     expect(onImmersiveChange).toHaveBeenLastCalledWith(true);
     await advance(50);
@@ -1295,18 +1252,21 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
   });
 
-  it('a restored solution of another session falls back to the start screen', async () => {
+  it('a restored solution of another session drops back to Today (T-251-21)', async () => {
     await analyzeAndLeave();
+    composeOrResumeSession.mockClear();
     getOpenSession.mockImplementation(async () => ({ ...TWO_WINDOW_SESSION, session_id: 8 }));
+    const onExit = vi.fn();
 
-    renderTab();
+    renderTab(vi.fn(), onExit);
     await advance(50);
 
-    expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('blunder_check_solution_cache')).toBeNull();
   });
 
-  it('Next drops the cached solution, so a later visit starts on the start screen', async () => {
+  it('Next drops the cached solution', async () => {
     await reachBetterMove();
     await playBoardMove('d2', 'd4');
     await advance(FEEDBACK_DISPLAY_MS);
@@ -1504,7 +1464,6 @@ describe('session end screen (D-14)', () => {
   async function playTwoWindows(): Promise<void> {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await finishWindowWithBlunderCall();
     await finishWindowWithBlunderCall();
@@ -1551,23 +1510,22 @@ describe('session end screen (D-14)', () => {
     expect(screen.getByTestId('blunder-check-end-screen')).not.toBeNull();
   });
 
-  it('Done returns to the start screen and the page leaves immersive mode', async () => {
+  it('Done leaves the host, and the end screen is not immersive', async () => {
     finishSession.mockImplementation(async () => RESULT);
     const onImmersiveChange = vi.fn();
-    renderTab(onImmersiveChange);
+    const onExit = vi.fn();
+    renderTab(onImmersiveChange, onExit);
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await finishWindowWithBlunderCall();
     await finishWindowWithBlunderCall();
     expect(screen.getByTestId('blunder-check-end-screen')).not.toBeNull();
     expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
 
+    expect(onExit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('btn-train-done'));
-    await advance(50);
 
-    expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull();
-    expect(screen.queryByTestId('blunder-check-end-screen')).toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 

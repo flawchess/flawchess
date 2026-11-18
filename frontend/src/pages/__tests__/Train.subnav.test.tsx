@@ -41,6 +41,7 @@ import type {
 } from '@/types/train';
 import type { FeatureRouteState, UserProfile } from '@/types/users';
 import type { BlunderCheckSessionResponse } from '@/types/blunderCheck';
+import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
 
 // Mutable profile flags: hasImportedGames reads `profileState.hasGames`; `route`
 // is the profile's stored feature route (null = no route state, no dots).
@@ -175,6 +176,7 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   pool_state: 'available',
   next_due_date: null,
   badge_visible: false,
+  ...PHASE_251_PROGRESS_FIELDS,
 };
 
 const composeOrResumeSession = vi.fn(async (): Promise<TrainSessionResponse> => SESSION_RESPONSE);
@@ -472,44 +474,22 @@ describe('Train layout: tabs and D-06 session rules', () => {
   });
 });
 
-describe('Train layout: beta-only Blunder check tab (D-01)', () => {
-  it('a beta user sees the tab; Start composes one session and shows the counter and points', async () => {
-    profileState.beta = true;
-    renderTrainPage(['/train/blunder-check']);
+describe('Train layout: no Blunder check tab (D-11, D-18)', () => {
+  it.each([false, true])(
+    'beta=%s: the subnav is Today / Leaderboard / Archive and /train/blunder-check lands on /train',
+    async (beta) => {
+      profileState.beta = beta;
+      renderTrainPage(['/train/blunder-check']);
 
-    await waitFor(() => expect(screen.getByTestId('train-blunder-check-panel')).not.toBeNull());
-    expect(screen.getByTestId('tab-train-blunder-check')).not.toBeNull();
-    fireEvent.click(await screen.findByTestId('blunder-check-btn-start'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-window-counter').textContent).toBe('1 of 6'),
-    );
-    expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
-    expect(blunderComposeOrResume).toHaveBeenCalledTimes(1);
-  });
-
-  it('a non-beta user sees three tabs and /train/blunder-check lands on /train', async () => {
-    renderTrainPage(['/train/blunder-check']);
-
-    await waitFor(() => expect(currentPath()).toBe('/train'));
-    await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
-    expect(screen.queryByTestId('tab-train-blunder-check')).toBeNull();
-    expect(screen.queryByTestId('train-blunder-check-panel')).toBeNull();
-    expect(screen.getByTestId('tab-train-archive')).not.toBeNull();
-  });
-
-  it('a beta blunder-check visit constructs no Worker and composes no Today session (Today latch)', async () => {
-    profileState.beta = true;
-    renderTrainPage(['/train/blunder-check']);
-
-    await waitFor(() => expect(screen.getByTestId('train-blunder-check-panel')).not.toBeNull());
-    await screen.findByTestId('blunder-check-btn-start');
-    await act(async () => {});
-    expect(WorkerCtor).toHaveBeenCalledTimes(0);
-    expect(composeOrResumeSession).toHaveBeenCalledTimes(0);
-    expect(blunderComposeOrResume).toHaveBeenCalledTimes(0);
-    expect(screen.queryByTestId('train-start-screen')).toBeNull();
-  });
+      await waitFor(() => expect(currentPath()).toBe('/train'));
+      await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
+      expect(screen.queryByTestId('tab-train-blunder-check')).toBeNull();
+      expect(screen.queryByTestId('train-blunder-check-panel')).toBeNull();
+      expect(screen.getByTestId('tab-train-today')).not.toBeNull();
+      expect(screen.getByTestId('tab-train-leaderboard')).not.toBeNull();
+      expect(screen.getByTestId('tab-train-archive')).not.toBeNull();
+    },
+  );
 });
 
 describe('Train layout: D-15 wrapper width', () => {

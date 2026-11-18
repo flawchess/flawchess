@@ -6,9 +6,10 @@
  *
  * `/train/*` is one route, so this page parses the pathname
  * (`lib/trainRoute.ts`) and renders URL-routed tabs: Today (the landing, the
- * solve loop and the score screen), Leaderboard, Archive and, for beta users,
- * Blunder check (non-beta users are redirected to Today). An unknown `/train/*`
- * path redirects to `/train`. The session, the grading Worker and the loop flags
+ * solve loop, the score screen and the blunder-check drill), Leaderboard and
+ * Archive. An unknown `/train/*` path redirects to `/train`. Blunder check has
+ * no tab and no beta gate (Phase 251 D-11, D-18): the Today card's Start button
+ * mounts the drill host under Today and its exit returns to the card. The session, the grading Worker and the loop flags
  * live in `useTrainLoop` (see its docstring for the session and loop rules
  * and the Today latch that keeps a Leaderboard-only visit from creating a
  * session or loading the engine).
@@ -19,13 +20,15 @@
  * its class, so nothing remounts.
  */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import type { ReactElement } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTrainLoop } from '@/hooks/useTrainLoop';
 import type { UseTrainLoopResult } from '@/hooks/useTrainLoop';
 import { useRouteDot } from '@/hooks/useFeatureRoute';
 import { useRecordFeatureRoute } from '@/hooks/useRecordFeatureRoute';
+import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
 import { hasImportedGames, useUserProfile } from '@/hooks/useUserProfile';
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
@@ -36,8 +39,12 @@ import { TrainMedalDialogHost } from '@/components/train/medals/TrainMedalDialog
 import { TrainSubnav } from '@/components/train/TrainSubnav';
 import { TrainArchiveTab } from '@/components/train/TrainArchiveTab';
 import { BlunderCheckTab } from '@/components/train/blunder-check/BlunderCheckTab';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
+import type { TrainTodayActions } from '@/components/train/trainTodayActions';
+import { readBlunderCheckSolutionCache } from '@/lib/blunderCheckSolutionCache';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
 import { feedbackAskDays } from '@/lib/feedbackAsk';
+import { unlockAudio } from '@/lib/sounds';
 import { parseTrainRoute, TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
@@ -120,12 +127,24 @@ export default function TrainPage(): ReactElement {
   // branches on. hasImportedGames is the SAME shared zero-game predicate
   // Home.tsx uses — never re-derived here.
   const hasGames = hasImportedGames(profile);
-  // The Blunder check tab is beta-only (D-01). `beta_enabled` comes from the profile,
-  // never useAuth().user (always null, carries no beta flag).
-  const isBeta = profile?.beta_enabled === true;
+  // The blunder-check drill is hosted under Today (D-18, D-20): the card's Start sets this.
+  // A cached solution (Analyze -> browser Back) mounts the host again, straight into it.
+  // Declared with the other hooks, above the early returns.
+  const [blunderCheckActive, setBlunderCheckActive] = useState(
+    () => readBlunderCheckSolutionCache() !== null,
+  );
+  // A drill left running on another tab would keep its timers going out of sight, so leaving
+  // Today ends it (the session stays open server-side and resumes from the next Start).
+  if (!isToday && blunderCheckActive) setBlunderCheckActive(false);
   // Set by BlunderCheckTab while a drill is on screen, so the page goes immersive like
-  // the solve loop. Declared with the other hooks, above the early returns.
+  // the solve loop.
   const [blunderImmersive, setBlunderImmersive] = useState(false);
+  const queryClient = useQueryClient();
+  const exitBlunderCheck = useCallback((): void => {
+    setBlunderCheckActive(false);
+    // The Today card reads the drill's new state (remaining, points, done) on return.
+    void queryClient.invalidateQueries({ queryKey: TRAIN_PROGRESS_QUERY_KEY });
+  }, [queryClient]);
   // No /train/* handler rejects guests, so canTrain only waits for the
   // profile to resolve.
   const canTrain = profile != null;
@@ -134,7 +153,7 @@ export default function TrainPage(): ReactElement {
   const recordRouteStep = useRecordFeatureRoute();
   const showStartRouteDot = useRouteDot('control:train-start');
   const showTodayRouteDot = useRouteDot('subtab:train-today');
-  const pageImmersive = loop.immersive || (route?.tab === 'blunder-check' && blunderImmersive);
+  const pageImmersive = loop.immersive || (blunderCheckActive && blunderImmersive);
 
   // All hooks are above: an unknown /train/* path lands on Today.
   if (route === null) {
@@ -157,8 +176,9 @@ export default function TrainPage(): ReactElement {
     );
   }
 
-  // Defense in depth: the server's beta gate is the real control (T-249-19).
-  if (route.tab === 'blunder-check' && !isBeta) {
+  // The Blunder check tab is gone (D-11); Task 2 drops the route member, until then an old
+  // link lands on Today.
+  if (route.tab === 'blunder-check') {
     return <Navigate to={TRAIN_TAB_PATHS.today} replace />;
   }
 
@@ -168,16 +188,33 @@ export default function TrainPage(): ReactElement {
   // press server-side.
   function handleEnterLoop(): void {
     recordRouteStep({ action: 'done', step: 'train' });
+    // Reverse hand-off: a drill host never stays mounted under the solve loop.
+    setBlunderCheckActive(false);
     loop.enterLoop();
   }
 
-  const landingActive = !(showLoop || showScoreScreen || restoredActive);
+  function handleStartBlunderCheck(): void {
+    // The lead-in's move sounds play from timers, not from a tap: unlock audio in this one.
+    unlockAudio();
+    // Callable from the puzzle score screen (the D-12 hand-off): leave it first. From the
+    // landing there is nothing to leave, so skip the session re-read it would fire.
+    if (showLoop || showScoreScreen || restoredActive) loop.returnToLanding();
+    setBlunderCheckActive(true);
+  }
+
+  const todayActions: TrainTodayActions = {
+    startPuzzles: handleEnterLoop,
+    startBlunderCheck: handleStartBlunderCheck,
+  };
+
+  const landingActive = !(showLoop || showScoreScreen || restoredActive || blunderCheckActive);
 
   return (
     // While a puzzle is on screen the phone header is suppressed
     // (`useMarkPlayActive`), so the top padding would only push the pinned
     // progress row + board down — drop it below `sm`, the header's own
     // breakpoint. Otherwise the tab views share one max-w-7xl wrapper.
+    <TrainTodayActionsContext.Provider value={todayActions}>
     <div
       className={
         pageImmersive
@@ -189,7 +226,7 @@ export default function TrainPage(): ReactElement {
       {!pageImmersive && (
         <TrainSubnav
           active={route.tab}
-          showBlunderCheck={isBeta}
+          showBlunderCheck={false}
           showTodayRouteDot={showTodayRouteDot}
         />
       )}
@@ -248,11 +285,12 @@ export default function TrainPage(): ReactElement {
           <TrainArchiveTab list={route.list} />
         </div>
       )}
-      {route.tab === 'blunder-check' && (
+      {isToday && blunderCheckActive && (
         <div className="mt-4" data-testid="train-blunder-check-panel">
-          <BlunderCheckTab onImmersiveChange={setBlunderImmersive} />
+          <BlunderCheckTab onImmersiveChange={setBlunderImmersive} onExit={exitBlunderCheck} />
         </div>
       )}
     </div>
+    </TrainTodayActionsContext.Provider>
   );
 }
