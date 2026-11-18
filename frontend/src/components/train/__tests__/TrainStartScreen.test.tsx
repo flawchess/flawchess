@@ -89,6 +89,8 @@ let mockTrainSettingsData: {
   timezone: string;
   weekday_mask: number;
   puzzles_per_session: number;
+  blunder_check_per_session: number;
+  blunder_check_level: 'beginner' | 'intermediate' | 'advanced' | null;
   intro_seen_at: string | null;
   reveal_tour_stage: 0 | 1 | 2 | 3;
   sr_explained_at: string | null;
@@ -97,6 +99,8 @@ let mockTrainSettingsData: {
   timezone: 'UTC',
   weekday_mask: 127,
   puzzles_per_session: 6,
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
   intro_seen_at: null,
   reveal_tour_stage: 0,
   sr_explained_at: null,
@@ -113,13 +117,14 @@ const SESSION_COMPLETED = {
 
 const saveMock = vi.fn(
   (
-    body: { weekdayMask: number; puzzlesPerSession: number },
+    body: { weekdayMask: number; puzzlesPerSession: number; blunderCheckPerSession: number },
     opts?: { onSuccess?: () => void },
   ) => {
     mockTrainSettingsData = {
       ...mockTrainSettingsData,
       weekday_mask: body.weekdayMask,
       puzzles_per_session: body.puzzlesPerSession,
+      blunder_check_per_session: body.blunderCheckPerSession,
     };
     opts?.onSuccess?.();
   },
@@ -202,7 +207,7 @@ vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
 
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
-import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
+import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/hooks/useTrainSettingsDraft';
 import type { TrainProgressResponse, TrainPuzzle, TrainSessionResponse } from '@/types/train';
 
 afterEach(() => {
@@ -215,6 +220,8 @@ afterEach(() => {
     timezone: 'UTC',
     weekday_mask: 127,
     puzzles_per_session: 6,
+    blunder_check_per_session: 6,
+    blunder_check_level: null,
     intro_seen_at: null,
     reveal_tour_stage: 0,
     sr_explained_at: null,

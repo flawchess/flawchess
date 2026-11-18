@@ -38,11 +38,13 @@ import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
+import { TrainModeSettings } from '@/components/train/TrainModeSettings';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import type { PuzzlesLanding } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
+import { useTrainSettingsDraft } from '@/hooks/useTrainSettingsDraft';
 import {
   GUEST_SIGNUP_ASK_SCORE,
   IMPORT_ASK_LANDING,
@@ -401,6 +403,10 @@ export function TrainStartScreen({
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
+  // The one settings draft: the mode rows and the schedule card all edit it, so a debounced
+  // save never overwrites another edit. It lives here (above the early returns) so a pending
+  // save survives the loading state and a tab switch.
+  const settingsDraft = useTrainSettingsDraft({ onSaved: onSettingsSaved });
 
   // Matches the existing muted text-only route-loading pattern
   // (`import-required-loading` / `bots-loading`) rather than a new skeleton.
@@ -441,7 +447,10 @@ export function TrainStartScreen({
         <TrainReminderResurfaceBanner />
         {todayCard}
         {puzzlesOff ? (
-          <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
+          <>
+            <TrainModeSettings settingsDraft={settingsDraft} />
+            <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={isGuest} />
+          </>
         ) : (
           <TrainEmptyBody progress={progress} />
         )}
@@ -462,8 +471,9 @@ export function TrainStartScreen({
         />
       )}
       {todayCard}
+      <TrainModeSettings settingsDraft={settingsDraft} />
       <TrainScheduleSettings
-        onSaved={onSettingsSaved}
+        settingsDraft={settingsDraft}
         nextSessionDate={state.kind === 'completed' ? state.nextSessionDate : undefined}
         isGuest={isGuest}
       />
