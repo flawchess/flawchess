@@ -176,12 +176,6 @@ export default function TrainPage(): ReactElement {
     );
   }
 
-  // The Blunder check tab is gone (D-11); Task 2 drops the route member, until then an old
-  // link lands on Today.
-  if (route.tab === 'blunder-check') {
-    return <Navigate to={TRAIN_TAB_PATHS.today} replace />;
-  }
-
   // D-21: the Train step completes on Start or Resume (fresh, warmup and resume
   // share this one handler), never on opening Train. useTrainLoop stays
   // route-agnostic. No Umami event: drill_sessions.entered_at already records the
@@ -226,7 +220,6 @@ export default function TrainPage(): ReactElement {
       {!pageImmersive && (
         <TrainSubnav
           active={route.tab}
-          showBlunderCheck={false}
           showTodayRouteDot={showTodayRouteDot}
         />
       )}

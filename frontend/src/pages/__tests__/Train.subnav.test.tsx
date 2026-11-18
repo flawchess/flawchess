@@ -485,9 +485,12 @@ describe('Train layout: no Blunder check tab (D-11, D-18)', () => {
       await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
       expect(screen.queryByTestId('tab-train-blunder-check')).toBeNull();
       expect(screen.queryByTestId('train-blunder-check-panel')).toBeNull();
-      expect(screen.getByTestId('tab-train-today')).not.toBeNull();
-      expect(screen.getByTestId('tab-train-leaderboard')).not.toBeNull();
-      expect(screen.getByTestId('tab-train-archive')).not.toBeNull();
+      const tabs = within(screen.getByTestId('train-tabs')).getAllByRole('tab');
+      expect(tabs.map((tab) => tab.getAttribute('data-testid'))).toEqual([
+        'tab-train-today',
+        'tab-train-leaderboard',
+        'tab-train-archive',
+      ]);
     },
   );
 });
