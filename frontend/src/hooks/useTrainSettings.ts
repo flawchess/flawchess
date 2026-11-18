@@ -17,7 +17,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
-import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
+import type { BlunderCheckLevel, TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
 
 /** The shared query key for GET /train/settings. */
 export const TRAIN_SETTINGS_QUERY_KEY = ['train', 'settings'] as const;
@@ -30,6 +30,10 @@ export interface TrainSettingsDraft {
   reminderEnabled: boolean;
   reminderHour: number;
   reminderIntentAt: string | null;
+  /** Optional blunder-check fields (Phase 251): sent only when defined, so a save that
+   * omits them keeps the stored value (plan 04's PUT contract). */
+  blunderCheckPerSession?: number;
+  blunderCheckLevel?: BlunderCheckLevel;
 }
 
 /**
@@ -56,6 +60,8 @@ export function useTrainSettings(options?: { enabled?: boolean }) {
       reminderEnabled,
       reminderHour,
       reminderIntentAt,
+      blunderCheckPerSession,
+      blunderCheckLevel,
     }: TrainSettingsDraft) => {
       const body: TrainSettingsUpdate = {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -64,6 +70,9 @@ export function useTrainSettings(options?: { enabled?: boolean }) {
         reminder_enabled: reminderEnabled,
         reminder_hour: reminderHour,
         reminder_intent_at: reminderIntentAt,
+        // `!== undefined`, not truthiness: 0 is the mode off and must be sent.
+        ...(blunderCheckPerSession !== undefined && { blunder_check_per_session: blunderCheckPerSession }),
+        ...(blunderCheckLevel !== undefined && { blunder_check_level: blunderCheckLevel }),
       };
       return trainApi.updateSettings(body);
     },
