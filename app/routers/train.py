@@ -21,6 +21,7 @@ ladder, streak days) without waiting real days. Outside
 from __future__ import annotations
 
 import datetime
+from dataclasses import asdict
 from typing import Annotated, Final
 
 import sentry_sdk
@@ -44,7 +45,10 @@ from app.schemas.train import (
     SolvedResult,
     TrainArchiveItem,
     TrainArchiveResponse,
+    TrainBlunderCheckModeProgress,
     TrainLeaderboardResponse,
+    TrainModeProgress,
+    TrainModesProgress,
     TrainProgressResponse,
     TrainPuzzle,
     TrainSessionResponse,
@@ -354,6 +358,13 @@ async def get_train_progress(
         pool_state=progress.pool_state,
         next_due_date=progress.next_due_date,
         badge_visible=progress.badge_visible,
+        modes=TrainModesProgress(
+            puzzles=TrainModeProgress(**asdict(progress.modes.puzzles)),
+            blunder_check=TrainBlunderCheckModeProgress(**asdict(progress.modes.blunder_check)),
+        ),
+        day_complete=progress.day_complete,
+        pending_count=progress.pending_count,
+        blunder_check_notice=progress.blunder_check_notice,
     )
 
 
@@ -658,6 +669,26 @@ async def stamp_onboarding_step(
         sentry_sdk.capture_exception()
         raise
     return await _settings_response(session, settings_row, user_id=user.id)
+
+
+@router.post("/blunder-check-notice/dismiss", status_code=204)
+async def dismiss_blunder_check_notice(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    """Dismiss the one-time "blunder check is now a Train mode" launch notice (D-21).
+
+    No body, idempotent: it clears only the caller's own stamp (user id from
+    `current_active_user`, never client-supplied) and answers 204 whether or not a stamp was set.
+    """
+    try:
+        await train_repository.dismiss_blunder_check_notice(session, user_id=user.id)
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user.id)})
+        sentry_sdk.capture_exception()
+        raise
 
 
 __all__ = ["router"]

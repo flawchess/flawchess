@@ -51,6 +51,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
+from app.repositories import blunder_check_repository
 from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.schemas.normalization import TimeControlBucket
 from app.schemas.train import (
@@ -94,6 +95,7 @@ from app.services.train_pool import (
     vetted_moves_from_pv_node,
 )
 from app.services.train_scheduler import (
+    BLUNDER_CHECK_NOTICE_DAYS,
     CROSS_MODE_COOLDOWN_DAYS,
     DEFAULT_BLUNDER_CHECK_PER_SESSION,
     DEFAULT_PUZZLES_PER_SESSION,
@@ -859,6 +861,38 @@ async def get_archive_page(
     return ArchivePage(rows=rows, total=total)
 
 
+# A mode row's state on the Today card (Phase 251 D-09). Mirrors `app.schemas.train.TrainModeState`.
+ModeState = Literal["pending", "in_progress", "done", "off"]
+
+
+@dataclass(frozen=True)
+class ModeProgress:
+    """One mode's row: mirrors `app.schemas.train.TrainModeProgress`."""
+
+    size: int
+    state: ModeState
+    remaining: int
+    pending: int
+    first_session_done: bool
+
+
+@dataclass(frozen=True)
+class BlunderCheckModeProgress(ModeProgress):
+    """The blunder-check row: mirrors `app.schemas.train.TrainBlunderCheckModeProgress`."""
+
+    points_today: int
+    has_rated_games: bool
+    needs_level: bool
+
+
+@dataclass(frozen=True)
+class ModesProgress:
+    """Both modes' rows: mirrors `app.schemas.train.TrainModesProgress`."""
+
+    puzzles: ModeProgress
+    blunder_check: BlunderCheckModeProgress
+
+
 @dataclass(frozen=True)
 class ProgressSnapshot:
     """Internal dataclass mirroring `app.schemas.train.TrainProgressResponse`.
@@ -868,7 +902,8 @@ class ProgressSnapshot:
     `streak_reset_notice` is derived from the resulting state, so it survives a
     page reload. `badge_visible` is a display hint only — it gates no
     server-side authorization; the badge's own number still comes from
-    `waiting_count`.
+    `waiting_count`. `modes`, `day_complete`, `pending_count` and
+    `blunder_check_notice` are the Phase 251 two-mode read model.
     """
 
     session_streak_count: int
@@ -882,6 +917,10 @@ class ProgressSnapshot:
     pool_state: Literal["no_material", "exhausted", "available"]
     next_due_date: datetime.date | None
     badge_visible: bool
+    modes: ModesProgress
+    day_complete: bool
+    pending_count: int
+    blunder_check_notice: bool
 
 
 async def _material_flags(session: AsyncSession, *, user_id: int) -> tuple[bool, bool]:
@@ -1220,6 +1259,221 @@ async def settle_streak_snapshot(
     return view
 
 
+async def _completed_session_exists(session: AsyncSession, *, user_id: int) -> tuple[bool, bool]:
+    """`(puzzles, blunder_check)`: whether any session of each mode ever completed (D-10, D-19).
+
+    Two sequential EXISTS reads, no new column: the flag drives the How it works auto-collapse
+    and the pitch line, and a completed row is exactly "the user finished this mode once".
+    """
+    puzzles = (
+        await session.execute(
+            select(
+                select(DrillSession.id)
+                .where(DrillSession.user_id == user_id, DrillSession.status == "completed")
+                .exists()
+            )
+        )
+    ).scalar_one()
+    blunder_check = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return puzzles, blunder_check
+
+
+async def _open_session_has_solves(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> bool:
+    """Whether the user's open, unexpired puzzle session has at least one solved puzzle.
+
+    An expired-but-still-open row is treated as absent (read-only, like the waiting count).
+    """
+    open_session = await open_session_for_user(session, user_id=user_id)
+    if open_session is None or is_session_expired(open_session.expires_on, today):
+        return False
+    solved_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(DrillSolve)
+            .where(DrillSolve.session_id == open_session.id, DrillSolve.solved_at.isnot(None))
+        )
+    ).scalar_one()
+    return solved_count > 0
+
+
+async def _puzzles_mode_progress(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+    waiting_count: int,
+    badge_visible: bool,
+    first_session_done: bool,
+) -> ModeProgress:
+    """The puzzles row (D-09): off at size 0, done after today's session, in_progress once a
+    puzzle is solved in the open session, else pending.
+
+    `remaining` is the existing `waiting_count`; `pending` keeps the nav badge's semantics
+    (`waiting_count` only when `badge_visible`).
+    """
+    size = settings_row.puzzles_per_session
+    state: ModeState = "pending"
+    if size == 0:
+        state = "off"
+    elif await completed_session_in_window(session, user_id=user_id, today=today) is not None:
+        state = "done"
+    elif await _open_session_has_solves(session, user_id=user_id, today=today):
+        state = "in_progress"
+    return ModeProgress(
+        size=size,
+        state=state,
+        remaining=waiting_count,
+        pending=waiting_count if badge_visible else 0,
+        first_session_done=first_session_done,
+    )
+
+
+@dataclass(frozen=True)
+class _BlunderCheckSessionState:
+    """The session-derived part of the blunder-check row."""
+
+    state: ModeState
+    remaining: int
+    pending: int
+    points_today: int
+
+
+async def _blunder_check_session_state(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+) -> _BlunderCheckSessionState:
+    """State, remaining, badge contribution and points of the blunder-check row (D-09, D-13).
+
+    Off at size 0; done when a completed session is still in its window (its points are the
+    summed window scores); in_progress or pending from an open unexpired session (expired rows
+    are treated as absent, read-only like the waiting count); otherwise pending with the whole
+    size remaining. `pending` is the badge contribution: the remaining count when today is
+    scheduled or an unexpired session is open, else 0.
+    """
+    size = settings_row.blunder_check_per_session
+    if size == 0:
+        return _BlunderCheckSessionState(state="off", remaining=0, pending=0, points_today=0)
+    completed = await blunder_check_repository.completed_session_in_window(
+        session, user_id=user_id, today=today
+    )
+    if completed is not None:
+        points = sum(window.points_scored for window in completed.windows)
+        return _BlunderCheckSessionState(state="done", remaining=0, pending=0, points_today=points)
+    open_progress = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+    if open_progress is None:
+        pending = size if is_scheduled_day(today, settings_row.weekday_mask) else 0
+        return _BlunderCheckSessionState(
+            state="pending", remaining=size, pending=pending, points_today=0
+        )
+    ended = sum(1 for window in open_progress.windows if window.outcome is not None)
+    started = any(window.started_at is not None for window in open_progress.windows)
+    remaining = open_progress.window_count - ended
+    return _BlunderCheckSessionState(
+        state="in_progress" if started else "pending",
+        remaining=remaining,
+        pending=remaining,
+        points_today=0,
+    )
+
+
+async def _blunder_check_mode_progress(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+    first_session_done: bool,
+) -> BlunderCheckModeProgress:
+    """The blunder-check row: the session state plus the level step flags (D-17, D-20).
+
+    `has_rated_games` is a limit-1 read of the rated-human-games source the level derivation
+    uses; `needs_level` is true only with neither rated games nor a stored level, so the
+    client shows the level step exactly once.
+    """
+    state = await _blunder_check_session_state(
+        session, user_id=user_id, settings_row=settings_row, today=today
+    )
+    has_rated_games = bool(
+        await blunder_check_repository.recent_rated_games(session, user_id=user_id, limit=1)
+    )
+    return BlunderCheckModeProgress(
+        size=settings_row.blunder_check_per_session,
+        state=state.state,
+        remaining=state.remaining,
+        pending=state.pending,
+        first_session_done=first_session_done,
+        points_today=state.points_today,
+        has_rated_games=has_rated_games,
+        needs_level=not has_rated_games and settings_row.blunder_check_level is None,
+    )
+
+
+async def _launch_notice_visible(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    now_utc: datetime.datetime,
+) -> bool:
+    """Whether the one-time "blunder check is now a Train mode" notice shows (D-21).
+
+    True only for a row stamped at launch (`blunder_check_notice_from`), within
+    `BLUNDER_CHECK_NOTICE_DAYS` of the stamp, with no blunder-check session completed since the
+    stamp. Derived on read, so completing a session needs no write. New users and guests carry
+    a NULL stamp and never see it; a blunder-check amount change nulls it (plan 04).
+    """
+    stamp = settings_row.blunder_check_notice_from
+    if stamp is None:
+        return False
+    if now_utc >= stamp + datetime.timedelta(days=BLUNDER_CHECK_NOTICE_DAYS):
+        return False
+    completed_since = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                    BlunderCheckSession.completed_at >= stamp,
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return not completed_since
+
+
+async def dismiss_blunder_check_notice(session: AsyncSession, *, user_id: int) -> None:
+    """Clear the caller's launch notice (sets the stamp to NULL). Idempotent; caller commits.
+
+    Scoped by `user_id` only (V4: never client-supplied), so it can touch no other user's row.
+    """
+    await session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == user_id)
+        .values(blunder_check_notice_from=None)
+    )
+
+
 async def get_progress(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> ProgressSnapshot:
@@ -1303,6 +1557,30 @@ async def get_progress(
         or await _open_unfinished_exists(session, user_id=user_id, today=today)
     )
 
+    puzzles_first_done, bc_first_done = await _completed_session_exists(session, user_id=user_id)
+    puzzles_mode = await _puzzles_mode_progress(
+        session,
+        user_id=user_id,
+        settings_row=settings_row,
+        today=today,
+        waiting_count=waiting_count,
+        badge_visible=badge_visible,
+        first_session_done=puzzles_first_done,
+    )
+    blunder_check_mode = await _blunder_check_mode_progress(
+        session,
+        user_id=user_id,
+        settings_row=settings_row,
+        today=today,
+        first_session_done=bc_first_done,
+    )
+    notice = await _launch_notice_visible(
+        session, user_id=user_id, settings_row=settings_row, now_utc=now_utc
+    )
+    day_complete = await day_complete_on(
+        session, user_id=user_id, day=today, settings_row=settings_row
+    )
+
     return ProgressSnapshot(
         session_streak_count=view.settled.streak_count,
         shield_level=view.settled.shield_level,
@@ -1315,6 +1593,10 @@ async def get_progress(
         pool_state=pool_state,
         next_due_date=next_due_date,
         badge_visible=badge_visible,
+        modes=ModesProgress(puzzles=puzzles_mode, blunder_check=blunder_check_mode),
+        day_complete=day_complete,
+        pending_count=puzzles_mode.pending + blunder_check_mode.pending,
+        blunder_check_notice=notice,
     )
 
 

@@ -813,8 +813,53 @@ class TrainSettingsUpdate(BaseModel):
         return value
 
 
+TrainModeState = Literal["pending", "in_progress", "done", "off"]
+
+
+class TrainModeProgress(BaseModel):
+    """One Train mode's row on the Today card (Phase 251 D-09).
+
+    `state` is `off` at session size 0, `done` once today's session is complete, `in_progress`
+    once the user started it, else `pending`. `remaining` is what is left to do in the session
+    (puzzles still to solve, windows still to finish). `pending` is what counts toward the nav
+    badge: `remaining` on a day the mode is due, else 0 (D-13). `first_session_done` is true once
+    any session of this mode ever completed (D-10, D-19).
+    """
+
+    size: int
+    state: TrainModeState
+    remaining: int
+    pending: int
+    first_session_done: bool
+
+
+class TrainBlunderCheckModeProgress(TrainModeProgress):
+    """The blunder-check row: the common fields plus the points earned today and the level step.
+
+    `has_rated_games` is true when the user has any rated human game to derive a rating band
+    from; `needs_level` is true when there is neither, so the client asks for a level once (D-17,
+    D-20).
+    """
+
+    points_today: int
+    has_rated_games: bool
+    needs_level: bool
+
+
+class TrainModesProgress(BaseModel):
+    """Both Train modes' rows."""
+
+    puzzles: TrainModeProgress
+    blunder_check: TrainBlunderCheckModeProgress
+
+
 class TrainProgressResponse(BaseModel):
     """Response for GET /train/progress.
+
+    `modes` is the per-mode read model the Today card renders; `day_complete` is the both-modes
+    day rule (D-02); `pending_count` is the sum of both modes' badge counts (D-13);
+    `blunder_check_notice` is true while the one-time launch notice shows (D-21). The older
+    fields keep their meaning for installed clients.
 
     A per-scheduled-day tick plus a 0-7 depletable shield:
     `session_streak_count` (completed scheduled-day SESSIONS, not settled
@@ -870,6 +915,10 @@ class TrainProgressResponse(BaseModel):
     pool_state: Literal["no_material", "exhausted", "available"]
     next_due_date: date | None
     badge_visible: bool
+    modes: TrainModesProgress
+    day_complete: bool
+    pending_count: int
+    blunder_check_notice: bool
 
 
 ArchiveList = Literal["mastered", "parked"]
