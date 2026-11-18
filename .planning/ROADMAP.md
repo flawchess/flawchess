@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 6/13 plans executed
+**Plans:** 7/13 plans executed
 
 Plans:
 **Wave 1**
@@ -384,7 +384,7 @@ Plans:
 - [x] 251-05-PLAN.md — Leaderboard frontend: Puzzles / Blunder check switch (D-24), medal dialog by week (D-15)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 251-06-PLAN.md — GET /train/progress per-mode read model, pending count, launch notice, reminder on day complete
+- [x] 251-06-PLAN.md — GET /train/progress per-mode read model, pending count, launch notice, reminder on day complete
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 251-07-PLAN.md — Blunder check runs from the Today card; Blunder Check tab and route removed
