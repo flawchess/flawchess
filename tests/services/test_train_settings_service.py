@@ -61,6 +61,13 @@ _SEED_ROWS = 61
 _SEED_BLUNDER_PLY = 20
 _SEED_BLUNDER_DROP_CP = 500
 _SUPPLY_GAMES = 24
+_FOREIGN_SUPPLY_GAMES = 16
+
+
+@pytest.fixture(autouse=True)
+def _full_foreign_sample(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sample every page: a 2% TABLESAMPLE of a tiny test table would return almost nothing."""
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
 
 
 def _maker(test_engine) -> async_sessionmaker:
@@ -176,6 +183,18 @@ async def _seed_supply(test_engine, user_id: int, count: int) -> list[int]:
         )
         for _ in range(count)
     ]
+
+
+async def _seed_full_supply(test_engine, user_id: int) -> list[int]:
+    """Own games plus another user's games, so every slot origin of a composition can fill.
+
+    Without the foreign half, slots drawn as foreign stay empty and an extension composes a
+    random number of windows.
+    """
+    foreign_id, _ = await register_user("resize-foreign", beta=False, test_engine=test_engine)
+    own = await _seed_supply(test_engine, user_id, _SUPPLY_GAMES)
+    foreign = await _seed_supply(test_engine, foreign_id, _FOREIGN_SUPPLY_GAMES)
+    return own + foreign
 
 
 async def _apply(
@@ -331,7 +350,8 @@ async def test_resize_extend_composes_more(test_engine) -> None:
     """2 ended of 6 and n = 9: three new windows at positions 6, 7, 8; window_count 9."""
     user_id, _ = await register_user("resize-extend", beta=False, test_engine=test_engine)
     await _seed_holder(test_engine, user_id)
-    game_ids = await _seed_supply(test_engine, user_id, _SUPPLY_GAMES)
+    all_game_ids = await _seed_full_supply(test_engine, user_id)
+    game_ids = all_game_ids[:_SUPPLY_GAMES]
     session_id = await _seed_open_bc_session(
         test_engine, user_id, total=6, ended=2, game_ids=game_ids[:6]
     )
@@ -349,7 +369,7 @@ async def test_resize_extend_composes_more(test_engine) -> None:
             assert window.outcome is None
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id])
-        await delete_games(test_engine, game_ids)
+        await delete_games(test_engine, all_game_ids)
 
 
 @pytest.mark.asyncio
@@ -357,7 +377,8 @@ async def test_resize_extend_never_reserves_shown_blunder(test_engine) -> None:
     """D-01: no extension window repeats a (game_id, blunder_ply) already in a window of the user."""
     user_id, _ = await register_user("resize-serve", beta=False, test_engine=test_engine)
     await _seed_holder(test_engine, user_id)
-    game_ids = await _seed_supply(test_engine, user_id, _SUPPLY_GAMES)
+    all_game_ids = await _seed_full_supply(test_engine, user_id)
+    game_ids = all_game_ids[:_SUPPLY_GAMES]
     session_id = await _seed_open_bc_session(
         test_engine, user_id, total=6, ended=4, game_ids=game_ids[:6]
     )
@@ -374,7 +395,7 @@ async def test_resize_extend_never_reserves_shown_blunder(test_engine) -> None:
         assert len(blunders) == len(set(blunders))
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id])
-        await delete_games(test_engine, game_ids)
+        await delete_games(test_engine, all_game_ids)
 
 
 @pytest.mark.asyncio
@@ -384,7 +405,7 @@ async def test_resize_after_completion_applies_next_session(
     """A completed session is never reopened; the next session composes with the new size."""
     user_id, _ = await register_user("resize-after", beta=False, test_engine=test_engine)
     await _seed_holder(test_engine, user_id)
-    game_ids = await _seed_supply(test_engine, user_id, _SUPPLY_GAMES)
+    all_game_ids = await _seed_full_supply(test_engine, user_id)
     session_id = await seed_completed_blunder_check_session(
         test_engine, user_id=user_id, session_date=_DAY, points=_WINDOW_POINTS
     )
@@ -417,4 +438,4 @@ async def test_resize_after_completion_applies_next_session(
         assert seen_counts == [9]
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id, *new_session_ids])
-        await delete_games(test_engine, game_ids)
+        await delete_games(test_engine, all_game_ids)

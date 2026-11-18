@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import train_repository
 from app.repositories.train_repository import TrainSettingsRow
+from app.services import blunder_check_service
 from app.services.train_scheduler import BlunderCheckLevel, local_today
 
 _BOTH_MODES_OFF_MESSAGE: Final = "At least one of puzzles and blunder check must stay on"
@@ -95,6 +96,12 @@ async def apply_settings_update(
         reminder_intent_at=reminder_intent_at,
         now_utc=now_utc,
     )
+    if resolved_bc_size != old_row.blunder_check_per_session:
+        # D-06: the open blunder-check session follows the new size now, not from the next
+        # scheduled day. A resize that completes the session is credited by the call below.
+        await blunder_check_service.resize_for_settings(
+            session, user_id=user_id, new_size=resolved_bc_size, now_utc=now_utc
+        )
     # "Today" is resolved with the NEW timezone: the user is acting on the day they now live in.
     today = local_today(new_row.timezone, now_utc)
     await train_repository.apply_day_completion(

@@ -596,6 +596,7 @@ async def compose_windows(
     count: int = BLUNDER_CHECK_SESSION_WINDOWS,
     fallback_level_elo: float = DEFAULT_USER_LEVEL_ELO,
     cooled_pairs: Sequence[tuple[int, int]] = (),
+    start_position: int = 0,
 ) -> list[NewWindow]:
     """Compose up to `count` windows for the user (250 D-12..D-16).
 
@@ -603,6 +604,8 @@ async def compose_windows(
     the documented default for direct callers. `fallback_level_elo` is the stored level's Elo, used
     only when the user has no rated games (D-17). `cooled_pairs` are the user's own flaws
     served as puzzles inside the cross-mode cooldown (D-16): they are not composed as own blunders.
+    `start_position` numbers the first returned window (the extension of an open session, D-06,
+    continues after its existing windows); positions stay contiguous from there.
     """
     plans = {slot: draw_slot_plan(rng) for slot in range(count)}
     own, foreign = _Pool(), _Pool()
@@ -629,10 +632,11 @@ async def compose_windows(
             rng=rng,
         )
         _redraw_and_refill(plans, "foreign", foreign, filled, rng=rng)
-    # Positions are renumbered contiguously so a short session keeps a gap-free sequence.
+    # Positions are renumbered contiguously from `start_position` so a short session keeps a
+    # gap-free sequence.
     windows: list[NewWindow] = []
     for _, item in sorted(filled.items()):
-        window = _new_window(len(windows), item)
+        window = _new_window(start_position + len(windows), item)
         if window is not None:
             windows.append(window)
     return windows
