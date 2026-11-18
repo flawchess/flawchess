@@ -231,6 +231,7 @@ async def compose_or_resume(
         user_id=user_id,
         rng=blunder_check_selection.new_session_rng(),
         count=settings.blunder_check_per_session,
+        fallback_level_elo=blunder_check_selection.level_fallback_elo(settings.blunder_check_level),
     )
     if not windows:
         return None

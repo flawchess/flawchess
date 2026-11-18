@@ -769,13 +769,60 @@ async def test_finish_then_start_returns_done_session_until_next_day(
             await delete_blunder_check_sessions(test_engine, [fresh_id] if fresh_id else [])
 
 
+async def _start_first(token: str, session_id: int) -> httpx.Response:
+    return await _start(token, session_id, 0)
+
+
+async def _begin_first(token: str, session_id: int) -> httpx.Response:
+    return await _begin(token, session_id, 0)
+
+
 @pytest.mark.asyncio
-async def test_non_beta_user_is_refused_on_the_drill_routes(test_engine, clock) -> None:
+async def test_non_beta_user_reaches_the_drill_routes(test_engine, clock) -> None:
+    """D-18: no drill route answers 403 for a missing beta flag; an unknown session is a 404."""
     _, token = await register_user("bc-drill-nonbeta", beta=False, test_engine=test_engine)
-    assert (await _start(token, 1, 0)).status_code == 403
-    assert (await _begin(token, 1, 0)).status_code == 403
-    assert (await _answer(token, 1, 0, 1, "safe")).status_code == 403
-    assert (await _finish(token, 1)).status_code == 403
+    responses = [
+        await _start(token, 1, 0),
+        await _begin(token, 1, 0),
+        await _answer(token, 1, 0, 1, "safe"),
+        await _finish(token, 1),
+    ]
+    assert [resp.status_code for resp in responses] == [404, 404, 404, 404]
+
+
+@pytest.mark.asyncio
+async def test_guest_reaches_the_drill_routes(test_engine, clock) -> None:
+    """D-18: a guest is an authenticated user; the drill routes answer the scoped 404."""
+    _, token = await register_user(
+        "bc-drill-guest", beta=False, test_engine=test_engine, guest=True
+    )
+    responses = [
+        await _start(token, 1, 0),
+        await _begin(token, 1, 0),
+        await _answer(token, 1, 0, 1, "safe"),
+        await _finish(token, 1),
+    ]
+    assert [resp.status_code for resp in responses] == [404, 404, 404, 404]
+
+
+@pytest.mark.asyncio
+async def test_non_beta_user_cannot_touch_another_users_session(test_engine, clock) -> None:
+    """T-251-09: with the gate gone, scoping by the caller's id still answers 404 (ASVS V4)."""
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        _, other_token = await register_user(
+            "bc-drill-nonbeta-idor", beta=False, test_engine=test_engine
+        )
+        _, guest_token = await register_user(
+            "bc-drill-guest-idor", beta=False, test_engine=test_engine, guest=True
+        )
+        statuses = [
+            (await call(token, s.session_id)).status_code
+            for token in (other_token, guest_token)
+            for call in (_finish, _start_first, _begin_first)
+        ]
+        window = await _window_row(test_engine, s.session_id, 0)
+    assert statuses == [404] * 6
+    assert window.started_at is None
 
 
 # ---------------------------------------------------------------------------

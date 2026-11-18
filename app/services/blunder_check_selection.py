@@ -61,6 +61,7 @@ from app.services.blunder_check_rules import (
     draw_slot_plan,
 )
 from app.services.normalization import is_correspondence_time_control
+from app.services.train_scheduler import BlunderCheckLevel
 
 # Own games loaded per batch (one random pick of fully evaluated games, then judged in Python).
 OWN_BATCH_GAMES: int = 40
@@ -82,6 +83,13 @@ REFERENCE_ELO_GAMES: int = 50
 # Level for a user with no rated games at all; mirrors the frontend FREE_PLAY_DEFAULT_ELO
 # (frontend/src/hooks/useMaiaEloDefault.ts), the 250 CONTEXT default for such a user.
 DEFAULT_USER_LEVEL_ELO: float = 1500.0
+# Phase 251 D-17: a user without rated games (every guest) composes at the Elo of their stored
+# blunder-check level. The middle level equals DEFAULT_USER_LEVEL_ELO on purpose; tune here only.
+LEVEL_ELO: Final[Mapping[BlunderCheckLevel, float]] = {
+    "beginner": 1000.0,
+    "intermediate": 1500.0,
+    "advanced": 2000.0,
+}
 # Rounds that redraw only the still-empty slots (re-using already loaded batches).
 MAX_SHAPE_REDRAWS: int = 5
 
@@ -152,13 +160,21 @@ def _median_pinned(rows: Sequence[EloSourceRow]) -> float | None:
     return statistics.median(elos) if elos else None
 
 
-def user_level_elo(rows: Sequence[EloSourceRow]) -> float:
+def level_fallback_elo(level: BlunderCheckLevel | None) -> float:
+    """The Elo a user without rated games composes at: their stored level, else the 1500 default."""
+    return DEFAULT_USER_LEVEL_ELO if level is None else LEVEL_ELO[level]
+
+
+def user_level_elo(
+    rows: Sequence[EloSourceRow], *, fallback: float = DEFAULT_USER_LEVEL_ELO
+) -> float:
     """The user's level (250 D-14): median pinned Elo of the newest games in their most-played
     time control. `rows` are the user's rated human games, newest first.
 
     The bucket is the one with the most rows (a count tie goes to the bucket whose newest row comes
     first); correspondence rows and rows without a bucket never decide it. With no bucketed rows the
-    level is the median over all rows, and with no rows DEFAULT_USER_LEVEL_ELO.
+    level is the median over all rows. Without a pinned Elo in the rows (a guest or a user with no
+    rated games) the level is `fallback`, the stored level's Elo (D-17); rated games always win.
     """
     bucketed = [
         row
@@ -175,7 +191,7 @@ def user_level_elo(rows: Sequence[EloSourceRow]) -> float:
             :REFERENCE_ELO_GAMES
         ]
     level = _median_pinned(chosen)
-    return DEFAULT_USER_LEVEL_ELO if level is None else level
+    return fallback if level is None else level
 
 
 # ---------------------------------------------------------------------------
@@ -407,14 +423,17 @@ def _own_source(user_id: int) -> _Source:
     return _Source("own", MAX_OWN_BATCHES, None, pick)
 
 
-async def _foreign_source(session: AsyncSession, user_id: int) -> _Source:
+async def _foreign_source(
+    session: AsyncSession, user_id: int, *, fallback_elo: float = DEFAULT_USER_LEVEL_ELO
+) -> _Source:
     """Foreign games whose mover's pinned Elo is within FOREIGN_RATING_BAND of the user's level.
 
     250 D-13: rating only (no time-control match), one band, no widening. The level is read once
-    per session start (D-14).
+    per session start (D-14). A user without rated games gets `fallback_elo` (D-17).
     """
     level = user_level_elo(
-        await repo.recent_rated_games(session, user_id=user_id, limit=USER_LEVEL_SCAN_GAMES)
+        await repo.recent_rated_games(session, user_id=user_id, limit=USER_LEVEL_SCAN_GAMES),
+        fallback=fallback_elo,
     )
     raw_margin = FOREIGN_RATING_BAND + FOREIGN_RAW_PREFILTER_MARGIN
 
@@ -558,11 +577,13 @@ async def compose_windows(
     user_id: int,
     rng: random.Random,
     count: int = BLUNDER_CHECK_SESSION_WINDOWS,
+    fallback_level_elo: float = DEFAULT_USER_LEVEL_ELO,
 ) -> list[NewWindow]:
     """Compose up to `count` windows for the user (250 D-12..D-16).
 
     `count` is the user's `blunder_check_per_session` (Phase 251 D-04); the constant stays as
-    the documented default for direct callers.
+    the documented default for direct callers. `fallback_level_elo` is the stored level's Elo, used
+    only when the user has no rated games (D-17).
     """
     plans = {slot: draw_slot_plan(rng) for slot in range(count)}
     own, foreign = _Pool(), _Pool()
@@ -582,7 +603,7 @@ async def compose_windows(
         await _fill_from_source(
             session,
             user_id=user_id,
-            source=await _foreign_source(session, user_id),
+            source=await _foreign_source(session, user_id, fallback_elo=fallback_level_elo),
             plans=plans,
             pool=foreign,
             filled=filled,
