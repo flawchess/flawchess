@@ -122,7 +122,7 @@ describe('blunder-check step (D-21)', () => {
 
   it('records on use only, never on a visit to Train', () => {
     const s = stateWith(ALL_BUT_BLUNDER_CHECK);
-    expect(planRouteWrites(s, ctx('/train', true))).toEqual([]);
+    expect(doneWrites(s, ctx('/train', true))).toEqual([]);
   });
 });
 
