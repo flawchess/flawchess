@@ -582,6 +582,23 @@ def _judge_one_day(
     )
 
 
+def day_is_complete(*, puzzles_done: bool, bc_done: bool, puzzles_size: int, bc_size: int) -> bool:
+    """The both-modes rule (D-02): is a local day complete for the streak?
+
+    A mode is satisfied when its per-session size is 0 (the user switched it
+    off, so it is not part of their day) or when it has a completed session
+    dated that day. At least one mode must actually be done, so a day with
+    nothing completed is never complete even when both modes are off.
+
+    Pure: callers resolve the four inputs (`train_repository.complete_days_for`
+    feeds `tick_days`, `apply_day_completion` feeds the eager path), so the
+    lazy walk and the eager credit apply the same rule.
+    """
+    puzzles_ok = puzzles_size == 0 or puzzles_done
+    bc_ok = bc_size == 0 or bc_done
+    return puzzles_ok and bc_ok and (puzzles_done or bc_done)
+
+
 def tick_days(
     snapshot: TickSnapshot,
     completed_session_dates: Sequence[datetime.date],
@@ -696,6 +713,7 @@ __all__ = [
     "TickSnapshot",
     "TickView",
     "apply_result",
+    "day_is_complete",
     "is_scheduled_day",
     "is_session_expired",
     "local_hour",

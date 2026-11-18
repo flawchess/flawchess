@@ -80,6 +80,10 @@ from app.services.train_pool import (
 from app.services.train_scheduler import ALL_WEEKDAYS_MASK, SHIELD_CAP
 from tests.conftest import ensure_test_user
 
+# Phase 251: the pre-existing tick tests below pin the puzzle-only completion rule, which the
+# D-02 both-modes rule reduces to when blunder check is off (size 0 = not part of the day).
+_PUZZLES_ONLY_BC_SIZE = 0
+
 # Unique user ID for this test module (distinct from other repo test modules —
 # see test_bot_game_settings_repository.py's 92400 / test_game_repository_persona_wins.py's
 # 92401/92402). Every test in this file uses the same rollback-scoped db_session fixture,
@@ -3215,7 +3219,11 @@ async def _seed_completed_session(
 
 
 async def _seed_pool_eligible_since(
-    db_session: AsyncSession, user_id: int, since: datetime.date
+    db_session: AsyncSession,
+    user_id: int,
+    since: datetime.date,
+    *,
+    blunder_check_per_session: int = _PUZZLES_ONLY_BC_SIZE,
 ) -> None:
     """Directly stamp the eligibility watermark, bypassing
     `_stamp_pool_eligibility`'s material-detection path.
@@ -3225,12 +3233,19 @@ async def _seed_pool_eligible_since(
     for the material-detection path itself) — tests that want to exercise
     `tick_days`' day-walk machinery WITHOUT also constructing real
     `drill_items`/pool-candidate rows use this helper instead.
+
+    Also writes `blunder_check_per_session` (default 0): the callers pin the
+    pre-Phase-251 puzzle-only completion rule, which the D-02 both-modes rule
+    reduces to when blunder check is off.
     """
     await train_repository.get_or_create_settings(db_session, user_id=user_id)
     await db_session.execute(
         update(TrainSettings)
         .where(TrainSettings.user_id == user_id)
-        .values(pool_eligible_since=since)
+        .values(
+            pool_eligible_since=since,
+            blunder_check_per_session=blunder_check_per_session,
+        )
     )
     await db_session.flush()
 
@@ -4759,7 +4774,8 @@ async def test_out_of_range_move_quality_violates_check_constraint(
 
 
 # ---------------------------------------------------------------------------
-# _apply_completion_tick — eager completion tick
+# apply_day_completion — eager completion tick (the eager entry point that replaced
+# the old completion tick)
 # ---------------------------------------------------------------------------
 
 _MONDAY_ONLY_MASK = 1 << 0  # weekday_mask bit for Monday
@@ -4833,16 +4849,22 @@ async def _seed_tick_state(
     streak_settled_through: datetime.date | None,
     pool_eligible_since: datetime.date | None,
     weekday_mask: int | None = None,
+    blunder_check_per_session: int = _PUZZLES_ONLY_BC_SIZE,
 ) -> None:
     """Directly seed the full persisted tick snapshot (+ optionally the
     weekday_mask), bypassing tick_days/settle_streak_snapshot's own replay —
-    the completion-tick tests need precise, arbitrary starting states."""
+    the completion-tick tests need precise, arbitrary starting states.
+
+    Also writes `blunder_check_per_session` (default 0): these tests pin the
+    pre-Phase-251 puzzle-only completion rule, which the D-02 both-modes rule
+    reduces to when blunder check is off."""
     await train_repository.get_or_create_settings(db_session, user_id=user_id)
     values: dict[str, object] = {
         "streak_count": streak_count,
         "shield_level": shield_level,
         "streak_settled_through": streak_settled_through,
         "pool_eligible_since": pool_eligible_since,
+        "blunder_check_per_session": blunder_check_per_session,
     }
     if weekday_mask is not None:
         values["weekday_mask"] = weekday_mask
