@@ -366,14 +366,14 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 1/13 plans executed
+**Plans:** 2/13 plans executed
 
 Plans:
 **Wave 1**
 - [x] 251-01-PLAN.md — Schema migration, constants, blunder-check sessions dated per local day with expiry
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 251-12-PLAN.md — Streak needs every switched-on mode (D-02): day completion, pool eligibility, launch-day matrix
+- [x] 251-12-PLAN.md — Streak needs every switched-on mode (D-02): day completion, pool eligibility, launch-day matrix
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 251-02-PLAN.md — Blunder-check Points and Score % boards with medals; owner decision on the stored board keys
