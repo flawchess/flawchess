@@ -34,7 +34,11 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories.game_flaws_repository import _SEVERITY_INT
-from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS, apply_game_filters
+from app.repositories.query_utils import (
+    ANALYTICS_INCLUDED_PLATFORMS,
+    apply_game_filters,
+    player_only_gate,
+)
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
 from app.services.facepalm_score import facepalm_expr
 
@@ -194,13 +198,22 @@ async def insert_session(
 
 
 def _unserved_qualifying_blunder_exists(
-    game_id_col: SQLColumnExpression[int], user_id: int, *, flaw_owner_id: int | None = None
+    game_id_col: SQLColumnExpression[int],
+    user_color_col: SQLColumnExpression[str],
+    user_id: int,
+    *,
+    flaw_owner_id: int | None = None,
 ) -> ColumnElement[bool]:
     """EXISTS a qualifying blunder (drill facepalm score >= FACEPALM_SCORE_MIN) this user was not served yet.
 
     The score is the query-time expression over the stored facts with the drill lambda
-    (`facepalm_expr(FACEPALM_DRILL_LAMBDA)`, 254 D-01 / D-03), not a stored column. NULL scores
-    (unscored rows, opponent rows without facts) drop out by SQL semantics.
+    (`facepalm_expr(FACEPALM_DRILL_LAMBDA)`, 254 D-01 / D-03), not a stored column. Unscored
+    rows drop out by SQL semantics. Only blunders played by the game owner's side qualify
+    (`player_only_gate` on `user_color_col`, the game's own color, never the requester's):
+    opponent rows carry scores too since SEED-261114-iuv Part A step 4, and the drill must
+    never serve the opponent's blunder as the owner's. `user_color_col` is the games row of
+    the outer query: `Game.user_color` for the own pick, the TABLESAMPLE alias column for the
+    foreign pick. It is correlated like `game_id_col`, so no second games join is added here.
 
     "Served" is a window of this user on the same game whose blunder_ply is the blunder's ply
     (250 D-17). The probe uses ix_game_flaws_game_id for the flaw rows and
@@ -225,6 +238,8 @@ def _unserved_qualifying_blunder_exists(
     conditions: list[ColumnElement[bool]] = [
         GameFlaw.game_id == game_id_col,
         facepalm_expr(FACEPALM_DRILL_LAMBDA) >= FACEPALM_SCORE_MIN,
+        # Owner side only: a parity filter on the flaw rows the index probe already fetched.
+        player_only_gate(GameFlaw.ply, user_color_col),
         not_(already_served),
     ]
     if flaw_owner_id is not None:
@@ -252,7 +267,9 @@ async def pick_own_game_ids(
         stmt = stmt.where(Game.id.notin_(exclude_ids))
     if require_facepalm:
         stmt = stmt.where(
-            _unserved_qualifying_blunder_exists(Game.id, user_id, flaw_owner_id=user_id)
+            _unserved_qualifying_blunder_exists(
+                Game.id, Game.user_color, user_id, flaw_owner_id=user_id
+            )
         )
     stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
@@ -296,7 +313,9 @@ async def pick_foreign_game_ids(
     if exclude_ids:
         stmt = stmt.where(sampled.c.id.notin_(exclude_ids))
     if require_facepalm:
-        stmt = stmt.where(_unserved_qualifying_blunder_exists(sampled.c.id, user_id))
+        stmt = stmt.where(
+            _unserved_qualifying_blunder_exists(sampled.c.id, sampled.c.user_color, user_id)
+        )
     stmt = stmt.limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
 
@@ -403,8 +422,8 @@ async def load_blunder_flaws(
     The score is `facepalm_expr(FACEPALM_DRILL_LAMBDA)` over the stored facts (254 D-01 / D-03),
     bound once and used both as the selected `facepalm_score` column and in the filter. The
     threshold is a plain SQL filter (250 D-05 / D-09); NULL scores drop out by SQL semantics.
-    Opponent rows carry no facts, so their expression is NULL and they drop out too, but parity
-    is still re-checked in the pure layer.
+    The SQL keeps only owner-side blunders (the game's own user_color, so foreign games served
+    by the drill keep their owner's blunders); the pure layer re-checks via key plies.
     """
     by_game: dict[int, list[BlunderFlawRow]] = defaultdict(list)
     if not game_ids:
@@ -419,9 +438,12 @@ async def load_blunder_flaws(
             GameFlaw.is_miss,
             score.label("facepalm_score"),
         )
+        .select_from(GameFlaw)
+        .join(Game, Game.id == GameFlaw.game_id)
         .where(
             GameFlaw.game_id.in_(game_ids),
             GameFlaw.severity == _SEVERITY_INT["blunder"],
+            player_only_gate(GameFlaw.ply, Game.user_color),
             score >= FACEPALM_SCORE_MIN,
         )
         .order_by(GameFlaw.game_id, GameFlaw.ply)

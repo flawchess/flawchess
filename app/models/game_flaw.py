@@ -125,9 +125,10 @@ class GameFlaw(Base):
     # Phase 250 facepalm-score facts (D-05). Nullable, NULL = not scored. maia_reply_spread (and
     # the Phase 254 maia_best_prob / maia_pre_spread below) are written for blunders of BOTH
     # players since SEED-261114-iuv Part A; line_mate_ply and the three Phase 254 line-fact
-    # columns below stay user-side only (opponent rows keep them NULL, so facepalm_expr stays NULL
-    # there and the drill and library readers, which have no side gate, keep ignoring opponent
-    # rows). Written only by app/services/maia_flaw_scoring.py, never by
+    # columns below are written for blunders of both players too since Part A step 4, so
+    # facepalm_expr scores opponent blunders. Readers that select or display the score gate on the
+    # game owner's side with player_only_gate (the drill picks and loader, the library marker
+    # scores). Written only by app/services/maia_flaw_scoring.py, never by
     # flaw_record_to_row, so a diff/upsert preserves them by omission. The Phase 250 stored
     # score and the five line-loss snapshot columns were dropped in Phase 254 (D-02, D-19):
     # the score is computed at query time by facepalm_expr and the played_line_material array

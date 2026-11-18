@@ -3,8 +3,8 @@ id: SEED-261117-hfb
 status: dormant
 planted: 2026-11-17
 planted_during: after Phase 256 (facepalm refit, material aggregated over depths); owner review of the model with a literature check
-trigger_when: the next facepalm refit, or any phase that changes the score's shape (material input, spread form, new stored Maia facts). Run step 1 (validation) before the next shape decision is made on the owner's labels.
-scope: step 1 (validation spike) is small, no schema change and no backfill. Step 2 (shape choices, new features) is small to medium. Step 3 (predicted puzzle difficulty as a model input) is medium to large, with new stored Maia facts and a backfill.
+trigger_when: the next facepalm refit, or any phase that changes the score's shape (material input, spread form, new stored Maia facts). Step 1 is done (spike 007, 2026-11-17); tabled by the owner on 2026-11-18 with steps 2 and 3 open.
+scope: step 1 (validation spike) is done. Step 2 (shape choices, new features) is small to medium; its main candidate needs one new stored Maia fact and a backfill. Step 3 (predicted puzzle difficulty as a model input) is medium to large, with new stored Maia facts and a backfill.
 ---
 
 # SEED-261117-hfb: Validate and improve the facepalm score against Lichess puzzle ratings
@@ -49,7 +49,7 @@ encode. Maia answers the other question (what players do in a game when nobody t
 
 ## Proposed steps
 
-### 1. Validate (spike, do first)
+### 1. Validate (done, see "Step 1 results")
 
 Compute the shipped score's facts on a rating-stratified sample (about 30k puzzles with a settled
 rating) and report the rank correlation between score and puzzle rating. Read each puzzle both ways:
@@ -83,7 +83,62 @@ Not a replacement for the score. Puzzle difficulty has no notion of temptation o
 loss, and Lichess puzzles require a clear win, so the "neither" rows (59 of the 261 labels) have no
 puzzle counterpart. The owner's labels stay as the normative calibration layer.
 
-## Open question: player ratings from the game links
+## Step 1 results (spike 007, 2026-11-17)
+
+Full write-up and tables: `.planning/spikes/007-facepalm-vs-puzzle-ratings/` (`README.md`,
+`results.md`). Run against the model of release #486 (decaying mean) on 26,464 puzzles with a
+settled rating, sampled evenly over 100-point rating bins, Maia at a fixed Elo of 1500.
+
+Verdict PARTIAL against the criterion set before the run (Spearman <= -0.30 between the
+composite score and the puzzle rating on non-mate puzzles with at most 2 solver moves):
+
+| view | Spearman | passes |
+|---|---|---|
+| miss view (the solver's first move is the missed best move) | -0.57 | yes |
+| loss view (the puzzle's blunder is the user's blunder), as shipped | -0.24 | no |
+| loss view, played probability held constant | -0.32 | narrowly |
+
+Findings:
+
+- The miss side (missed term plus best-move probability) ranks puzzles well, -0.51 over all
+  puzzles once solution length is removed.
+- The loss side is diluted by the played-probability term, which puzzles cannot test (its own
+  correlation with the rating is -0.03). This says nothing about its value on real blunders.
+- The loss view cannot score 39% of non-mate puzzles (7,386 of 18,839): their line shows no
+  material loss under the app's rules. They are harder (mean rating 1972 vs 1701) and lean to
+  endgame, advanced-pawn and quiet-move themes. `line_material` counts captures only, so a
+  promotion is not a loss. Whether real blunders have the same blind spot was not checked.
+- Maia's probability of the punishing move beats reply spread in every slice (overall -0.49 vs
+  +0.37, primary slice -0.45 vs +0.25). The two are strongly related (Spearman -0.77) and
+  spread adds nothing once the probability is in: a cross-validated linear model of the rating
+  reaches R^2 0.476 with loss + probability, 0.477 with spread added, 0.430 with loss + spread.
+- The decaying mean holds up. Loss term with length removed: decaying mean -0.41, first stable
+  -0.35, depth 3 -0.34. On 3-move puzzles it is the only input with signal.
+- Solution length is the largest single factor (Spearman +0.61 with the rating). Raw
+  correlations over all puzzles overstate the terms by about a factor of two; signal sits in
+  2-move puzzles and fades beyond.
+- The Elo choice does not matter (1100 / 1500 / 1900: loss view -0.60 / -0.61 / -0.63, miss
+  view -0.62 / -0.64 / -0.66).
+- A linear model on the four shipped terms recovers about half of the rating variance (R^2
+  0.49, Spearman 0.70; 0.58 with length and cheap extras). The sample is uniform over rating,
+  so this is not comparable with published figures.
+
+Consequences for the steps below:
+
+- Step 2, spread vs probability of the punishing move, is the strongest candidate. The value
+  is NOT stored today: `maia_refutation_prob` (Phase 248) was dropped in Phase 250 D-11 on
+  2026-11-14. Bringing it back means a column and a backfill (the policy call at ply + 1
+  already runs for the spread, so going forward it is free). Cheaper first check, no prod
+  change: compute it for the 261 labelled rows with `scripts/blunder_check/facepalm_features.py`
+  and refit. Phase 250 preferred spread on the owner's labels; the reason is not written down
+  in `250-CONTEXT.md` and should be looked up before reversing it.
+- Step 2, material shape: no reason to reopen the Phase 256 choice of the decaying mean.
+- Step 3 has signal to build on, but a predictor must not use solution length: a stored
+  engine line has no natural end, so length does not exist for a real blunder.
+- New open question: does the no-material-loss share (39% of non-mate puzzles) have a
+  counterpart in real blunders, for example promotions and quiet wins?
+
+## Open question: player ratings from the game links (settled by step 1)
 
 The puzzle CSV has no player ratings, and Maia needs an Elo. Two options:
 
@@ -97,6 +152,8 @@ rating is measured on solvers of all levels, not on the two players of the sourc
 ratings describe who blundered, not who solved. They matter only for the played-probability term,
 which the puzzle rating cannot validate anyway. Suggested default: fixed Elo in step 1, and revisit
 only if a result turns out to be sensitive to the Elo choice (check by running two fixed Elos).
+
+Settled: step 1 ran three fixed Elos and no conclusion moved, so the game ratings are not needed.
 
 ## Risks and caveats
 
@@ -138,6 +195,7 @@ No published model for the normative target ("should have seen this") was found.
 - `scripts/blunder_check/fit_facepalm.py`: fit and CV tooling
 - `scripts/select_tagger_fixtures.py`: reads the Lichess puzzle dump
 - `reports/blunder-check/facepalm-fit-2026-11-16.md`: current fit report
+- `.planning/spikes/007-facepalm-vs-puzzle-ratings/`: step 1 scripts, feature tables and results
 - `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the "Findable" refutation-probability idea
-- `.planning/seeds/SEED-261115-agg-facepalm-material-across-depths.md`: the depth-aggregation seed
+- `.planning/seeds/closed/SEED-261115-agg-facepalm-material-across-depths.md`: the depth-aggregation seed
 - `.planning/seeds/SEED-129-rated-puzzle-benchmark.md`: rated puzzles as an engine calibration instrument

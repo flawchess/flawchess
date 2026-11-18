@@ -21,10 +21,13 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
     --mode line --cutoff <ISO timestamp with offset>
                        the Maia-free, re-runnable line pass (250 D-18). Every spread-stamped game
                        whose facepalm_line_completed_at is NULL or older than the cutoff has the
-                       line facts of its user-side blunders recomputed from the stored lines (the
-                       played line at ply + 1 and the best line at the flaw ply): played and best
-                       line material arrays, line_mate_ply and best_line_mate_ply, INCLUDING rows
-                       that already hold values and blunders that had no line before. It never
+                       line facts of its blunders of BOTH sides (user and opponent) recomputed from
+                       the stored lines (the played line at ply + 1 and the best line at the flaw
+                       ply): played and best line material arrays, line_mate_ply and
+                       best_line_mate_ply, INCLUDING rows that already hold values and blunders that
+                       had no line before. A cutoff at or after the deploy of the opponent line
+                       facts (SEED-261114-iuv Part A step 4) re-selects every game, so opponent
+                       rows get their line facts. Spread and pre modes stay user-side only. It never
                        starts Maia, never computes the spread and never exits 3 for a missing
                        Maia. --cutoff is required here and rejected for every other mode.
 
@@ -41,9 +44,8 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        needed). ONE pre-blunder inference (maia_best_prob, maia_pre_spread) plus ONE
                        post-blunder inference (maia_reply_spread) per such blunder, at the mover's
                        (the opponent's) pinned Elo. Writes only those three columns: never
-                       maia_played_prob, never the line facts (the drill and library readers have no
-                       side gate and rely on opponent rows scoring NULL), never a user-side row,
-                       never a stamp. No stamp column exists for it, so the row predicate is the
+                       maia_played_prob, never the line facts (full mode and the line pass write
+                       those for opponent blunders), never a user-side row, never a stamp. No stamp column exists for it, so the row predicate is the
                        checkpoint and a rerun resumes. Run it only against a DB whose lanes already
                        run the updated full-mode hook: a full re-score by the old hook would write
                        NULL Maia values on opponent rows and undo the backfill.
@@ -91,6 +93,8 @@ Usage:
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode spread
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode line --cutoff <deploy time UTC> --workers 4 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode line --cutoff <same cutoff>
+    (line pass over opponent blunders too: the cutoff must be at or after the deploy of this change;
+     --status --mode line then also prints opponent_blunders_total / _with_line_facts / _with_score)
     PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode pre --workers 8 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode pre
     (pre mode, 254 D-20: 8 shards, one connection each; the stamp is the checkpoint, re-run to resume)
@@ -336,6 +340,10 @@ class ShardReport:
     opponent_spreads_null: int = 0
     opponent_pre_scored: int = 0
     opponent_pre_null: int = 0
+    # Opponent blunders whose facts score non-NULL in memory / not (modes full and line;
+    # SEED-261114-iuv Part A step 4). The user counterpart is scores_set / scores_null.
+    opponent_scores_set: int = 0
+    opponent_scores_null: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
@@ -386,6 +394,9 @@ def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
     if score.mode in ("full", "pre"):
         report.pre_scored += score.pre_scored
         report.pre_null += score.user_blunders - score.pre_scored
+    if score.mode in ("full", "line"):
+        report.opponent_scores_set += score.opponent_scores_set
+        report.opponent_scores_null += score.opponent_blunders - score.opponent_scores_set
     if score.mode in ("full", "opponent"):
         report.opponent_spreads_scored += score.opponent_spreads_scored
         report.opponent_spreads_null += score.opponent_blunders - score.opponent_spreads_scored
@@ -1035,6 +1046,23 @@ async def _fetch_opponent_status(session: AsyncSession, user_id: int | None) -> 
     return counts
 
 
+async def _fetch_opponent_line_counts(session: AsyncSession, user_id: int | None) -> dict[str, int]:
+    """Line pass progress on the opponent side: operator counts of opponent blunders in total, with
+    line facts and with a drill score (SEED-261114-iuv Part A step 4). Never user-facing."""
+    score = facepalm_expr(FACEPALM_DRILL_LAMBDA)
+    value_filters: dict[str, Sequence[ColumnElement[bool]]] = {
+        "opponent_blunders_total": (),
+        "opponent_blunders_with_line_facts": [GameFlaw.played_line_material.is_not(None)],
+        "opponent_blunders_with_score": [score.is_not(None)],
+    }
+    return {
+        key: await _scalar_count(
+            session, _opponent_blunder_count_stmt(user_id, extra_where=extra_where)
+        )
+        for key, extra_where in value_filters.items()
+    }
+
+
 async def fetch_status(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int | None,
@@ -1047,7 +1075,7 @@ async def fetch_status(
     returns the Phase 250 stamp and value counts; pre mode the 254 stamp and pre-input counts;
     opponent mode (SEED-261114-iuv Part A) the pending games, the opponent-blunder counts per
     filled column and the residue (`opponent_blunders_pending`); line mode (needs `cutoff`) the
-    games done / pending against it plus the score counts.
+    games done / pending against it plus the user score counts, then the opponent line counts.
     """
     if mode == "spread":
         async with session_maker() as session:
@@ -1064,9 +1092,12 @@ async def fetch_status(
         if cutoff is None:
             raise ValueError("line mode status needs a cutoff")
         async with session_maker() as session:
-            return await _fetch_facepalm_status(
+            counts = await _fetch_facepalm_status(
                 session, user_id, _LINE_STATUS_QUERIES, cutoff=cutoff, with_spread=False
             )
+            # The unchanged user keys come first, then the opponent counts (line facts of both sides).
+            counts.update(await _fetch_opponent_line_counts(session, user_id))
+            return counts
     user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
     params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}
     counts: dict[str, int] = {}
@@ -1132,6 +1163,8 @@ def _combined_total_line(reports: list[dict[str, Any]]) -> str:
         "opponent_spreads_null",
         "opponent_pre_scored",
         "opponent_pre_null",
+        "opponent_scores_set",
+        "opponent_scores_null",
     )
     totals = {k: sum(int(r.get(k, 0)) for r in reports) for k in keys}
     reasons: Counter[str] = Counter()

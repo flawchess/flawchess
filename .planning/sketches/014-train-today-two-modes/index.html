@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 014 — Train Today with two modes</title>
+<link rel="stylesheet" href="../themes/default.css">
+<link rel="stylesheet" href="../005-streak-flame-and-freezes/flame.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: var(--color-text); font-family: var(--font-sans); padding-top: 108px; }
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 8px 16px; display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+  #variant-nav .lbl { color: var(--color-text-muted); font-size: 13px; margin: 0 2px 0 12px; }
+  #variant-nav .lbl:first-child { margin-left: 0; }
+  .pill { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 5px 11px; font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .pill:hover { color: var(--color-text); border-color: var(--brand-brown-light); }
+  .pill.active { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .pill:disabled { opacity: .35; cursor: not-allowed; }
+
+  .stage { display: flex; gap: 24px; justify-content: center; align-items: flex-start; padding: 20px 16px 40px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .col h2 { margin: 0; font-size: 15px; font-weight: 700; text-align: center; }
+  .col h2 small { display: block; font-weight: 400; color: var(--color-text-muted); font-size: 13px; margin-top: 2px; }
+  .phone { width: 375px; height: 760px; background: var(--color-bg); border: 10px solid #222; border-radius: 36px; overflow: hidden auto; box-shadow: var(--shadow-lg); position: relative; }
+  .desk { width: 1000px; max-width: 96vw; background: var(--color-bg); border: 1px solid #333; border-radius: 12px; box-shadow: var(--shadow-lg); }
+  .screen { padding: 14px 12px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .fold { position: absolute; left: 0; right: 0; top: 640px; border-top: 1px dashed oklch(0.82 0.10 230 / .35); pointer-events: none; }
+  .fold::after { content: 'typical phone fold'; position: absolute; right: 8px; top: -16px; font-size: 10px; color: oklch(0.82 0.10 230 / .6); }
+  .desk .fold { display: none; }
+
+  /* Desktop grid: hero and modes placed per variant */
+  .desk .screen { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px; align-items: start; }
+  .desk .g-full { grid-column: 1 / -1; }
+  .desk [data-layout="B"] .g-hero { grid-column: 1; }
+  .desk [data-layout="B"] .g-rest { grid-column: 2; }
+  .g-rest { display: flex; flex-direction: column; gap: 12px; }
+
+  .bot { display: flex; gap: 10px; align-items: flex-start; }
+  .bot .av { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--color-text-muted); }
+  .bot img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #1d2a26; }
+  .bubble { position: relative; border: 1.5px solid oklch(0.55 0.02 40); border-radius: 14px; padding: 9px 12px; font-size: 14px; line-height: 1.4; background: var(--color-bg); }
+  .bubble::before { content: ''; position: absolute; left: -7px; top: 16px; width: 12px; height: 12px; background: var(--color-bg); border-left: 1.5px solid oklch(0.55 0.02 40); border-bottom: 1.5px solid oklch(0.55 0.02 40); transform: rotate(45deg); }
+
+  .card { background: var(--color-surface); border: 1px solid oklch(1 0 0 / 8%); border-radius: var(--radius-lg); overflow: hidden; transition: opacity .15s ease; }
+  .card.off { opacity: .72; }
+  .card-h { padding: 10px 14px; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--color-border); background: oklch(1 0 0 / 4%); display: flex; align-items: center; gap: 8px; }
+  .card-h .sp { flex: 1; }
+  .card-b { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .muted { color: var(--color-text-muted); font-size: 14px; line-height: 1.45; margin: 0; }
+  .pitch { font-size: 14px; line-height: 1.45; margin: 0; }
+
+  .badge { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: oklch(0.58 0.22 27); color: #fff; font: 700 13px var(--font-sans); display: inline-flex; align-items: center; justify-content: center; }
+  .ok { width: 22px; height: 22px; border-radius: 50%; background: var(--wdl-win); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex: 0 0 auto; }
+  .ring { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-text-muted); flex: 0 0 auto; }
+
+  .btn { height: 44px; border-radius: var(--radius-md); border: none; background: var(--brand-brown); color: #fff; font: 700 15px var(--font-sans); cursor: pointer; transition: all .15s ease; padding: 0 16px; }
+  .btn:hover { background: var(--brand-brown-hover); }
+  .btn:active { transform: scale(.98); }
+  .btn.full { width: 100%; }
+  .btn.sm { height: 36px; font-size: 14px; padding: 0 14px; }
+  .btn.ghost { background: transparent; border: 1px solid var(--color-border-strong); color: var(--color-text); }
+  .btn.ghost:hover { border-color: var(--brand-brown-light); background: oklch(1 0 0 / 4%); }
+  .btn:disabled { background: oklch(1 0 0 / 8%); color: var(--color-text-muted); cursor: default; transform: none; }
+
+  .done-line { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; min-height: 44px; }
+  .done-line span.pts { color: var(--color-text-muted); font-weight: 400; }
+
+  /* How it works */
+  .how-h { background: none; border: none; color: var(--brand-brown-highlight); font: 600 14px var(--font-sans); cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; }
+  .how-h:hover { text-decoration: underline; }
+  .chev { transition: transform .2s ease; }
+  .open > .how-h .chev, .open > .acc-h .chev, .open > .sched-h .chev { transform: rotate(180deg); }
+  .fold-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
+  .open > .fold-body { grid-template-rows: 1fr; }
+  .fold-body > div { overflow: hidden; }
+  .how ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.5; color: var(--color-text-muted); }
+
+  /* Session size */
+  .size { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--color-border); padding-top: 10px; }
+  .size .row { display: flex; justify-content: space-between; font-size: 14px; }
+  .size .k { color: var(--color-text-muted); }
+  .size .v { font-weight: 700; }
+  input[type=range] { width: 100%; accent-color: var(--brand-brown-light); }
+
+  .level { display: flex; flex-direction: column; gap: 6px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .seg button { height: 34px; border-radius: var(--radius-sm); font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; border: 1px solid var(--color-border-strong); background: transparent; color: var(--color-text-muted); }
+  .seg button.on { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .seg button:hover { border-color: var(--brand-brown-light); }
+
+  /* Streak hero */
+  .hero { display: flex; gap: 14px; align-items: center; padding: 14px; }
+  .hero .fh { width: 92px; flex: 0 0 auto; }
+  .hero.small .fh { width: 68px; }
+  .hero .side { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .hero .lab { font-size: 13px; color: var(--color-text-muted); }
+  .checks { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+  .checks .c { display: flex; align-items: center; gap: 8px; }
+  .checks .c.is-done { color: var(--color-text-muted); }
+  .checks .ok { width: 18px; height: 18px; font-size: 11px; }
+  .notice { margin: 0 14px 14px; padding: 10px 12px; border-radius: var(--radius-md); background: oklch(0.72 0.12 200 / .12); border: 1px solid oklch(0.72 0.12 200 / .35); font-size: 14px; line-height: 1.45; display: flex; gap: 10px; align-items: flex-start; }
+  .notice button { background: none; border: none; color: var(--color-text-muted); font-size: 16px; cursor: pointer; line-height: 1; padding: 2px; }
+
+  /* B: launcher rows inside the hero card */
+  .launch { border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+  .launch .t { flex: 1; min-width: 0; }
+  .launch .t b { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .launch .t span { display: block; font-size: 13px; color: var(--color-text-muted); margin-top: 2px; }
+  .launch.off { opacity: .72; }
+  .acc-h, .sched-h { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: transparent; border: none; color: var(--color-text); font: 600 14px var(--font-sans); cursor: pointer; text-align: left; }
+  .acc-h:hover, .sched-h:hover { background: oklch(1 0 0 / 3%); }
+  .acc-h .sum, .sched-h .sum { color: var(--color-text-muted); font-weight: 400; font-size: 13px; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acc + .acc { border-top: 1px solid var(--color-border); }
+  .acc-inner { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--color-border); }
+
+  /* C: slim cards */
+  .slim-h { display: flex; align-items: center; gap: 8px; padding: 12px 14px 0; font-weight: 700; font-size: 15px; }
+  .slim-h .sp { flex: 1; }
+
+  .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day { height: 34px; border-radius: var(--radius-sm); font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; border: 1px solid var(--color-border-strong); background: transparent; color: var(--color-text-muted); }
+  .day.on { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: #222; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: all .2s ease; pointer-events: none; z-index: 9999; max-width: 90vw; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .look { max-width: 900px; margin: 0 auto 80px; padding: 0 16px; font-size: 14px; color: var(--color-text-muted); line-height: 1.5; }
+  .look b { color: var(--color-text); }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="lbl">Puzzles</span>
+  <span data-group="p"></span>
+  <span class="lbl">Blunder check</span>
+  <span data-group="b"></span>
+  <span class="lbl">Show</span>
+  <button class="pill" data-flag="notice">Launch notice</button>
+  <button class="pill" data-flag="norated">No rated games</button>
+  <span class="lbl">View</span>
+  <button class="pill" data-view="phone">Phone</button>
+  <button class="pill" data-view="desk">Desktop</button>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<div class="look">
+  <b>What to look for:</b> on the phone, which variant keeps both Start buttons (or the one that matters) above the dashed fold?
+  Does the streak checklist make the "both sessions" rule clear? Click <b>Start</b> / <b>Resume</b> to walk a mode through
+  pending, in progress and done; when every active mode is done the flame ticks. Drag a session-size slider to 0 to turn a mode
+  off (the last active mode refuses). <b>No rated games</b> shows the level picker a guest would see.
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="../005-streak-flame-and-freezes/flame.js"></script>
+<script>
+  const S = window.Streak;
+  const BOT_IMG = '../../../frontend/src/assets/personas-source/grinder-1600.webp';
+  const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+  const STATES = [['pending', 'Pending'], ['progress', 'In progress'], ['done', 'Done'], ['off', 'Off']];
+  const MIN_SIZE = 3;
+  const BASE_STREAK = 51;
+
+  const MODES = {
+    p: {
+      title: 'Personalized Puzzles', short: 'Puzzles', unit: 'puzzles', max: 30,
+      pitch: 'Your own blunders as puzzles: find the move you missed in the game.',
+      how: ['Puzzles come from mistakes and blunders in your imported games.',
+        'Solve one correctly and it returns after 10 days, missed ones after 4.',
+        'Two correct solves in a row and the puzzle is mastered.'],
+      points: 14,
+    },
+    b: {
+      title: 'Blunder Check', short: 'Blunder check', unit: 'sequences', max: 18,
+      pitch: 'Replay a stretch of a real game and call each move before it is played: good or blunder?',
+      how: ['Some sequences have no blunder at all, so you can never tell when one is coming.',
+        'Every correct Good call adds a point to the sequence\'s pot.',
+        'Catch the blunder for bonus points, then find a better move for more.',
+        'Miss the blunder and the pot is lost. A false alarm ends the sequence, but you keep the pot.'],
+      points: 23,
+    },
+  };
+
+  const st = {
+    p: 'pending', b: 'pending', n: { p: 6, b: 6 }, prev: { p: 6, b: 6 },
+    notice: true, norated: false, view: 'phone', level: 1, open: new Set(), days: [1, 1, 1, 1, 1, 0, 0],
+  };
+
+  const active = (m) => st[m] !== 'off';
+  const left = (m) => (st[m] === 'pending' ? st.n[m] : st[m] === 'progress' ? Math.max(1, st.n[m] - 2) : 0);
+  const allDone = () => ['p', 'b'].every((m) => !active(m) || st[m] === 'done');
+  const streak = () => BASE_STREAK + (allDone() ? 1 : 0);
+  const chev = '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>';
+  const fold = (key, head, body, cls = '') =>
+    `<div class="${cls} ${st.open.has(key) ? 'open' : ''}" data-fold="${key}">${head}<div class="fold-body"><div>${body}</div></div></div>`;
+
+  const bot = () => `
+    <div class="bot g-full">
+      <div class="av"><img src="${BOT_IMG}" alt="">Tank</div>
+      <div class="bubble">${allDone() ? 'Both drills done. Dismissed, recruit!' : 'Two drills on today\'s orders, recruit. Finish both to keep the flame.'}</div>
+    </div>`;
+
+  const badge = (m) => (st[m] === 'done' ? '<span class="ok">✓</span>' : active(m) ? `<span class="badge">${left(m)}</span>` : '');
+
+  const how = (v, m) => fold(`${v}-how-${m}`,
+    `<button class="how-h">How it works ${chev}</button>`,
+    `<ul>${MODES[m].how.map((h) => `<li>${h}</li>`).join('')}</ul>`, 'how');
+
+  const level = (m) => (m === 'b' && st.norated ? `
+    <div class="level"><span class="muted">Your level (sets how hard the blunders are)</span>
+      <div class="seg">${['Beginner', 'Intermediate', 'Advanced'].map((l, i) => `<button class="${i === st.level ? 'on' : ''}" data-level="${i}">${l}</button>`).join('')}</div>
+    </div>` : '');
+
+  const size = (m) => `
+    <div class="size">
+      <div class="row"><span class="k">Per session</span><span class="v" data-size-label="${m}">${active(m) ? st.n[m] : 'Off'}</span></div>
+      <input type="range" min="0" max="${MODES[m].max}" step="3" value="${active(m) ? st.n[m] : 0}" data-size="${m}">
+    </div>`;
+
+  const action = (m, cls = 'full') => {
+    if (st[m] === 'off') return `<button class="btn ghost ${cls}" data-on="${m}">Turn on</button>`;
+    if (st[m] === 'done') return `<div class="done-line"><span class="ok">✓</span>Done today <span class="pts">· ${MODES[m].points} points</span></div>`;
+    return `<button class="btn ${cls}" data-go="${m}">${st[m] === 'progress' ? `Resume · ${left(m)} left` : `Start · ${left(m)} ${MODES[m].unit}`}</button>`;
+  };
+
+  const checks = () => `<div class="checks">${['p', 'b'].filter(active).map((m) => (st[m] === 'done'
+    ? `<div class="c is-done"><span class="ok">✓</span>${MODES[m].short} done</div>`
+    : `<div class="c"><span class="ring"></span>${MODES[m].short} · ${left(m)} left</div>`)).join('')}</div>`;
+
+  const notice = () => (st.notice ? `<div class="notice"><span>Your streak now includes Blunder Check. Change the amount, or turn it off, on its card.</span><button data-dismiss title="Dismiss">×</button></div>` : '');
+
+  const sched = (v) => {
+    const on = st.days.map((d, i) => (d ? i : -1)).filter((i) => i >= 0);
+    const sum = on.length === 7 ? 'Every day' : on.length === 5 && on[4] === 4 ? 'Mo–Fr' : on.map((i) => DAYS[i]).join(' ');
+    return `<section class="card">${fold(`${v}-sched`,
+      `<button class="sched-h"><span>Train schedule</span><span class="sum">${sum} · reminder 18:00</span>${chev}</button>`,
+      `<div class="acc-inner"><div class="days">${DAYS.map((d, i) => `<button class="day ${st.days[i] ? 'on' : ''}" data-day="${i}">${d}</button>`).join('')}</div>
+        <p class="muted">Days and the reminder apply to both modes. Session size is set per mode.</p></div>`)}</section>`;
+  };
+
+  const LAYOUTS = {
+    A: {
+      title: 'A: Three full cards', sub: 'Streak card, then one complete card per mode',
+      html: () => `${bot()}
+        <section class="card g-full g-hero">
+          <div class="hero"><div class="fh" data-flame></div>
+            <div class="side"><div class="lab">Session streak · 3 of 5 this week</div><div data-meter></div>${checks()}</div></div>
+          ${notice()}
+        </section>
+        ${['p', 'b'].map((m) => `
+        <section class="card ${active(m) ? '' : 'off'}">
+          <div class="card-h">${MODES[m].title}<span class="sp"></span>${badge(m)}</div>
+          <div class="card-b"><p class="pitch">${MODES[m].pitch}</p>${how('A', m)}${level(m)}${action(m)}${size(m)}</div>
+        </section>`).join('')}
+        <div class="g-full">${sched('A')}</div>`,
+    },
+    B: {
+      title: 'B: One Today card ★ Selected', sub: 'The checklist rows are the launchers; details collapsed',
+      html: () => `${bot()}
+        <section class="card g-hero">
+          <div class="hero small"><div class="fh" data-flame></div>
+            <div class="side"><div class="lab">Session streak · 3 of 5 this week</div><div data-meter></div></div></div>
+          ${notice()}
+          ${['p', 'b'].map((m) => `
+          <div class="launch ${active(m) ? '' : 'off'}">
+            <div class="t"><b>${MODES[m].title} ${st[m] === 'done' ? '' : badge(m)}</b>
+              <span>${st[m] === 'off' ? 'Off' : st[m] === 'done' ? `Done today · ${MODES[m].points} points` : `${left(m)} ${MODES[m].unit} left`}</span></div>
+            ${st[m] === 'done' ? '<span class="ok">✓</span>' : st[m] === 'off' ? `<button class="btn ghost sm" data-on="${m}">Turn on</button>` : `<button class="btn sm" data-go="${m}">${st[m] === 'progress' ? 'Resume' : 'Start'}</button>`}
+          </div>`).join('')}
+        </section>
+        <div class="g-rest">
+          <section class="card">${['p', 'b'].map((m) => fold(`B-acc-${m}`,
+            `<button class="acc-h"><span>${MODES[m].title}</span><span class="sum">${active(m) ? `${st.n[m]} per session` : 'Off'}</span>${chev}</button>`,
+            `<div class="acc-inner"><p class="pitch">${MODES[m].pitch}</p>${how('B', m)}${level(m)}${size(m)}</div>`, 'acc')).join('')}</section>
+          ${sched('B')}
+        </div>`,
+    },
+    C: {
+      title: 'C: One Start button', sub: 'A single CTA runs the next pending mode; slim cards below',
+      html: () => {
+        const next = ['p', 'b'].find((m) => active(m) && st[m] !== 'done');
+        const total = ['p', 'b'].filter(active).map((m) => `${st.n[m]} ${MODES[m].unit}`).join(' + ');
+        const anyStarted = ['p', 'b'].some((m) => st[m] === 'progress' || st[m] === 'done');
+        const cta = !next ? '<button class="btn full" disabled>Done for today ✓</button>'
+          : `<button class="btn full" data-go="${next}">${anyStarted ? `Continue · ${MODES[next].short}` : 'Start session'}</button><div class="lab">${anyStarted ? `${left(next)} ${MODES[next].unit} left` : total}</div>`;
+        return `${bot()}
+        <section class="card g-full g-hero">
+          <div class="hero"><div class="fh" data-flame></div>
+            <div class="side"><div class="lab">Session streak · 3 of 5 this week</div><div data-meter></div>${cta}</div></div>
+          <div style="padding:0 14px 14px">${checks()}</div>
+          ${notice()}
+        </section>
+        ${['p', 'b'].map((m) => `
+        <section class="card ${active(m) ? '' : 'off'}">
+          <div class="slim-h">${MODES[m].title}<span class="sp"></span>${badge(m)}</div>
+          <div class="card-b"><p class="pitch">${MODES[m].pitch}</p>${how('C', m)}${level(m)}
+            ${st[m] === 'off' ? action(m, 'sm') : ''}${size(m)}</div>
+        </section>`).join('')}
+        <div class="g-full">${sched('C')}</div>`;
+      },
+    },
+  };
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  function render(prevStreak) {
+    S.cancelAll();
+    const frame = st.view === 'phone' ? 'phone' : 'desk';
+    document.getElementById('stage').innerHTML = Object.entries(LAYOUTS).map(([k, L]) => `
+      <div class="col"><h2>${L.title}<small>${L.sub}</small></h2>
+        <div class="${frame}"><div class="screen" data-layout="${k}">${L.html()}</div><div class="fold"></div></div></div>`).join('');
+    const now = streak();
+    const from = prevStreak !== undefined && prevStreak < now ? prevStreak : now;
+    document.querySelectorAll('[data-flame]').forEach((h) => (h.innerHTML = S.flameSVG('A', from)));
+    document.querySelectorAll('[data-meter]').forEach((h) => (h.innerHTML = S.meterHTML('snow', 4)));
+    if (from < now) S.later(() => document.querySelectorAll('[data-flame]').forEach((f) => S.ignite(f, 'A', from, now)), 300);
+    document.querySelectorAll('[data-group]').forEach((g) => {
+      const m = g.dataset.group; const other = m === 'p' ? 'b' : 'p';
+      g.innerHTML = STATES.map(([s, l]) => `<button class="pill ${st[m] === s ? 'active' : ''}" data-set="${m}:${s}" ${s === 'off' && !active(other) ? 'disabled' : ''}>${l}</button>`).join(' ');
+    });
+    document.querySelectorAll('[data-flag]').forEach((b) => b.classList.toggle('active', st[b.dataset.flag]));
+    document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', st.view === b.dataset.view));
+  }
+
+  function setMode(m, s) {
+    const other = m === 'p' ? 'b' : 'p';
+    if (s === 'off' && !active(other)) { toast('At least one mode stays on. Untick days in the schedule for a break.'); return false; }
+    if (s === 'off') st.prev[m] = st.n[m];
+    if (s !== 'off' && st[m] === 'off') st.n[m] = st.prev[m] || 6;
+    st[m] = s;
+    return true;
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    const before = streak();
+    const d = t.dataset;
+    if (d.set) { const [m, s] = d.set.split(':'); setMode(m, s); }
+    else if (d.go) {
+      const m = d.go;
+      if (st[m] === 'pending') { st[m] = 'progress'; toast(`${MODES[m].title} session running…`); }
+      else {
+        st[m] = 'done';
+        const next = ['p', 'b'].find((x) => active(x) && st[x] !== 'done');
+        toast(next ? `Score screen: "Continue with ${MODES[next].short} (${left(next)})"` : 'Both sessions done. Streak ticks.');
+      }
+    }
+    else if (d.on) { setMode(d.on, 'pending'); }
+    else if (d.flag) st[d.flag] = !st[d.flag];
+    else if (d.view) st.view = d.view;
+    else if (d.dismiss !== undefined) st.notice = false;
+    else if (d.level) st.level = Number(d.level);
+    else if (d.day) st.days[Number(d.day)] = st.days[Number(d.day)] ? 0 : 1;
+    else if (t.parentElement.dataset.fold) {
+      const k = t.parentElement.dataset.fold;
+      st.open.has(k) ? st.open.delete(k) : st.open.add(k);
+      t.parentElement.classList.toggle('open');
+      return; // no rerender, so the collapse animates
+    } else return;
+    render(before);
+  });
+
+  document.addEventListener('input', (e) => {
+    const m = e.target.dataset.size;
+    if (!m) return;
+    const v = Number(e.target.value);
+    e.target.closest('.size').querySelector('[data-size-label]').textContent = v === 0 ? 'Off' : v;
+  });
+  document.addEventListener('change', (e) => {
+    const m = e.target.dataset.size;
+    if (!m) return;
+    const before = streak();
+    const v = Number(e.target.value);
+    if (v === 0) { if (!setMode(m, 'off')) st.n[m] = MIN_SIZE; }
+    else { st.n[m] = v; if (st[m] === 'off') st[m] = 'pending'; }
+    render(before);
+  });
+
+  // Deep-linkable states for screenshots: #desk, #p=done, #b=progress, #norated
+  location.hash.slice(1).split(',').forEach((h) => {
+    if (h === 'desk') st.view = 'desk';
+    else if (h === 'norated') st.norated = true;
+    else if (/^[pb]=/.test(h)) setMode(h[0], h.slice(2));
+  });
+  render();
+</script>
+</body>
+</html>

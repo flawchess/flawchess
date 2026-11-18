@@ -2863,6 +2863,49 @@ class TestFacepalmGamesFilter:
         assert scored.id in ids
         assert unscored.id not in ids
 
+    @pytest.mark.asyncio
+    async def test_scored_opponent_row_never_surfaces_in_games_or_flaws_list(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Regression (L-01): a white-owner game whose ONLY blunder is a High-scoring opponent ply.
+
+        Opponent rows score in SQL since SEED-261114-iuv Part A step 4; both the Games-tab
+        facepalm range (flaw_exists_from_table) and the Flaws list (query_flaws) already gate on
+        the owner side and must keep excluding it.
+        """
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_GAMES_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
+        # Odd ply = Black's move = the opponent's in a white-owner game.
+        await _seed_game_flaw(db_session, game=game, ply=3, facepalm_target=_FP_HIGH_SCORE)
+
+        ids = await _facepalm_game_ids(
+            db_session,
+            user_id=_FP_GAMES_USER_ID,
+            min_facepalm_pct=_FP_HIGH_MIN_PCT,
+            max_facepalm_pct=_FP_HIGH_MAX_PCT,
+        )
+        items, matched = await query_flaws(
+            db_session,
+            user_id=_FP_GAMES_USER_ID,
+            severity=["blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            min_facepalm_pct=_FP_HIGH_MIN_PCT,
+            max_facepalm_pct=_FP_HIGH_MAX_PCT,
+        )
+
+        assert game.id not in ids
+        assert matched == 0
+        assert items == []
+
 
 # ---------------------------------------------------------------------------
 # fetch_page_facepalm_scores: eval-chart / move-list marker scores (254 D-01, D-04)
@@ -2883,29 +2926,52 @@ class TestFetchPageFacepalmScores:
         assert await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, []) == {}
 
     @pytest.mark.asyncio
-    async def test_scored_rows_of_both_movers_unscored_skipped(
+    async def test_owner_side_scored_rows_only_unscored_skipped(
         self, db_session: AsyncSession
     ) -> None:
-        """Both colors' scored rows come back by ply; an unscored row is absent."""
+        """White owner: only the owner's scored ply comes back.
+
+        The opponent ply carries a HIGH score (0.95, the old fixture used 0.33): since
+        SEED-261114-iuv Part A step 4 opponent rows score in SQL, so only the owner-side gate
+        keeps them out of the markers. An unscored row is absent as before.
+        """
         from tests.conftest import ensure_test_user
 
         await ensure_test_user(db_session, _FP_MARKER_USER_ID)
-        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID, user_color="white")
         await _seed_game_flaw(db_session, game=game, ply=_FP_MARKER_USER_PLY, facepalm_target=0.87)
         await _seed_game_flaw(
-            db_session, game=game, ply=_FP_MARKER_OPPONENT_PLY, facepalm_target=0.33
+            db_session, game=game, ply=_FP_MARKER_OPPONENT_PLY, facepalm_target=_FP_HIGH_SCORE
         )
         await _seed_game_flaw(db_session, game=game, ply=_FP_MARKER_UNSCORED_PLY)
 
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
 
         assert set(scores) == {game.id}
-        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY, _FP_MARKER_OPPONENT_PLY}
+        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY}
         assert scores[game.id][_FP_MARKER_USER_PLY] == pytest.approx(
             0.87, abs=SEED_FACEPALM_TOLERANCE
         )
+
+    @pytest.mark.asyncio
+    async def test_owner_side_scored_rows_only_black_owner(self, db_session: AsyncSession) -> None:
+        """Black owner: the odd ply is the owner's, the even high-scoring ply is the opponent's."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_MARKER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID, user_color="black")
+        await _seed_game_flaw(
+            db_session, game=game, ply=_FP_MARKER_USER_PLY, facepalm_target=_FP_HIGH_SCORE
+        )
+        await _seed_game_flaw(
+            db_session, game=game, ply=_FP_MARKER_OPPONENT_PLY, facepalm_target=0.87
+        )
+
+        scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
+
+        assert set(scores[game.id]) == {_FP_MARKER_OPPONENT_PLY}
         assert scores[game.id][_FP_MARKER_OPPONENT_PLY] == pytest.approx(
-            0.33, abs=SEED_FACEPALM_TOLERANCE
+            0.87, abs=SEED_FACEPALM_TOLERANCE
         )
 
     @pytest.mark.asyncio

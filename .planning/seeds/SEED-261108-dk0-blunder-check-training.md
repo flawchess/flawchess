@@ -83,6 +83,130 @@ Train's puzzles announce that something critical is happening. In a real game no
 - Split: Phase 249 = playable MVP on a beta-only Train tab, 6 windows per session; Phase 251 = schedule, streak,
   spaced repetition, cross-mode cooldown, leaderboards, launch.
 
+### Spaced repetition revisited (owner, 2026-11-18, /gsd-explore session)
+
+The owner reconsidered a light form of spaced repetition (mastery after one correct solve; a missed window
+repeated after n days, again after m days, parked after 3 misses) for the sense of accomplishment and to fix
+blind spots. **Outcome: serve-once stands (250-CONTEXT D-17). Phase 251 builds no reviews.** The idea may be
+revisited after launch in the lighter form below.
+
+Arguments against repetition in this drill:
+
+- **The answer is binary and the review pool is one-sided.** Only missed blunder windows would come back, so
+  recognising the game is the answer ("seen this, so there is a blunder in it"). Personalized puzzles survive
+  recognition because the move still has to be found. Here only the better-move step stays real work.
+- **It leaks through the hazard model.** A recognised review is a guaranteed blunder window, the tell the
+  constant hazard was designed to remove. Re-drawing the window start softens this but does not remove it.
+- **The drill trains a habit, not positions.** The blind spot is "I don't check before I move". Fresh windows
+  train that better than a familiar one.
+- **Supply does not need it.** With one third foreign blunders (250-CONTEXT D-12) there is always new material.
+- **Score % fairness.** Reviews are easier than fresh windows, so a player who misses more gets more easy points
+  later. Reviews would have to be excluded from the board or accepted as noise.
+- **Extra rules and surface.** Reviews must count toward the one-third mix shares, the cross-mode cooldown must
+  cover them, a false alarm before the blunder in a review needs a ruling (miss or no attempt), and mastered and
+  parked states pull in the Archive tab.
+
+Notes for a later revisit:
+
+- **Nothing is lost by waiting.** `blunder_check_windows` stores game, blunder ply and outcome for every missed
+  window, so a review queue can be backfilled from history.
+- **Lighter version to consider:** one retry after a long gap (3 to 4 weeks, so memory has faded). Caught means
+  "fixed", missed again means dropped. No ladder, no parked state. It yields a "blind spots fixed: 12 of 30"
+  counter.
+- **Progress without re-serving:** a catch-rate trend over the last N sessions, or the facepalm rate in the
+  user's real games (SEED-261114-iuv), the outcome the drill exists to move.
+- **Open:** which feeling the player should get, "I fixed this specific blunder" (needs repetition) or "I'm
+  getting better at checking my moves" (needs only stats).
+
+### Phase 251 decisions (owner, 2026-11-18, /gsd-explore session)
+
+These refine or replace the 2026-11-09 "Interaction and scoring" bullets on schedule, streak and leaderboards.
+
+**Streak and schedule**
+
+- **Both modes are required for the streak.** On a scheduled day, the streak ticks when every mode with a session
+  size above 0 is complete. Replaces "a completed session of either mode counts". Reason: committing to an amount
+  of training beforehand matters for habit forming. A mode set to 0 is not part of the day.
+- **Default blunder-check session size is 6 for all users**, existing ones included, at launch.
+- **Launch notice:** pair the default with the feature-discovery dot (Phase 255) and a short notice on the streak
+  card for the first days ("Your streak now includes blunder check. Change the amount on the card."), so a streak
+  holder does not lose a streak they thought they had kept.
+- **Session size can be changed anytime, per mode, 0 allowed.** The known loophole (set a mode to 0 on a lazy day,
+  turn it back on tomorrow) is accepted: the same one already exists via the puzzle slider and the scheduled days,
+  and the streak is a self-commitment tool with nothing competitive attached. "Changes apply from the next
+  scheduled day" was rejected because it blocks the opt-out on launch day.
+- **Changes while a blunder-check session is open** (`blunder_check_sessions.window_count` is fixed at creation
+  today):
+  - reduced to at or below the windows already done: the session completes now and counts as done;
+  - reduced, but above the windows already done: the session shortens to the new count;
+  - increased: the session extends, unless it is already complete for today (then it applies from the next session);
+  - set to 0: the session closes, the mode is no longer required today, points already earned stay.
+  - A completed session never reopens, so an earned tick cannot be taken back.
+- **Never both modes at 0.** The slider of the last active mode stops at its minimum, with a hint to untick days
+  for a break.
+- **Schema:** `train_settings.puzzles_per_session` has a `BETWEEN 1 AND 50` check and the UI slider runs 3 to 30;
+  "0 allowed" for puzzles relaxes both. Blunder check gets its own column and range.
+
+**Today page**
+
+- **Three cards:** Session Streak, Personalized Puzzle Training, Blunder-Check Training. The Blunder Check tab is
+  removed; the subnav is Today / Leaderboard / Archive.
+- **Each training card has:** a red badge with the number of pending puzzles (as on the Train nav), a start/resume
+  button, one sentence on the core idea with a "How it works" collapsible (auto-collapsed after the user's first
+  completed session in that mode), and the mode's session-size slider. Days and reminders stay in the shared
+  schedule settings.
+- **Card states:** pending (badge, Start), in progress (badge with remaining count, Resume), done today (checkmark
+  and points earned, no badge), off (count 0: muted card with the one-line pitch and a "Turn on" control).
+- **The streak card shows both parts** as a two-item checklist under the flame (e.g. "Puzzles done, Blunder check
+  4 left"), so the both-required rule is visible.
+- **Score-screen hand-off:** after finishing one mode, the primary button continues with the other mode if it is
+  still pending.
+- **Nav badge** = sum of both cards' pending counts. Blunder check has no due queue, so its pending count is
+  today's configured count minus what is done, and nothing on an unscheduled day.
+- **Layout: sketch 014, variant B** (owner, 2026-11-18; `.planning/sketches/014-train-today-two-modes/`). The
+  three-card layout above put the second Start button below the phone fold, so the cards merge: one Today card
+  holds the flame, the freeze meter and a launcher row per mode (name, badge, Start / Resume, checkmark when
+  done, "Turn on" when off). The rows are the streak checklist. Pitch, "How it works", the level picker and the
+  session-size slider sit in one collapsed row per mode below, then the shared schedule row. The card contents
+  and states listed above still apply; only their placement changes.
+- **Open (proposed):** show the one-line pitch under the Blunder Check row until the user's first completed
+  session, since variant B hides the pitch behind a tap.
+
+**Leaderboards**
+
+- **Separate boards per mode, no merged Points board.** Blunder check pays roughly twice the points per item (3 max
+  per personalized puzzle; 5 to 9 for a blunder window, 3 to 5 for a clean one) and more per minute (estimated from
+  the scoring constants, not measured on prod). A merged board would shut out puzzle-only players, and it would
+  need an exchange rate that every retune of blunder-check scoring would shift.
+- **Leaderboard card:** a mode switch (Puzzles / Blunder check), each with its Points and Score % boards.
+  `train_weekly_standings.board` is a text key, so the new boards run through the existing finalization and medal
+  code.
+- **One medal dialog per week** showing all of a user's medals, not up to four in a row.
+- Thin blunder-check podiums in the first weeks are accepted; the Score % board keeps its minimum window count.
+
+**Cross-mode cooldown**
+
+- A flaw served in either mode is ineligible in the other for `CROSS_MODE_COOLDOWN_DAYS`. With serve-once this is
+  one filter in each mode's selection.
+
+**Launch scope**
+
+- **Guests get blunder check too.** They have no own games, so they are served foreign blunders (same code path as
+  a user with no supply, 250-CONTEXT D-15) and do not appear on leaderboards.
+- **Level for users without rated games** (today the constant `DEFAULT_USER_LEVEL_ELO = 1500` in
+  `blunder_check_selection.py`): ask once on the blunder-check start screen, one tap, labels not numbers:
+  Beginner / Intermediate / Advanced, mapped to about 1000 / 1500 / 2000 on the lichess-blitz-normalised scale.
+  Intermediate is preselected, so skipping equals today's behaviour. Stored as a nullable column on
+  `train_settings`, changeable later on the card, ignored once the user has rated games. Reason: the facepalm
+  score is computed at the mover's rating, so a wrong level gives a guest blunders that are invisible or trivial.
+
+**Later ideas (not in Phase 251)**
+
+- Adaptive level: start at the chosen or default level and move it from the catch rate. Removes the question and
+  corrects wrong self-reports, but needs its own tuning.
+- Reuse the stored level for the lichess warm-up puzzles in personalized training and for the default bot strength.
+- The single-retry form of spaced repetition (see "Spaced repetition revisited" above).
+
 ## Proposed (discussed, not yet decided)
 
 - **Face-palm test v2** (2026-11-09 review, owner agrees with the direction, details to elaborate). Problem with test (a): capping the played move's Maia probability means every blunder arrow is a move that looks unusual for the rating, while the Good moves before it look natural. Users could score by flagging odd-looking arrows instead of checking, and the drill would skip the *typical* blunders of a level, which the owner wants trained. Proposal: judge whether the punishment is easy to spot, not whether the move is unlikely to be played.
@@ -147,8 +271,8 @@ Findings:
 
 ## Breadcrumbs
 
-- `.planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
-- `.planning/seeds/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
+- `.planning/seeds/closed/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
+- `.planning/seeds/closed/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
 - `app/services/maia_engine.py`, `app/services/maia_encoding.py`, `app/services/best_move_candidates.py`
 - `app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/herring_pool.py`
 - `app/services/train_pool.py`, `app/repositories/train_repository.py`

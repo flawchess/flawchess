@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 256
 status: completed
 stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-17T19:52:23.723Z"
-last_activity: 2026-11-16
+last_updated: "2026-11-18T21:49:19.737Z"
+last_activity: 2026-11-17
 last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: bca5a9b4db8d5e9fb5775371b9d729b6abe5a212
+state_head: 030270bd707a1a72ac2de73caaec234b374a9ae0
 progress:
   total_phases: 10
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-17 - Completed quick task 261117-sfh: Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready
+Last activity: 2026-11-18 - Completed quick task 261118-v32: opponent facepalm line facts (reader gates, scorer and line pass, SEED-261114-iuv Part A)
 
 Open threads carried forward (not blockers):
 
@@ -1143,6 +1143,7 @@ None active.
 | 261116-mco | Facepalm label set 8: disagreement sampler in miss_labels.py, 60 blind prod rows appended to facepalm-labels.tsv | 2026-11-16 | 6f4d484e8 | [261116-mco-facepalm-label-set-8-sampler-disagreemen](./quick/261116-mco-facepalm-label-set-8-sampler-disagreemen/) |
 | 261116-spc | Maia columns for opponent blunders: full-mode hook plus --mode opponent backfill (SEED-261114-iuv Part A) | 2026-11-16 | f58d8e90f | [261116-spc-maia-columns-for-opponent-blunders-full-](./quick/261116-spc-maia-columns-for-opponent-blunders-full-/) |
 | 261117-sfh | Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready | 2026-11-17 | bca5a9b4d | [261117-sfh-blunder-check-ready-gate-show-the-start-](./quick/261117-sfh-blunder-check-ready-gate-show-the-start-/) |
+| 261118-v32 | Opponent facepalm line facts: user-side reader gates, scorer and line pass write opponent line facts (SEED-261114-iuv Part A) | 2026-11-18 | 030270bd7 | [261118-v32-opponent-facepalm-line-facts-reader-gate](./quick/261118-v32-opponent-facepalm-line-facts-reader-gate/) |
 
 ## Deferred Items
 
