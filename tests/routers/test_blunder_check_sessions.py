@@ -356,6 +356,49 @@ async def test_start_session_dated_local_today(test_engine, monkeypatch) -> None
     assert header.expires_on == session_window(_AUCKLAND_LOCAL_DAY, weekday_mask)
 
 
+_TWO_DAYS = datetime.timedelta(days=2)
+
+
+@pytest.mark.asyncio
+async def test_start_after_window_expires_old_session_and_composes_new(
+    test_engine, monkeypatch
+) -> None:
+    """Start past the window expires the stale open session (D-01: shown windows stay)."""
+    _force_own_blunder_slots(monkeypatch)
+    monkeypatch.setattr(
+        blunder_check_selection, "new_session_rng", lambda: random.Random(_RNG_SEED)
+    )
+    user_id, token = await _register("bc-start-expire", beta=True, test_engine=test_engine)
+    game_ids = await _seed_own_games(test_engine, user_id, _SEED_GAMES)
+    # One shown and one never-started window; dated today on the real clock, expiring tomorrow.
+    stale_id = await _insert_session(test_engine, user_id, [None, WindowOutcome.CLEARED], [0, 3])
+    fresh_id: int | None = None
+    real_now = datetime.datetime.now(datetime.timezone.utc)
+    app.dependency_overrides[dev_now_utc] = lambda: real_now + _TWO_DAYS
+    try:
+        resp = await _post(token)
+        assert resp.status_code == 200, resp.text
+        fresh_id = resp.json()["session_id"]
+        maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with maker() as session:
+            stale_status = (
+                await session.execute(
+                    select(BlunderCheckSession.status).where(BlunderCheckSession.id == stale_id)
+                )
+            ).scalar_one()
+        stale_windows = await _windows_of(test_engine, stale_id)
+    finally:
+        app.dependency_overrides.pop(dev_now_utc, None)
+        await delete_blunder_check_sessions(
+            test_engine, [stale_id] + ([fresh_id] if fresh_id else [])
+        )
+        await delete_games(test_engine, game_ids)
+    assert fresh_id != stale_id
+    assert stale_status == "expired"
+    # Only the window that was shown (position 1, outcome set) stays stored.
+    assert [w.position for w in stale_windows] == [1]
+
+
 @pytest.mark.asyncio
 async def test_start_session_non_beta_403(test_engine) -> None:
     _, token = await _register("bc-start-nonbeta", beta=False, test_engine=test_engine)
