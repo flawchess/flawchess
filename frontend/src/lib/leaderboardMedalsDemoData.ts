@@ -6,13 +6,13 @@
  */
 import type {
   LeaderboardBoard,
-  LeaderboardBoardKind,
   LeaderboardLastWeek,
   LeaderboardMedals,
   LeaderboardRow,
   TrainLeaderboardResponse,
   UnclaimedMedal,
 } from '@/types/train';
+import type { LeaderboardMode, LeaderboardTab } from '@/lib/trainLeaderboard';
 
 export type BoardScenarioId =
   | 'tallies-none'
@@ -24,7 +24,9 @@ export type BoardScenarioId =
   | 'podium-tie'
   | 'podium-deleted-user'
   | 'podium-viewer'
-  | 'finished-12';
+  | 'finished-12'
+  | 'bc-points'
+  | 'bc-score-tentative';
 export type CelebrateScenarioId =
   | 'gold-points'
   | 'silver-points'
@@ -32,7 +34,9 @@ export type CelebrateScenarioId =
   | 'gold-accuracy'
   | 'gold-points-bronze-accuracy'
   | 'three-weeks'
-  | 'shared-gold';
+  | 'shared-gold'
+  | 'bc-score-gold'
+  | 'mixed-modes';
 
 /** Fixed countdown shown in the demo card header (2 days, 3 hours). */
 export const DEMO_REMAINING_SECONDS = 2 * 86400 + 3 * 3600;
@@ -79,19 +83,27 @@ function lastWeek(podium: LeaderboardLastWeek['podium'], viewerFinalRank: number
   return { week_start: DEMO_LAST_WEEK_START, podium, viewer_final_rank: viewerFinalRank };
 }
 
-function response(points: LeaderboardBoard, accuracy: LeaderboardBoard = emptyBoard()): TrainLeaderboardResponse {
+function response(
+  points: LeaderboardBoard,
+  accuracy: LeaderboardBoard = emptyBoard(),
+  blunderCheckPoints: LeaderboardBoard = emptyBoard(),
+  blunderCheckScore: LeaderboardBoard = emptyBoard(),
+): TrainLeaderboardResponse {
   return {
     week_start: DEMO_WEEK_START,
     week_end: DEMO_WEEK_END,
     seconds_remaining: DEMO_REMAINING_SECONDS,
     points,
     accuracy,
+    blunder_check_points: blunderCheckPoints,
+    blunder_check_score: blunderCheckScore,
   };
 }
 
+/** `mode` is the card's starting mode; it defaults to Puzzles. On Blunder check `puzzles` counts sequences. */
 export const DEMO_BOARD_SCENARIOS: Record<
   BoardScenarioId,
-  { label: string; tab: LeaderboardBoardKind; data: TrainLeaderboardResponse }
+  { label: string; mode?: LeaderboardMode; tab: LeaderboardTab; data: TrainLeaderboardResponse }
 > = {
   'tallies-none': {
     label: 'Tallies: none',
@@ -229,6 +241,35 @@ export const DEMO_BOARD_SCENARIOS: Record<
       ),
     }),
   },
+  'bc-points': {
+    label: 'Blunder check: Points',
+    mode: 'blunder_check',
+    tab: 'points',
+    data: response(
+      emptyBoard(),
+      emptyBoard(),
+      {
+        rows: [row(1, 'alice', 96, 32, { gold: 1 }), viewerRow(2, 'You', 88, 29), row(3, 'carol', 71, 24)],
+        viewer: { rank: 2, rank_without_session: null, tentative: false, puzzles_to_qualify: 0, visibility: 'public' },
+        last_week: null,
+      },
+      emptyBoard(),
+    ),
+  },
+  'bc-score-tentative': {
+    label: 'Blunder check: Score % with tentative row',
+    mode: 'blunder_check',
+    tab: 'accuracy',
+    data: response(emptyBoard(), emptyBoard(), emptyBoard(), {
+      rows: [
+        row(1, 'alice', 91, 32, { silver: 2 }),
+        row(2, 'carol', 84, 26),
+        { ...row(null, 'bob', 97, 9), tentative: true },
+      ],
+      viewer: null,
+      last_week: null,
+    }),
+  },
 };
 
 export const DEMO_CELEBRATE_SCENARIOS: Record<CelebrateScenarioId, { label: string; medals: UnclaimedMedal[] }> = {
@@ -266,5 +307,18 @@ export const DEMO_CELEBRATE_SCENARIOS: Record<CelebrateScenarioId, { label: stri
   'shared-gold': {
     label: 'Shared gold',
     medals: [{ week_start: DEMO_LAST_WEEK_START, board: 'points', medal: 'gold', value: 412, shared: true }],
+  },
+  'bc-score-gold': {
+    label: 'Gold, Blunder check Score %',
+    medals: [{ week_start: DEMO_LAST_WEEK_START, board: 'blunder_check_score', medal: 'gold', value: 92, shared: false }],
+  },
+  'mixed-modes': {
+    label: 'Two weeks, both modes',
+    medals: [
+      { week_start: DEMO_LAST_WEEK_START, board: 'points', medal: 'gold', value: 412, shared: false },
+      { week_start: DEMO_LAST_WEEK_START, board: 'blunder_check_points', medal: 'silver', value: 88, shared: false },
+      { week_start: DEMO_LAST_WEEK_START, board: 'blunder_check_score', medal: 'bronze', value: 79, shared: true },
+      { week_start: DEMO_WEEK_BEFORE_LAST_START, board: 'accuracy', medal: 'gold', value: 94, shared: false },
+    ],
   },
 };

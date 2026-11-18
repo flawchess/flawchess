@@ -66,13 +66,13 @@ describe('MedalClaimDialog content', () => {
     expect(list.children).toHaveLength(3);
 
     const first = screen.getByTestId('train-medal-dialog-entry-0');
-    expect(within(first).getByText('Gold, Points')).not.toBeNull();
+    expect(within(first).getByText('Gold, Puzzles Points')).not.toBeNull();
     expect(within(first).getByText('Week of Oct 5 · 412 pts')).not.toBeNull();
     const second = screen.getByTestId('train-medal-dialog-entry-1');
-    expect(within(second).getByText('Silver, Accuracy (shared)')).not.toBeNull();
+    expect(within(second).getByText('Silver, Puzzles Accuracy (shared)')).not.toBeNull();
     expect(within(second).getByText('Week of Oct 5 · 87%')).not.toBeNull();
     const third = screen.getByTestId('train-medal-dialog-entry-2');
-    expect(within(third).getByText('Bronze, Points')).not.toBeNull();
+    expect(within(third).getByText('Bronze, Puzzles Points')).not.toBeNull();
     expect(within(third).getByText('Week of Sep 28 · 55 pts')).not.toBeNull();
   });
 

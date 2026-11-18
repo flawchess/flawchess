@@ -452,8 +452,15 @@ export interface TrainProgressResponse {
 
 // ─── Weekly leaderboards ─────────────────────────────────────────
 
-/** Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py. */
-export type LeaderboardBoardKind = 'points' | 'accuracy';
+/**
+ * Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py.
+ * The values double as the keys of TrainLeaderboardResponse.
+ */
+export type LeaderboardBoardKind =
+  | 'points'
+  | 'accuracy'
+  | 'blunder_check_points'
+  | 'blunder_check_score';
 
 /**
  * Row visibility. `'public'` for every row except the viewer's own private
@@ -501,7 +508,10 @@ export interface LeaderboardRow {
   name: string;
   /** Points, or the floored accuracy percent. */
   value: number;
-  /** All solves (points board) or non-filler solves (accuracy board). */
+  /**
+   * All solves (points board) or non-filler solves (accuracy board). On the
+   * blunder-check boards: the number of ended sequences (windows) this week.
+   */
   puzzles: number;
   /** Accuracy board only: fewer than 20 qualifying puzzles this week. */
   tentative: boolean;
@@ -525,6 +535,7 @@ export interface LeaderboardViewer {
    */
   rank_without_session: number | null;
   tentative: boolean;
+  /** Puzzles still needed to qualify; on the blunder-check Score % board, sequences (windows). */
   puzzles_to_qualify: number;
   visibility: LeaderboardVisibility;
 }
@@ -545,6 +556,13 @@ export interface TrainLeaderboardResponse {
   seconds_remaining: number;
   points: LeaderboardBoard;
   accuracy: LeaderboardBoard;
+  /** Blunder-check points; `puzzles` on its rows is the sequence (window) count. */
+  blunder_check_points: LeaderboardBoard;
+  /**
+   * Blunder-check Score %: tentative (rank null) below 18 sequences. `puzzles` on
+   * its rows is the sequence count; `rank_without_session` is always null here.
+   */
+  blunder_check_score: LeaderboardBoard;
 }
 
 // ─── Medal claim ─────────────────────────────────────────────────
@@ -561,7 +579,7 @@ export interface UnclaimedMedal {
   shared: boolean;
 }
 
-/** Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy. */
+/** Response for GET /train/medals/unclaimed: newest week first, then points, accuracy, blunder-check points, blunder-check score. */
 export interface UnclaimedMedalsResponse {
   medals: UnclaimedMedal[];
 }

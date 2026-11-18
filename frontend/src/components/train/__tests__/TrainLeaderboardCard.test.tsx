@@ -58,6 +58,8 @@ function makeResponse(overrides: Partial<TrainLeaderboardResponse> = {}): TrainL
     seconds_remaining: 388800,
     points: EMPTY_BOARD,
     accuracy: EMPTY_BOARD,
+    blunder_check_points: EMPTY_BOARD,
+    blunder_check_score: EMPTY_BOARD,
     ...overrides,
   };
 }
@@ -703,7 +705,9 @@ describe('TrainLeaderboardCardView', () => {
         isPending={false}
         isError={false}
         secondsRemaining={3600}
+        mode="puzzles"
         tab="points"
+        onModeChange={() => undefined}
         onTabChange={() => undefined}
         isGuest={false}
       />,
@@ -744,7 +748,7 @@ describe('TrainLeaderboardCard lifetime medal tally', () => {
     expect(nameBlock?.contains(cue)).toBe(true);
     expect(tally.compareDocumentPosition(cue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(nameBlock?.firstElementChild?.textContent).toBe('me');
-    expect(tally.getAttribute('aria-label')).toBe('2 gold, 1 bronze Points medals');
+    expect(tally.getAttribute('aria-label')).toBe('2 gold, 1 bronze Puzzles Points medals');
   });
 
   it('renders no tally for a row without medals', async () => {
@@ -769,10 +773,10 @@ describe('TrainLeaderboardCard lifetime medal tally', () => {
     );
     renderCard();
     const anon = await screen.findByTestId('train-leaderboard-row-0-medals');
-    expect(anon.getAttribute('aria-label')).toBe('1 gold Points medal');
+    expect(anon.getAttribute('aria-label')).toBe('1 gold Puzzles Points medal');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     const tentative = screen.getByTestId('train-leaderboard-row-0-medals');
-    expect(tentative.getAttribute('aria-label')).toBe('4 silver Accuracy medals');
+    expect(tentative.getAttribute('aria-label')).toBe('4 silver Puzzles Accuracy medals');
   });
 
   it('shows no tally on the guest ghost row (zero medals)', async () => {
@@ -799,10 +803,10 @@ describe('TrainLeaderboardCard lifetime medal tally', () => {
     );
     renderCard();
     const points = await screen.findByTestId('train-leaderboard-row-0-medals');
-    expect(points.getAttribute('aria-label')).toBe('3 gold Points medals');
+    expect(points.getAttribute('aria-label')).toBe('3 gold Puzzles Points medals');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     expect(screen.getByTestId('train-leaderboard-row-0-medals').getAttribute('aria-label')).toBe(
-      '7 bronze Accuracy medals',
+      '7 bronze Puzzles Accuracy medals',
     );
   });
 });
@@ -882,5 +886,184 @@ describe('TrainLeaderboardCard last-week finish', () => {
     renderCard();
     fireEvent.click(await screen.findByTestId('train-leaderboard-info'));
     expect((await screen.findByText(LEADERBOARD_INFO_MEDALS_COPY)).textContent).toContain('win a medal');
+  });
+});
+
+const BC_RESPONSE = makeResponse({
+  blunder_check_points: {
+    rows: [
+      makeRow({ rank: 1, name: 'bea', value: 96, puzzles: 32 }),
+      makeRow({ rank: 2, name: 'cal', value: 70, puzzles: 1 }),
+    ],
+    viewer: VIEWER,
+    last_week: null,
+  },
+  blunder_check_score: {
+    rows: [
+      makeRow({ rank: 1, name: 'dee', value: 91, puzzles: 30 }),
+      makeRow({ rank: null, name: 'eli', value: 97, puzzles: 9, tentative: true }),
+    ],
+    viewer: { ...VIEWER, rank: null, tentative: true, puzzles_to_qualify: 9 },
+    last_week: null,
+  },
+});
+
+const BC_RESPONSE_NO_VIEWER = makeResponse({
+  blunder_check_points: {
+    rows: [makeRow({ rank: 1, name: 'bea', value: 96, puzzles: 32 })],
+    viewer: null,
+    last_week: null,
+  },
+});
+
+describe('TrainLeaderboardCard Blunder check mode', () => {
+  it('opens on Puzzles with the mode switch above the board pills', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    expect(screen.getByTestId('train-leaderboard-mode-puzzles').getAttribute('data-state')).toBe('on');
+    expect(screen.getByTestId('train-leaderboard-mode-blunder-check').getAttribute('data-state')).toBe('off');
+    expect(screen.getByTestId('train-leaderboard-mode-blunder-check').textContent).toBe('Blunder check');
+    const mode = screen.getByTestId('train-leaderboard-mode');
+    expect(mode.nextElementSibling).toBe(screen.getByTestId('train-leaderboard-tabs'));
+  });
+
+  it('switching to Blunder check shows the Points board with sequence counts and no puzzle rows', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    const rows = screen.getByTestId('train-leaderboard-rows');
+    expect(within(rows).getByText('bea')).not.toBeNull();
+    expect(within(rows).getByText('96 pts')).not.toBeNull();
+    expect(screen.getByTestId('train-leaderboard-row-0-puzzles').getAttribute('aria-label')).toBe('32 sequences');
+    expect(screen.getByTestId('train-leaderboard-row-1-puzzles').getAttribute('aria-label')).toBe('1 sequence');
+    expect(screen.getByTestId('train-leaderboard-tab-blunder-check-points').textContent).toBe('Points');
+    expect(screen.getByTestId('train-leaderboard-tab-blunder-check-score').textContent).toBe('Score %');
+  });
+
+  it('the Score % tab shows % values and the 18-sequence divider before tentative rows', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-blunder-check-score'));
+    const rows = screen.getByTestId('train-leaderboard-rows');
+    expect(within(rows).getByText('91%')).not.toBeNull();
+    const dividers = screen.getAllByTestId('train-leaderboard-qualify-divider');
+    expect(dividers).toHaveLength(1);
+    expect(dividers[0]?.textContent).toBe('Not yet qualified (18+ sequences)');
+    expect(dividers[0]?.nextElementSibling).toBe(screen.getByTestId('train-leaderboard-row-1'));
+    expect(screen.getByTestId('train-leaderboard-row-1').textContent).not.toContain('#');
+  });
+
+  it('keeps the board slot when the mode flips (second board stays second)', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    expect(screen.getByTestId('train-leaderboard-tab-blunder-check-score').getAttribute('data-state')).toBe('on');
+  });
+
+  it('remembers the mode across a remount via localStorage only', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    expect(localStorage.getItem('flawchess_train_leaderboard_mode')).toBe('blunder_check');
+    cleanup();
+
+    renderCard();
+    await screen.findByTestId('train-leaderboard-rows');
+    expect(screen.getByTestId('train-leaderboard-mode-blunder-check').getAttribute('data-state')).toBe('on');
+    expect(screen.getByText('bea')).not.toBeNull();
+    // Browser-only memory: nothing about the mode is sent to the server.
+    for (const call of getSpy.mock.calls as [string, { params?: unknown } | undefined][]) {
+      expect(call[1]?.params).toBeUndefined();
+    }
+  });
+
+  it('falls back to Puzzles for a corrupted stored mode', async () => {
+    localStorage.setItem('flawchess_train_leaderboard_mode', 'skill');
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    expect(screen.getByTestId('train-leaderboard-mode-puzzles').getAttribute('data-state')).toBe('on');
+  });
+
+  it('sends tab-switch for a hand mode switch and for a board switch inside the mode, none on restore or re-tap', async () => {
+    localStorage.setItem('flawchess_train_leaderboard_mode', 'blunder_check');
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-rows');
+    expect(trackFeature).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    expect(trackFeature).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-blunder-check-score'));
+    expect(trackFeature).toHaveBeenLastCalledWith('tab-switch', { target: 'leaderboard-blunder-check-score' });
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-blunder-check-points'));
+    expect(trackFeature).toHaveBeenLastCalledWith('tab-switch', { target: 'leaderboard-blunder-check-points' });
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-puzzles'));
+    expect(trackFeature).toHaveBeenLastCalledWith('tab-switch', { target: 'leaderboard-mode-puzzles' });
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    expect(trackFeature).toHaveBeenLastCalledWith('tab-switch', { target: 'leaderboard-mode-blunder-check' });
+    expect(trackFeature).toHaveBeenCalledTimes(4);
+  });
+
+  it('the info popover explains the Blunder check boards, not the puzzle ones', async () => {
+    respondWith(BC_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    fireEvent.click(screen.getByTestId('train-leaderboard-info'));
+    const body = await screen.findByText(/share of the points on offer/);
+    expect(body.textContent).toContain('Score %');
+    expect(screen.queryByText(/how many puzzles you solve/)).toBeNull();
+  });
+
+  it('renders the empty Blunder check copy per board', async () => {
+    respondWith(makeResponse());
+    renderCard();
+    await screen.findByTestId('train-leaderboard-card');
+    fireEvent.click(screen.getByTestId('train-leaderboard-mode-blunder-check'));
+    expect(screen.getByTestId('train-leaderboard-empty').textContent).toBe(
+      'No one has played Blunder check yet this week. Be the first.',
+    );
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-blunder-check-score'));
+    expect(screen.getByTestId('train-leaderboard-empty').textContent).toBe('No Score % entries yet this week.');
+  });
+
+  it('guest viewer: sees the standings, their own private row and the sign-up ask', async () => {
+    localStorage.setItem('flawchess_train_leaderboard_mode', 'blunder_check');
+    respondWith(
+      makeResponse({
+        blunder_check_points: {
+          rows: [
+            makeRow({ rank: 1, name: 'bea', value: 96, puzzles: 32 }),
+            makeRow({ rank: 5, name: 'Anonymous', value: 40, puzzles: 11, is_viewer: true, visibility: 'guest' }),
+          ],
+          viewer: { ...VIEWER, visibility: 'guest' },
+          last_week: null,
+        },
+      }),
+    );
+    renderCard(true);
+    await screen.findByTestId('train-leaderboard-rows');
+    expect(screen.getByTestId('train-leaderboard-row-0').textContent).toContain('bea');
+    const own = screen.getByTestId('train-leaderboard-row-1');
+    expect(own.textContent).toContain('You (guest)');
+    expect(own.getAttribute('data-viewer')).toBe('true');
+    expect(screen.getByTestId('train-leaderboard-guest-cta').textContent).toContain('Sign up to claim your spot');
+    expect(screen.getByTestId('btn-signup-free-train-leaderboard')).not.toBeNull();
+  });
+
+  it('a viewer not on the Blunder check board gets the Blunder check invitation, not the puzzle one', async () => {
+    respondWith(BC_RESPONSE_NO_VIEWER);
+    localStorage.setItem('flawchess_train_leaderboard_mode', 'blunder_check');
+    renderCard();
+    expect((await screen.findByTestId('train-leaderboard-enter-hint')).textContent).toBe(
+      "Play a Blunder check sequence to enter this week's board.",
+    );
   });
 });

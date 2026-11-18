@@ -371,7 +371,14 @@ describe('feature-event registry', () => {
     expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 24)).toBeNull();
   });
 
-  it.each(['leaderboard-points', 'leaderboard-accuracy'] as const)(
+  it.each([
+    'leaderboard-points',
+    'leaderboard-accuracy',
+    'leaderboard-mode-puzzles',
+    'leaderboard-mode-blunder-check',
+    'leaderboard-blunder-check-points',
+    'leaderboard-blunder-check-score',
+  ] as const)(
     'trackFeature sends the %s tab-switch target with page train',
     (target) => {
       window.history.pushState({}, '', '/train');

@@ -24,8 +24,8 @@ import {
   DEMO_REMAINING_SECONDS,
 } from '@/lib/leaderboardMedalsDemoData';
 import type { BoardScenarioId, CelebrateScenarioId } from '@/lib/leaderboardMedalsDemoData';
-import { parseLeaderboardTab } from '@/lib/trainLeaderboard';
-import type { LeaderboardBoardKind } from '@/types/train';
+import { parseLeaderboardMode, parseLeaderboardTab } from '@/lib/trainLeaderboard';
+import type { LeaderboardMode, LeaderboardTab } from '@/lib/trainLeaderboard';
 
 const INITIAL_BOARD_SCENARIO: BoardScenarioId = 'podium-tie';
 /** Phone-width frame the narrow toggle applies; the default is the Train page card width. */
@@ -38,7 +38,8 @@ const TOGGLE_HELPER =
 
 export function LeaderboardMedalsDemo(): ReactElement {
   const [boardId, setBoardId] = useState<BoardScenarioId>(INITIAL_BOARD_SCENARIO);
-  const [tab, setTab] = useState<LeaderboardBoardKind>(DEMO_BOARD_SCENARIOS[INITIAL_BOARD_SCENARIO].tab);
+  const [mode, setMode] = useState<LeaderboardMode>(DEMO_BOARD_SCENARIOS[INITIAL_BOARD_SCENARIO].mode ?? 'puzzles');
+  const [tab, setTab] = useState<LeaderboardTab>(DEMO_BOARD_SCENARIOS[INITIAL_BOARD_SCENARIO].tab);
   const [celebrateId, setCelebrateId] = useState<CelebrateScenarioId | null>(null);
   const [muted, setMuted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -49,6 +50,7 @@ export function LeaderboardMedalsDemo(): ReactElement {
 
   function pickBoard(id: BoardScenarioId): void {
     setBoardId(id);
+    setMode(DEMO_BOARD_SCENARIOS[id].mode ?? 'puzzles');
     setTab(DEMO_BOARD_SCENARIOS[id].tab);
   }
 
@@ -119,7 +121,11 @@ export function LeaderboardMedalsDemo(): ReactElement {
           isPending={false}
           isError={false}
           secondsRemaining={DEMO_REMAINING_SECONDS}
+          mode={mode}
           tab={tab}
+          onModeChange={(value) => {
+            if (value !== '') setMode(parseLeaderboardMode(value));
+          }}
           onTabChange={(value) => {
             if (value !== '') setTab(parseLeaderboardTab(value));
           }}

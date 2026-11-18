@@ -278,8 +278,18 @@ export function isTrackingExcludedPath(pathname: string): boolean {
 export const ANALYSIS_TAB_IDS = ['moves', 'eval', 'human', 'flawchess', 'stats'] as const;
 export type AnalysisTabId = (typeof ANALYSIS_TAB_IDS)[number];
 
-/** Train weekly leaderboard tabs, sent as `tab-switch` targets. */
-export const LEADERBOARD_TAB_IDS = ['leaderboard-points', 'leaderboard-accuracy'] as const;
+/**
+ * Train weekly leaderboard tabs and the Puzzles / Blunder check mode switch, sent as
+ * `tab-switch` targets. Append-only: the first two keep their names so Umami history stays joined.
+ */
+export const LEADERBOARD_TAB_IDS = [
+  'leaderboard-points',
+  'leaderboard-accuracy',
+  'leaderboard-mode-puzzles',
+  'leaderboard-mode-blunder-check',
+  'leaderboard-blunder-check-points',
+  'leaderboard-blunder-check-score',
+] as const;
 export type LeaderboardTabId = (typeof LEADERBOARD_TAB_IDS)[number];
 
 export function isAnalysisTabId(value: string): value is AnalysisTabId {
@@ -416,7 +426,7 @@ type ActionTarget = (typeof ACTION_TARGETS)[number];
 export const NAV_DESTINATIONS = ['library', 'train', 'bots', 'openings', 'endgames', 'analysis'] as const;
 type NavDestination = (typeof NAV_DESTINATIONS)[number];
 
-export const NAV_SOURCES = ['more-drawer', 'train-rank-line'] as const;
+export const NAV_SOURCES = ['more-drawer', 'train-rank-line', 'blunder-check-score-screen'] as const;
 type NavSource = (typeof NAV_SOURCES)[number];
 
 /** Map a nav link path to its destination; null for anything else (admin and activity can never be named). */

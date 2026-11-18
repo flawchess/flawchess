@@ -27,10 +27,16 @@ export const LAST_WEEK_PODIUM_LABEL = 'Last week:';
 /** Display order of medal types in a tally: best first. */
 export const MEDAL_KIND_ORDER: readonly MedalKind[] = ['gold', 'silver', 'bronze'];
 
-/** Board name used in the tally's accessible label. */
+/**
+ * Board name with its mode, used in the tally's accessible label and the claim
+ * dialog's entries (D-15: one dialog holds medals of both modes, so each entry
+ * names its mode and board).
+ */
 export const BOARD_LABEL: Record<LeaderboardBoardKind, string> = {
-  points: 'Points',
-  accuracy: 'Accuracy',
+  points: 'Puzzles Points',
+  accuracy: 'Puzzles Accuracy',
+  blunder_check_points: 'Blunder check Points',
+  blunder_check_score: 'Blunder check Score %',
 };
 
 /** Non-zero medal counts in gold, silver, bronze order; empty when the user has no medals. */
