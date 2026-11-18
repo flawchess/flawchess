@@ -56,7 +56,7 @@ from app.services.blunder_check_grading import (
     window_ucis,
 )
 from app.services.train_pool import ServerGradedMove
-from app.services.train_scheduler import local_today, session_window
+from app.services.train_scheduler import DEFAULT_TIMEZONE, local_today, session_window
 from app.services.blunder_check_rules import BLUNDER_POINTS
 from app.services.train_score import MOVE_QUALITY_TIER, MOVE_TIER_POINTS
 
@@ -209,9 +209,19 @@ async def compose_or_resume(
     """
     settings = await train_repository.get_or_create_settings(session, user_id=user_id)
     today = local_today(settings.timezone, now_utc)
-    existing = await blunder_check_repository.open_session_progress(session, user_id=user_id)
+    await blunder_check_repository.expire_stale_sessions(session, user_id=user_id, today=today)
+    existing = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
     if existing is not None:
         return existing
+    # Bug fix: a finished session inside its window is returned, not recomposed, so a second
+    # Start on a done day shows the recap instead of building a new session.
+    done = await blunder_check_repository.completed_session_in_window(
+        session, user_id=user_id, today=today
+    )
+    if done is not None:
+        return done
     windows = await blunder_check_selection.compose_windows(
         session, user_id=user_id, rng=blunder_check_selection.new_session_rng()
     )
@@ -226,7 +236,24 @@ async def compose_or_resume(
         session_date=today,
         expires_on=session_window(today, settings.weekday_mask),
     )
-    return await blunder_check_repository.open_session_progress(session, user_id=user_id)
+    return await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+
+
+async def get_open_session(
+    session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
+) -> SessionProgress | None:
+    """The user's current open session, or None. Read-only: never creates a settings row.
+
+    The day comes from the stored settings (the defaults when the user has none yet), so a
+    session past its window reads as absent without any write.
+    """
+    settings = await train_repository.get_settings(session, user_id=user_id)
+    timezone = DEFAULT_TIMEZONE if settings is None else settings.timezone
+    return await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=local_today(timezone, now_utc)
+    )
 
 
 # ---------------------------------------------------------------------------

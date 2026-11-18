@@ -166,10 +166,13 @@ async def start_session(
 async def get_open_session(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: BetaUser,
+    now_utc: NowUtc,
 ) -> BlunderCheckSessionResponse | None:
     """The caller's open blunder-check session with window progress, or null."""
     try:
-        progress = await blunder_check_repository.open_session_progress(session, user_id=user.id)
+        progress = await blunder_check_service.get_open_session(
+            session, user_id=user.id, now_utc=now_utc
+        )
     except Exception:
         await session.rollback()
         sentry_sdk.set_context("blunder_check", {"user_id": str(user.id)})
