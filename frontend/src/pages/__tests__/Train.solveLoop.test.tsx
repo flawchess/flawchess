@@ -449,7 +449,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await renderTrainPage();
 
     await waitFor(() => expect(screen.getByTestId('btn-train-resume')).not.toBeNull());
-    expect(screen.getByTestId('btn-train-resume').textContent).toBe('Resume session — 7 of 12 done');
+    expect(screen.getByTestId('btn-train-resume').textContent).toBe('Resume');
+    expect(screen.getByTestId('train-launcher-status-puzzles').textContent).toBe('5 puzzles left');
     fireEvent.click(screen.getByTestId('btn-train-resume'));
 
     // The click must actually enter the solve loop on the first remaining puzzle.
@@ -588,8 +589,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
 
     await renderTrainPage();
 
-    await waitFor(() => expect(screen.getByTestId('train-points-today')).not.toBeNull());
-    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 14/18');
+    await waitFor(() => expect(screen.getByTestId('train-launcher-done-puzzles')).not.toBeNull());
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 14 points');
     // Never touched browser storage for the score — the whole point of this
     // test. The streak hero's last-seen snapshot is unrelated
     // cosmetic state and is the only key allowed.

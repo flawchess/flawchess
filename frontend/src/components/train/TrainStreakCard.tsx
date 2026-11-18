@@ -1,11 +1,12 @@
 /**
- * TrainStreakCard — the Train landing's hero card: the session streak drawn
- * inside a 3-layer flame on the left; on the right the weekly tally, the 0-7
- * freeze meter and, when the session is startable, the Start/Resume button
- * passed in as `action`. Under the weekly tally sits the rank line: the
- * viewer's Points rank this week (`#4 this week`) as a link to the Leaderboard
- * tab, left out with no rank. Self-contained: calls `useTrainProgress()` and
- * `useTrainLeaderboard()` internally.
+ * TrainStreakCard — the Train landing's Today card (sketch 014 variant B): the
+ * session streak drawn inside a 3-layer flame on the left; on the right the
+ * weekly tally and the 0-7 freeze meter; beneath them one launcher row per mode
+ * (`TrainModeLauncherRow`), which are the both-required streak checklist (D-08).
+ * Under the weekly tally sits the rank line: the viewer's Points rank this week
+ * (`#4 this week`) as a link to the Leaderboard tab, left out with no rank.
+ * Self-contained: calls `useTrainProgress()` and `useTrainLeaderboard()`
+ * internally.
  *
  * The streak buffer is shown as snowflake "freezes" (cold color family,
  * distinct from the flame, which is reserved for the streak). The
@@ -18,14 +19,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
-import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { FreezeMeter } from '@/components/train/FreezeMeter';
 import { StreakFlame } from '@/components/train/StreakFlame';
-import { useTrainTodayActions } from '@/components/train/trainTodayActions';
+import { TrainModeLauncherRow } from '@/components/train/TrainModeLauncherRow';
+import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
 import { useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -39,7 +39,7 @@ import {
 import type { StreakArrival } from '@/lib/streakArrival';
 import { trackFeature } from '@/lib/analytics';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
-import type { TrainBlunderCheckModeProgress, TrainProgressResponse } from '@/types/train';
+import type { TrainModeProgress, TrainModeState, TrainProgressResponse } from '@/types/train';
 
 /** A freeze earned together with a streak tick pops in once the ignite settles. */
 const EARNED_AFTER_IGNITE_DELAY_MS = 1300;
@@ -169,57 +169,77 @@ function buildStreakVisuals({
 }
 
 /**
- * The Blunder Check row: Start or Resume while the mode has work, a recap once done, nothing
- * when it is off (plan 251-13 builds the full launcher rows, including "Turn on", around this
- * button and keeps its testid). The tap calls the page's action so audio unlocks inside the
- * gesture and the drill mounts under Today.
+ * What the landing knows about today's puzzle session. The session response is the
+ * authority for what the Start button does (fresh, resume or done) and for the count
+ * left, so it overrides the server's per-mode estimate for the puzzles row. A server
+ * `off` (session size 0) always wins.
  */
-function BlunderCheckStartRow({
-  mode,
-}: {
-  mode: TrainBlunderCheckModeProgress;
-}): ReactElement | null {
-  const { startBlunderCheck } = useTrainTodayActions();
-  if (mode.state === 'off') return null;
+export interface PuzzlesLanding {
+  state: TrainModeState;
+  /** Puzzles left in today's session. */
+  left: number;
+  /** Points scored in today's session, shown once it is done. */
+  pointsToday: number;
+}
+
+export interface TrainStreakCardProps {
+  puzzlesLanding?: PuzzlesLanding;
+  /** Disables the puzzles Start / Resume (the session is loading or has no puzzles). */
+  puzzlesStartDisabled?: boolean;
+  /** Puts the feature-route dot on the puzzles Start / Resume button. */
+  showRouteDot?: boolean;
+  /** Called by an off row's Turn on button; no button renders without it. */
+  onTurnOn?: (mode: TrainLauncherMode) => void;
+}
+
+/**
+ * The puzzles row's progress. Without a landing the count left is the server's
+ * `waiting_count` estimate, an upper bound that can exceed one session, so it is capped
+ * at the session size.
+ */
+function puzzlesRowProgress(
+  server: TrainModeProgress,
+  landing: PuzzlesLanding | undefined,
+): TrainModeProgress {
+  if (server.state === 'off') return server;
+  if (landing === undefined) return { ...server, remaining: Math.min(server.remaining, server.size) };
+  return { ...server, state: landing.state, remaining: landing.left };
+}
+
+/** The two launcher rows, the streak checklist (D-08). */
+function TrainLauncherRows({
+  data,
+  puzzlesLanding,
+  puzzlesStartDisabled,
+  showRouteDot,
+  onTurnOn,
+}: { data: TrainProgressResponse } & TrainStreakCardProps): ReactElement {
   return (
-    <div
-      className="col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-      data-testid="train-blunder-check-row"
-    >
-      <div className="flex min-w-0 flex-col">
-        <span className="text-sm font-semibold">Blunder Check</span>
-        <span className="text-sm text-muted-foreground" data-testid="train-blunder-check-status">
-          {mode.state === 'done'
-            ? `Done today, ${mode.points_today} points`
-            : `${mode.remaining} sequences left`}
-        </span>
-      </div>
-      {mode.state !== 'done' && (
-        <Button
-          variant="default"
-          className={TRAIN_CTA_BUTTON_CLASS}
-          onClick={startBlunderCheck}
-          data-testid="btn-train-blunder-check-start"
-        >
-          {mode.state === 'in_progress' ? 'Resume' : 'Start'}
-        </Button>
-      )}
+    <div className="col-span-2 flex flex-col gap-3" data-testid="train-launcher-rows">
+      <TrainModeLauncherRow
+        mode="puzzles"
+        progress={puzzlesRowProgress(data.modes.puzzles, puzzlesLanding)}
+        pointsToday={puzzlesLanding?.pointsToday ?? 0}
+        disabled={puzzlesStartDisabled}
+        showRouteDot={showRouteDot}
+        onTurnOn={onTurnOn}
+      />
+      <TrainModeLauncherRow
+        mode="blunder_check"
+        progress={data.modes.blunder_check}
+        pointsToday={data.modes.blunder_check.points_today}
+        onTurnOn={onTurnOn}
+      />
     </div>
   );
 }
 
-export interface TrainStreakCardProps {
-  /** The Start/Resume button, in the states where a session is startable. */
-  action?: ReactNode;
-  /**
-   * Today's score, passed only by the completed landing. The label says
-   * "Points" because a bare `5/9` next to "Puzzles per session" reads as a
-   * puzzle count.
-   */
-  pointsToday?: { total: number; max: number };
-}
-
-export function TrainStreakCard({ action, pointsToday }: TrainStreakCardProps): ReactElement {
+export function TrainStreakCard({
+  puzzlesLanding,
+  puzzlesStartDisabled = false,
+  showRouteDot = false,
+  onTurnOn,
+}: TrainStreakCardProps): ReactElement {
   const { data, isPending, isError } = useTrainProgress();
   const profile = useUserProfile();
   const arrival = useStreakArrival(
@@ -257,16 +277,12 @@ export function TrainStreakCard({ action, pointsToday }: TrainStreakCardProps): 
     );
   }
 
-  // Phone: flame | details on one row, the action full card width beneath it
-  // (a ~200px column cannot hold "Resume session — 3 of 6 done" at the mobile
-  // type bump). From sm: up the flame spans both rows and the action sits in
-  // the right column, beside the flame.
+  // Flame | details on one row, the launcher rows full card width beneath
+  // (both Start buttons sit above the phone fold on this one card).
   return (
     <Card as="section" className="w-full" data-testid="train-streak-card">
       <CardBody className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
-        <div className={action !== undefined ? 'sm:row-span-2' : undefined}>
-          {visuals?.flame ?? <div className="aspect-[100/122] w-full" aria-hidden="true" />}
-        </div>
+        <div>{visuals?.flame ?? <div className="aspect-[100/122] w-full" aria-hidden="true" />}</div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-1.5 text-sm font-semibold">
             Session streak
@@ -284,15 +300,17 @@ export function TrainStreakCard({ action, pointsToday }: TrainStreakCardProps): 
             </span>
           )}
           <TrainRankLine />
-          {pointsToday !== undefined && (
-            <span className="text-sm text-muted-foreground" data-testid="train-points-today">
-              {`Points today: ${pointsToday.total}/${pointsToday.max}`}
-            </span>
-          )}
           {details}
         </div>
-        {action !== undefined && <div className="col-span-2 sm:col-span-1 sm:col-start-2">{action}</div>}
-        {data !== undefined && <BlunderCheckStartRow mode={data.modes.blunder_check} />}
+        {data !== undefined && (
+          <TrainLauncherRows
+            data={data}
+            puzzlesLanding={puzzlesLanding}
+            puzzlesStartDisabled={puzzlesStartDisabled}
+            showRouteDot={showRouteDot}
+            onTurnOn={onTurnOn}
+          />
+        )}
       </CardBody>
     </Card>
   );

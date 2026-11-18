@@ -2,12 +2,12 @@
 /**
  * TrainStreakCard.test.tsx — the Train landing's streak hero:
  * the streak inside a 3-layer flame, the 0-7 buffer as snowflake freezes, the
- * weekly tally, the optional Start/Resume slot, and the one-shot arrival
+ * weekly tally, the two launcher rows (one per mode), and the one-shot arrival
  * animations driven by the per-device last-seen snapshot.
  * Mocks `@/api/client` the way `useReadiness.test.tsx` does, wrapped in a
  * QueryClientProvider with `retry: false`.
  */
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -43,12 +43,14 @@ import type {
   LeaderboardViewer,
   LeaderboardVisibility,
   TrainBlunderCheckModeProgress,
+  TrainModeProgress,
   TrainLeaderboardResponse,
   TrainProgressResponse,
 } from '@/types/train';
 import {
   BLUNDER_CHECK_MODE,
   PHASE_251_PROGRESS_FIELDS,
+  PUZZLES_MODE,
 } from '@/components/train/__tests__/trainProgressFixtures';
 
 const OWNER = 'user@example.com';
@@ -71,6 +73,7 @@ afterEach(() => {
   vi.mocked(trainApi.getLeaderboard).mockReset();
   vi.mocked(trackFeature).mockReset();
   startBlunderCheck.mockReset();
+  startPuzzles.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -79,14 +82,15 @@ function LocationProbe(): ReactNode {
 }
 
 const startBlunderCheck = vi.fn();
+const startPuzzles = vi.fn();
 
-function renderWithClient(action?: ReactNode, pointsToday?: { total: number; max: number }): void {
+function renderWithClient(props: Partial<ComponentProps<typeof TrainStreakCard>> = {}): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={['/train']}>
-          <TrainTodayActionsContext.Provider value={{ startPuzzles: vi.fn(), startBlunderCheck }}>
+          <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
             {children}
           </TrainTodayActionsContext.Provider>
           <LocationProbe />
@@ -94,7 +98,7 @@ function renderWithClient(action?: ReactNode, pointsToday?: { total: number; max
       </QueryClientProvider>
     );
   }
-  render(<TrainStreakCard action={action} pointsToday={pointsToday} />, { wrapper: Wrapper });
+  render(<TrainStreakCard {...props} />, { wrapper: Wrapper });
 }
 
 const BASE: TrainProgressResponse = {
@@ -114,10 +118,10 @@ const BASE: TrainProgressResponse = {
 
 async function renderPopulated(
   overrides: Partial<TrainProgressResponse> = {},
-  action?: ReactNode,
+  props: Partial<ComponentProps<typeof TrainStreakCard>> = {},
 ): Promise<void> {
   vi.mocked(trainApi.getProgress).mockResolvedValue({ ...BASE, ...overrides });
-  renderWithClient(action);
+  renderWithClient(props);
   await waitFor(() => expect(screen.getByTestId('train-streak-flame')).not.toBeNull());
 }
 
@@ -274,27 +278,6 @@ describe('TrainStreakCard', () => {
     });
   });
 
-  describe('points today', () => {
-    it('absent unless the pointsToday prop is passed', async () => {
-      await renderPopulated();
-      expect(screen.queryByTestId('train-points-today')).toBeNull();
-    });
-
-    it('renders "Points today: 5/9" after the rank line and before the freeze row', async () => {
-      vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
-      vi.mocked(trainApi.getLeaderboard).mockResolvedValue({
-        points: { rows: [], viewer: { rank: 4 }, last_week: null },
-      } as unknown as TrainLeaderboardResponse);
-      renderWithClient(undefined, { total: 5, max: 9 });
-      const rank = await screen.findByTestId('train-rank-line');
-      const points = await screen.findByTestId('train-points-today');
-      const shield = await screen.findByTestId('train-shield-row');
-      expect(points.textContent).toBe('Points today: 5/9');
-      expect(rank.compareDocumentPosition(points) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(points.compareDocumentPosition(shield) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    });
-  });
-
   describe('streak reset notice', () => {
     it('absent when streak_reset_notice is false, even with no freezes', async () => {
       await renderPopulated({ shield_level: 0, streak_reset_notice: false });
@@ -307,12 +290,6 @@ describe('TrainStreakCard', () => {
         'Streak reset. Complete a session to start a new one.',
       );
     });
-  });
-
-  it('renders the action slot (the Start/Resume button) inside the hero', async () => {
-    await renderPopulated({}, <button data-testid="btn-train-start">Start</button>);
-    const card = screen.getByTestId('train-streak-card');
-    expect(card.contains(screen.getByTestId('btn-train-start'))).toBe(true);
   });
 
   describe('explainer popover', () => {
@@ -421,48 +398,118 @@ describe('TrainStreakCard', () => {
       expect(screen.getByTestId('train-streak-count').textContent).toBe('0');
     });
   });
-  describe('Blunder Check row (Phase 251 D-18)', () => {
-    async function renderWithBlunderCheck(
-      mode: Partial<TrainBlunderCheckModeProgress>,
+
+  describe('launcher rows (Phase 251 D-08, D-09)', () => {
+    async function renderWithModes(
+      puzzles: Partial<TrainModeProgress>,
+      blunderCheck: Partial<TrainBlunderCheckModeProgress>,
+      props: Partial<ComponentProps<typeof TrainStreakCard>> = {},
     ): Promise<void> {
-      await renderPopulated({
-        modes: {
-          ...PHASE_251_PROGRESS_FIELDS.modes,
-          blunder_check: { ...BLUNDER_CHECK_MODE, ...mode },
+      await renderPopulated(
+        {
+          modes: {
+            puzzles: { ...PUZZLES_MODE, ...puzzles },
+            blunder_check: { ...BLUNDER_CHECK_MODE, ...blunderCheck },
+          },
         },
-      });
+        props,
+      );
     }
 
-    it('pending: names the sequences left and starts the drill from the card', async () => {
-      await renderWithBlunderCheck({ state: 'pending', remaining: 6 });
+    it('renders both rows, puzzles first, inside the card under the flame and freeze meter', async () => {
+      await renderWithModes({ remaining: 6, pending: 6 }, {});
 
-      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe('6 sequences left');
-      const button = screen.getByTestId('btn-train-blunder-check-start');
-      expect(button.textContent).toBe('Start');
-      fireEvent.click(button);
-      expect(startBlunderCheck).toHaveBeenCalledTimes(1);
+      const card = screen.getByTestId('train-streak-card');
+      const puzzles = screen.getByTestId('train-launcher-row-puzzles');
+      const blunderCheck = screen.getByTestId('train-launcher-row-blunder-check');
+      expect(card.contains(puzzles)).toBe(true);
+      expect(card.contains(blunderCheck)).toBe(true);
+      expect(puzzles.compareDocumentPosition(blunderCheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const shield = screen.getByTestId('train-shield-row');
+      expect(shield.compareDocumentPosition(puzzles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('in progress: offers Resume', async () => {
-      await renderWithBlunderCheck({ state: 'in_progress', remaining: 4 });
+    it('Blunder Check Start calls startBlunderCheck, puzzles Start calls startPuzzles', async () => {
+      await renderWithModes({ remaining: 6, pending: 6 }, { state: 'pending', remaining: 6 });
+
+      fireEvent.click(screen.getByTestId('btn-train-blunder-check-start'));
+      expect(startBlunderCheck).toHaveBeenCalledTimes(1);
+      expect(startPuzzles).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('btn-train-start'));
+      expect(startPuzzles).toHaveBeenCalledTimes(1);
+    });
+
+    it('Blunder Check in progress shows Resume with the remaining count', async () => {
+      await renderWithModes({}, { state: 'in_progress', remaining: 4 });
 
       expect(screen.getByTestId('btn-train-blunder-check-start').textContent).toBe('Resume');
-      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe('4 sequences left');
+      expect(screen.getByTestId('train-launcher-status-blunder-check').textContent).toBe('4 sequences left');
     });
 
-    it('done: shows the points recap and no button', async () => {
-      await renderWithBlunderCheck({ state: 'done', remaining: 0, points_today: 17 });
+    it('Blunder Check done shows the points recap and no button', async () => {
+      await renderWithModes({}, { state: 'done', remaining: 0, pending: 0, points_today: 17 });
 
-      expect(screen.getByTestId('train-blunder-check-status').textContent).toBe(
-        'Done today, 17 points',
-      );
+      expect(screen.getByTestId('train-launcher-done-blunder-check').textContent).toBe('Done today, 17 points');
       expect(screen.queryByTestId('btn-train-blunder-check-start')).toBeNull();
     });
 
-    it('off: the row is left out', async () => {
-      await renderWithBlunderCheck({ state: 'off', size: 0, remaining: 0 });
+    it('a mode that is off stays on the card as a muted Off row (no Turn on without a handler)', async () => {
+      await renderWithModes({}, { state: 'off', size: 0, remaining: 0, pending: 0 });
 
-      expect(screen.queryByTestId('train-blunder-check-row')).toBeNull();
+      expect(screen.getByTestId('train-launcher-row-blunder-check').dataset.state).toBe('off');
+      expect(screen.getByTestId('train-launcher-status-blunder-check').textContent).toBe('Off');
+      expect(screen.queryByTestId('btn-train-launcher-turn-on-blunder-check')).toBeNull();
+    });
+
+    it('passes onTurnOn through to an off row', async () => {
+      const onTurnOn = vi.fn();
+      await renderWithModes({ state: 'off', size: 0, remaining: 0, pending: 0 }, {}, { onTurnOn });
+
+      fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+      expect(onTurnOn).toHaveBeenCalledWith('puzzles');
+    });
+
+    it('the landing session overrides the puzzles row: resume, done with its points, left count', async () => {
+      await renderWithModes(
+        { remaining: 40, pending: 40 },
+        {},
+        { puzzlesLanding: { state: 'in_progress', left: 8, pointsToday: 0 } },
+      );
+      expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
+      expect(screen.getByTestId('train-launcher-status-puzzles').textContent).toBe('8 puzzles left');
+      cleanup();
+
+      await renderWithModes({}, {}, { puzzlesLanding: { state: 'done', left: 0, pointsToday: 9 } });
+      expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 9 points');
+      expect(screen.queryByTestId('btn-train-start')).toBeNull();
+    });
+
+    it('without a landing session the puzzles count is the waiting estimate capped at the session size', async () => {
+      await renderWithModes({ size: 6, remaining: 40, pending: 40 }, {});
+
+      expect(screen.getByTestId('train-launcher-status-puzzles').textContent).toBe('6 puzzles left');
+    });
+
+    it('a server-off puzzles mode wins over the landing session', async () => {
+      await renderWithModes(
+        { state: 'off', size: 0, remaining: 0, pending: 0 },
+        {},
+        { puzzlesLanding: { state: 'pending', left: 6, pointsToday: 0 } },
+      );
+
+      expect(screen.getByTestId('train-launcher-row-puzzles').dataset.state).toBe('off');
+      expect(screen.queryByTestId('btn-train-start')).toBeNull();
+    });
+
+    it('puzzlesStartDisabled disables only the puzzles Start', async () => {
+      await renderWithModes(
+        { remaining: 6, pending: 6 },
+        { state: 'pending', remaining: 6 },
+        { puzzlesStartDisabled: true },
+      );
+
+      expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
+      expect(screen.getByTestId('btn-train-blunder-check-start').hasAttribute('disabled')).toBe(false);
     });
   });
 });

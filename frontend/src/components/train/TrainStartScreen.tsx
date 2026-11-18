@@ -8,10 +8,10 @@
  * not scattered inline ternaries — the states are mutually exclusive and
  * exactly one always matches.
  *
- * Wherever a `TrainStreakCard` renders, the schedule card follows it: the
- * landing is those two cards. The completed state also passes today's Points
- * to the streak card. The weekly leaderboard lives on its own tab, not here
- * (the streak card's rank line links to it).
+ * Every state renders the same Today card (`TrainStreakCard`, with one launcher
+ * row per mode), and the schedule card follows it. The session state drives the
+ * puzzles row (Start, Resume or done with today's Points). The weekly
+ * leaderboard lives on its own tab, not here (the card's rank line links to it).
  *
  * The medal dialog is not rendered here: the Train page layout owns
  * `TrainMedalDialogHost`, outside the immersive views, so it opens on any tab
@@ -30,17 +30,17 @@ import type { ReactElement } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { RouteDot } from '@/components/feature-route/RouteDot';
 import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
-import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
+import type { PuzzlesLanding } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import {
@@ -50,7 +50,6 @@ import {
   isRevealTourDone,
   landingHost,
 } from '@/lib/trainBotCopy';
-import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -64,9 +63,6 @@ export interface TrainStartScreenProps {
    * 'completed' state.
    */
   sessionScore: number;
-  /** Enter the solve loop at the already-seeded resume index. Does not
-   * re-fetch — the session/puzzles were already loaded by the status fetch. */
-  onEnterLoop: () => void;
   /**
    * Re-fires the session status fetch after a
    * `TrainScheduleSettings` save actually persists, so an untouched session
@@ -123,7 +119,7 @@ type LandingState =
   | { kind: 'loading' }
   | { kind: 'error' }
   | { kind: 'empty' }
-  | { kind: 'completed'; score: number; totalPoints: number; nextSessionDate: string }
+  | { kind: 'completed'; score: number; nextSessionDate: string }
   | { kind: 'resume'; solved: number; total: number; isWarmup: boolean }
   | { kind: 'warmup'; puzzleCount: number }
   | { kind: 'fresh'; puzzleCount: number };
@@ -175,15 +171,7 @@ function resolveLandingState(
     session.puzzle_count > 0 &&
     (session.solved_count >= session.puzzle_count || nothingLeftToServe)
   ) {
-    return {
-      kind: 'completed',
-      score: sessionScore,
-      // Use the shared per-puzzle max (3: 1 guess + 0-2 move tier), not a
-      // hardcoded `* 2`: a 3-puzzle session would report "0/6" while the
-      // in-loop score screen, which reads the same constant, reports "0/9".
-      totalPoints: session.puzzle_count * TRAIN_POINTS_PER_PUZZLE,
-      nextSessionDate: session.expires_on,
-    };
+    return { kind: 'completed', score: sessionScore, nextSessionDate: session.expires_on };
   }
   if (session.solved_count > 0 && session.solved_count < session.puzzle_count) {
     return {
@@ -331,10 +319,8 @@ function landingActions(showSignupAsk: boolean, showImportAsk: boolean): ReactEl
  */
 function TrainEmptyBody({
   progress,
-  isVisible,
 }: {
   progress: ReturnType<typeof useTrainProgress>;
-  isVisible: boolean;
 }): ReactElement {
   const poolState = progress.isPending || progress.isError ? undefined : progress.data?.pool_state;
 
@@ -364,12 +350,9 @@ function TrainEmptyBody({
         ? `Next review: ${format(parseISO(next_due_date), 'MMM d, yyyy')}.`
         : 'Nothing due right now — nice work.';
     return (
-      <>
-        {isVisible && <TrainStreakCard />}
-        <div data-testid="train-empty-exhausted">
-          <EmptyState layout="page" title="All caught up!" subtitle={`${mastered_count} mastered. ${nextDueCopy}`} />
-        </div>
-      </>
+      <div data-testid="train-empty-exhausted">
+        <EmptyState layout="page" title="All caught up!" subtitle={`${mastered_count} mastered. ${nextDueCopy}`} />
+      </div>
     );
   }
 
@@ -385,12 +368,30 @@ function TrainEmptyBody({
   );
 }
 
+/**
+ * What today's puzzle session tells the puzzles launcher row. The session response, not the
+ * server's per-mode estimate, decides whether Start or Resume shows and how many puzzles are
+ * left. 'empty' and the load states carry none, so the row falls back to the server mode.
+ */
+function puzzlesLandingFor(state: LandingState): PuzzlesLanding | undefined {
+  switch (state.kind) {
+    case 'completed':
+      return { state: 'done', left: 0, pointsToday: state.score };
+    case 'resume':
+      return { state: 'in_progress', left: state.total - state.solved, pointsToday: 0 };
+    case 'warmup':
+    case 'fresh':
+      return { state: 'pending', left: state.puzzleCount, pointsToday: 0 };
+    default:
+      return undefined;
+  }
+}
+
 export function TrainStartScreen({
   session,
   isLoading,
   isError,
   sessionScore,
-  onEnterLoop,
   onSettingsSaved,
   isGuest,
   hasGames,
@@ -419,49 +420,35 @@ export function TrainStartScreen({
     );
   }
 
+  // The Today card (flame, freezes and one launcher row per mode) renders in every landing
+  // state, so both modes stay reachable. A re-fetch after a schedule save may replace the
+  // session, so the puzzles Start is disabled while loading, and while there is no session.
+  const todayCard = isVisible && (
+    <TrainStreakCard
+      puzzlesLanding={puzzlesLandingFor(state)}
+      puzzlesStartDisabled={isLoading || state.kind === 'empty'}
+      showRouteDot={showRouteDot}
+    />
+  );
+  const completed = state.kind === 'completed';
+
   if (state.kind === 'empty') {
+    // With puzzles off, "no puzzles available" copy would be wrong (the user chose zero);
+    // the schedule settings below are where they turn the mode back on.
+    const puzzlesOff = progress.data?.modes.puzzles.state === 'off';
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <TrainEmptyBody progress={progress} isVisible={isVisible} />
-      </div>
-    );
-  }
-
-  if (state.kind === 'completed') {
-    return (
-      <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
-        <TrainReminderResurfaceBanner />
-        {isVisible && (
-          <TrainLandingHost
-            session={session}
-            isGuest={isGuest}
-            hasGames={hasGames}
-            feedbackAskDays={feedbackAskDays}
-            sessionCompleted
-          />
+        {todayCard}
+        {puzzlesOff ? (
+          <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
+        ) : (
+          <TrainEmptyBody progress={progress} />
         )}
-        {isVisible && <TrainStreakCard pointsToday={{ total: state.score, max: state.totalPoints }} />}
-        <TrainScheduleSettings
-          onSaved={onSettingsSaved}
-          nextSessionDate={state.nextSessionDate}
-          isGuest={isGuest}
-        />
       </div>
     );
   }
 
-  // The fresh/warmup puzzle count lives in the label, matching the shape
-  // 'resume' uses, so the two states describing the same button agree on where
-  // the number lives and no loose line sits above the CTA.
-  const buttonLabel =
-    state.kind === 'resume'
-      ? `Resume session — ${state.solved} of ${state.total} done`
-      : `Start session — ${state.puzzleCount} ${state.puzzleCount === 1 ? 'puzzle' : 'puzzles'}`;
-
-  // The CTA lives INSIDE the streak hero, beside the flame, so the one action
-  // on the page and the number it feeds share a glance above the fold on a
-  // phone.
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainReminderResurfaceBanner />
@@ -471,27 +458,15 @@ export function TrainStartScreen({
           isGuest={isGuest}
           hasGames={hasGames}
           feedbackAskDays={feedbackAskDays}
-          sessionCompleted={false}
+          sessionCompleted={completed}
         />
       )}
-      {isVisible && (
-        <TrainStreakCard
-          action={
-            <Button
-              variant="default"
-              className={`${TRAIN_BUTTON_CLASS} relative w-full`}
-              data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
-              // A re-fetch after a schedule save may replace this session.
-              disabled={isLoading}
-              onClick={onEnterLoop}
-            >
-              {buttonLabel}
-              {showRouteDot && <RouteDot testid="train-start-notification-dot" variant="corner" />}
-            </Button>
-          }
-        />
-      )}
-      <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
+      {todayCard}
+      <TrainScheduleSettings
+        onSaved={onSettingsSaved}
+        nextSessionDate={state.kind === 'completed' ? state.nextSessionDate : undefined}
+        isGuest={isGuest}
+      />
     </div>
   );
 }
