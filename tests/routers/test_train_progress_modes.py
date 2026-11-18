@@ -10,6 +10,8 @@ Covers:
   - test_pending_count_unscheduled_day_with_open_session: an unfinished open session keeps its
     remaining count in the badge even off-schedule.
   - test_pending_count_off_when_blunder_check_size_zero: size 0 is `off`, contributes nothing.
+  - test_notice_*: the D-21 launch notice over HTTP, its dismissal (204, idempotent) and its
+    hiding after a blunder-check amount change; a new user or guest never sees it.
 
 Every seeded blunder-check session is deleted in `finally`.
 """
@@ -42,6 +44,8 @@ from tests.blunder_check_seed import (
 )
 
 _PROGRESS = "/api/train/progress"
+_SETTINGS = "/api/train/settings"
+_DISMISS = "/api/train/blunder-check-notice/dismiss"
 _START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 _WINDOW_COUNT = 6
 _ENDED_WINDOWS = 2
@@ -227,3 +231,77 @@ async def test_pending_count_off_when_blunder_check_size_zero(test_engine) -> No
         assert body["pending_count"] == _modes(body)["puzzles"]["pending"]
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id])
+
+
+async def _post_dismiss(token: str) -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.post(_DISMISS, headers={"Authorization": f"Bearer {token}"})
+
+
+@pytest.mark.asyncio
+async def test_notice_visible_then_dismissed(test_engine) -> None:
+    """A row stamped at launch shows the notice; the dismiss POST (204) clears it."""
+    user_id, token = await register_user("notice-dismiss", beta=False, test_engine=test_engine)
+    await _seed_settings(
+        test_engine, user_id, notice_from=datetime.datetime.now(datetime.timezone.utc)
+    )
+    assert (await _progress(token))["blunder_check_notice"] is True
+    resp = await _post_dismiss(token)
+    assert resp.status_code == 204
+    assert (await _progress(token))["blunder_check_notice"] is False
+    # Idempotent: a second dismissal is still 204.
+    assert (await _post_dismiss(token)).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_notice_dismiss_is_scoped_to_caller(test_engine) -> None:
+    """T-251-18: dismissing as one user leaves another user's notice alone."""
+    stamp = datetime.datetime.now(datetime.timezone.utc)
+    user_a, token_a = await register_user("notice-scope-a", beta=False, test_engine=test_engine)
+    user_b, token_b = await register_user("notice-scope-b", beta=False, test_engine=test_engine)
+    await _seed_settings(test_engine, user_a, notice_from=stamp)
+    await _seed_settings(test_engine, user_b, notice_from=stamp)
+    assert (await _post_dismiss(token_a)).status_code == 204
+    assert (await _progress(token_a))["blunder_check_notice"] is False
+    assert (await _progress(token_b))["blunder_check_notice"] is True
+
+
+@pytest.mark.asyncio
+async def test_notice_hidden_after_blunder_check_amount_change(test_engine) -> None:
+    """PUT /train/settings with a different blunder-check amount clears the notice (D-21)."""
+    user_id, token = await register_user("notice-resize", beta=False, test_engine=test_engine)
+    await _seed_settings(
+        test_engine, user_id, notice_from=datetime.datetime.now(datetime.timezone.utc)
+    )
+    assert (await _progress(token))["blunder_check_notice"] is True
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.put(
+            _SETTINGS,
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "timezone": "UTC",
+                "weekday_mask": ALL_WEEKDAYS_MASK,
+                "puzzles_per_session": DEFAULT_PUZZLES_PER_SESSION,
+                "blunder_check_per_session": DEFAULT_BLUNDER_CHECK_PER_SESSION - 1,
+                "reminder_enabled": False,
+                "reminder_hour": 18,
+                "reminder_intent_at": None,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    assert (await _progress(token))["blunder_check_notice"] is False
+
+
+@pytest.mark.asyncio
+async def test_notice_never_for_new_user_or_guest(test_engine) -> None:
+    """A NULL stamp (new users, guests) never shows the notice."""
+    _user_id, token = await register_user("notice-new", beta=False, test_engine=test_engine)
+    assert (await _progress(token))["blunder_check_notice"] is False
+    _guest_id, guest_token = await register_user(
+        "notice-guest", beta=False, test_engine=test_engine, guest=True
+    )
+    assert (await _progress(guest_token))["blunder_check_notice"] is False
