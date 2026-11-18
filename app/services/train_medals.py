@@ -1,7 +1,7 @@
 """Lazy weekly leaderboard finalization.
 
 At or after a week's Sunday deadline plus `MEDALS_FINALIZE_GRACE`, the first request to
-reach `finalize_due_weeks` freezes that week's public boards into
+reach `finalize_due_weeks` freezes that week's four public boards (two puzzle, two blunder-check) into
 `train_weekly_standings` with explicit medals. No cron, scheduler hook or background
 task: finalization is lazy, idempotent and global. The marker row
 (`train_weekly_finalizations`, inserted first) is the lock and the memory: a concurrent
@@ -9,7 +9,7 @@ finalizer blocks on it and then skips the week, and a week with no eligible entr
 still gets a marker so it is never re-scanned.
 
 Eligibility timing (accepted trade-off): `users.leaderboard_hidden` is read
-live by `fetch_week_aggregates` when a week is finalized, i.e. on the first board or
+live by `fetch_week_aggregates` / `fetch_week_bc_aggregates` when a week is finalized, i.e. on the first board or
 unclaimed-medals request after the deadline plus `MEDALS_FINALIZE_GRACE`, not at the
 deadline itself. With low Train traffic that gap can be hours, so a user who toggles
 "Hide me from leaderboards" in between is excluded (or included) according to their
@@ -31,11 +31,14 @@ from __future__ import annotations
 import datetime
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, get_args
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.train_leaderboard_repository import fetch_week_aggregates
+from app.repositories.train_leaderboard_repository import (
+    fetch_week_aggregates,
+    fetch_week_bc_aggregates,
+)
 from app.repositories.train_medals_repository import (
     NewStanding,
     claim_week,
@@ -48,6 +51,7 @@ from app.schemas.train import MEDAL_CLAIM_MAX_ITEMS, LeaderboardBoardKind, Medal
 from app.services.train_leaderboard import (
     DAYS_PER_WEEK,
     MEDAL_KIND,
+    aggregates_for_board,
     final_standings,
     week_window,
 )
@@ -62,7 +66,8 @@ MEDALS_START_WEEK: Final = datetime.date(2026, 9, 28)
 # permanent snapshot from missing it, at the cost of the podium appearing at 00:05 UTC.
 MEDALS_FINALIZE_GRACE: Final = datetime.timedelta(minutes=5)
 
-_BOARDS: Final[tuple[LeaderboardBoardKind, ...]] = ("points", "accuracy")
+# Every board a week is finalized for, derived from the Literal so a new key cannot be missed.
+_BOARDS: Final[tuple[LeaderboardBoardKind, ...]] = get_args(LeaderboardBoardKind)
 
 
 def due_weeks(
@@ -94,6 +99,9 @@ async def finalize_due_weeks(session: AsyncSession, *, now_utc: datetime.datetim
         week_start = datetime.datetime.combine(week, datetime.time.min, tzinfo=datetime.UTC)
         week_end = week_start + datetime.timedelta(days=DAYS_PER_WEEK)
         aggregates = await fetch_week_aggregates(session, week_start=week_start, week_end=week_end)
+        bc_aggregates = await fetch_week_bc_aggregates(
+            session, week_start=week_start, week_end=week_end
+        )
         rows = [
             NewStanding(
                 board=kind,
@@ -105,7 +113,9 @@ async def finalize_due_weeks(session: AsyncSession, *, now_utc: datetime.datetim
                 medal=standing.medal,
             )
             for kind in _BOARDS
-            for standing in final_standings(kind, aggregates)
+            for standing in final_standings(
+                kind, aggregates_for_board(kind, aggregates, bc_aggregates)
+            )
         ]
         await insert_standings(session, week_start=week, rows=rows)
         done += 1

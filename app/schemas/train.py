@@ -1016,12 +1016,12 @@ class UnclaimedMedal(BaseModel):
     week_start: date  # the Monday (UTC)
     board: LeaderboardBoardKind
     medal: MedalKind
-    value: int  # final points, or floored accuracy percent
+    value: int  # final points, or floored percent
     shared: bool  # another row of the same week, board and medal exists (a tie)
 
 
 class UnclaimedMedalsResponse(BaseModel):
-    """Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy."""
+    """Response for GET /train/medals/unclaimed: newest week first, puzzle boards before blunder-check boards."""
 
     model_config = ConfigDict(from_attributes=True)
 

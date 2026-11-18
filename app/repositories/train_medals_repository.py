@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import get_args
 
 from sqlalchemy import case, exists, false, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -24,7 +25,10 @@ from app.models.train_weekly_standing import Medal, TrainWeeklyFinalization, Tra
 from app.models.user import User
 from app.schemas.train import LeaderboardBoardKind
 
-_BOARD_BY_TEXT: dict[str, LeaderboardBoardKind] = {"points": "points", "accuracy": "accuracy"}
+# Stored board text to its typed key, derived from the Literal so a new board cannot be missed.
+_BOARD_BY_TEXT: dict[str, LeaderboardBoardKind] = {
+    key: key for key in get_args(LeaderboardBoardKind)
+}
 
 
 @dataclass(frozen=True)
@@ -155,7 +159,7 @@ async def fetch_last_week_rows(
     result = await session.execute(stmt)
     return [
         StandingRow(
-            board=_BOARD_BY_TEXT[row[0]],  # the CHECK constraint guarantees both values
+            board=_BOARD_BY_TEXT[row[0]],  # the CHECK constraint guarantees every value
             user_id=row[1],
             display_name=row[2],
             final_rank=int(row[3]),
@@ -168,7 +172,9 @@ async def fetch_last_week_rows(
 
 
 async def fetch_unclaimed(session: AsyncSession, *, user_id: int, limit: int) -> list[UnclaimedRow]:
-    """The caller's medals with `celebrated_at` NULL, newest week first, Points before Accuracy.
+    """The caller's medals with `celebrated_at` NULL, newest week first, boards in display order.
+
+    Within a week: puzzle Points, puzzle Accuracy, blunder-check Points, blunder-check Score %.
 
     Scoping by the caller's user id is the IDOR guard: the endpoint takes no
     user parameter, so nobody can read another user's medals. `leaderboard_hidden` is
@@ -183,8 +189,14 @@ async def fetch_unclaimed(session: AsyncSession, *, user_id: int, limit: int) ->
         other.medal == TrainWeeklyStanding.medal,
         other.id != TrainWeeklyStanding.id,
     )
-    # Alphabetical order would put 'accuracy' first; the Points board leads.
-    board_order = case((TrainWeeklyStanding.board == "points", 0), else_=1)
+    # Alphabetical order would put 'accuracy' first and 'blunder_check_*' before 'points'; the
+    # boards follow the page order, puzzle boards before blunder-check boards.
+    board_order = case(
+        (TrainWeeklyStanding.board == "points", 0),
+        (TrainWeeklyStanding.board == "accuracy", 1),
+        (TrainWeeklyStanding.board == "blunder_check_points", 2),
+        else_=3,
+    )
     stmt = (
         select(
             TrainWeeklyStanding.week_start,
@@ -205,7 +217,7 @@ async def fetch_unclaimed(session: AsyncSession, *, user_id: int, limit: int) ->
     return [
         UnclaimedRow(
             week_start=row[0],
-            board=_BOARD_BY_TEXT[row[1]],  # the CHECK constraint guarantees both values
+            board=_BOARD_BY_TEXT[row[1]],  # the CHECK constraint guarantees every value
             medal=Medal(row[2]),
             value=int(row[3]),
             shared=bool(row[4]),
@@ -271,7 +283,7 @@ async def fetch_medal_tallies(
     result = await session.execute(stmt)
     return [
         TallyCount(
-            board=_BOARD_BY_TEXT[row[0]],  # the CHECK constraint guarantees both values
+            board=_BOARD_BY_TEXT[row[0]],  # the CHECK constraint guarantees every value
             user_id=int(row[1]),
             medal=Medal(row[2]),
             count=int(row[3]),
