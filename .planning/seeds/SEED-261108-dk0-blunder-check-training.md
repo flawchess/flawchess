@@ -83,6 +83,41 @@ Train's puzzles announce that something critical is happening. In a real game no
 - Split: Phase 249 = playable MVP on a beta-only Train tab, 6 windows per session; Phase 251 = schedule, streak,
   spaced repetition, cross-mode cooldown, leaderboards, launch.
 
+### Spaced repetition revisited (owner, 2026-11-18, /gsd-explore session)
+
+The owner reconsidered a light form of spaced repetition (mastery after one correct solve; a missed window
+repeated after n days, again after m days, parked after 3 misses) for the sense of accomplishment and to fix
+blind spots. **Outcome: serve-once stands (250-CONTEXT D-17). Phase 251 builds no reviews.** The idea may be
+revisited after launch in the lighter form below.
+
+Arguments against repetition in this drill:
+
+- **The answer is binary and the review pool is one-sided.** Only missed blunder windows would come back, so
+  recognising the game is the answer ("seen this, so there is a blunder in it"). Personalized puzzles survive
+  recognition because the move still has to be found. Here only the better-move step stays real work.
+- **It leaks through the hazard model.** A recognised review is a guaranteed blunder window, the tell the
+  constant hazard was designed to remove. Re-drawing the window start softens this but does not remove it.
+- **The drill trains a habit, not positions.** The blind spot is "I don't check before I move". Fresh windows
+  train that better than a familiar one.
+- **Supply does not need it.** With one third foreign blunders (250-CONTEXT D-12) there is always new material.
+- **Score % fairness.** Reviews are easier than fresh windows, so a player who misses more gets more easy points
+  later. Reviews would have to be excluded from the board or accepted as noise.
+- **Extra rules and surface.** Reviews must count toward the one-third mix shares, the cross-mode cooldown must
+  cover them, a false alarm before the blunder in a review needs a ruling (miss or no attempt), and mastered and
+  parked states pull in the Archive tab.
+
+Notes for a later revisit:
+
+- **Nothing is lost by waiting.** `blunder_check_windows` stores game, blunder ply and outcome for every missed
+  window, so a review queue can be backfilled from history.
+- **Lighter version to consider:** one retry after a long gap (3 to 4 weeks, so memory has faded). Caught means
+  "fixed", missed again means dropped. No ladder, no parked state. It yields a "blind spots fixed: 12 of 30"
+  counter.
+- **Progress without re-serving:** a catch-rate trend over the last N sessions, or the facepalm rate in the
+  user's real games (SEED-261114-iuv), the outcome the drill exists to move.
+- **Open:** which feeling the player should get, "I fixed this specific blunder" (needs repetition) or "I'm
+  getting better at checking my moves" (needs only stats).
+
 ## Proposed (discussed, not yet decided)
 
 - **Face-palm test v2** (2026-11-09 review, owner agrees with the direction, details to elaborate). Problem with test (a): capping the played move's Maia probability means every blunder arrow is a move that looks unusual for the rating, while the Good moves before it look natural. Users could score by flagging odd-looking arrows instead of checking, and the drill would skip the *typical* blunders of a level, which the owner wants trained. Proposal: judge whether the punishment is easy to spot, not whether the move is unlikely to be played.
