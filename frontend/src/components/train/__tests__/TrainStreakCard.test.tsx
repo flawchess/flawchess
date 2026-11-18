@@ -22,6 +22,7 @@ vi.mock('@/api/client', async () => {
       ...actual.trainApi,
       getProgress: vi.fn(),
       getLeaderboard: vi.fn(),
+      dismissBlunderCheckNotice: vi.fn(),
     },
   };
 });
@@ -71,6 +72,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(trainApi.getProgress).mockReset();
   vi.mocked(trainApi.getLeaderboard).mockReset();
+  vi.mocked(trainApi.dismissBlunderCheckNotice).mockReset();
   vi.mocked(trackFeature).mockReset();
   startBlunderCheck.mockReset();
   startPuzzles.mockReset();
@@ -289,6 +291,54 @@ describe('TrainStreakCard', () => {
       expect(screen.getByTestId('train-streak-reset-notice').textContent).toBe(
         'Streak reset. Complete a session to start a new one.',
       );
+    });
+  });
+
+  describe('blunder-check launch notice (Phase 251 D-21)', () => {
+    const NOTICE_COPY = 'Your streak now includes blunder check. Change the amount on the card.';
+
+    it('shows the D-21 sentence above the launcher rows while the server reports the notice', async () => {
+      await renderPopulated({ blunder_check_notice: true });
+
+      const notice = screen.getByTestId('train-blunder-check-notice');
+      expect(notice.textContent).toContain(NOTICE_COPY);
+      const rows = screen.getByTestId('train-launcher-rows');
+      expect(notice.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        screen.getByTestId('btn-train-blunder-check-notice-dismiss').getAttribute('aria-label'),
+      ).toBe('Dismiss');
+    });
+
+    it('shows no notice when the server flag is false (new user, guest, expired, dismissed)', async () => {
+      await renderPopulated({ blunder_check_notice: false });
+
+      expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull();
+    });
+
+    it('dismiss hides the notice at once, tells the server, tracks it and refreshes progress', async () => {
+      // The server call never settles: the notice must go away optimistically.
+      vi.mocked(trainApi.dismissBlunderCheckNotice).mockReturnValue(new Promise(() => undefined));
+      await renderPopulated({ blunder_check_notice: true });
+
+      fireEvent.click(screen.getByTestId('btn-train-blunder-check-notice-dismiss'));
+
+      await waitFor(() => expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull());
+      expect(trainApi.dismissBlunderCheckNotice).toHaveBeenCalledTimes(1);
+      expect(trackFeature).toHaveBeenCalledWith('action', {
+        target: 'train-blunder-check-notice-dismiss',
+      });
+    });
+
+    it('invalidates the progress query once the dismissal settles', async () => {
+      vi.mocked(trainApi.dismissBlunderCheckNotice).mockResolvedValue(undefined);
+      await renderPopulated({ blunder_check_notice: true });
+      expect(trainApi.getProgress).toHaveBeenCalledTimes(1);
+      vi.mocked(trainApi.getProgress).mockResolvedValue({ ...BASE, blunder_check_notice: false });
+
+      fireEvent.click(screen.getByTestId('btn-train-blunder-check-notice-dismiss'));
+
+      await waitFor(() => expect(trainApi.getProgress).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull();
     });
   });
 

@@ -301,6 +301,10 @@ export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 export const ANALYSIS_PENDING_TINT_CLASS = 'border border-amber-500/30 bg-amber-500/10';
 export const ANALYSIS_PENDING_ICON_CLASS = 'text-amber-400';
 
+// One-time "what changed" notice on the Train Today card (the blunder-check launch notice,
+// Phase 251 D-21): a quiet brand-brown tint, deliberately not the amber warning tone.
+export const LAUNCH_NOTICE_TINT_CLASS = 'border border-brand-brown/40 bg-brand-brown/10';
+
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look
 export const GLASS_OVERLAY =
