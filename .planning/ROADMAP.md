@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 4/13 plans executed
+**Plans:** 6/13 plans executed
 
 Plans:
 **Wave 1**
@@ -380,8 +380,8 @@ Plans:
 - [x] 251-03-PLAN.md — Beta gate removed (D-18), stored level fallback (D-17), cross-mode cooldown (D-16), compose latency probe
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 251-04-PLAN.md — PUT /train/settings with per-mode sizes, never both 0 (D-05), open-session resize rules (D-06)
-- [ ] 251-05-PLAN.md — Leaderboard frontend: Puzzles / Blunder check switch (D-24), medal dialog by week (D-15)
+- [x] 251-04-PLAN.md — PUT /train/settings with per-mode sizes, never both 0 (D-05), open-session resize rules (D-06)
+- [x] 251-05-PLAN.md — Leaderboard frontend: Puzzles / Blunder check switch (D-24), medal dialog by week (D-15)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 251-06-PLAN.md — GET /train/progress per-mode read model, pending count, launch notice, reminder on day complete
