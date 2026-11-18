@@ -11,7 +11,9 @@
  * Start / Resume call the page's actions (`useTrainTodayActions`), so audio unlocks inside the
  * tap and the card never receives the session loop through a prop chain. The puzzles Start
  * keeps `btn-train-start` / `btn-train-resume` and the feature-route dot; the Blunder Check
- * Start keeps `btn-train-blunder-check-start`.
+ * Start keeps `btn-train-blunder-check-start` and carries its own route dot when the page's
+ * `showBlunderCheckRouteDot` flag is set (D-21). Until the user's first completed Blunder Check
+ * session a one-line pitch sits under that row (D-19); the puzzles row never has one.
  */
 import type { ReactElement } from 'react';
 import { Check } from 'lucide-react';
@@ -42,6 +44,9 @@ const MODE_COPY: Record<TrainLauncherMode, ModeCopy> = {
     unitMany: 'sequences',
   },
 };
+
+/** D-19: the one-line pitch under the Blunder Check row until the first completed session. */
+const BLUNDER_CHECK_PITCH = 'New: call each move of a real game before it is played, good or blunder?';
 
 export interface TrainModeLauncherRowProps {
   mode: TrainLauncherMode;
@@ -84,7 +89,7 @@ export function TrainModeLauncherRow({
   showRouteDot = false,
   onTurnOn,
 }: TrainModeLauncherRowProps): ReactElement {
-  const { startPuzzles, startBlunderCheck } = useTrainTodayActions();
+  const { startPuzzles, startBlunderCheck, showBlunderCheckRouteDot = false } = useTrainTodayActions();
   const copy = MODE_COPY[mode];
   const { state } = progress;
   const isOff = state === 'off';
@@ -124,11 +129,15 @@ export function TrainModeLauncherRow({
         {mode === 'puzzles' && showRouteDot && (
           <RouteDot testid="train-start-notification-dot" variant="corner" />
         )}
+        {mode === 'blunder_check' && showBlunderCheckRouteDot && (
+          <RouteDot testid="train-blunder-check-notification-dot" variant="corner" />
+        )}
       </Button>
     );
   }
 
-  return (
+  const showPitch = mode === 'blunder_check' && !progress.first_session_done;
+  const row = (
     <div
       className={cn('flex items-center justify-between gap-3', isOff && 'opacity-60')}
       data-testid={`train-launcher-row-${copy.slug}`}
@@ -160,6 +169,15 @@ export function TrainModeLauncherRow({
         )}
       </div>
       {action}
+    </div>
+  );
+  if (!showPitch) return row;
+  return (
+    <div className="flex flex-col gap-1">
+      {row}
+      <p className="text-sm text-muted-foreground" data-testid="train-launcher-pitch-blunder-check">
+        {BLUNDER_CHECK_PITCH}
+      </p>
     </div>
   );
 }

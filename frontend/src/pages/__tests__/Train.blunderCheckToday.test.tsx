@@ -339,7 +339,10 @@ describe('Train: blunder-check discovery dot (D-21)', () => {
     expect(start.querySelector('[data-testid="train-blunder-check-notification-dot"]')).not.toBeNull();
     fireEvent.click(start);
 
-    expect(post).toHaveBeenCalledWith('/users/me/feature-route', { action: 'done', step: 'blunder-check' });
+    // The mutation runs after onMutate's async cancel, so the POST is not synchronous.
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/users/me/feature-route', { action: 'done', step: 'blunder-check' }),
+    );
     await waitFor(() => expect(screen.getByTestId('blunder-check-session')).not.toBeNull());
   });
 

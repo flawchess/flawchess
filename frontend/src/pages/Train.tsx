@@ -152,6 +152,7 @@ export default function TrainPage(): ReactElement {
   const { trainSession, showLoop, showScoreScreen, restoredActive } = loop;
   const recordRouteStep = useRecordFeatureRoute();
   const showStartRouteDot = useRouteDot('control:train-start');
+  const showBlunderCheckRouteDot = useRouteDot('control:train-blunder-check-start');
   const showTodayRouteDot = useRouteDot('subtab:train-today');
   const pageImmersive = loop.immersive || (blunderCheckActive && blunderImmersive);
 
@@ -188,6 +189,9 @@ export default function TrainPage(): ReactElement {
   }
 
   function handleStartBlunderCheck(): void {
+    // D-21: the blunder-check step completes on pressing its Start (the `used` rule), before the
+    // drill's own work. No Umami event: the session row records the press server-side.
+    recordRouteStep({ action: 'done', step: 'blunder-check' });
     // The lead-in's move sounds play from timers, not from a tap: unlock audio in this one.
     unlockAudio();
     // Callable from the puzzle score screen (the D-12 hand-off): leave it first. From the
@@ -199,6 +203,7 @@ export default function TrainPage(): ReactElement {
   const todayActions: TrainTodayActions = {
     startPuzzles: handleEnterLoop,
     startBlunderCheck: handleStartBlunderCheck,
+    showBlunderCheckRouteDot,
   };
 
   const landingActive = !(showLoop || showScoreScreen || restoredActive || blunderCheckActive);

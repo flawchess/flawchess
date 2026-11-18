@@ -16,6 +16,8 @@ export interface TrainTodayActions {
   startPuzzles: () => void;
   /** Start or resume a blunder-check drill under Today. */
   startBlunderCheck: () => void;
+  /** Puts the feature-discovery dot on the Blunder Check Start (D-21). Absent reads as false. */
+  showBlunderCheckRouteDot?: boolean;
 }
 
 export const TrainTodayActionsContext = createContext<TrainTodayActions | null>(null);
