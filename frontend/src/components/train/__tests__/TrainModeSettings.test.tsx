@@ -31,12 +31,41 @@ vi.mock('@/hooks/useInstallPrompt', () => ({
   useInstallPrompt: vi.fn(),
 }));
 
+// The rows read the per-mode progress (first_session_done, has_rated_games). A mutable
+// module-level object lets each test pick the progress; the rest of the module (the query
+// key `useTrainSettings` invalidates) stays real.
+let progressMock: { data: TrainProgressResponse | undefined; isPending: boolean; isError: boolean };
+vi.mock('@/hooks/useTrainProgress', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useTrainProgress')>('@/hooks/useTrainProgress');
+  return { ...actual, useTrainProgress: () => progressMock };
+});
+
 import { trainApi } from '@/api/client';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { TrainModeSettings } from '@/components/train/TrainModeSettings';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS, useTrainSettingsDraft } from '@/hooks/useTrainSettingsDraft';
-import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
+import {
+  BLUNDER_CHECK_MODE,
+  PHASE_251_PROGRESS_FIELDS,
+  PUZZLES_MODE,
+} from '@/components/train/__tests__/trainProgressFixtures';
+import {
+  BLUNDER_CHECK_PER_SESSION_MAX,
+  BLUNDER_CHECK_PER_SESSION_MIN,
+  BLUNDER_CHECK_PER_SESSION_STEP,
+  PUZZLES_PER_SESSION_MAX,
+  PUZZLES_PER_SESSION_MIN,
+  PUZZLES_PER_SESSION_STEP,
+} from '@/components/train/TrainModeSettings';
+import { TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES, TRAIN_PUZZLES_PER_SESSION_VALUES } from '@/lib/analytics';
+import type {
+  TrainBlunderCheckModeProgress,
+  TrainModeProgress,
+  TrainProgressResponse,
+  TrainSettingsResponse,
+  TrainSettingsUpdate,
+} from '@/types/train';
 
 const BASE_SETTINGS: TrainSettingsResponse = {
   timezone: 'UTC',
@@ -48,6 +77,30 @@ const BASE_SETTINGS: TrainSettingsResponse = {
   blunder_check_per_session: 6,
   blunder_check_level: null,
 };
+
+function progressData(
+  puzzles: Partial<TrainModeProgress> = {},
+  blunderCheck: Partial<TrainBlunderCheckModeProgress> = {},
+): TrainProgressResponse {
+  return {
+    session_streak_count: 0,
+    shield_level: 0,
+    current_week_completed: 0,
+    current_week_required: null,
+    streak_reset_notice: false,
+    mastered_count: 0,
+    parked_count: 0,
+    waiting_count: 0,
+    pool_state: 'available',
+    next_due_date: null,
+    badge_visible: false,
+    ...PHASE_251_PROGRESS_FIELDS,
+    modes: {
+      puzzles: { ...PUZZLES_MODE, ...puzzles },
+      blunder_check: { ...BLUNDER_CHECK_MODE, ...blunderCheck },
+    },
+  };
+}
 
 function Harness() {
   const settingsDraft = useTrainSettingsDraft();
@@ -83,6 +136,7 @@ async function openRow(slug: 'puzzles' | 'blunder-check'): Promise<void> {
 }
 
 beforeEach(() => {
+  progressMock = { data: progressData(), isPending: false, isError: false };
   vi.mocked(useInstallPrompt).mockReturnValue({
     showAndroidPrompt: false,
     showIOSBanner: false,
@@ -161,5 +215,250 @@ describe('TrainModeSettings (tracer): the size slider saves through the shared d
     await openRow('blunder-check');
     await advanceDebounce();
     expect(trainApi.updateSettings).not.toHaveBeenCalled();
+  });
+});
+
+function mockSettings(overrides: Partial<TrainSettingsResponse>): void {
+  vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, ...overrides });
+}
+
+function sizeThumb(slug: 'puzzles' | 'blunder-check'): HTMLElement {
+  const name = slug === 'puzzles' ? 'Puzzles per session' : 'Blunder check sequences per session';
+  return screen.getByRole('slider', { name });
+}
+
+describe('slider grids (drift guard)', () => {
+  it('the tracked value lists match the slider grids, 0 (Off) included', () => {
+    const puzzles: string[] = [];
+    for (let n = PUZZLES_PER_SESSION_MIN; n <= PUZZLES_PER_SESSION_MAX; n += PUZZLES_PER_SESSION_STEP) {
+      puzzles.push(String(n));
+    }
+    const blunderCheck: string[] = [];
+    for (
+      let n = BLUNDER_CHECK_PER_SESSION_MIN;
+      n <= BLUNDER_CHECK_PER_SESSION_MAX;
+      n += BLUNDER_CHECK_PER_SESSION_STEP
+    ) {
+      blunderCheck.push(String(n));
+    }
+    expect(PUZZLES_PER_SESSION_MIN).toBe(0);
+    expect(BLUNDER_CHECK_PER_SESSION_MIN).toBe(0);
+    expect(PUZZLES_PER_SESSION_MAX).toBe(30);
+    expect(BLUNDER_CHECK_PER_SESSION_MAX).toBe(18);
+    expect([...TRAIN_PUZZLES_PER_SESSION_VALUES]).toEqual(puzzles);
+    expect([...TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES]).toEqual(blunderCheck);
+  });
+});
+
+describe('Off at 0 and the never-both-off clamp (D-04, D-05)', () => {
+  it('dragging the puzzles slider to 0 shows Off on the value and the collapsed summary, and saves 0', async () => {
+    mockSettings({ puzzles_per_session: 3 });
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 0 });
+    renderHarness();
+    await openRow('puzzles');
+
+    expect(sizeThumb('puzzles').getAttribute('aria-valuemin')).toBe('0');
+    fireEvent.keyDown(sizeThumb('puzzles'), { key: 'Home' });
+
+    expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('Off');
+    fireEvent.click(screen.getByTestId('btn-train-mode-settings-puzzles'));
+    expect(screen.getByTestId('btn-train-mode-settings-puzzles').textContent).toContain('Off');
+    await advanceDebounce();
+
+    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(trainApi.updateSettings).mock.calls[0]?.[0] as TrainSettingsUpdate;
+    expect(body.puzzles_per_session).toBe(0);
+    expect(body.blunder_check_per_session).toBe(6);
+  });
+
+  it('the collapsed summary reads "N per session" when the mode is on', async () => {
+    renderHarness();
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-train-mode-settings-puzzles').textContent).toContain('12 per session');
+    });
+    expect(screen.getByTestId('btn-train-mode-settings-blunder-check').textContent).toContain('6 per session');
+  });
+
+  it('with blunder check off, the puzzles slider stops at 3 and shows the break hint', async () => {
+    mockSettings({ blunder_check_per_session: 0 });
+    renderHarness();
+    await openRow('puzzles');
+
+    expect(sizeThumb('puzzles').getAttribute('aria-valuemin')).toBe('3');
+    expect(screen.getByTestId('train-mode-break-hint-puzzles').textContent).toBe(
+      'To take a break, untick days in the schedule.',
+    );
+    // The other row is the one that is off: its own slider may go to 0 and has no hint.
+    fireEvent.click(screen.getByTestId('btn-train-mode-settings-blunder-check'));
+    expect(sizeThumb('blunder-check').getAttribute('aria-valuemin')).toBe('0');
+    expect(screen.queryByTestId('train-mode-break-hint-blunder-check')).toBeNull();
+    expect(screen.getByTestId('train-blunder-check-per-session-value').textContent).toBe('Off');
+  });
+
+  it('with puzzles off, the blunder-check slider stops at 3 and shows the break hint', async () => {
+    mockSettings({ puzzles_per_session: 0 });
+    renderHarness();
+    await openRow('blunder-check');
+
+    expect(sizeThumb('blunder-check').getAttribute('aria-valuemin')).toBe('3');
+    expect(screen.getByTestId('train-mode-break-hint-blunder-check')).not.toBeNull();
+  });
+
+  it('Home on the last active slider never saves 0 (the UI cannot send both sizes at 0)', async () => {
+    mockSettings({ puzzles_per_session: 3, blunder_check_per_session: 0 });
+    renderHarness();
+    await openRow('puzzles');
+
+    fireEvent.keyDown(sizeThumb('puzzles'), { key: 'Home' });
+    fireEvent.keyDown(sizeThumb('puzzles'), { key: 'ArrowLeft' });
+    expect(sizeThumb('puzzles').getAttribute('aria-valuenow')).toBe('3');
+    await advanceDebounce();
+    expect(trainApi.updateSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('How it works (D-10)', () => {
+  it('is open until the first completed session in that mode, collapsed after it, per mode', async () => {
+    progressMock = {
+      data: progressData({ first_session_done: false }, { first_session_done: true }),
+      isPending: false,
+      isError: false,
+    };
+    renderHarness();
+    await openRow('puzzles');
+    fireEvent.click(screen.getByTestId('btn-train-mode-settings-blunder-check'));
+
+    expect(screen.getByTestId('btn-train-mode-how-puzzles').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('btn-train-mode-how-blunder-check').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('train-mode-how-puzzles').textContent).toContain(
+      'Puzzles come from mistakes and blunders in your imported games.',
+    );
+    expect(screen.queryByText(/A false alarm ends the sequence/)).toBeNull();
+  });
+
+  it('the user can open a collapsed How it works and it then shows the blunder-check rules', async () => {
+    progressMock = {
+      data: progressData({}, { first_session_done: true }),
+      isPending: false,
+      isError: false,
+    };
+    renderHarness();
+    await openRow('blunder-check');
+
+    fireEvent.click(screen.getByTestId('btn-train-mode-how-blunder-check'));
+    expect(screen.getByTestId('btn-train-mode-how-blunder-check').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/A false alarm ends the sequence, but you keep the pot\./)).not.toBeNull();
+  });
+});
+
+describe('level picker (D-17)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('shows only for a user without rated games, with Intermediate selected when no level is stored', async () => {
+    progressMock = { data: progressData({}, { has_rated_games: false }), isPending: false, isError: false };
+    renderHarness();
+    await openRow('blunder-check');
+
+    expect(screen.getByTestId('btn-train-level-intermediate').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('btn-train-level-beginner').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('btn-train-level-advanced').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByText('Your level (sets how hard the blunders are)')).not.toBeNull();
+  });
+
+  it('is absent for a user with rated games', async () => {
+    progressMock = { data: progressData({}, { has_rated_games: true }), isPending: false, isError: false };
+    renderHarness();
+    await openRow('blunder-check');
+
+    expect(screen.queryByTestId('btn-train-level-beginner')).toBeNull();
+    expect(screen.queryByText('Your level (sets how hard the blunders are)')).toBeNull();
+  });
+
+  it('preselects the stored level', async () => {
+    mockSettings({ blunder_check_level: 'advanced' });
+    progressMock = { data: progressData({}, { has_rated_games: false }), isPending: false, isError: false };
+    renderHarness();
+    await openRow('blunder-check');
+
+    expect(screen.getByTestId('btn-train-level-advanced').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('picking Beginner sends blunder_check_level in the next save and one option-change event', async () => {
+    progressMock = { data: progressData({}, { has_rated_games: false }), isPending: false, isError: false };
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, blunder_check_level: 'beginner' });
+    renderHarness();
+    await openRow('blunder-check');
+
+    fireEvent.click(screen.getByTestId('btn-train-level-beginner'));
+    fireEvent.click(screen.getByTestId('btn-train-level-beginner'));
+    expect(screen.getByTestId('btn-train-level-beginner').getAttribute('aria-pressed')).toBe('true');
+    expect(track.mock.calls).toEqual([
+      ['option-change', { page: 'train', target: 'train-blunder-check-level', value: 'beginner' }],
+    ]);
+    await advanceDebounce();
+
+    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(trainApi.updateSettings).mock.calls[0]?.[0] as TrainSettingsUpdate;
+    expect(body.blunder_check_level).toBe('beginner');
+  });
+});
+
+describe('Umami tracking of the size sliders', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('a puzzles slider burst sends exactly one debounced option-change with the final grid value', async () => {
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 18 });
+    renderHarness();
+    await openRow('puzzles');
+
+    fireEvent.keyDown(sizeThumb('puzzles'), { key: 'ArrowRight' });
+    fireEvent.keyDown(sizeThumb('puzzles'), { key: 'ArrowRight' });
+    expect(track.mock.calls).toEqual([]);
+
+    // Unmounting flushes the pending event.
+    cleanup();
+    expect(track.mock.calls).toEqual([
+      ['option-change', { page: 'train', target: 'train-puzzles-per-session', value: '18' }],
+    ]);
+  });
+
+  it('a blunder-check slider burst tracks its own target, and 0 is a registered value', async () => {
+    renderHarness();
+    await openRow('blunder-check');
+
+    fireEvent.keyDown(sizeThumb('blunder-check'), { key: 'Home' });
+    cleanup();
+    expect(track.mock.calls).toEqual([
+      ['option-change', { page: 'train', target: 'train-blunder-check-per-session', value: '0' }],
+    ]);
+  });
+
+  it('mount, opening a row and settings load send no events', async () => {
+    renderHarness();
+    await openRow('puzzles');
+    await advanceDebounce();
+    expect(track.mock.calls).toEqual([]);
   });
 });
