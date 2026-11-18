@@ -38,6 +38,12 @@ import pytest
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.models.blunder_check import (
+    BlunderCheckSession,
+    BlunderCheckWindow,
+    WindowCase,
+    WindowOutcome,
+)
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillMoveQuality, DrillSolve, DrillSource
 from app.models.train_weekly_standing import Medal, TrainWeeklyFinalization, TrainWeeklyStanding
@@ -369,3 +375,132 @@ async def test_concurrent_finalizers_write_one_marker_and_no_duplicates(
             ]
     finally:
         await _cleanup_concurrency_rows(session_maker)
+
+
+# --- blunder-check boards (Phase 251, D-14) -----------------------------------
+#
+# k table, blunder-check finalization tests (k 12-19 were reserved for later additions):
+# - k=12 test_finalize_writes_four_boards (the finalized week)
+# - k=13 test_finalize_writes_four_boards (the "now" week)
+# - k=14 test_finalize_bc_score_skips_tentative (the finalized week)
+# - k=15 test_finalize_bc_score_skips_tentative (the "now" week)
+
+_BC_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+_BC_WINDOWS_TO_QUALIFY = 18  # BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS, pinned in the service tests
+
+
+async def _seed_bc_windows(
+    db: AsyncSession, user_id: int, week_k: int, count: int, *, scored: int, possible: int
+) -> None:
+    """Insert one completed blunder-check session with `count` ended windows in week k (flush only)."""
+    ended_at = _mid_week(week_k)
+    day = ended_at.date()
+    header = BlunderCheckSession(
+        user_id=user_id,
+        status="completed",
+        window_count=count,
+        started_at=ended_at,
+        completed_at=ended_at,
+        session_date=day,
+        expires_on=day + datetime.timedelta(days=1),
+    )
+    db.add(header)
+    await db.flush()
+    for position in range(count):
+        db.add(
+            BlunderCheckWindow(
+                session_id=header.id,
+                position=position,
+                user_id=user_id,
+                game_id=None,
+                is_own=True,
+                window_length=3,
+                blunder_position=None,
+                first_ply=10,
+                blunder_ply=None,
+                window_case=int(WindowCase.HERRING),
+                start_fen=_BC_START_FEN,
+                move_ucis="e2e4 e7e5 g1f3",
+                lead_in_plies=0,
+                points_possible=possible,
+                points_scored=scored,
+                outcome=int(WindowOutcome.CLEARED),
+                started_at=ended_at,
+                ended_at=ended_at,
+            )
+        )
+    await db.flush()
+
+
+async def _standings_by_board(
+    db: AsyncSession, week: datetime.date
+) -> dict[str, list[tuple[int | None, int, int | None]]]:
+    """Stored rows of a week grouped by board: (user_id, final_rank, medal) in rank order."""
+    result = await db.execute(
+        select(
+            TrainWeeklyStanding.board,
+            TrainWeeklyStanding.user_id,
+            TrainWeeklyStanding.final_rank,
+            TrainWeeklyStanding.medal,
+        )
+        .where(TrainWeeklyStanding.week_start == week)
+        .order_by(TrainWeeklyStanding.board, TrainWeeklyStanding.final_rank)
+    )
+    grouped: dict[str, list[tuple[int | None, int, int | None]]] = {}
+    for board, user_id, rank, medal in result.all():
+        grouped.setdefault(board, []).append((user_id, rank, medal))
+    return grouped
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_four_boards(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closed week with puzzle solves and ended windows freezes all four boards under one marker."""
+    monkeypatch.setattr(train_medals, "MEDALS_START_WEEK", _week(12))
+    await ensure_test_user(db_session, _USER_A)
+    await ensure_test_user(db_session, _USER_B)
+    # A qualifies on both puzzle boards (20 non-filler solves) and both blunder-check boards.
+    await _seed_solves(db_session, _USER_A, 12, 20)
+    await _seed_bc_windows(db_session, _USER_A, 12, _BC_WINDOWS_TO_QUALIFY, scored=3, possible=4)
+    # B only plays blunder check, with more points but a lower score percent.
+    await _seed_bc_windows(db_session, _USER_B, 12, _BC_WINDOWS_TO_QUALIFY, scored=4, possible=8)
+    now = _mid_week(13)
+
+    assert await finalize_due_weeks(db_session, now_utc=now) == 1
+
+    grouped = await _standings_by_board(db_session, _week(12))
+    gold, silver = int(Medal.GOLD), int(Medal.SILVER)
+    assert grouped == {
+        "accuracy": [(_USER_A, 1, gold)],
+        "blunder_check_points": [(_USER_B, 1, gold), (_USER_A, 2, silver)],
+        "blunder_check_score": [(_USER_A, 1, gold), (_USER_B, 2, silver)],
+        "points": [(_USER_A, 1, gold)],
+    }
+    # One marker for the week, and a repeat call writes nothing more.
+    assert await finalize_due_weeks(db_session, now_utc=now) == 0
+    assert (
+        sum(len(rows) for rows in (await _standings_by_board(db_session, _week(12))).values()) == 6
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_bc_score_skips_tentative(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """17 ended windows is tentative on Score %: no standing row there, but a Points row."""
+    monkeypatch.setattr(train_medals, "MEDALS_START_WEEK", _week(14))
+    await ensure_test_user(db_session, _USER_A)
+    await ensure_test_user(db_session, _USER_B)
+    await _seed_bc_windows(db_session, _USER_A, 14, _BC_WINDOWS_TO_QUALIFY, scored=2, possible=4)
+    await _seed_bc_windows(
+        db_session, _USER_B, 14, _BC_WINDOWS_TO_QUALIFY - 1, scored=4, possible=4
+    )
+
+    assert await finalize_due_weeks(db_session, now_utc=_mid_week(15)) == 1
+
+    grouped = await _standings_by_board(db_session, _week(14))
+    gold, silver = int(Medal.GOLD), int(Medal.SILVER)
+    # B scores 100 percent but over 17 windows: unranked, no row. A is alone on Score %.
+    assert grouped["blunder_check_score"] == [(_USER_A, 1, gold)]
+    assert grouped["blunder_check_points"] == [(_USER_B, 1, gold), (_USER_A, 2, silver)]
