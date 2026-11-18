@@ -31,6 +31,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 010 | library-stats-you-vs-opponents | How do the Library Stats you-vs-opponent sections (context tags, tactics) become readable, consistent with 009 but without percentiles? | **Round 5: tiles + opponents, zero-centred gap bars (gap only, rates in popovers), What stands out, three tactic tables by filter group (Advanced collapsed), synced TC switch** (SEED-198) | library, stats, flaws, tactics, iqr, mobile |
 | 012 | opening-stats-repertoire | How do the Openings Stats + Insights tabs carry over the 009/010 system (repertoire table, out-of/after-the-opening gap bars, move-led findings)? | Stats A + Insights A, merged; After the opening dropped | openings, stats, insights, repertoire, mobile |
 | 013 | out-of-the-opening | How should the per-colour "came out worse / better" rates (±1.0 vs colour baseline, peer-ranked per TC) look on the Openings Stats tab without reading as a WDL bar? | **A: per-TC cards, two percentile rows (canonical-slice CDFs); same bars per opening in the expanded card vs the peer band** | openings, stats, percentiles, eval, mobile |
+| 014 | train-today-two-modes | How does the Train Today page carry two training modes with a streak that needs both (Phase 251, SEED-261108-dk0)? | **B: one Today card, launcher rows double as the streak checklist; per-mode details collapsed below** | train, landing, blunder-check, streak, mobile |
 
 ## Decisions (winners)
 

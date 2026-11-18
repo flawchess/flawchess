@@ -163,8 +163,14 @@ These refine or replace the 2026-11-09 "Interaction and scoring" bullets on sche
   still pending.
 - **Nav badge** = sum of both cards' pending counts. Blunder check has no due queue, so its pending count is
   today's configured count minus what is done, and nothing on an unscheduled day.
-- **Next step:** a `/gsd-sketch` of the Today page before planning, mainly for mobile (three stacked cards can push
-  the second Start button below the fold).
+- **Layout: sketch 014, variant B** (owner, 2026-11-18; `.planning/sketches/014-train-today-two-modes/`). The
+  three-card layout above put the second Start button below the phone fold, so the cards merge: one Today card
+  holds the flame, the freeze meter and a launcher row per mode (name, badge, Start / Resume, checkmark when
+  done, "Turn on" when off). The rows are the streak checklist. Pitch, "How it works", the level picker and the
+  session-size slider sit in one collapsed row per mode below, then the shared schedule row. The card contents
+  and states listed above still apply; only their placement changes.
+- **Open (proposed):** show the one-line pitch under the Blunder Check row until the user's first completed
+  session, since variant B hides the pitch behind a tap.
 
 **Leaderboards**
 
