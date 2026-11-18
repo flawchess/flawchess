@@ -3,17 +3,16 @@ gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 256
 status: completed
-stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-17T19:52:23.723Z"
-last_activity: 2026-11-16
+stopped_at: Phase 251 context gathered
+last_updated: "2026-11-18T18:54:25.433Z"
+last_activity: 2026-11-17
 last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: bca5a9b4db8d5e9fb5775371b9d729b6abe5a212
+state_head: fb74787f4e3205a3217c96c9234cb9dcdfd4927a
 progress:
   total_phases: 10
   completed_phases: 63
   total_plans: 80
   completed_plans: 76
-  percent: 95
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -1195,9 +1194,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-16T16:06:01.946Z
-**Stopped at:** Phase 256 complete — all phases complete
-**Resume file:** .planning/phases/256-facepalm-refit-material-aggregated-over-depths/256-CONTEXT.md
+**Last session:** 2026-11-18T18:54:24.392Z
+**Stopped at:** Phase 251 context gathered
+**Resume file:** .planning/phases/251-blunder-check-schedule-streak-and-leaderboards-seed-261108-d/251-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
