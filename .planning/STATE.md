@@ -3,12 +3,12 @@ gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 251
 current_phase_name: Blunder-Check Schedule, Streak and Leaderboards (SEED-261108-dk0)
-status: completed
+status: executing
 stopped_at: Phase 251 context gathered
-last_updated: "2026-11-18T20:21:40.391Z"
-last_activity: 2026-11-17
-last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: 53308abe1810b112036883311652eb007d0bde2f
+last_updated: "2026-11-18T20:24:21.504Z"
+last_activity: 2026-11-18
+last_activity_desc: Phase 251 execution started
+state_head: c56374ff6c287b027ed1a3f0013e4925a0351abc
 progress:
   total_phases: 10
   completed_phases: 63
@@ -21,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 251 (Blunder-Check Schedule, Streak and Leaderboards (SEED-261108-dk0)) — READY TO EXECUTE
-Plan: Not started
+Phase: 251 (Blunder-Check Schedule, Streak and Leaderboards (SEED-261108-dk0)) — EXECUTING
+Plan: 1 of 13
 
-Status: All phases complete
+Status: Executing Phase 251
 
-Last activity: 2026-11-17 - Completed quick task 261117-sfh: Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready
+Last activity: 2026-11-18 — Phase 251 execution started
 
 Open threads carried forward (not blockers):
 
