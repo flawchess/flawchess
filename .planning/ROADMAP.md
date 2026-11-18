@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 10/13 plans executed
+**Plans:** 11/13 plans executed
 
 Plans:
 **Wave 1**
@@ -396,7 +396,7 @@ Plans:
 - [x] 251-08-PLAN.md — One-time level step (D-20) and launch notice with dismissal (D-21)
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 251-09-PLAN.md — Per-mode settings rows: 0-to-off sliders, never-both-0 clamp, level picker, How it works
+- [x] 251-09-PLAN.md — Per-mode settings rows: 0-to-off sliders, never-both-0 clamp, level picker, How it works
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 251-10-PLAN.md — Score-screen hand-off between modes (D-12), feature-route step and dot, pitch line (D-19)
