@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 12/13 plans executed
+**Plans:** 13/13 plans executed
 
 Plans:
 **Wave 1**
@@ -402,7 +402,7 @@ Plans:
 - [x] 251-10-PLAN.md — Score-screen hand-off between modes (D-12), feature-route step and dot, pitch line (D-19)
 
 **Wave 11** *(blocked on Wave 10 completion)*
-- [ ] 251-11-PLAN.md — Full pre-merge gate, CHANGELOG, validation record; browser launch walk and serial suite by the orchestrator
+- [x] 251-11-PLAN.md — Full pre-merge gate, CHANGELOG, validation record; browser launch walk and serial suite by the orchestrator
 
 ### Phase 252: Short Engine Line Repair Backfill (SEED-261112-s4v)
 
