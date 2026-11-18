@@ -26,6 +26,7 @@ from sqlalchemy import (
     exists,
     func,
     literal,
+    true,
     Select,
     or_,
     select,
@@ -37,8 +38,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
+from sqlalchemy.sql.expression import SQLColumnExpression
 
-from app.models.blunder_check import BlunderCheckSession
+from app.models.blunder_check import BlunderCheckSession, BlunderCheckWindow
 from app.models.drill_item import DrillItem, DrillStatus
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillGuess, DrillMoveQuality, DrillSolve, DrillSource
@@ -90,6 +92,7 @@ from app.services.train_pool import (
     vetted_moves_from_pv_node,
 )
 from app.services.train_scheduler import (
+    CROSS_MODE_COOLDOWN_DAYS,
     DEFAULT_BLUNDER_CHECK_PER_SESSION,
     DEFAULT_PUZZLES_PER_SESSION,
     DEFAULT_REMINDER_ENABLED,
@@ -1437,6 +1440,49 @@ async def _is_untouched_and_resized(
     return solved_so_far == 0
 
 
+async def blunder_check_cooled_pairs(
+    session: AsyncSession, *, user_id: int, since: datetime.date
+) -> list[tuple[int, int]]:
+    """(game_id, blunder_ply) of every flaw served in a blunder-check window of this user since `since`.
+
+    Cross-mode cooldown (Phase 251 D-16): a flaw shown in blunder check is ineligible for puzzles
+    until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
+    `today - CROSS_MODE_COOLDOWN_DAYS`, from the caller's already-resolved local today (never a
+    `.date()` on a UTC instant), compared with the session's own local `session_date`. Windows
+    without a flaw (herrings, `blunder_ply` NULL) and windows whose game was deleted
+    (`game_id` NULL) carry nothing to cool.
+
+    Read by composition and by the waiting count so they filter the same set. The cooldown only
+    filters: `drill_items.due_date` is never written, so a cooled due item resurfaces
+    most-overdue-first once the window passes (A7).
+    """
+    rows = (
+        await session.execute(
+            select(BlunderCheckWindow.game_id, BlunderCheckWindow.blunder_ply)
+            .join(BlunderCheckSession, BlunderCheckSession.id == BlunderCheckWindow.session_id)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.session_date >= since,
+                BlunderCheckWindow.game_id.isnot(None),
+                BlunderCheckWindow.blunder_ply.isnot(None),
+            )
+            .distinct()
+        )
+    ).all()
+    return [(int(game_id), int(ply)) for game_id, ply in rows]
+
+
+def _not_cooled(
+    game_id_col: SQLColumnExpression[int],
+    ply_col: SQLColumnExpression[int],
+    cooled: Sequence[tuple[int, int]],
+) -> ColumnElement[bool]:
+    """Predicate keeping rows whose (game_id, ply) is not in the cooled set (true when empty)."""
+    if not cooled:
+        return true()
+    return tuple_(game_id_col, ply_col).not_in(list(cooled))
+
+
 async def get_waiting_puzzle_count(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> int:
@@ -1521,6 +1567,11 @@ async def get_waiting_puzzle_count(
     if completed is not None:
         return 0
 
+    # Cross-mode cooldown (D-16): the same exclusion composition applies, so the count mirrors it.
+    cooled = await blunder_check_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
+
     # Due drill_items — mirrors compose_and_materialize_session's due_stmt
     # eligibility exactly (status/due_date/flaw-row-presence/answer-key/
     # dead-band/second-best-still-winning), minus the
@@ -1552,6 +1603,7 @@ async def get_waiting_puzzle_count(
             answer_key_present(GameFlaw.missed_pv_lines),
             dead_band_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
             second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+            _not_cooled(DrillItem.game_id, DrillItem.ply, cooled),
         )
     )
     due_count = (await session.execute(due_count_stmt)).scalar_one()
@@ -1569,7 +1621,8 @@ async def get_waiting_puzzle_count(
                     DrillItem.game_id == pool_subq.c.game_id,
                     DrillItem.ply == pool_subq.c.ply,
                 )
-            )
+            ),
+            _not_cooled(pool_subq.c.game_id, pool_subq.c.ply, cooled),
         )
     )
     untracked_pool_count = (await session.execute(untracked_pool_stmt)).scalar_one()
@@ -2020,6 +2073,14 @@ async def _select_candidates(
     # are otherwise resolved independently.
     per_game_counts: Counter[int] = Counter()
 
+    # Cross-mode cooldown (D-16): flaws served in blunder check recently are skipped for THIS
+    # session only, in both the due and the pool statements below. A cooled due item keeps its
+    # due_date (never written here) and resurfaces once the cooldown ends. Deliberately NOT in
+    # pool_entry_stmt, which also feeds _material_flags and the eligibility watermark.
+    cooled = await blunder_check_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
+
     # --- SR side: due drill_items first, most-overdue-first ---
     due_stmt = (
         select(DrillItem, Game)
@@ -2066,6 +2127,7 @@ async def _select_candidates(
             # is skipped for THIS session only (status/due_date untouched)
             # so it resurfaces automatically if re-analysis moves it back.
             second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+            _not_cooled(DrillItem.game_id, DrillItem.ply, cooled),
         )
         .order_by(DrillItem.due_date.asc(), DrillItem.game_id.asc(), DrillItem.ply.asc())
         # Over-fetch (bounded by _DUE_OVERFETCH_FACTOR, never unbounded)
@@ -2101,8 +2163,10 @@ async def _select_candidates(
     )
     existing_pairs = {(gid, ply) for gid, ply in existing_pairs_result.all()}
 
-    pool_stmt = pool_entry_stmt(user_id).order_by(
-        Game.played_at.desc().nulls_last(), GameFlaw.game_id.desc(), GameFlaw.ply.asc()
+    pool_stmt = (
+        pool_entry_stmt(user_id)
+        .where(_not_cooled(GameFlaw.game_id, GameFlaw.ply, cooled))
+        .order_by(Game.played_at.desc().nulls_last(), GameFlaw.game_id.desc(), GameFlaw.ply.asc())
     )
     pool_rows = (await session.execute(pool_stmt)).all()
     deduped_pool: list[tuple[int, int, Game]] = []

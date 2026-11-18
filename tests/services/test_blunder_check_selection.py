@@ -51,6 +51,7 @@ from app.services.blunder_check_selection import (
     REFERENCE_ELO_GAMES,
     build_snapshot,
     compose_windows,
+    level_fallback_elo,
     user_level_elo,
 )
 from tests.facepalm_seed import SEED_FACEPALM_MARGIN
@@ -581,3 +582,32 @@ def test_user_level_without_bucketed_rows_is_the_median_of_all_rows() -> None:
 
 def test_user_level_without_rows_is_the_named_default() -> None:
     assert user_level_elo([]) == DEFAULT_USER_LEVEL_ELO == 1500.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 251 D-17: the stored level is the Elo of a user without rated games
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("level", "elo"),
+    [("beginner", 1000.0), ("intermediate", 1500.0), ("advanced", 2000.0), (None, 1500.0)],
+)
+def test_level_fallback_elo_maps_each_stored_level(level, elo) -> None:
+    assert level_fallback_elo(level) == elo
+
+
+def test_level_stored_level_is_used_when_the_user_has_no_rated_games() -> None:
+    assert user_level_elo([], fallback=level_fallback_elo("beginner")) == 1000.0
+    assert user_level_elo([], fallback=level_fallback_elo("advanced")) == 2000.0
+
+
+def test_level_no_stored_level_gives_the_1500_default() -> None:
+    assert user_level_elo([], fallback=level_fallback_elo(None)) == 1500.0
+
+
+def test_level_rated_games_win_over_the_stored_level() -> None:
+    rows = [_row(r) for r in (1400, 1500, 1600, 1700)]
+    expected = statistics.median([1400, 1500, 1600, 1700])
+    assert user_level_elo(rows, fallback=level_fallback_elo("beginner")) == expected
+    assert user_level_elo(rows, fallback=level_fallback_elo("advanced")) == expected

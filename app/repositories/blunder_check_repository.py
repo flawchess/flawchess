@@ -22,6 +22,7 @@ from sqlalchemy import (
     not_,
     select,
     tablesample,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -39,7 +40,8 @@ from app.models.blunder_check import (
     WindowCase,
     WindowOutcome,
 )
-from app.models.drill_solve import DrillMoveQuality
+from app.models.drill_session import DrillSession
+from app.models.drill_solve import DrillMoveQuality, DrillSolve, DrillSource
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
@@ -314,8 +316,40 @@ async def insert_session(
 # ---------------------------------------------------------------------------
 
 
+async def puzzle_cooled_pairs(
+    session: AsyncSession, *, user_id: int, since: datetime.date
+) -> list[tuple[int, int]]:
+    """(game_id, ply) of every flaw served as a puzzle (SR row) to this user since `since`.
+
+    Cross-mode cooldown (Phase 251 D-16): a flaw shown in a puzzle session is ineligible for blunder
+    check until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
+    `today - CROSS_MODE_COOLDOWN_DAYS` from the caller's resolved local today, compared with the
+    puzzle session's local `session_date`. The scan starts from drill_sessions (filtered on
+    user_id and session_date) because drill_solves has no user index. Herring and sharp-filler
+    rows carry no own flaw, and a row whose game was deleted has a NULL `game_id`.
+    """
+    rows = (
+        await session.execute(
+            select(DrillSolve.game_id, DrillSolve.ply)
+            .join(DrillSession, DrillSession.id == DrillSolve.session_id)
+            .where(
+                DrillSession.user_id == user_id,
+                DrillSession.session_date >= since,
+                DrillSolve.source == DrillSource.SR_ITEM,
+                DrillSolve.game_id.isnot(None),
+            )
+            .distinct()
+        )
+    ).all()
+    return [(int(game_id), int(ply)) for game_id, ply in rows]
+
+
 def _unserved_qualifying_blunder_exists(
-    game_id_col: SQLColumnExpression[int], user_id: int, *, flaw_owner_id: int | None = None
+    game_id_col: SQLColumnExpression[int],
+    user_id: int,
+    *,
+    flaw_owner_id: int | None = None,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> ColumnElement[bool]:
     """EXISTS a qualifying blunder (drill facepalm score >= FACEPALM_SCORE_MIN) this user was not served yet.
 
@@ -331,6 +365,9 @@ def _unserved_qualifying_blunder_exists(
     the caller knows it. Bug fix: without it the own-game pick had no selective predicate on
     game_flaws, so on prod the planner hashed a sequential scan of the whole table (17.8 s for
     one session start). With it the probe is a primary-key lookup per game (about 0.4 s).
+
+    `cooled_pairs` are (game_id, ply) flaws served as puzzles inside the cross-mode cooldown
+    (D-16); those flaw rows do not count as unserved here.
     """
     # correlate_except: the games table (or the TABLESAMPLE alias) sits two SELECT levels up, past
     # the flaw EXISTS, so auto-correlation would pull it into this FROM list as a cross join.
@@ -350,6 +387,8 @@ def _unserved_qualifying_blunder_exists(
     ]
     if flaw_owner_id is not None:
         conditions.append(GameFlaw.user_id == flaw_owner_id)
+    if cooled_pairs:
+        conditions.append(tuple_(GameFlaw.game_id, GameFlaw.ply).not_in(list(cooled_pairs)))
     return exists().where(and_(*conditions))
 
 
@@ -360,20 +399,24 @@ async def pick_own_game_ids(
     limit: int,
     exclude_ids: Sequence[int],
     require_facepalm: bool = False,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> list[int]:
     """Random ids of the user's fully evaluated games (index scan on ix_games_user_full_evals).
 
     Platform is filtered at load time, not here, to keep the scan on the index. No age
     weighting: ordering by age needs the heap and defeats the index scan. `require_facepalm`
     keeps only games holding a qualifying blunder the user has not been served yet; the EXISTS
-    probes ix_game_flaws_game_id per candidate game.
+    probes ix_game_flaws_game_id per candidate game. `cooled_pairs` (flaws served as puzzles inside
+    the cross-mode cooldown, D-16) never count as such a blunder.
     """
     stmt = select(Game.id).where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
     if exclude_ids:
         stmt = stmt.where(Game.id.notin_(exclude_ids))
     if require_facepalm:
         stmt = stmt.where(
-            _unserved_qualifying_blunder_exists(Game.id, user_id, flaw_owner_id=user_id)
+            _unserved_qualifying_blunder_exists(
+                Game.id, user_id, flaw_owner_id=user_id, cooled_pairs=cooled_pairs
+            )
         )
     stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
@@ -566,7 +609,11 @@ class ServedSets:
 
 
 async def served_for_games(
-    session: AsyncSession, *, user_id: int, game_ids: Sequence[int]
+    session: AsyncSession,
+    *,
+    user_id: int,
+    game_ids: Sequence[int],
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> ServedSets:
     """Blunder plies of every window served and the judged ply ranges of every window served.
 
@@ -575,11 +622,19 @@ async def served_for_games(
     ended on a false alarm before the blunder was reached still burns that blunder, so the
     249 false-alarm exception is gone. The judged range of a window is (first_ply, last judged
     ply): the blunder ply for a blunder window, else the last user move of the window.
+
+    `cooled_pairs` (flaws served as puzzles inside the cross-mode cooldown, D-16) are added to the
+    served blunder plies, so the Python judge skips them like a window already served. They never
+    enter `judged_ranges`: only blunder plies are cooled, not the surrounding herring runs.
     """
     served: dict[int, set[int]] = defaultdict(set)
     ranges: dict[int, list[tuple[int, int]]] = defaultdict(list)
     if not game_ids:
         return ServedSets(served_blunder_plies=served, judged_ranges=ranges)
+    wanted = set(game_ids)
+    for cooled_game_id, cooled_ply in cooled_pairs:
+        if cooled_game_id in wanted:
+            served[cooled_game_id].add(cooled_ply)
     window_stmt = select(
         BlunderCheckWindow.game_id,
         BlunderCheckWindow.first_ply,

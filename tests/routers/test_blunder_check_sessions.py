@@ -1,8 +1,10 @@
-"""Integration tests for the blunder-check router's beta gate and open-session read.
+"""Integration tests for the blunder-check router's access rules and open-session read.
 
 Coverage:
-- test_open_session_anon_401          : no token -> 401 (D-01)
-- test_open_session_non_beta_403      : logged-in user with beta_enabled false -> 403 (D-01)
+- test_open_session_anon_401          : no token -> 401
+- test_open_session_non_beta_200_null : logged-in user with beta_enabled false -> 200 (D-18)
+- test_guest_*                        : a guest uses the routes and composes at the stored level (D-17, D-18)
+- test_non_beta_*                     : a non-beta registered user composes a session (D-18)
 - test_open_session_beta_no_session_null : beta user without a session -> 200, body null
 - test_open_session_beta_returns_progress : exact response key sets, derived fields
 - test_open_session_never_returns_other_users_session : user-id scoping (T-249-03)
@@ -40,6 +42,7 @@ from tests.blunder_check_seed import (
     delete_blunder_check_sessions,
     delete_games,
     flat_evals,
+    register_user,
     seed_judged_game,
     with_user_blunder,
 )
@@ -139,9 +142,21 @@ async def test_open_session_anon_401() -> None:
 
 
 @pytest.mark.asyncio
-async def test_open_session_non_beta_403(test_engine) -> None:
+async def test_open_session_non_beta_200_null(test_engine) -> None:
+    """D-18: the beta gate is gone, so a non-beta user reads the open session (null here)."""
     _, token = await _register("bc-nonbeta", beta=False, test_engine=test_engine)
-    assert (await _get(token)).status_code == 403
+    resp = await _get(token)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() is None
+
+
+@pytest.mark.asyncio
+async def test_guest_open_session_200_null(test_engine) -> None:
+    """D-18: a guest reads the open session too."""
+    _, token = await register_user("bc-guest-open", beta=False, test_engine=test_engine, guest=True)
+    resp = await _get(token)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() is None
 
 
 @pytest.mark.asyncio
@@ -399,10 +414,103 @@ async def test_start_after_window_expires_old_session_and_composes_new(
     assert [w.position for w in stale_windows] == [1]
 
 
+_LEVEL_RATINGS = {"beginner": 1000, "intermediate": 1500, "advanced": 2000}
+_GUEST_FOREIGN_GAMES = 8
+_ELO_ROUNDING_SLACK = 1
+
+
+async def _seed_foreign_games(test_engine, owner_id: int, count: int, rating: int) -> list[int]:
+    """`count` fully evaluated games of another user, both players rated `rating`."""
+    evals = with_user_blunder(flat_evals(61, 0), _USER_BLUNDER_PLY, _BLUNDER_DROP_CP)
+    return [
+        await seed_judged_game(
+            test_engine,
+            user_id=owner_id,
+            evals_cp=evals,
+            blunders=[SeedBlunder(ply=_USER_BLUNDER_PLY)],
+            white_rating=rating,
+            black_rating=rating,
+        )
+        for _ in range(count)
+    ]
+
+
+async def _set_level(test_engine, user_id: int, level: str) -> None:
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        async with session.begin():
+            session.add(TrainSettings(user_id=user_id, blunder_check_level=level))
+
+
 @pytest.mark.asyncio
-async def test_start_session_non_beta_403(test_engine) -> None:
+@pytest.mark.parametrize("level", ["beginner", "advanced"])
+async def test_guest_start_session_composes_at_stored_level(
+    test_engine, monkeypatch, level: str
+) -> None:
+    """D-17 / D-18: a guest has no own supply and composes foreign windows at the stored level."""
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_own_blunder_slots(monkeypatch)
+    guest_id, token = await register_user(
+        "bc-guest-start", beta=False, test_engine=test_engine, guest=True
+    )
+    await _set_level(test_engine, guest_id, level)
+    stranger_id, _ = await register_user("bc-guest-stranger", beta=False, test_engine=test_engine)
+    in_band = await _seed_foreign_games(
+        test_engine, stranger_id, _GUEST_FOREIGN_GAMES, _LEVEL_RATINGS[level]
+    )
+    # Games at the other levels fall outside the band of the stored level and must not be picked.
+    others: list[int] = []
+    for other_level, rating in _LEVEL_RATINGS.items():
+        if other_level != level:
+            others += await _seed_foreign_games(
+                test_engine, stranger_id, _GUEST_FOREIGN_GAMES, rating
+            )
+    session_id: int | None = None
+    try:
+        resp = await _post(token)
+        assert resp.status_code == 200, resp.text
+        session_id = resp.json()["session_id"]
+        windows = await _windows_of(test_engine, session_id)
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, in_band + others)
+    assert windows, "a guest composes a session from foreign supply"
+    assert all(window.is_own is False for window in windows)
+    assert {window.game_id for window in windows} <= set(in_band)
+    assert all(
+        window.mover_elo is not None
+        and abs(window.mover_elo - _LEVEL_RATINGS[level]) <= _ELO_ROUNDING_SLACK
+        for window in windows
+    )
+
+
+@pytest.mark.asyncio
+async def test_guest_start_session_no_supply_409(test_engine) -> None:
+    """A guest with no foreign supply gets the expected 409, not a 403."""
+    _, token = await register_user(
+        "bc-guest-empty", beta=False, test_engine=test_engine, guest=True
+    )
+    assert (await _post(token)).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_non_beta_start_session_composes_foreign_at_default_level(
+    test_engine, monkeypatch
+) -> None:
+    """D-18: a non-beta registered user without games composes at the 1500 default."""
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_own_blunder_slots(monkeypatch)
     _, token = await _register("bc-start-nonbeta", beta=False, test_engine=test_engine)
-    assert (await _post(token)).status_code == 403
+    stranger_id, _ = await register_user("bc-nonbeta-stranger", beta=False, test_engine=test_engine)
+    game_ids = await _seed_foreign_games(test_engine, stranger_id, _GUEST_FOREIGN_GAMES, 1500)
+    session_id: int | None = None
+    try:
+        resp = await _post(token)
+        assert resp.status_code == 200, resp.text
+        session_id = resp.json()["session_id"]
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, game_ids)
 
 
 @pytest.mark.asyncio

@@ -56,7 +56,12 @@ from app.services.blunder_check_grading import (
     window_ucis,
 )
 from app.services.train_pool import ServerGradedMove
-from app.services.train_scheduler import DEFAULT_TIMEZONE, local_today, session_window
+from app.services.train_scheduler import (
+    CROSS_MODE_COOLDOWN_DAYS,
+    DEFAULT_TIMEZONE,
+    local_today,
+    session_window,
+)
 from app.services.blunder_check_rules import BLUNDER_POINTS
 from app.services.train_score import MOVE_QUALITY_TIER, MOVE_TIER_POINTS
 
@@ -226,11 +231,18 @@ async def compose_or_resume(
     )
     if done is not None:
         return done
+    # Cross-mode cooldown (D-16): flaws served as puzzles in the last CROSS_MODE_COOLDOWN_DAYS local
+    # days are not composed as own blunders.
+    cooled_pairs = await blunder_check_repository.puzzle_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
     windows = await blunder_check_selection.compose_windows(
         session,
         user_id=user_id,
         rng=blunder_check_selection.new_session_rng(),
         count=settings.blunder_check_per_session,
+        fallback_level_elo=blunder_check_selection.level_fallback_elo(settings.blunder_check_level),
+        cooled_pairs=cooled_pairs,
     )
     if not windows:
         return None
