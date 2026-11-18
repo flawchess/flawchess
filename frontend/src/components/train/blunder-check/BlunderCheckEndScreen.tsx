@@ -103,7 +103,8 @@ export function BlunderCheckEndScreen({
   const bubbleLines = useMemo(() => blunderCheckScoreBubbleCopy(band).lines, [band]);
   // Read once per render so the badge animation and the confetti decision agree.
   const reducedMotion = prefersReducedMotion();
-  // D-12: finishing Blunder Check offers the puzzle session while it is still owed.
+  // D-12: finishing Blunder Check offers the puzzle session while it is still owed
+  // (testid btn-train-continue-puzzles, defined with the hook).
   const continueAction = useContinueAction('puzzles');
   useEffect(() => {
     // The Train score screen's result sound and confetti, once per mount.
