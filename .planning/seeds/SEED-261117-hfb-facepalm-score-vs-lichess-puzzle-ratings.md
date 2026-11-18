@@ -144,5 +144,5 @@ No published model for the normative target ("should have seen this") was found.
 - `scripts/select_tagger_fixtures.py`: reads the Lichess puzzle dump
 - `reports/blunder-check/facepalm-fit-2026-11-16.md`: current fit report
 - `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the "Findable" refutation-probability idea
-- `.planning/seeds/SEED-261115-agg-facepalm-material-across-depths.md`: the depth-aggregation seed
+- `.planning/seeds/closed/SEED-261115-agg-facepalm-material-across-depths.md`: the depth-aggregation seed
 - `.planning/seeds/SEED-129-rated-puzzle-benchmark.md`: rated puzzles as an engine calibration instrument

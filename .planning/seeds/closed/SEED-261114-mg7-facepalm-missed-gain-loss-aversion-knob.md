@@ -1,6 +1,9 @@
 ---
 id: SEED-261114-mg7
-status: dormant
+status: closed
+closed: 2026-11-18
+closed_reason: shipped as Phase 254 (missed gains and the lambda knob, releases up to #485); the material input was refitted again in Phase 256 (#486). Left open: the drill's loss-aversion weight (`FACEPALM_DRILL_LAMBDA` = 1.0, symmetric) waits for GM Noel Studer's answer; a constant change, no phase (254-CONTEXT D-03)
+promoted_to: Phase 254
 planted: 2026-11-14
 planted_during: after Phase 253 (facepalm score in the library UI); owner review of low-scoring own blunders
 trigger_when: when the facepalm score or blunder-check selection is next worked on, or once the owner has GM Noel Studer's view on loss aversion in blunder-check training. Not before Phase 252 (line repair) concludes, since the new feature reads the stored best line

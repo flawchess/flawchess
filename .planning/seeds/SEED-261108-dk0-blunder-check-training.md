@@ -147,8 +147,8 @@ Findings:
 
 ## Breadcrumbs
 
-- `.planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
-- `.planning/seeds/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
+- `.planning/seeds/closed/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
+- `.planning/seeds/closed/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
 - `app/services/maia_engine.py`, `app/services/maia_encoding.py`, `app/services/best_move_candidates.py`
 - `app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/herring_pool.py`
 - `app/services/train_pool.py`, `app/repositories/train_repository.py`

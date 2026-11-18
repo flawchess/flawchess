@@ -1,6 +1,9 @@
 ---
 id: SEED-261115-agg
-status: dormant
+status: closed
+closed: 2026-11-18
+closed_reason: shipped as Phase 256 (refit on the decaying mean over odd depths, squash-merge b2a66e3b7, release #486). Successor: SEED-261117-hfb (validation against Lichess puzzle ratings)
+promoted_to: Phase 256 (2026-11-16)
 planted: 2026-11-15
 planted_during: Phase 254 plan 11 (refit with the set 7 miss labels); owner review of the fit
 trigger_when: the next facepalm refit. Best after Phase 252's prod line repair and the gap-fill line pass (Phase 254 D-21), when more label rows have a best line and deeper depths are better covered.

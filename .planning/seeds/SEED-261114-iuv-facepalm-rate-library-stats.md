@@ -76,7 +76,7 @@ Part B's timeline line for the user alone does not need Part A and could ship fi
 
 ## Breadcrumbs
 
-- `.planning/seeds/SEED-261114-0ke-facepalm-score-library-ui.md` (name, icon, filter, chip)
+- `.planning/seeds/closed/SEED-261114-0ke-facepalm-score-library-ui.md` (name, icon, filter, chip)
 - `.planning/phases/250-facepalm-blunder-selection/250-CONTEXT.md` (D-01 score, D-06 scope, D-08 backfill)
 - `app/services/maia_flaw_scoring.py` (`_is_user_blunder`, spread and line backfill modes)
 - `scripts/backfill_maia_flaws.py`, `scripts/blunder_check/fit_facepalm.py`
