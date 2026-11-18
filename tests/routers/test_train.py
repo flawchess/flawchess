@@ -78,7 +78,7 @@ reminder_intent_at on GET/PUT /train/settings:
   non-null PUT reads back null
 
 GET /train/progress:
-- test_progress_returns_200_with_all_eleven_fields : an authenticated non-guest
+- test_progress_returns_200_with_every_field : an authenticated non-guest
                                                       account gets a full payload
 - test_guest_progress_200                          : a guest
                                                       gets the same full payload, 200
@@ -3414,7 +3414,7 @@ async def test_untouched_open_session_recomposes_after_size_change(test_engine) 
 
 
 @pytest.mark.asyncio
-async def test_progress_returns_200_with_all_eleven_fields(test_engine) -> None:
+async def test_progress_returns_200_with_every_field(test_engine) -> None:
     """An authenticated non-guest account gets 200 with every response field."""
     email = f"train-progress-ok-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -3434,6 +3434,10 @@ async def test_progress_returns_200_with_all_eleven_fields(test_engine) -> None:
         "pool_state",
         "next_due_date",
         "badge_visible",
+        "modes",
+        "day_complete",
+        "pending_count",
+        "blunder_check_notice",
     }
     assert body["pool_state"] in ("no_material", "exhausted", "available")
     # A brand-new account: empty shield, nothing settled, no counts yet, and
@@ -3506,6 +3510,10 @@ async def test_guest_progress_200(test_engine) -> None:
         "pool_state",
         "next_due_date",
         "badge_visible",
+        "modes",
+        "day_complete",
+        "pending_count",
+        "blunder_check_notice",
     }
 
 
