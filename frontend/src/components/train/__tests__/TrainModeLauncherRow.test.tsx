@@ -20,14 +20,18 @@ const startPuzzles = vi.fn();
 const startBlunderCheck = vi.fn();
 
 afterEach(() => {
+  showBlunderCheckRouteDot = false;
   cleanup();
   startPuzzles.mockReset();
   startBlunderCheck.mockReset();
 });
 
+// Set per test: the page's feature-route flag for the Blunder Check Start (D-21).
+let showBlunderCheckRouteDot = false;
+
 function Wrapper({ children }: { children: ReactNode }): ReactNode {
   return (
-    <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
+    <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck, showBlunderCheckRouteDot }}>
       {children}
     </TrainTodayActionsContext.Provider>
   );
@@ -157,5 +161,46 @@ describe('TrainModeLauncherRow: puzzles route dot', () => {
 
     renderRow('blunder_check', { state: 'pending', remaining: 4, pending: 4 }, { showRouteDot: true });
     expect(screen.queryByTestId('train-start-notification-dot')).toBeNull();
+  });
+});
+
+describe('Blunder Check route dot (D-21)', () => {
+  it('renders the dot on the Blunder Check Start while the page flag is set', () => {
+    showBlunderCheckRouteDot = true;
+    renderRow('blunder_check', { state: 'pending' });
+    const start = screen.getByTestId('btn-train-blunder-check-start');
+    expect(start.querySelector('[data-testid="train-blunder-check-notification-dot"]')).not.toBeNull();
+  });
+
+  it('renders no dot when the flag is false', () => {
+    renderRow('blunder_check', { state: 'pending' });
+    expect(screen.queryByTestId('train-blunder-check-notification-dot')).toBeNull();
+  });
+
+  it('keeps the flag off the puzzles row', () => {
+    showBlunderCheckRouteDot = true;
+    renderRow('puzzles', { state: 'pending' });
+    expect(screen.queryByTestId('train-blunder-check-notification-dot')).toBeNull();
+  });
+});
+
+describe('Blunder Check pitch line (D-19)', () => {
+  const PITCH_ID = 'train-launcher-pitch-blunder-check';
+
+  it('shows the one-line pitch on the Blunder Check row before the first completed session', () => {
+    renderRow('blunder_check', { state: 'pending', first_session_done: false });
+    expect(screen.getByTestId(PITCH_ID).textContent).toBe(
+      'New: call each move of a real game before it is played, good or blunder?',
+    );
+  });
+
+  it('drops the pitch once the first session is done', () => {
+    renderRow('blunder_check', { state: 'pending', first_session_done: true });
+    expect(screen.queryByTestId(PITCH_ID)).toBeNull();
+  });
+
+  it('never shows the pitch on the puzzles row', () => {
+    renderRow('puzzles', { state: 'pending', first_session_done: false });
+    expect(screen.queryByTestId(PITCH_ID)).toBeNull();
   });
 });

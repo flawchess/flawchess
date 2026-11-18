@@ -42,7 +42,8 @@ export type FeatureRouteStepId =
   | 'openings-filters'
   | 'openings-stats'
   | 'endgames'
-  | 'library-stats';
+  | 'library-stats'
+  | 'blunder-check';
 
 /** Body action of POST /users/me/feature-route. */
 export type FeatureRouteAction = 'current' | 'done' | 'skip';

@@ -23,6 +23,7 @@ const EXPECTED_STEP_IDS: FeatureRouteStepId[] = [
   'openings-stats',
   'endgames',
   'library-stats',
+  'blunder-check',
 ];
 
 const TEST_DATE = '2026-11-15';
@@ -68,7 +69,7 @@ function placement(state: FeatureRouteState | null, c: RouteCtx): string | null 
 }
 
 describe('FEATURE_ROUTE registry', () => {
-  it('holds the nine step IDs in D-06 order without duplicates', () => {
+  it('holds the ten step IDs in route order without duplicates', () => {
     const ids = FEATURE_ROUTE.map((s) => s.id);
     expect(ids).toEqual(EXPECTED_STEP_IDS);
     expect(new Set(ids).size).toBe(ids.length);
@@ -96,6 +97,32 @@ describe('resolveRouteDot order (D-02, D-12)', () => {
   it('a null state fails closed: no dot and no writes', () => {
     expect(resolveRouteDot(null, ctx('/library/import', true))).toBeNull();
     expect(planRouteWrites(null, ctx('/library/import', true))).toEqual([]);
+  });
+});
+
+describe('blunder-check step (D-21)', () => {
+  const ALL_BUT_BLUNDER_CHECK = EXPECTED_STEP_IDS.filter((id) => id !== 'blunder-check');
+
+  it('is the last step: nav /train, Today subtab, Start control, completes on use, needs no games', () => {
+    const step = stepById('blunder-check');
+    expect(FEATURE_ROUTE[FEATURE_ROUTE.length - 1]).toBe(step);
+    expect(step.nav).toBe('/train');
+    expect(step.subtab?.slot).toBe('train-today');
+    expect(step.control).toBe('train-blunder-check-start');
+    expect(step.completion).toBe('used');
+    expect(step.requiresGames).toBe(false);
+  });
+
+  it('puts the dot on the Blunder Check Start once every earlier step is resolved', () => {
+    const s = stateWith(ALL_BUT_BLUNDER_CHECK);
+    expect(placement(s, ctx('/library/games', true))).toBe('nav:/train');
+    expect(placement(s, ctx('/train/leaderboard', true))).toBe('subtab:train-today');
+    expect(placement(s, ctx('/train', true))).toBe('control:train-blunder-check-start');
+  });
+
+  it('records on use only, never on a visit to Train', () => {
+    const s = stateWith(ALL_BUT_BLUNDER_CHECK);
+    expect(doneWrites(s, ctx('/train', true))).toEqual([]);
   });
 });
 

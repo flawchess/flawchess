@@ -16,7 +16,7 @@ import type {
 
 export type RouteNav = '/library' | '/train' | '/bots' | '/openings' | '/endgames';
 export type RouteSubtabSlot = 'library-import' | 'library-stats' | 'openings-stats' | 'train-today';
-export type RouteControlSlot = 'openings-played-as' | 'openings-filters' | 'train-start';
+export type RouteControlSlot = 'openings-played-as' | 'openings-filters' | 'train-start' | 'train-blunder-check-start';
 export type RouteDotSlot = `nav:${RouteNav}` | `subtab:${RouteSubtabSlot}` | `control:${RouteControlSlot}`;
 
 export interface RouteStepDef {
@@ -145,6 +145,16 @@ export const FEATURE_ROUTE: readonly RouteStepDef[] = [
     completion: 'visit',
     visitMatch: (p) => p.startsWith('/library/stats'),
     requiresGames: true,
+  },
+  {
+    // Phase 251, D-21: appended last (append-only). Done when the user presses the Blunder Check
+    // Start, not on visiting Train. Needs no games, but it sits after steps that do (D-23 pause).
+    id: 'blunder-check',
+    nav: '/train',
+    subtab: { slot: 'train-today', isOn: (p) => parseTrainRoute(p)?.tab === 'today' },
+    control: 'train-blunder-check-start',
+    completion: 'used',
+    requiresGames: false,
   },
 ];
 

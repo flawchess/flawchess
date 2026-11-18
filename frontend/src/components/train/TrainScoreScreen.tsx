@@ -61,6 +61,7 @@ import type { Persona } from '@/lib/personas/personaRegistry';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import { useHoldUpdateReload } from '@/lib/updateReload';
+import { useContinueAction, type ContinueAction } from '@/components/train/trainTodayActions';
 import { localTodayIso, nextSessionWhen } from '@/lib/trainNextSession';
 import { celebrateScore } from '@/lib/trainScoreCelebration';
 import type { SolvedResult } from '@/types/train';
@@ -219,6 +220,9 @@ export function TrainScoreScreen({
   // useTrainReminderSlot.tsx's module docstring for why the split exists. One
   // hook call, one state instance, for this whole screen.
   const { control: reminderControl, belowRow: reminderBelowRow } = useTrainReminderSlot();
+  // D-12: finishing puzzles offers the Blunder Check part of the day while it is still owed
+  // (testid btn-train-continue-blunder-check, defined with the hook).
+  const continueAction = useContinueAction('blunder_check');
   // Read once per render (not inside the effect) so the badge animation and
   // the confetti decision can never disagree within a single mount.
   const reducedMotion = prefersReducedMotion();
@@ -243,6 +247,7 @@ export function TrainScoreScreen({
       reminderBelowRow={isGuest ? null : reminderBelowRow}
       reducedMotion={reducedMotion}
       onDone={onDone}
+      continueAction={continueAction}
     />
   );
 }
@@ -263,6 +268,9 @@ export interface TrainScoreScreenViewProps {
   reminderBelowRow: ReactElement | null;
   reducedMotion: boolean;
   onDone: () => void;
+  /** Hand-off to the other mode (D-12). Present: it is the primary button and Done drops to
+   * brand-outline. Absent: Done stays primary. */
+  continueAction?: ContinueAction;
 }
 
 export function TrainScoreScreenView({
@@ -277,6 +285,7 @@ export function TrainScoreScreenView({
   reminderBelowRow,
   reducedMotion,
   onDone,
+  continueAction,
 }: TrainScoreScreenViewProps): ReactElement {
   const percentage = percentageOverride ?? displaySessionPercentage(score);
   const band = resolveViewBand(score, percentageOverride);
@@ -333,10 +342,20 @@ export function TrainScoreScreenView({
           line below via `reminderBelowRow`, wrapped in this flex-col so both
           pieces stay inside the same max-w-sm column. */}
       <div className={cn('flex w-full flex-col gap-2', SCORE_COLUMN_MAX_W)}>
+        {continueAction && (
+          <Button
+            variant="default"
+            className={TRAIN_BUTTON_CLASS}
+            onClick={continueAction.onClick}
+            data-testid={continueAction.testId}
+          >
+            {continueAction.label}
+          </Button>
+        )}
         <div className="flex w-full items-center gap-2" data-testid="train-score-button-row">
           {reminderControl}
           <Button
-            variant="default"
+            variant={continueAction ? 'brand-outline' : 'default'}
             className={cn('flex-1', TRAIN_BUTTON_CLASS)}
             onClick={onDone}
             data-testid="btn-train-done"

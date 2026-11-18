@@ -29,6 +29,7 @@ FeatureRouteStepId = Literal[
     "openings-stats",
     "endgames",
     "library-stats",
+    "blunder-check",
 ]
 
 FeatureRouteAction = Literal["current", "done", "skip"]

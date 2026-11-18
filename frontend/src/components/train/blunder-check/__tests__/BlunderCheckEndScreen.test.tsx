@@ -10,6 +10,13 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 
 vi.mock('@/lib/trainScoreCelebration', () => ({ celebrateScore: vi.fn() }));
 
+// The D-12 continue action reads the shared progress query; this suite has no
+// QueryClientProvider, so the hook is mocked and each test sets the puzzles state.
+const progressMock = vi.fn<() => { data: TrainProgressResponse | undefined }>(() => ({ data: undefined }));
+vi.mock('@/hooks/useTrainProgress', () => ({
+  useTrainProgress: () => progressMock(),
+}));
+
 // The tracker is observed at the Umami global, so this file imports no analytics module and
 // carries no Umami data attribute (BlunderCheckTab.test.tsx scans this directory for both).
 const track = vi.fn();
@@ -17,7 +24,13 @@ const UMAMI_ATTRIBUTE = ['data-umami', 'event'].join('-');
 
 import { BlunderCheckEndScreen } from '@/components/train/blunder-check/BlunderCheckEndScreen';
 import { LEADERBOARD_MODE_STORAGE_KEY } from '@/lib/trainLeaderboard';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
+import {
+  PHASE_251_PROGRESS_FIELDS,
+  PUZZLES_MODE,
+} from '@/components/train/__tests__/trainProgressFixtures';
 import type { SessionResultResponse } from '@/types/blunderCheck';
+import type { TrainModeState, TrainProgressResponse } from '@/types/train';
 
 const RESULT: SessionResultResponse = {
   session_id: 7,
@@ -55,6 +68,8 @@ afterEach(() => {
   track.mockReset();
   delete window.umami;
   localStorage.clear();
+  progressMock.mockReset();
+  progressMock.mockReturnValue({ data: undefined });
 });
 
 describe('BlunderCheckEndScreen leaderboard link', () => {
@@ -91,5 +106,64 @@ describe('BlunderCheckEndScreen leaderboard link', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('path-probe').textContent).toBe('/train/blunder-check');
     expect(localStorage.getItem(LEADERBOARD_MODE_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('BlunderCheckEndScreen continue with Puzzles (D-12)', () => {
+  const startPuzzles = vi.fn();
+  const startBlunderCheck = vi.fn();
+
+  function progressWithPuzzlesState(state: TrainModeState): { data: TrainProgressResponse } {
+    return {
+      data: {
+        ...PHASE_251_PROGRESS_FIELDS,
+        modes: { ...PHASE_251_PROGRESS_FIELDS.modes, puzzles: { ...PUZZLES_MODE, state } },
+      } as TrainProgressResponse,
+    };
+  }
+
+  function renderWithActions(onDone: () => void = () => undefined): void {
+    render(
+      <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
+        <MemoryRouter initialEntries={['/train']}>
+          <BlunderCheckEndScreen result={RESULT} onDone={onDone} />
+        </MemoryRouter>
+      </TrainTodayActionsContext.Provider>,
+    );
+  }
+
+  afterEach(() => {
+    startPuzzles.mockReset();
+    startBlunderCheck.mockReset();
+  });
+
+  it.each<TrainModeState>(['pending', 'in_progress'])(
+    'offers the continue button while puzzles are %s, and starts them on click',
+    (state) => {
+      progressMock.mockReturnValue(progressWithPuzzlesState(state));
+      renderWithActions();
+      const button = screen.getByTestId('btn-train-continue-puzzles');
+      expect(button.textContent).toBe('Continue with Puzzles');
+      fireEvent.click(button);
+      expect(startPuzzles).toHaveBeenCalledTimes(1);
+      expect(startBlunderCheck).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each<TrainModeState>(['done', 'off'])('shows no continue button while puzzles are %s', (state) => {
+    progressMock.mockReturnValue(progressWithPuzzlesState(state));
+    const onDone = vi.fn();
+    renderWithActions(onDone);
+    expect(screen.queryByTestId('btn-train-continue-puzzles')).toBeNull();
+    fireEvent.click(screen.getByTestId('btn-train-done'));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Done available next to the continue button', () => {
+    progressMock.mockReturnValue(progressWithPuzzlesState('pending'));
+    const onDone = vi.fn();
+    renderWithActions(onDone);
+    fireEvent.click(screen.getByTestId('btn-train-done'));
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
