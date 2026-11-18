@@ -350,14 +350,19 @@ Plans:
 - [x] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline); superseded by Phase 254 (254-CONTEXT D-11)
 - [x] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
 
-### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
+### Phase 251: Blunder-Check Schedule, Streak and Leaderboards (SEED-261108-dk0)
 
-**Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
-(0 allowed), session streak across both modes, a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
-and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
+**Goal**: Turn the Phase 249 MVP into a full Train mode for everyone, guests included: a shared schedule and
+reminders with a per-mode session size, a session streak that needs both modes, a Today page with three cards
+(streak, personalized puzzles, blunder check) replacing the Blunder Check tab, a cross-mode cooldown with
+personalized puzzles, and Points and Score % leaderboards with medals per mode. Decisions from the 2026-11-18
+/gsd-explore session are in the seed ("Phase 251 decisions"); they feed the discuss-phase.
 
-- **No spaced repetition for blunder check** (owner, 2026-11-13): a sequence is shown to a user once and never
-  re-served, so there are no reviews of missed-blunder windows. This drops the review item from the seed's scope.
+- **No spaced repetition for blunder check** (owner, 2026-11-13, confirmed 2026-11-18): a sequence is shown to a
+  user once and never re-served. The counter-arguments and a lighter retry idea for later are in the seed.
+- **Default session size 6 for all users**, changeable anytime, 0 turns a mode off, never both modes at 0.
+- **Users without rated games** pick a level (Beginner / Intermediate / Advanced) that sets the Elo for foreign
+  blunder selection.
 
 **Depends on**: Phase 250
 **Requirements**: TBD
