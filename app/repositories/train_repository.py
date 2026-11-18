@@ -1347,6 +1347,31 @@ async def expire_stale_sessions(
     )
 
 
+async def expire_open_session(session: AsyncSession, *, user_id: int) -> bool:
+    """Flip the user's open puzzle session to 'expired' regardless of its window; True if one moved.
+
+    Used when puzzles are switched off (size 0, D-04): the mode is no longer required today, so
+    the open session is closed instead of lingering as an unfinished obligation. Recorded
+    `drill_solves` rows (and the leaderboard points they carry) are untouched, exactly like
+    `expire_stale_sessions`, and unsolved SR items keep their `due_date`. A completed session is
+    never matched (`status = 'open'` only), so it never reopens. Scoped by the auth-derived
+    `user_id`.
+
+    Args:
+        session: AsyncSession. Caller commits.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+    """
+    moved = (
+        await session.execute(
+            update(DrillSession)
+            .where(DrillSession.user_id == user_id, DrillSession.status == "open")
+            .values(status="expired")
+            .returning(DrillSession.id)
+        )
+    ).scalar_one_or_none()
+    return moved is not None
+
+
 async def stamp_session_entered(
     session: AsyncSession, *, user_id: int, session_id: int, now_utc: datetime.datetime
 ) -> bool:
@@ -1574,6 +1599,11 @@ async def get_waiting_puzzle_count(
         today: The local calendar day (from `local_today`, resolved once per
             request by the caller).
     """
+    if settings_row.puzzles_per_session == 0:
+        # Puzzles are switched off (D-04): nothing waits, whatever is due or still open. Without
+        # this an open session left over from before the switch would keep advertising its
+        # unsolved remainder on the nav badge.
+        return 0
     open_session = await open_session_for_user(session, user_id=user_id)
     if open_session is not None and not is_session_expired(open_session.expires_on, today):
         # Bug fix: an UNTOUCHED open session whose size has drifted from the
@@ -2994,6 +3024,9 @@ async def compose_and_materialize_session(
 ) -> ComposedSession:
     """Compose or resume a Train session at the full 75/25 mix.
 
+    0. Puzzles switched off (`puzzles_per_session == 0`, D-04): right after the settings are
+       resolved, return the empty `ComposedSession` (no session row, counts 0) before any other
+       read or write, so the Today mount's status read neither composes nor discards anything.
     1. Resolve `train_settings` (create-on-first-touch), today's local date,
        and the `(sr_slots, herring_slots)` split (`compose_slots`).
     1b. Stamp the `pool_eligible_since` watermark if it is still NULL and
@@ -3075,6 +3108,25 @@ async def compose_and_materialize_session(
     settings_row = await get_or_create_settings(session, user_id=user_id)
     n = settings_row.puzzles_per_session
     today = local_today(settings_row.timezone, now_utc)
+
+    if n == 0:
+        # Puzzles are switched off (D-04). POST /train/sessions runs on every Today mount as a
+        # status read, so without this guard the mount would try to compose an empty session or
+        # `_discard_if_untouched_and_resized` an untouched one whose frozen size no longer
+        # matches 0. Nothing is read or written: the settings PUT already closed any open
+        # session (`expire_open_session`), and the eligibility stamp is owned by get_progress.
+        return ComposedSession(
+            session_id=None,
+            session_date=today,
+            expires_on=session_window(today, settings_row.weekday_mask),
+            puzzle_count=0,
+            requested_count=0,
+            solved_count=0,
+            blob_pending_count=0,
+            puzzles=[],
+            solved_results=[],
+            is_warmup=False,
+        )
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
     # The third term, sharp_filler_available(), lets a filler-only session

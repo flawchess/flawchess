@@ -102,6 +102,9 @@ async def apply_settings_update(
         await blunder_check_service.resize_for_settings(
             session, user_id=user_id, new_size=resolved_bc_size, now_utc=now_utc
         )
+    if puzzles_per_session == 0 and old_row.puzzles_per_session != 0:
+        # Puzzles switched off: the open puzzle session no longer counts (D-04, D-06 twin).
+        await train_repository.expire_open_session(session, user_id=user_id)
     # "Today" is resolved with the NEW timezone: the user is acting on the day they now live in.
     today = local_today(new_row.timezone, now_utc)
     await train_repository.apply_day_completion(
