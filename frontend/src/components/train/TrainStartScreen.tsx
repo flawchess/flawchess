@@ -9,7 +9,10 @@
  * exactly one always matches.
  *
  * Every state renders the same Today card (`TrainStreakCard`, with one launcher
- * row per mode), and the schedule card follows it. The session state drives the
+ * row per mode), with the settings column beside it (desktop) or below it (phones):
+ * one collapsed settings row per mode (`TrainModeSettings`), then the schedule card.
+ * All of them edit ONE settings draft (`useTrainSettingsDraft`) owned here, which a
+ * launcher row's "Turn on" writes to as well. The session state drives the
  * puzzles row (Start, Resume or done with today's Points). The weekly
  * leaderboard lives on its own tab, not here (the card's rank line links to it).
  *
@@ -38,7 +41,8 @@ import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
-import { TrainModeSettings } from '@/components/train/TrainModeSettings';
+import { DEFAULT_MODE_SIZE, TrainModeSettings } from '@/components/train/TrainModeSettings';
+import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import type { PuzzlesLanding } from '@/components/train/TrainStreakCard';
@@ -52,6 +56,7 @@ import {
   isRevealTourDone,
   landingHost,
 } from '@/lib/trainBotCopy';
+import { trackFeature } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -107,14 +112,19 @@ export interface TrainStartScreenProps {
  * settings chips stretch edge-to-edge on a wide window while the text sits
  * flush against the left gutter. Text stays left-aligned inside the column.
  *
- * Only the landing states use this — `TrainSolveScreen` is a two-column lg
+ * The column widens from lg so the Today card and the settings column fit side by
+ * side. Only the landing states use this — `TrainSolveScreen` is a two-column lg
  * layout that must keep the full page width.
  *
  * There is no top padding: the Today panel's `mt-4` supplies the gap under the
  * tabs. Bottom padding is `pb-6 md:pb-8`.
  */
 const LANDING_CONTAINER_CLASS =
-  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 pb-6 text-left md:pb-8';
+  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 pb-6 text-left md:pb-8 lg:max-w-4xl';
+
+/** One column on phones (host bubble, Today card, mode rows, schedule row); from lg the Today
+ * card sits on the left and the settings column on the right. */
+const LANDING_GRID_CLASS = 'grid w-full grid-cols-1 items-start gap-4 lg:grid-cols-2';
 
 
 type LandingState =
@@ -408,6 +418,19 @@ export function TrainStartScreen({
   // save survives the loading state and a tab switch.
   const settingsDraft = useTrainSettingsDraft({ onSaved: onSettingsSaved });
 
+  // An off launcher row's Turn on writes the default size into the shared draft, so it rides
+  // the same debounced PUT as the sliders (D-09). Nothing happens until settings have loaded.
+  const handleTurnOn = (mode: TrainLauncherMode): void => {
+    if (settingsDraft.draft === null) return;
+    if (mode === 'puzzles') {
+      trackFeature('action', { target: 'train-mode-turn-on-puzzles' });
+      settingsDraft.update({ puzzlesPerSession: DEFAULT_MODE_SIZE });
+      return;
+    }
+    trackFeature('action', { target: 'train-mode-turn-on-blunder-check' });
+    settingsDraft.update({ blunderCheckPerSession: DEFAULT_MODE_SIZE });
+  };
+
   // Matches the existing muted text-only route-loading pattern
   // (`import-required-loading` / `bots-loading`) rather than a new skeleton.
   if (state.kind === 'loading') {
@@ -434,26 +457,26 @@ export function TrainStartScreen({
       puzzlesLanding={puzzlesLandingFor(state)}
       puzzlesStartDisabled={isLoading || state.kind === 'empty'}
       showRouteDot={showRouteDot}
+      onTurnOn={handleTurnOn}
     />
   );
   const completed = state.kind === 'completed';
 
   if (state.kind === 'empty') {
     // With puzzles off, "no puzzles available" copy would be wrong (the user chose zero);
-    // the schedule settings below are where they turn the mode back on.
+    // the mode rows and schedule beside the card are where they turn the mode back on.
     const puzzlesOff = progress.data?.modes.puzzles.state === 'off';
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        {todayCard}
-        {puzzlesOff ? (
-          <>
+        <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">
+          {todayCard}
+          <div className="flex min-w-0 flex-col gap-4">
             <TrainModeSettings settingsDraft={settingsDraft} />
             <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={isGuest} />
-          </>
-        ) : (
-          <TrainEmptyBody progress={progress} />
-        )}
+          </div>
+        </div>
+        {!puzzlesOff && <TrainEmptyBody progress={progress} />}
       </div>
     );
   }
@@ -470,13 +493,17 @@ export function TrainStartScreen({
           sessionCompleted={completed}
         />
       )}
-      {todayCard}
-      <TrainModeSettings settingsDraft={settingsDraft} />
-      <TrainScheduleSettings
-        settingsDraft={settingsDraft}
-        nextSessionDate={state.kind === 'completed' ? state.nextSessionDate : undefined}
-        isGuest={isGuest}
-      />
+      <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">
+        {todayCard}
+        <div className="flex min-w-0 flex-col gap-4">
+          <TrainModeSettings settingsDraft={settingsDraft} />
+          <TrainScheduleSettings
+            settingsDraft={settingsDraft}
+            nextSessionDate={state.kind === 'completed' ? state.nextSessionDate : undefined}
+            isGuest={isGuest}
+          />
+        </div>
+      </div>
     </div>
   );
 }

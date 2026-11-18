@@ -183,7 +183,7 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
       }
       setIosPending(true);
       // A direct, IMMEDIATE save fired on the tap — never folded into
-      // TrainScheduleSettings's 600ms debounced draft path. The user is
+      // the shared settings draft's 600ms debounced path (`useTrainSettingsDraft`). The user is
       // about to background the tab to open the Share sheet; a debounced
       // write would be lost (mirrors the toggle-ON precedent in
       // TrainScheduleSettings).
