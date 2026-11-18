@@ -366,7 +366,7 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 8/13 plans executed
+**Plans:** 9/13 plans executed
 
 Plans:
 **Wave 1**
@@ -390,7 +390,7 @@ Plans:
 - [x] 251-07-PLAN.md — Blunder check runs from the Today card; Blunder Check tab and route removed
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 251-13-PLAN.md — Today card launcher rows (D-08, D-09), nav badge as two-mode pending sum, analytics targets
+- [x] 251-13-PLAN.md — Today card launcher rows (D-08, D-09), nav badge as two-mode pending sum, analytics targets
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 251-08-PLAN.md — One-time level step (D-20) and launch notice with dismissal (D-21)
