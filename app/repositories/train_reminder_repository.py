@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import exists, or_, select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.drill_session import DrillSession
 from app.models.push_subscription import PushSubscription
 from app.models.train_settings import TrainSettings
 from app.models.user import User
@@ -145,34 +144,8 @@ async def release_reminder_claim(
     return released is not None
 
 
-async def has_completed_session_on(
-    session: AsyncSession, *, user_id: int, day: datetime.date
-) -> bool:
-    """True when `user_id` has a completed `drill_sessions` row for `day`.
-
-    This is what "already trained today" means -- matches what
-    the streak machine already counts. A session opened at 17:00 and
-    abandoned half-done deliberately still earns the nudge (only a
-    non-NULL `completed_at` suppresses).
-
-    Args:
-        session: AsyncSession.
-        user_id: Authenticated user's internal PK (V4: never client-supplied).
-        day: The user's own already-resolved local calendar day.
-    """
-    stmt = select(
-        exists().where(
-            DrillSession.user_id == user_id,
-            DrillSession.session_date == day,
-            DrillSession.completed_at.isnot(None),
-        )
-    )
-    return bool((await session.execute(stmt)).scalar_one())
-
-
 __all__ = [
     "claim_reminder_day",
-    "has_completed_session_on",
     "list_reminder_candidate_user_ids",
     "release_reminder_claim",
 ]

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import type { TrainProgressResponse } from '@/types/train';
 
@@ -24,5 +24,28 @@ export function useTrainProgress(options?: { enabled?: boolean }) {
     queryKey: TRAIN_PROGRESS_QUERY_KEY,
     queryFn: trainApi.getProgress,
     enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * POST /train/blunder-check-notice/dismiss — hides the launch notice (D-21). Optimistic: the
+ * cached progress flips `blunder_check_notice` to false on mutate, so the card drops the notice
+ * at once, and the progress query is invalidated on settle so the server's answer wins (a failed
+ * dismissal brings the notice back).
+ *
+ * No Sentry call here: the global MutationCache.onError already captures every mutation error.
+ */
+export function useDismissBlunderCheckNotice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: trainApi.dismissBlunderCheckNotice,
+    onMutate: () => {
+      queryClient.setQueryData<TrainProgressResponse>(TRAIN_PROGRESS_QUERY_KEY, (cached) =>
+        cached === undefined ? cached : { ...cached, blunder_check_notice: false },
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: TRAIN_PROGRESS_QUERY_KEY });
+    },
   });
 }

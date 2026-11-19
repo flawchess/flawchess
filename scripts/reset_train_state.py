@@ -17,9 +17,17 @@ WHAT IT DELETES / RESETS (for ONE user)
     - ``drill_items``   — deleted. The pool is re-materialised from the user's
       own qualifying blunders on the next ``POST /train/sessions``, so this
       loses only spaced-repetition progress, never game/flaw data.
+    - ``blunder_check_sessions`` — deleted, with their windows and answers
+      (FK cascade; windows are counted in the report). Bug fix: these were left
+      behind, so a session completed under a forward-shifted clock kept its
+      future ``expires_on`` and the Train page went on showing "Done today"
+      for Blunder Check after the reset, however the clock was moved.
     - ``train_settings`` — the per-day tick snapshot columns
       (``streak_count``, ``shield_level``, ``streak_settled_through``,
-      ``pool_eligible_since``) reset to 0/0/NULL/NULL. The watermark is
+      ``pool_eligible_since``, ``streak_credited_on``) reset to 0/0/NULL/NULL/NULL.
+      ``streak_credited_on`` (Phase 251) is the per-day idempotency key of the
+      eager streak credit; left behind, a dev account reset mid-day could never
+      be credited for that day again, breaking repeatable UAT. The watermark is
       derived state, not a user setting, so a clean slate must clear it too
       — leaving a stale ``pool_eligible_since`` behind would let a
       time-travelled run silently treat "the OLD material-discovery date" as
@@ -35,7 +43,7 @@ WHAT IT DELETES / RESETS (for ONE user)
       drop the row entirely and get the D-06/D-07/D-08 defaults back on next
       touch.
 
-    Nothing outside these four tables is touched — no games, positions, flaws,
+    Nothing outside these tables is touched — no games, positions, flaws,
     or evals.
 
 DB target (per CLAUDE.md), selected with ``--db``:
@@ -79,6 +87,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import db_url_for_target  # noqa: E402
+from app.models.blunder_check import BlunderCheckSession, BlunderCheckWindow  # noqa: E402
 from app.models.drill_item import DrillItem  # noqa: E402
 from app.models.drill_session import DrillSession  # noqa: E402
 from app.models.drill_solve import DrillSolve  # noqa: E402
@@ -177,6 +186,20 @@ async def _count_rows(session: AsyncSession, user_id: int) -> dict[str, int]:
             select(func.count()).select_from(DrillSolve).where(DrillSolve.user_id == user_id)
         )
     ).scalar_one()
+    counts["blunder_check_sessions"] = (
+        await session.execute(
+            select(func.count())
+            .select_from(BlunderCheckSession)
+            .where(BlunderCheckSession.user_id == user_id)
+        )
+    ).scalar_one()
+    counts["blunder_check_windows"] = (
+        await session.execute(
+            select(func.count())
+            .select_from(BlunderCheckWindow)
+            .where(BlunderCheckWindow.user_id == user_id)
+        )
+    ).scalar_one()
     counts["train_settings"] = (
         await session.execute(
             select(func.count()).select_from(TrainSettings).where(TrainSettings.user_id == user_id)
@@ -190,6 +213,8 @@ async def _reset(session: AsyncSession, user_id: int, *, reset_settings: bool) -
     await session.execute(delete(DrillSolve).where(DrillSolve.user_id == user_id))
     await session.execute(delete(DrillSession).where(DrillSession.user_id == user_id))
     await session.execute(delete(DrillItem).where(DrillItem.user_id == user_id))
+    # Windows and answers go with their session (ON DELETE CASCADE).
+    await session.execute(delete(BlunderCheckSession).where(BlunderCheckSession.user_id == user_id))
     if reset_settings:
         await session.execute(delete(TrainSettings).where(TrainSettings.user_id == user_id))
     else:
@@ -201,6 +226,8 @@ async def _reset(session: AsyncSession, user_id: int, *, reset_settings: bool) -
                 shield_level=0,
                 streak_settled_through=None,
                 pool_eligible_since=None,
+                # Phase 251: the per-day credit key is part of the tick snapshot.
+                streak_credited_on=None,
                 # Phase 222 (TRAINBOT-05, D-13/RESEARCH Finding I): without
                 # clearing these, a dev account can see each onboarding
                 # stepper exactly once, ever, making iterative UAT of the
@@ -223,7 +250,7 @@ async def main() -> int:
             before = await _count_rows(session, args.user_id)
             print(f"Train state for user {args.user_id} on --db {args.db}:")
             for table, count in before.items():
-                print(f"  {table:<16} {count}")
+                print(f"  {table:<22} {count}")
             if args.dry_run:
                 print("\n--dry-run: nothing written.")
                 return 0
@@ -240,7 +267,7 @@ async def main() -> int:
             settings_note = "deleted" if args.reset_settings else "streak snapshot cleared"
             print(f"\nReset done (train_settings: {settings_note}). Remaining rows:")
             for table, count in after.items():
-                print(f"  {table:<16} {count}")
+                print(f"  {table:<22} {count}")
     finally:
         await engine.dispose()
     return 0

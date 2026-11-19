@@ -56,6 +56,24 @@ export const WINDOW_OUTCOME_LABELS: Record<WindowOutcome, string> = {
 };
 
 const UNEXPECTED_RESPONSE_MESSAGE = 'Unexpected blunder-check response';
+export const MS_PER_SECOND = 1000;
+/** Remaining share of the move's time at or below which the countdown turns amber. */
+const TIMER_WARN_FRACTION = 2 / 3;
+/** Remaining share at or below which it turns red; the low-time sound starts here too. */
+const TIMER_DANGER_FRACTION = 1 / 3;
+
+/** The countdown's color band: equal thirds of the move's time (4 s each at 12 s). */
+export type TimerZone = 'safe' | 'warn' | 'danger';
+
+/**
+ * Which third of the move's time is left (Phase 251 UAT). The ring colors by it, and the drill
+ * starts the low-time sound on `danger`, so the sound always plays as the ring turns red.
+ */
+export function timerZone(remainingMs: number, totalMs: number): TimerZone {
+  if (remainingMs <= totalMs * TIMER_DANGER_FRACTION) return 'danger';
+  if (remainingMs <= totalMs * TIMER_WARN_FRACTION) return 'warn';
+  return 'safe';
+}
 
 /**
  * The FEN after playing `ucis` from `startFen`. Throws on an illegal move: the server's
@@ -88,6 +106,8 @@ export interface DrillWindow {
   shownUcis: readonly string[];
   /** The game move that led to `startFen`: the last-move highlight while nothing is shown yet. */
   priorUci: string | null;
+  /** The full per-move countdown (the ring's 100%), from the server's move_timer_seconds. */
+  moveTimerMs: number;
   windowPoints: number;
 }
 
@@ -234,6 +254,7 @@ function betterMoveResumed(
       // The caught blunder itself was never played on the board.
       shownUcis: [...response.lead_in_ucis, ...answeredUcis(response.answered.slice(0, -1))],
       priorUci: response.prior_uci,
+      moveTimerMs: response.move_timer_seconds * MS_PER_SECOND,
       windowPoints: response.window_points,
     },
     prompt: response.prompt,
@@ -265,6 +286,7 @@ function windowFromServer(
     leadInUcis: response.lead_in_ucis,
     shownUcis: resumed ? [...response.lead_in_ucis, ...answeredUcis(response.answered)] : [],
     priorUci: response.prior_uci,
+    moveTimerMs: response.move_timer_seconds * MS_PER_SECOND,
     windowPoints: response.window_points,
   };
   const common = {

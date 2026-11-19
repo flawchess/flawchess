@@ -78,7 +78,7 @@ reminder_intent_at on GET/PUT /train/settings:
   non-null PUT reads back null
 
 GET /train/progress:
-- test_progress_returns_200_with_all_eleven_fields : an authenticated non-guest
+- test_progress_returns_200_with_every_field : an authenticated non-guest
                                                       account gets a full payload
 - test_guest_progress_200                          : a guest
                                                       gets the same full payload, 200
@@ -783,12 +783,27 @@ async def _seed_completed_session_router(
             )
 
 
-async def _seed_pool_eligible_since_router(test_engine, user_id: int, since: datetime.date) -> None:
+# Phase 251: the pre-existing streak tests in this file pin the puzzle-only completion rule,
+# which the D-02 both-modes rule reduces to when blunder check is off (size 0 = not part of the
+# day). The two-mode case lives in tests/routers/test_train_two_mode_streak.py.
+_PUZZLES_ONLY_BC_SIZE = 0
+
+
+async def _seed_pool_eligible_since_router(
+    test_engine,
+    user_id: int,
+    since: datetime.date,
+    *,
+    blunder_check_per_session: int = _PUZZLES_ONLY_BC_SIZE,
+) -> None:
     """Directly stamp the eligibility watermark via test_engine
     (mirrors the repository test suite's `_seed_pool_eligible_since`, for
     the router test file's HTTP-registered users). Creates a default
     train_settings row first if one does not already exist, mirroring
-    `train_repository.get_or_create_settings`'s own insert shape."""
+    `train_repository.get_or_create_settings`'s own insert shape.
+
+    Also writes `blunder_check_per_session` (default 0): the callers pin the pre-Phase-251
+    puzzle-only completion rule."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from app.models.train_settings import TrainSettings
@@ -810,9 +825,46 @@ async def _seed_pool_eligible_since_router(test_engine, user_id: int, since: dat
                 shield_level=0,
                 streak_settled_through=None,
                 pool_eligible_since=since,
+                blunder_check_per_session=blunder_check_per_session,
             )
             stmt = stmt.on_conflict_do_update(
-                index_elements=["user_id"], set_={"pool_eligible_since": since}
+                index_elements=["user_id"],
+                set_={
+                    "pool_eligible_since": since,
+                    "blunder_check_per_session": blunder_check_per_session,
+                },
+            )
+            await session.execute(stmt)
+
+
+async def _set_blunder_check_size_router(test_engine, user_id: int, size: int) -> None:
+    """Set `train_settings.blunder_check_per_session` via test_engine (same upsert shape as
+    `_seed_pool_eligible_since_router`), creating the default row when absent."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from app.models.train_settings import TrainSettings
+    from app.services.train_scheduler import (
+        DEFAULT_PUZZLES_PER_SESSION,
+        DEFAULT_TIMEZONE,
+        DEFAULT_WEEKDAY_MASK,
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            stmt = pg_insert(TrainSettings).values(
+                user_id=user_id,
+                timezone=DEFAULT_TIMEZONE,
+                weekday_mask=DEFAULT_WEEKDAY_MASK,
+                puzzles_per_session=DEFAULT_PUZZLES_PER_SESSION,
+                streak_count=0,
+                shield_level=0,
+                streak_settled_through=None,
+                pool_eligible_since=None,
+                blunder_check_per_session=size,
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["user_id"], set_={"blunder_check_per_session": size}
             )
             await session.execute(stmt)
 
@@ -1055,10 +1107,12 @@ async def test_guest_zero_game_warmup_end_to_end(
     sharp-filler solve carries no per-item SR bookkeeping, unlike an SR_ITEM
     solve. The account-level streak this test proves lives on
     `TrainProgressResponse.session_streak_count`, ticked by
-    `_apply_completion_tick` the instant the session's LAST puzzle is
+    `apply_day_completion` the instant the session's LAST puzzle is
     solved (Finding C leg 1: `sharp_filler_available()` already counts as
     material for `_stamp_pool_eligibility`, so a filler-only session ticks
-    the same as any other). Every puzzle in the composed session is solved
+    the same as any other). Blunder check is switched off for this user, so
+    the puzzle-only completion completes the day; the two-mode case lives in
+    test_train_two_mode_streak.py. Every puzzle in the composed session is solved
     in a loop for exactly this reason — solving only the first of several
     would never flip `session_complete` and the streak would stay at 0.
 
@@ -1070,6 +1124,7 @@ async def test_guest_zero_game_warmup_end_to_end(
     email = f"train-guest-e2e-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     await _set_guest(test_engine, user_id)
+    await _set_blunder_check_size_router(test_engine, user_id, _PUZZLES_ONLY_BC_SIZE)
     _install_sharp_fixture(monkeypatch)
 
     session_id: int | None = None
@@ -2734,6 +2789,8 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
         "timezone": "UTC",
         "weekday_mask": 127,
         "puzzles_per_session": 6,
+        "blunder_check_per_session": 6,
+        "blunder_check_level": None,
         "reminder_enabled": False,
         "reminder_hour": 18,
         "reminder_intent_at": None,
@@ -2826,6 +2883,8 @@ async def test_put_settings_persists_and_round_trips(test_engine) -> None:
         "timezone": "America/New_York",
         "weekday_mask": 0b0010101,
         "puzzles_per_session": 8,
+        "blunder_check_per_session": 6,
+        "blunder_check_level": None,
         "reminder_enabled": True,
         "reminder_hour": 7,
         "reminder_intent_at": None,
@@ -3355,7 +3414,7 @@ async def test_untouched_open_session_recomposes_after_size_change(test_engine) 
 
 
 @pytest.mark.asyncio
-async def test_progress_returns_200_with_all_eleven_fields(test_engine) -> None:
+async def test_progress_returns_200_with_every_field(test_engine) -> None:
     """An authenticated non-guest account gets 200 with every response field."""
     email = f"train-progress-ok-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -3375,6 +3434,10 @@ async def test_progress_returns_200_with_all_eleven_fields(test_engine) -> None:
         "pool_state",
         "next_due_date",
         "badge_visible",
+        "modes",
+        "day_complete",
+        "pending_count",
+        "blunder_check_notice",
     }
     assert body["pool_state"] in ("no_material", "exhausted", "available")
     # A brand-new account: empty shield, nothing settled, no counts yet, and
@@ -3447,6 +3510,10 @@ async def test_guest_progress_200(test_engine) -> None:
         "pool_state",
         "next_due_date",
         "badge_visible",
+        "modes",
+        "day_complete",
+        "pending_count",
+        "blunder_check_notice",
     }
 
 

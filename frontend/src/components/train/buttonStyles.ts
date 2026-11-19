@@ -32,3 +32,21 @@ export const TRAIN_FILTER_PILL_CLASS =
 
 /** Gap between filter pills, for `ToggleGroup`'s `spacing` prop (Tailwind units). */
 export const TRAIN_FILTER_PILL_SPACING = 2;
+
+/**
+ * One underline tab, for a `ToggleGroupItem` in a row that carries a bottom rule
+ * (Leaderboard game switch). Text only with a 2px active underline, so it does not
+ * read like the filter pills or the segmented control below it. `-mb-px` lays the
+ * underline over the row's rule; h-11 is the mobile touch height.
+ */
+export const TRAIN_UNDERLINE_TAB_CLASS =
+  '-mb-px h-11 rounded-none! border-0 border-b-2 border-transparent bg-transparent px-3 text-sm text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:border-primary data-[state=on]:bg-transparent data-[state=on]:text-foreground sm:h-9';
+
+/**
+ * One segment of a joined segmented control, for a `ToggleGroupItem` in a
+ * `spacing={0}` group (Leaderboard board switch in the card header). Same 32px
+ * draw height and ::before tap area as the filter pill, without its full rounding
+ * (the group rounds the outer corners).
+ */
+export const TRAIN_SEGMENT_CLASS =
+  'relative h-8 px-3 text-sm before:absolute before:inset-x-0 before:-inset-y-2 sm:h-7 sm:before:hidden';

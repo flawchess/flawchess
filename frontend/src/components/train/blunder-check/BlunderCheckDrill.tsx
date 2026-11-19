@@ -18,12 +18,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, ReactElement, ReactNode } from 'react';
 import axios from 'axios';
-import { Clock } from 'lucide-react';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import { BlunderCheckBetterMove } from '@/components/train/blunder-check/BlunderCheckBetterMove';
 import { BlunderCheckPointsFlash } from '@/components/train/blunder-check/BlunderCheckPointsFlash';
 import { BlunderCheckSolution } from '@/components/train/blunder-check/BlunderCheckSolution';
+import { BlunderCheckTimerRing } from '@/components/train/blunder-check/BlunderCheckTimerRing';
 import {
   BlunderCheckStage,
   BlunderCheckStageMessage,
@@ -46,11 +46,13 @@ import {
   LEAD_IN_PLY_INTERVAL_MS,
   LEAD_IN_START_DELAY_MS,
   MOVE_REPLY_DELAY_MS,
+  MS_PER_SECOND,
   applyUcis,
   bankingProgress,
   drillProgress,
   flashFor,
   moveSoundFor,
+  timerZone,
 } from '@/lib/blunderCheckDrill';
 import type {
   DrillEvent,
@@ -59,6 +61,7 @@ import type {
   DrillWindow,
   FeedbackFlash,
 } from '@/lib/blunderCheckDrill';
+import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { prefersReducedMotion } from '@/lib/confetti';
 import { saveBlunderCheckSolutionCache } from '@/lib/blunderCheckSolutionCache';
 import type { CachedBlunderCheckSolution } from '@/lib/blunderCheckSolutionCache';
@@ -67,16 +70,17 @@ import type { Persona } from '@/lib/personas/personaRegistry';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { playSound } from '@/lib/sounds';
-import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, ZONE_DANGER } from '@/lib/theme';
+import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD } from '@/lib/theme';
 import { TRAIN_PLAYED_MOVE_ARROW_WIDTH } from '@/lib/trainArrows';
 import { sideToMoveFromFen } from '@/lib/liveFlaw';
-import { blunderCheckReadyCopy, pickPuzzleHost } from '@/lib/trainBotCopy';
+import {
+  blunderCheckIntroSteps,
+  blunderCheckReadyCopy,
+  pickPuzzleHost,
+} from '@/lib/trainBotCopy';
 import type { RevealTreeSnapshot } from '@/lib/trainRevealLines';
 import type { AnswerKind, AnswerResponse } from '@/types/blunderCheck';
 
-/** The countdown turns red, and the low-time sound plays, once this little time is left. */
-const MOVE_TIMER_WARN_MS = 3000;
-const MS_PER_SECOND = 1000;
 const HTTP_CONFLICT = 409;
 /** The `detail` of the 409 the server answers when the client's prompt is no longer the open one. */
 const STALE_PROMPT_DETAIL = 'stale_prompt';
@@ -357,27 +361,6 @@ async function postAnswer(
   }
 }
 
-/** The countdown inside the bubble, with a clock icon; it keeps its place while hidden. */
-function MoveTimer({
-  remainingMs,
-  visible,
-}: {
-  remainingMs: number;
-  visible: boolean;
-}): ReactElement {
-  const warn = remainingMs <= MOVE_TIMER_WARN_MS;
-  return (
-    <span
-      className={`flex shrink-0 items-center gap-1 font-semibold tabular-nums ${visible ? '' : 'invisible'}`}
-      style={warn ? { color: ZONE_DANGER } : undefined}
-      data-testid="blunder-check-timer"
-    >
-      <Clock className="size-4" aria-hidden="true" />
-      {Math.ceil(remainingMs / MS_PER_SECOND)}s
-    </span>
-  );
-}
-
 /** The two answer buttons, the same width (the personalized-puzzle guess-button grid). */
 function AnswerButtons({
   answerable,
@@ -479,14 +462,23 @@ function ReadyGateBubble({
   orientation,
   startFen,
   beginning,
+  rulesTimerMs,
   onReady,
 }: {
   persona: Persona;
   orientation: 'white' | 'black';
   startFen: string;
   beginning: boolean;
+  /** The per-move countdown when this gate is a candidate for the rules (a session's first
+   * sequence), else null. */
+  rulesTimerMs: number | null;
   onReady: () => void;
 }): ReactElement {
+  // The intro shows once: on the first sequence of a user who has never finished a blunder-check
+  // session. While the progress is still loading nothing extra is shown.
+  const progress = useTrainProgress();
+  const showRules =
+    rulesTimerMs !== null && progress.data?.modes.blunder_check.first_session_done === false;
   return (
     <div data-testid="blunder-check-ready-gate">
       <TrainBotBubble
@@ -504,6 +496,16 @@ function ReadyGateBubble({
           </Button>
         }
       >
+        {showRules && (
+          <div className="mb-2 text-sm" data-testid="blunder-check-ready-rules">
+            <p className="font-medium">How it works:</p>
+            <ul className="list-disc pl-5">
+              {blunderCheckIntroSteps(Math.round(rulesTimerMs / MS_PER_SECOND)).map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p data-testid="blunder-check-ready-copy">
           {blunderCheckReadyCopy(orientation, sideToMoveFromFen(startFen))}
         </p>
@@ -517,6 +519,7 @@ function WindowView({
   progress,
   persona,
   remainingMs,
+  lowTime,
   onAnswer,
   onReady,
 }: {
@@ -524,6 +527,8 @@ function WindowView({
   progress: DrillProgress;
   persona: Persona;
   remainingMs: number;
+  /** The low-time sound has played for this prompt: the ring shakes. */
+  lowTime: boolean;
   onAnswer: (answer: AnswerKind) => void;
   onReady: () => void;
 }): ReactElement {
@@ -606,21 +611,28 @@ function WindowView({
           orientation={window.orientation}
           startFen={window.startFen}
           beginning={state.phase === 'beginning'}
+          rulesTimerMs={window.position === 0 ? window.moveTimerMs : null}
           onReady={onReady}
         />
       ) : (
-        // The question, the countdown and the answer buttons in the host's speech bubble
-        // (the personalized-puzzle chat row).
+        // The question and the answer buttons in the host's speech bubble (the
+        // personalized-puzzle chat row), with the countdown ring in the avatar's place
+        // (Phase 251 UAT: the inline timer read too small).
         <TrainBotBubble
           persona={persona}
           state={nudged ? 'drop-nudge' : 'prompt'}
           nudgeNonce={nudgeNonce}
+          leading={
+            <BlunderCheckTimerRing
+              remainingMs={remainingMs}
+              totalMs={window.moveTimerMs}
+              active={timerVisible}
+              shake={lowTime}
+            />
+          }
           actions={<AnswerButtons answerable={state.phase === 'prompt'} onAnswer={onAnswer} />}
         >
-          <div className="flex items-center justify-between gap-3" data-testid="blunder-check-prompt">
-            <p>Good move or blunder?</p>
-            <MoveTimer remainingMs={remainingMs} visible={timerVisible} />
-          </div>
+          <p data-testid="blunder-check-prompt">Good move or blunder?</p>
         </TrainBotBubble>
       )}
     </BlunderCheckStage>
@@ -642,7 +654,7 @@ function useAnswering(
   state: DrillState,
   dispatch: DrillDispatch,
   api: { answer: AnswerAsync; startWindow: StartWindowAsync },
-): { remainingMs: number; handleAnswer: (answer: AnswerKind) => void } {
+): { remainingMs: number; lowTime: boolean; handleAnswer: (answer: AnswerKind) => void } {
   // The moment the prompt phase began, for the client_elapsed_ms the server records.
   const promptStartedAt = useRef(0);
   const promptKey = promptKeyOf(state);
@@ -685,7 +697,9 @@ function useAnswering(
   });
 
   // The low-time warning, once per prompt, as the countdown reaches its last seconds.
-  const lowTime = inPrompt && remainingMs > 0 && remainingMs <= MOVE_TIMER_WARN_MS;
+  // Phase 251 UAT: it starts as the ring turns red (the last third), not at a fixed 3 s.
+  const lowTime =
+    state.phase === 'prompt' && remainingMs > 0 && timerZone(remainingMs, state.window.moveTimerMs) === 'danger';
   const lowTimeSoundedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!lowTime || lowTimeSoundedFor.current === promptKey) return;
@@ -693,7 +707,7 @@ function useAnswering(
     playSound('low-time');
   }, [lowTime, promptKey]);
 
-  return { remainingMs, handleAnswer };
+  return { remainingMs, lowTime, handleAnswer };
 }
 
 function SolutionLoading({
@@ -755,7 +769,7 @@ export function BlunderCheckDrill({
   useWindowBeginner(state, dispatch, session.beginWindow.mutateAsync);
   useLeadInTicks(state, dispatch);
   useAfterAnswerTicks(state, dispatch);
-  const { remainingMs, handleAnswer } = useAnswering(state, dispatch, api);
+  const { remainingMs, lowTime, handleAnswer } = useAnswering(state, dispatch, api);
   const solutionLoader = useSolutionLoader(state, dispatch, session.solution.mutateAsync);
   const { banking, handleNext } = useBankOnNext(state, dispatch);
   const handleReady = useCallback((): void => dispatch({ type: 'READY_CONFIRMED' }), [dispatch]);
@@ -808,6 +822,7 @@ export function BlunderCheckDrill({
           progress={progress}
           persona={persona}
           remainingMs={remainingMs}
+          lowTime={lowTime}
           onAnswer={handleAnswer}
           onReady={handleReady}
         />

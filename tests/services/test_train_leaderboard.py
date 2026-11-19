@@ -12,15 +12,24 @@ import dataclasses
 import datetime
 import re
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from app.models.train_weekly_standing import Medal
-from app.repositories.train_leaderboard_repository import SolveTotals, WeeklyAggregate
+from app.repositories.train_leaderboard_repository import (
+    BlunderCheckAggregate,
+    BlunderCheckTotals,
+    SolveTotals,
+    WeeklyAggregate,
+)
 from app.repositories.train_medals_repository import StandingRow, TallyCount
+from app.schemas.train import LeaderboardBoardKind
 from app.services.train_leaderboard import (
     ACCURACY_QUALIFY_MIN_PUZZLES,
     ANONYMOUS_DISPLAY_NAME,
+    BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS,
+    BOARD_KINDS,
     DELETED_USER_DISPLAY_NAME,
     LEADERBOARD_TOP_N,
     ZERO_TALLY,
@@ -30,6 +39,7 @@ from app.services.train_leaderboard import (
     MedalTally,
     PodiumEntry,
     accuracy_percent,
+    aggregates_for_board,
     build_board,
     build_last_week,
     build_leaderboard,
@@ -40,6 +50,7 @@ from app.services.train_leaderboard import (
     puzzles_to_qualify,
     totals_without,
     resolve_viewer_visibility,
+    score_percent,
     visible_keys,
     week_window,
 )
@@ -1068,7 +1079,13 @@ def test_tally_fold_builds_per_board_maps_with_zero_filled_missing_types() -> No
     }
     # User 1 holds Points medals only, so it has no Accuracy entry at all.
     assert folded["accuracy"] == {2: MedalTally(gold=3, silver=0, bronze=0)}
-    assert fold_medal_tallies([]) == {"points": {}, "accuracy": {}}
+    # Every board key is present, the two blunder-check boards included (Phase 251).
+    assert fold_medal_tallies([]) == {
+        "points": {},
+        "accuracy": {},
+        "blunder_check_points": {},
+        "blunder_check_score": {},
+    }
 
 
 def _ids_by_name(aggs: list[WeeklyAggregate]) -> dict[str, int]:
@@ -1111,3 +1128,268 @@ def test_visible_keys_is_empty_when_nobody_is_on_the_board() -> None:
     # Filler-only users have no Accuracy entry.
     filler_only = [_agg(1, points=10, puzzles=3, non_filler_points=0, non_filler_puzzles=0)]
     assert visible_keys("accuracy", filler_only, viewer_id=1) == []
+
+
+# --- blunder-check boards (Phase 251, D-14 / D-22 / D-25) --------------------
+
+
+def _bc(
+    user_id: int,
+    *,
+    scored: int,
+    possible: int | None = None,
+    windows: int = 1,
+    name: str | None = None,
+    is_guest: bool = False,
+    hidden: bool = False,
+) -> BlunderCheckAggregate:
+    """A weekly blunder-check aggregate; points possible default to twice the points scored."""
+    return BlunderCheckAggregate(
+        user_id=user_id,
+        totals=BlunderCheckTotals(
+            points_scored=scored,
+            points_possible=possible if possible is not None else max(2 * scored, 1),
+            windows=windows,
+        ),
+        lichess_username=name if name is not None else f"user{user_id:02d}",
+        chess_com_username=None,
+        is_guest=is_guest,
+        leaderboard_hidden=hidden,
+    )
+
+
+def _bc_points(aggs: list[BlunderCheckAggregate], viewer_id: int) -> Board:
+    return build_board(
+        "blunder_check_points", aggs, viewer_id=viewer_id, viewer_visibility="public"
+    )
+
+
+def _bc_score(aggs: list[BlunderCheckAggregate], viewer_id: int) -> Board:
+    return build_board("blunder_check_score", aggs, viewer_id=viewer_id, viewer_visibility="public")
+
+
+def test_bc_board_qualify_constant_is_eighteen_windows() -> None:
+    """D-22 pin: three full default sessions of six windows."""
+    assert BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS == 18
+
+
+def test_bc_board_every_board_kind_has_a_spec() -> None:
+    """A new LeaderboardBoardKind without a spec would raise KeyError at request time."""
+    assert set(BOARD_KINDS) == set(get_args(LeaderboardBoardKind))
+    assert set(BOARD_KINDS) == {
+        "points",
+        "accuracy",
+        "blunder_check_points",
+        "blunder_check_score",
+    }
+    for kind in BOARD_KINDS:
+        assert aggregates_for_board(kind, [], []) == []
+
+
+def test_bc_board_points_ranks_by_points_scored_and_is_never_tentative() -> None:
+    aggs = [
+        _bc(1, scored=10, windows=2),
+        _bc(2, scored=30, windows=6),
+        _bc(3, scored=20, windows=3),
+    ]
+
+    board = _bc_points(aggs, viewer_id=1)
+
+    assert [(r.rank, r.name, r.value, r.puzzles, r.tentative) for r in board.rows] == [
+        (1, "user02", 30, 6, False),
+        (2, "user03", 20, 3, False),
+        (3, "user01", 10, 2, False),
+    ]
+    assert board.viewer is not None
+    assert (board.viewer.rank, board.viewer.puzzles_to_qualify) == (3, 0)
+
+
+def test_bc_board_points_tie_shares_a_rank_and_orders_by_windows_then_name() -> None:
+    """Mirrors the puzzle Points rule: equal value shares a rank, display order windows desc."""
+    aggs = [
+        _bc(1, scored=20, windows=2, name="zed"),
+        _bc(2, scored=20, windows=5, name="amy"),
+        _bc(3, scored=20, windows=2, name="bob"),
+        _bc(4, scored=10, windows=1, name="cat"),
+    ]
+
+    board = _bc_points(aggs, viewer_id=4)
+
+    assert [(r.rank, r.name) for r in board.rows] == [
+        (1, "amy"),
+        (1, "bob"),
+        (1, "zed"),
+        (4, "cat"),
+    ]
+
+
+def test_bc_board_score_floors_the_percent() -> None:
+    """floor(100 * 10 / 15) = 66, never rounded up to 67."""
+    board = _bc_score(
+        [_bc(1, scored=10, possible=15, windows=BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS)],
+        viewer_id=1,
+    )
+
+    assert [(r.value, r.puzzles) for r in board.rows] == [
+        (66, BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS)
+    ]
+
+
+def test_bc_board_score_tentative_below_eighteen_windows_is_unranked_below_qualified() -> None:
+    qualified = _bc(1, scored=50, possible=100, windows=BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS)
+    tentative = _bc(2, scored=10, possible=10, windows=BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS - 1)
+
+    board = _bc_score([tentative, qualified], viewer_id=2)
+
+    # 100% over 17 windows does not outrank 50% over 18: the unranked entry lists below.
+    assert [(r.rank, r.name, r.value, r.tentative) for r in board.rows] == [
+        (1, "user01", 50, False),
+        (None, "user02", 100, True),
+    ]
+    assert board.viewer is not None
+    assert board.viewer.rank is None
+    assert board.viewer.tentative is True
+    assert board.viewer.puzzles_to_qualify == 1
+
+
+def test_bc_board_score_exactly_eighteen_windows_is_ranked() -> None:
+    board = _bc_score(
+        [_bc(1, scored=5, possible=10, windows=BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS)],
+        viewer_id=1,
+    )
+
+    assert [(r.rank, r.tentative) for r in board.rows] == [(1, False)]
+    assert board.viewer is not None
+    assert board.viewer.puzzles_to_qualify == 0
+
+
+def test_bc_board_score_equal_percent_ranks_the_player_with_more_windows_higher() -> None:
+    aggs = [
+        _bc(1, scored=9, possible=18, windows=18, name="few"),
+        _bc(2, scored=10, possible=20, windows=20, name="many"),
+        _bc(3, scored=10, possible=20, windows=20, name="many2"),
+    ]
+
+    board = _bc_score(aggs, viewer_id=1)
+
+    assert [(r.rank, r.name) for r in board.rows] == [(1, "many"), (1, "many2"), (3, "few")]
+
+
+def test_bc_board_score_has_no_entry_when_no_points_were_possible() -> None:
+    aggs = [_bc(1, scored=0, possible=0, windows=18)]
+
+    assert _bc_score(aggs, viewer_id=1).rows == ()
+    assert visible_keys("blunder_check_score", aggs, viewer_id=1) == []
+    assert score_percent(0, 0) is None
+
+
+def test_bc_board_guest_and_hidden_users_never_shift_another_viewers_rows() -> None:
+    aggs = [
+        _bc(1, scored=10, name="visible"),
+        _bc(2, scored=99, name="ghost", is_guest=True),
+        _bc(3, scored=98, name="optout", hidden=True),
+        _bc(4, scored=5, name="viewer"),
+    ]
+
+    board = _bc_points(aggs, viewer_id=4)
+
+    assert [(r.rank, r.name) for r in board.rows] == [(1, "visible"), (2, "viewer")]
+    assert visible_keys("blunder_check_points", aggs, viewer_id=4) == [1, 4]
+
+
+def test_bc_board_guest_and_hidden_viewers_get_a_private_row_ranked_among_visible() -> None:
+    aggs = [
+        _bc(1, scored=10, name="visible"),
+        _bc(2, scored=30, name="guest", is_guest=True),
+        _bc(3, scored=20, name="optout", hidden=True),
+    ]
+
+    for viewer_id, visibility in ((2, "guest"), (3, "hidden")):
+        board = build_board(
+            "blunder_check_points", aggs, viewer_id=viewer_id, viewer_visibility=visibility
+        )
+        mine = [r for r in board.rows if r.is_viewer]
+        assert [(r.rank, r.visibility) for r in mine] == [(1, visibility)]
+        # The other private user stays invisible to this viewer.
+        assert len(board.rows) == 2
+
+
+def test_bc_board_has_no_rank_without_session() -> None:
+    """The blunder-check score screen links to the boards instead of a session delta (D-24)."""
+    aggs = [_bc(1, scored=10), _bc(2, scored=5)]
+
+    board = build_board(
+        "blunder_check_points",
+        aggs,
+        viewer_id=1,
+        viewer_visibility="public",
+        session_contribution=SolveTotals(
+            points=3, puzzles=1, non_filler_points=3, non_filler_puzzles=1
+        ),
+    )
+
+    assert board.viewer is not None
+    assert board.viewer.rank == 1
+    assert board.viewer.rank_without_session is None
+
+
+def test_bc_board_a_puzzle_board_ignores_blunder_check_totals() -> None:
+    """A spec only reads totals of its own mode, so a mode mix-up yields no entry."""
+    board = build_board("points", [_bc(1, scored=10)], viewer_id=1, viewer_visibility="public")
+
+    assert board.rows == ()
+
+
+def test_bc_board_final_standings_use_the_live_ranking_and_skip_tentative_score_entries() -> None:
+    aggs = [
+        _bc(1, scored=40, possible=80, windows=18, name="gold"),
+        _bc(2, scored=30, possible=40, windows=17, name="tentative"),
+        _bc(3, scored=100, possible=100, windows=18, name="ghost", is_guest=True),
+    ]
+
+    score = final_standings("blunder_check_score", aggs)
+    points = final_standings("blunder_check_points", aggs)
+
+    assert [(s.user_id, s.final_rank, s.value, s.puzzles, s.medal) for s in score] == [
+        (1, 1, 50, 18, Medal.GOLD)
+    ]
+    assert [(s.user_id, s.final_rank, s.value, s.puzzles, s.medal) for s in points] == [
+        (1, 1, 40, 18, Medal.GOLD),
+        (2, 2, 30, 17, Medal.SILVER),
+    ]
+
+
+def test_bc_board_build_leaderboard_returns_all_four_boards() -> None:
+    week_start, week_end = week_window(datetime.datetime(2031, 1, 8, 12, 0, tzinfo=UTC))
+
+    result = build_leaderboard(
+        [_agg(1, points=12, puzzles=4)],
+        viewer_id=1,
+        viewer_visibility="public",
+        week_start=week_start,
+        week_end=week_end,
+        now_utc=datetime.datetime(2031, 1, 8, 12, 0, tzinfo=UTC),
+        bc_aggregates=[_bc(1, scored=9, possible=12, windows=2)],
+    )
+
+    assert [r.value for r in result.points.rows] == [12]
+    assert [r.value for r in result.blunder_check_points.rows] == [9]
+    # 2 windows is below the Score % cutoff: listed but unranked.
+    assert [(r.value, r.rank, r.tentative) for r in result.blunder_check_score.rows] == [
+        (75, None, True)
+    ]
+
+
+def test_bc_board_tally_fold_keeps_blunder_check_medals_off_the_puzzle_boards() -> None:
+    """D-23: a blunder-check medal is tallied on its own board key only."""
+    folded = fold_medal_tallies(
+        [
+            TallyCount("blunder_check_points", 1, Medal.GOLD, 2),
+            TallyCount("points", 1, Medal.SILVER, 1),
+        ]
+    )
+
+    assert folded["blunder_check_points"] == {1: MedalTally(gold=2, silver=0, bronze=0)}
+    assert folded["points"] == {1: MedalTally(gold=0, silver=1, bronze=0)}
+    assert folded["accuracy"] == {}
+    assert folded["blunder_check_score"] == {}

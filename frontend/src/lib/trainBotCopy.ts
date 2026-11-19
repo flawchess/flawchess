@@ -834,6 +834,26 @@ export const BLUNDER_CHECK_RATIONALES: readonly string[] = [
   'Spotting the blunder here is easy to do slowly, and the reps are what make it fast enough for a real game.',
 ];
 
+/** The blunder-check scoring rules, shown under "Why and how it works" in the mode's settings row. */
+export const BLUNDER_CHECK_RULES: readonly string[] = [
+  'Some sequences have no blunder at all, so you can never tell when one is coming.',
+  "Every correct Good call adds a point to the sequence's pot.",
+  'Catch the blunder for bonus points, then find a better move for more.',
+  'Miss the blunder and the pot is lost. A false alarm ends the sequence, but you keep the pot.',
+];
+
+/** What happens in a blunder-check sequence, listed on the Ready gate of a user's very first
+ * sequence: the drill is timed, so a first-time user must not find out how it runs while the
+ * clock is ticking. It describes the flow, not the scoring (that is `BLUNDER_CHECK_RULES`). */
+export function blunderCheckIntroSteps(moveTimerSeconds: number): readonly string[] {
+  return [
+    'Sequences of moves are replayed on the board. Some may come from your own games.',
+    `Before each of your side's moves is played, an arrow shows it. Call it: Good or Blunder? You have ${moveTimerSeconds} seconds.`,
+    'If you catch a blunder, you get to find a better move. Then the solution shows what was going on.',
+    'Not every sequence has a blunder, so stay alert on every move.',
+  ];
+}
+
 /**
  * The blunder-check Ready gate bubble (L-02): which side the user plays and whose turn it is.
  * The turn sentence follows the start FEN, so a window with no lead-in ply (the first judged

@@ -75,7 +75,7 @@ def _done(step: FeatureRouteStepId) -> FeatureRouteActionRequest:
 
 
 def test_step_ids_are_pinned_in_d06_order() -> None:
-    """D-09: the backend Literal lists the nine D-06 steps in route order."""
+    """D-09: the backend Literal lists the nine route steps in order."""
     assert get_args(FeatureRouteStepId) == EXPECTED_STEP_IDS
 
 

@@ -366,7 +366,43 @@ personalized puzzles, and Points and Score % leaderboards with medals per mode. 
 
 **Depends on**: Phase 250
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 13/13 plans complete
+
+Plans:
+**Wave 1**
+- [x] 251-01-PLAN.md — Schema migration, constants, blunder-check sessions dated per local day with expiry
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 251-12-PLAN.md — Streak needs every switched-on mode (D-02): day completion, pool eligibility, launch-day matrix
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 251-02-PLAN.md — Blunder-check Points and Score % boards with medals; owner decision on the stored board keys
+- [x] 251-03-PLAN.md — Beta gate removed (D-18), stored level fallback (D-17), cross-mode cooldown (D-16), compose latency probe
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 251-04-PLAN.md — PUT /train/settings with per-mode sizes, never both 0 (D-05), open-session resize rules (D-06)
+- [x] 251-05-PLAN.md — Leaderboard frontend: Puzzles / Blunder check switch (D-24), medal dialog by week (D-15)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 251-06-PLAN.md — GET /train/progress per-mode read model, pending count, launch notice, reminder on day complete
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 251-07-PLAN.md — Blunder check runs from the Today card; Blunder Check tab and route removed
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 251-13-PLAN.md — Today card launcher rows (D-08, D-09), nav badge as two-mode pending sum, analytics targets
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 251-08-PLAN.md — One-time level step (D-20) and launch notice with dismissal (D-21)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 251-09-PLAN.md — Per-mode settings rows: 0-to-off sliders, never-both-0 clamp, level picker, How it works
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 251-10-PLAN.md — Score-screen hand-off between modes (D-12), feature-route step and dot, pitch line (D-19)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 251-11-PLAN.md — Full pre-merge gate, CHANGELOG, validation record; browser launch walk and serial suite by the orchestrator
 
 ### Phase 252: Short Engine Line Repair Backfill (SEED-261112-s4v)
 

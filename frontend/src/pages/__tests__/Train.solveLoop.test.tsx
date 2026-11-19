@@ -41,6 +41,7 @@ import type {
   TrainSettingsResponse,
 } from '@/types/train';
 import type { UserProfile } from '@/types/users';
+import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
 
 // Train.tsx is profile-gated (startSession() only fires
 // once useUserProfile() resolves to a non-guest profile). This file's
@@ -190,6 +191,7 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   pool_state: 'available',
   next_due_date: null,
   badge_visible: false,
+  ...PHASE_251_PROGRESS_FIELDS,
 };
 const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 
@@ -447,7 +449,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await renderTrainPage();
 
     await waitFor(() => expect(screen.getByTestId('btn-train-resume')).not.toBeNull());
-    expect(screen.getByTestId('btn-train-resume').textContent).toBe('Resume session — 7 of 12 done');
+    expect(screen.getByTestId('btn-train-resume').textContent).toBe('Resume');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('5');
     fireEvent.click(screen.getByTestId('btn-train-resume'));
 
     // The click must actually enter the solve loop on the first remaining puzzle.
@@ -586,8 +589,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
 
     await renderTrainPage();
 
-    await waitFor(() => expect(screen.getByTestId('train-points-today')).not.toBeNull());
-    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 14/18');
+    await waitFor(() => expect(screen.getByTestId('train-launcher-done-puzzles')).not.toBeNull());
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 14 points');
     // Never touched browser storage for the score — the whole point of this
     // test. The streak hero's last-seen snapshot is unrelated
     // cosmetic state and is the only key allowed.

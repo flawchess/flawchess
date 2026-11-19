@@ -1,8 +1,9 @@
-"""Blunder-check router (Phase 249).
+"""Blunder-check router (Phase 249, opened to everyone in Phase 251).
 
-Beta-gated (D-01): every route depends on `current_beta_user`, so the API itself refuses
-non-beta users with 403, not only the hidden frontend tab. Every handler scopes strictly
-by the authenticated user's id, never a client-supplied id (IDOR guard).
+Open to every authenticated user, registered or guest (D-18): the beta gate of Phase 249 is
+gone, so no route answers 403 for a missing beta flag. Every handler still scopes strictly
+by the authenticated user's id, never a client-supplied id (IDOR guard, ASVS V4): another
+user's session id answers 404.
 
 Time-dependent handlers take "now" from the `dev_now_utc` dependency (`NowUtc`), never
 `datetime.now()` inline.
@@ -77,16 +78,6 @@ _OUTCOME_WIRE: Final[dict[WindowOutcome, WindowOutcomeWire]] = {
 }
 
 
-async def current_beta_user(user: Annotated[User, Depends(current_active_user)]) -> User:
-    """Authenticated user with beta access, else 403 (D-01: the API refuses too)."""
-    if not user.beta_enabled:
-        raise HTTPException(status_code=403, detail="Not available")
-    return user
-
-
-BetaUser = Annotated[User, Depends(current_beta_user)]
-
-
 def _outcome_wire(outcome: WindowOutcome | None) -> WindowOutcomeWire | None:
     return None if outcome is None else _OUTCOME_WIRE[outcome]
 
@@ -139,7 +130,7 @@ def _session_response(progress: SessionProgress) -> BlunderCheckSessionResponse:
 @router.post("/sessions", response_model=BlunderCheckSessionResponse)
 async def start_session(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> BlunderCheckSessionResponse:
     """Start a blunder-check session, or resume the open one (idempotent)."""
@@ -165,11 +156,14 @@ async def start_session(
 @router.get("/sessions/open", response_model=BlunderCheckSessionResponse | None)
 async def get_open_session(
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
 ) -> BlunderCheckSessionResponse | None:
     """The caller's open blunder-check session with window progress, or null."""
     try:
-        progress = await blunder_check_repository.open_session_progress(session, user_id=user.id)
+        progress = await blunder_check_service.get_open_session(
+            session, user_id=user.id, now_utc=now_utc
+        )
     except Exception:
         await session.rollback()
         sentry_sdk.set_context("blunder_check", {"user_id": str(user.id)})
@@ -285,7 +279,7 @@ async def start_window(
     session_id: SessionIdPath,
     position: PositionPath,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> WindowStartResponse:
     """Start (or reload) a window: the lead-in, answered moves and the single open prompt."""
@@ -306,7 +300,7 @@ async def begin_window(
     session_id: SessionIdPath,
     position: PositionPath,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> WindowStartResponse:
     """Ready on the gate: issue the first prompt and start its clock (idempotent)."""
@@ -328,7 +322,7 @@ async def answer_prompt(
     position: PositionPath,
     body: AnswerRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> AnswerResponse:
     """Answer the open prompt; the server grades it and reveals only what the grade allows."""
@@ -355,7 +349,7 @@ async def answer_prompt(
 async def finish_session(
     session_id: SessionIdPath,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> SessionResultResponse:
     """Finish the session once every window ended: points, points possible and Score %."""
@@ -464,7 +458,7 @@ async def submit_better_move(
     position: PositionPath,
     body: BetterMoveRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> BetterMoveResponse:
     """Grade and score the one better move after a caught blunder (server-only points)."""
@@ -498,7 +492,7 @@ async def window_solution(
     session_id: SessionIdPath,
     position: PositionPath,
     session: Annotated[AsyncSession, Depends(get_async_session)],
-    user: BetaUser,
+    user: Annotated[User, Depends(current_active_user)],
 ) -> BlunderSolution | HerringSolution | FalseAlarmSolution:
     """What the solution screen shows after a window ended (409 while it is still open)."""
     data = await _guarded(

@@ -16,9 +16,11 @@ Per-candidate step order (`_process_candidate`) is load-bearing:
   4. `settle_streak_snapshot`, committed as its own step, BEFORE the copy is
      built and BEFORE the claim -- the job is a WRITER of streak
      state, not just a reader, so a lapsed user's "Day N" is honest.
-  5. `has_completed_session_on`, placed AFTER settlement so
-     the settled state reflects a same-day completion, and BEFORE the claim
-     so an already-trained user's day stays unclaimed.
+  5. The both-modes day-complete check in `train_repository` (the rule: every mode with a size
+     above 0 has a completed session today), placed AFTER settlement so the settled state
+     reflects a same-day completion, and BEFORE the claim so a user who finished every required
+     mode keeps the day unclaimed. A user with puzzles done and blunder check still owed is
+     nudged.
   6. `claim_reminder_day`, committed BEFORE any network call -- this
      is what makes a double-send structurally impossible across a crash
      mid-fan-out or a second ticker.
@@ -168,11 +170,12 @@ async def _process_candidate(user_id: int, now_utc: datetime.datetime) -> _Candi
         )
         await session.commit()
 
-        # Placed AFTER settlement (so the settled state
-        # reflects a same-day completion) and BEFORE the claim (so an
-        # already-trained user's day stays unclaimed).
-        if await train_reminder_repository.has_completed_session_on(
-            session, user_id=user_id, day=today
+        # Placed AFTER settlement (so the settled state reflects a same-day completion) and
+        # BEFORE the claim (so a user who finished every required mode keeps the day
+        # unclaimed). The both-modes rule means a user with puzzles done and blunder check
+        # still pending is nudged (Phase 251, D-02).
+        if await train_repository.day_complete_on(
+            session, user_id=user_id, day=today, settings_row=row
         ):
             return _CandidateOutcome(eligible=True, claimed=False, sent=False, pruned=0, failed=0)
 

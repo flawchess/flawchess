@@ -33,6 +33,7 @@ import type {
 } from '@/types/api';
 import type { EndgameClass, TimeControlBucket } from '@/types/endgames';
 import type { FlawSeverity, FlawTag, TacticOrientation } from '@/types/library';
+import type { BlunderCheckLevel } from '@/types/train';
 
 /** The subset of an outgoing tracker payload this module rewrites. */
 interface UmamiPayload {
@@ -278,8 +279,18 @@ export function isTrackingExcludedPath(pathname: string): boolean {
 export const ANALYSIS_TAB_IDS = ['moves', 'eval', 'human', 'flawchess', 'stats'] as const;
 export type AnalysisTabId = (typeof ANALYSIS_TAB_IDS)[number];
 
-/** Train weekly leaderboard tabs, sent as `tab-switch` targets. */
-export const LEADERBOARD_TAB_IDS = ['leaderboard-points', 'leaderboard-accuracy'] as const;
+/**
+ * Train weekly leaderboard tabs and the Puzzles / Blunder check mode switch, sent as
+ * `tab-switch` targets. Append-only: the first two keep their names so Umami history stays joined.
+ */
+export const LEADERBOARD_TAB_IDS = [
+  'leaderboard-points',
+  'leaderboard-accuracy',
+  'leaderboard-mode-puzzles',
+  'leaderboard-mode-blunder-check',
+  'leaderboard-blunder-check-points',
+  'leaderboard-blunder-check-score',
+] as const;
 export type LeaderboardTabId = (typeof LEADERBOARD_TAB_IDS)[number];
 
 export function isAnalysisTabId(value: string): value is AnalysisTabId {
@@ -325,8 +336,22 @@ export const REMINDER_ENABLE_OUTCOMES = [
  * The puzzles-per-session slider grid as strings. A test in
  * TrainScheduleSettings.test.tsx pins it to PUZZLES_PER_SESSION_MIN/MAX/STEP.
  */
-export const TRAIN_PUZZLES_PER_SESSION_VALUES = ['3', '6', '9', '12', '15', '18', '21', '24', '27', '30'] as const;
+export const TRAIN_PUZZLES_PER_SESSION_VALUES = [
+  '0', // the mode off (Phase 251): sessions may be turned off per mode
+  '3',
+  '6',
+  '9',
+  '12',
+  '15',
+  '18',
+  '21',
+  '24',
+  '27',
+  '30',
+] as const;
 
+/** The blunder-check sequences-per-session grid as strings: 0 (the mode off) to 18 in steps of 3. */
+export const TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES = ['0', '3', '6', '9', '12', '15', '18'] as const;
 /**
  * Exact reminder hour, kept rather than coarse buckets: 24 bounded literals carry
  * no PII and the exact hour is the useful scheduling signal. A test in
@@ -382,6 +407,7 @@ export const PANEL_TARGETS = [
   'settings',
   'more-drawer',
   'train-verdict-strip',
+  'blunder-check-verdict-strip',
   'opening-insights-more',
   'opening-insights-played-before',
   'opening-stats-more',
@@ -389,7 +415,7 @@ export const PANEL_TARGETS = [
   'tactic-motifs-more',
   'move-stats-expand',
 ] as const;
-type PanelTarget = (typeof PANEL_TARGETS)[number];
+export type PanelTarget = (typeof PANEL_TARGETS)[number];
 export type SidebarPanelId = Extract<PanelTarget, 'filters' | 'tags' | 'bookmarks'>;
 
 export const ACTION_TARGETS = [
@@ -410,13 +436,17 @@ export const ACTION_TARGETS = [
   'reminder-enable',
   'feedback-ask-sure',
   'feedback-ask-later',
+  // Phase 251: a mode's "Turn on" row action and the launch notice's dismiss.
+  'train-mode-turn-on-puzzles',
+  'train-mode-turn-on-blunder-check',
+  'train-blunder-check-notice-dismiss',
 ] as const;
 type ActionTarget = (typeof ACTION_TARGETS)[number];
 
 export const NAV_DESTINATIONS = ['library', 'train', 'bots', 'openings', 'endgames', 'analysis'] as const;
 type NavDestination = (typeof NAV_DESTINATIONS)[number];
 
-export const NAV_SOURCES = ['more-drawer', 'train-rank-line'] as const;
+export const NAV_SOURCES = ['more-drawer', 'train-rank-line', 'blunder-check-score-screen'] as const;
 type NavSource = (typeof NAV_SOURCES)[number];
 
 /** Map a nav link path to its destination; null for anything else (admin and activity can never be named). */
@@ -455,6 +485,8 @@ export const OPTION_TARGETS = [
   'bot-color',
   'import-cap',
   'train-puzzles-per-session',
+  'train-blunder-check-per-session',
+  'train-blunder-check-level',
   'train-reminder-hour',
   'endgame-stats-tc',
   'library-stats-tc',
@@ -494,6 +526,9 @@ export type OptionChangeProps =
   | { target: 'bot-color'; value: BotSetupSettings['colorPreference'] }
   | { target: 'import-cap'; value: `${GameCap}` }
   | { target: 'train-puzzles-per-session'; value: (typeof TRAIN_PUZZLES_PER_SESSION_VALUES)[number] }
+  | { target: 'train-blunder-check-per-session'; value: (typeof TRAIN_BLUNDER_CHECK_PER_SESSION_VALUES)[number] }
+  // The three self-declared level literals (D-17).
+  | { target: 'train-blunder-check-level'; value: BlunderCheckLevel }
   | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] }
   // The synced time-control switch on the Endgame Stats tab.
   | { target: 'endgame-stats-tc'; value: TimeControlBucket }

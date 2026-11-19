@@ -378,7 +378,14 @@ export interface TrainSettingsResponse {
    * it to swap the phone QR handoff for a "reminders on your phone" line.
    */
   has_mobile_subscription: boolean;
+  /** Blunder-check sequences per session; 0 turns the mode off (Phase 251). */
+  blunder_check_per_session: number;
+  /** The self-declared level, or null until asked (only needed for a user with no rated games). */
+  blunder_check_level: BlunderCheckLevel | null;
 }
+
+/** The self-declared blunder-check level (D-17). Mirrors the backend `BlunderCheckLevel`. */
+export type BlunderCheckLevel = 'beginner' | 'intermediate' | 'advanced';
 
 /** Body for PUT /train/settings — a separate shape so a PUT can never smuggle
  * a server-owned field (mirrors the backend's `TrainSettingsUpdate`).
@@ -395,6 +402,9 @@ export interface TrainSettingsUpdate {
   reminder_enabled: boolean;
   reminder_hour: number;
   reminder_intent_at: string | null;
+  /** Optional: omitted keeps the stored value (the one exception to the full-replace body). */
+  blunder_check_per_session?: number;
+  blunder_check_level?: BlunderCheckLevel | null;
 }
 
 /**
@@ -408,6 +418,31 @@ export interface TrainSettingsUpdate {
  * single source of truth.
  */
 export type TrainPoolState = 'no_material' | 'exhausted' | 'available';
+
+/** One Train mode's state on the Today card. Mirrors the backend `TrainModeState`. */
+export type TrainModeState = 'pending' | 'in_progress' | 'done' | 'off';
+
+/** One Train mode's row (`remaining` is what is left in the session; `pending` feeds the nav badge). */
+export interface TrainModeProgress {
+  size: number;
+  state: TrainModeState;
+  remaining: number;
+  pending: number;
+  first_session_done: boolean;
+}
+
+/** The blunder-check row: the common fields plus today's points and the level step (D-17, D-20). */
+export interface TrainBlunderCheckModeProgress extends TrainModeProgress {
+  points_today: number;
+  has_rated_games: boolean;
+  needs_level: boolean;
+}
+
+/** Both Train modes' rows. */
+export interface TrainModesProgress {
+  puzzles: TrainModeProgress;
+  blunder_check: TrainBlunderCheckModeProgress;
+}
 
 /**
  * Response for GET /train/progress.
@@ -437,6 +472,14 @@ export type TrainPoolState = 'no_material' | 'exhausted' | 'available';
  * of truth for whether the badge should show.
  */
 export interface TrainProgressResponse {
+  /** Per-mode rows the Today card renders (Phase 251). */
+  modes: TrainModesProgress;
+  /** True once every required mode is done today (the both-modes day rule, D-02). */
+  day_complete: boolean;
+  /** Sum of both modes' badge counts (D-13). */
+  pending_count: number;
+  /** True while the one-time blunder-check launch notice shows (D-21). */
+  blunder_check_notice: boolean;
   session_streak_count: number;
   shield_level: number;
   current_week_completed: number;
@@ -452,8 +495,15 @@ export interface TrainProgressResponse {
 
 // ─── Weekly leaderboards ─────────────────────────────────────────
 
-/** Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py. */
-export type LeaderboardBoardKind = 'points' | 'accuracy';
+/**
+ * Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py.
+ * The values double as the keys of TrainLeaderboardResponse.
+ */
+export type LeaderboardBoardKind =
+  | 'points'
+  | 'accuracy'
+  | 'blunder_check_points'
+  | 'blunder_check_score';
 
 /**
  * Row visibility. `'public'` for every row except the viewer's own private
@@ -501,7 +551,10 @@ export interface LeaderboardRow {
   name: string;
   /** Points, or the floored accuracy percent. */
   value: number;
-  /** All solves (points board) or non-filler solves (accuracy board). */
+  /**
+   * All solves (points board) or non-filler solves (accuracy board). On the
+   * blunder-check boards: the number of ended sequences (windows) this week.
+   */
   puzzles: number;
   /** Accuracy board only: fewer than 20 qualifying puzzles this week. */
   tentative: boolean;
@@ -525,6 +578,7 @@ export interface LeaderboardViewer {
    */
   rank_without_session: number | null;
   tentative: boolean;
+  /** Puzzles still needed to qualify; on the blunder-check Score % board, sequences (windows). */
   puzzles_to_qualify: number;
   visibility: LeaderboardVisibility;
 }
@@ -545,6 +599,13 @@ export interface TrainLeaderboardResponse {
   seconds_remaining: number;
   points: LeaderboardBoard;
   accuracy: LeaderboardBoard;
+  /** Blunder-check points; `puzzles` on its rows is the sequence (window) count. */
+  blunder_check_points: LeaderboardBoard;
+  /**
+   * Blunder-check Score %: tentative (rank null) below 18 sequences. `puzzles` on
+   * its rows is the sequence count; `rank_without_session` is always null here.
+   */
+  blunder_check_score: LeaderboardBoard;
 }
 
 // ─── Medal claim ─────────────────────────────────────────────────
@@ -561,7 +622,7 @@ export interface UnclaimedMedal {
   shared: boolean;
 }
 
-/** Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy. */
+/** Response for GET /train/medals/unclaimed: newest week first, then points, accuracy, blunder-check points, blunder-check score. */
 export interface UnclaimedMedalsResponse {
   medals: UnclaimedMedal[];
 }

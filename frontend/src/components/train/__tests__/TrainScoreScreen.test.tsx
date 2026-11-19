@@ -24,7 +24,9 @@ import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router';
 import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
 import type { TrainScoreScreenProps } from '@/components/train/TrainScoreScreen';
-import type { SolvedResult, TrainSettingsResponse } from '@/types/train';
+import type { SolvedResult, TrainModeState, TrainProgressResponse, TrainSettingsResponse } from '@/types/train';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
+import { BLUNDER_CHECK_MODE, PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
 import type { TrainSessionScore } from '@/lib/trainScore';
 import { GUEST_SIGNUP_ASK_SCORE } from '@/lib/trainBotCopy';
 import { isUpdateSessionActive } from '@/lib/updateReload';
@@ -110,6 +112,13 @@ const getSettingsMock = vi.fn<() => { data: TrainSettingsResponse | undefined }>
 }));
 vi.mock('@/hooks/useTrainSettings', () => ({
   useTrainSettings: () => getSettingsMock(),
+}));
+
+// The D-12 continue action reads the shared progress query; this suite has no
+// QueryClientProvider, so the hook is mocked and each test sets the other mode's state.
+const progressMock = vi.fn<() => { data: TrainProgressResponse | undefined }>(() => ({ data: undefined }));
+vi.mock('@/hooks/useTrainProgress', () => ({
+  useTrainProgress: () => progressMock(),
 }));
 
 const stampMock = vi.fn();
@@ -738,5 +747,85 @@ describe('TrainScoreScreen', () => {
       // plan touched the file.
       expect(bubble.querySelector('.justify-end')).toBeNull();
     });
+  });
+});
+
+describe('TrainScoreScreen continue with Blunder Check (D-12)', () => {
+  const startPuzzles = vi.fn();
+  const startBlunderCheck = vi.fn();
+
+  function progressWithBlunderCheckState(state: TrainModeState): { data: TrainProgressResponse } {
+    return {
+      data: {
+        ...PHASE_251_PROGRESS_FIELDS,
+        modes: {
+          ...PHASE_251_PROGRESS_FIELDS.modes,
+          blunder_check: { ...BLUNDER_CHECK_MODE, state },
+        },
+      } as TrainProgressResponse,
+    };
+  }
+
+  function renderWithActions() {
+    return render(
+      <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
+        <TrainScoreScreen
+          score={{ total: 12, max: 20 }}
+          nextSessionDate={NEXT_SESSION_DATE}
+          onDone={onDone}
+          solvedOutcomes={[]}
+          isWarmup={false}
+          hasGames={true}
+          isGuest={false}
+          sessionId={42}
+        />
+      </TrainTodayActionsContext.Provider>,
+      { wrapper: MemoryRouter },
+    );
+  }
+
+  beforeEach(() => {
+    getSettingsMock.mockReturnValue({ data: SETTINGS_FIXTURE });
+    prefersReducedMotion.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    cleanup();
+    progressMock.mockReset();
+    progressMock.mockReturnValue({ data: undefined });
+    startPuzzles.mockReset();
+    startBlunderCheck.mockReset();
+    onDone.mockReset();
+  });
+
+  it.each<TrainModeState>(['pending', 'in_progress'])(
+    'offers the continue button as primary while Blunder Check is %s, and starts it on click',
+    (state) => {
+      progressMock.mockReturnValue(progressWithBlunderCheckState(state));
+      renderWithActions();
+      const button = screen.getByTestId('btn-train-continue-blunder-check');
+      expect(button.textContent).toBe('Continue with Blunder Check');
+      fireEvent.click(button);
+      expect(startBlunderCheck).toHaveBeenCalledTimes(1);
+      expect(startPuzzles).not.toHaveBeenCalled();
+      // Done is still there, as the secondary action.
+      fireEvent.click(screen.getByTestId('btn-train-done'));
+      expect(onDone).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each<TrainModeState>(['done', 'off'])(
+    'shows no continue button while Blunder Check is %s, and Done stays',
+    (state) => {
+      progressMock.mockReturnValue(progressWithBlunderCheckState(state));
+      renderWithActions();
+      expect(screen.queryByTestId('btn-train-continue-blunder-check')).toBeNull();
+      expect(screen.getByTestId('btn-train-done')).toBeTruthy();
+    },
+  );
+
+  it('shows no continue button before the progress has loaded', () => {
+    renderWithActions();
+    expect(screen.queryByTestId('btn-train-continue-blunder-check')).toBeNull();
   });
 });

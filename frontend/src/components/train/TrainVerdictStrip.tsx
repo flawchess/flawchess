@@ -15,6 +15,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
 import { trackFeature } from '@/lib/analytics';
+import type { PanelTarget } from '@/lib/analytics';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import { TOUR_SPOTLIGHT_CLASS, TRAIN_BUBBLE_BORDER } from '@/lib/theme';
@@ -33,8 +34,10 @@ export interface TrainVerdictStripProps {
   onExpand?: () => void;
   /** The reveal tour spotlights the strip with the shared glow. */
   spotlight?: boolean;
-  /** The expansion body (`TrainVerdictDetails`). */
+  /** The expansion body (`TrainVerdictDetails`, or the blunder-check verdict). */
   children: ReactNode;
+  /** The `panel-open` target, so the blunder-check strip counts apart from the puzzle one. */
+  panelTarget?: Extract<PanelTarget, 'train-verdict-strip' | 'blunder-check-verdict-strip'>;
 }
 
 export function TrainVerdictStrip({
@@ -44,6 +47,7 @@ export function TrainVerdictStrip({
   onExpand,
   spotlight = false,
   children,
+  panelTarget = 'train-verdict-strip',
 }: TrainVerdictStripProps): ReactElement {
   const [expanded, setExpanded] = useState(false);
   const avatar = placeholderAvatarFor(persona);
@@ -51,7 +55,7 @@ export function TrainVerdictStrip({
 
   function handleToggle(): void {
     if (!expanded) {
-      trackFeature('panel-open', { target: 'train-verdict-strip' });
+      trackFeature('panel-open', { target: panelTarget });
       onExpand?.();
     }
     setExpanded(!expanded);

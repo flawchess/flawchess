@@ -1,10 +1,11 @@
 """Tests for the Train reminder scheduler.
 
 Covers:
-- TestListReminderCandidateUserIds / TestClaimReminderDay /
-  TestHasCompletedSessionOn (Task 1): app.repositories.train_reminder_repository's
-  SQL, using the ordinary rollback-scoped `db_session` fixture (no cross-
-  connection visibility needed for these).
+- TestListReminderCandidateUserIds / TestClaimReminderDay (Task 1):
+  app.repositories.train_reminder_repository's SQL, using the ordinary rollback-scoped
+  `db_session` fixture (no cross-connection visibility needed for these).
+- TestAlreadyTrained: the both-modes day rule (Phase 251, D-02) -- the nudge fires while any
+  required mode is pending and stays quiet once the day is complete.
 - Everything below TestTickInterval (Task 2): app.services.train_reminder_service's
   per-candidate eligibility loop, settle-before-copy, and claim-then-send
   fan-out, using a REAL (non-savepoint) session maker patched onto
@@ -41,11 +42,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.train_reminder_service as train_reminder_service
 from app.core.config import settings as config_settings
+from app.models.blunder_check import BlunderCheckSession
 from app.models.drill_session import DrillSession
 from app.models.push_subscription import PushSubscription
 from app.models.train_settings import TrainSettings
 from app.models.user import User
-from app.repositories import train_reminder_repository
+from app.repositories import train_reminder_repository, train_repository
 from app.services import push_send
 from app.services.train_scheduler import ALL_WEEKDAYS_MASK
 from tests.conftest import ensure_test_user
@@ -292,65 +294,6 @@ class TestReleaseReminderClaim:
         assert released is False
 
 
-class TestHasCompletedSessionOn:
-    async def test_true_for_completed_session_same_date(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY,
-                status="completed",
-                puzzle_count=1,
-                expires_on=_TODAY + datetime.timedelta(days=1),
-                completed_at=datetime.datetime.now(datetime.timezone.utc),
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is True
-
-    async def test_false_when_completed_at_null(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY,
-                status="open",
-                puzzle_count=1,
-                expires_on=_TODAY + datetime.timedelta(days=1),
-                completed_at=None,
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is False
-
-    async def test_false_when_date_differs(self, db_session: AsyncSession) -> None:
-        await ensure_test_user(db_session, _USER_ID)
-        db_session.add(
-            DrillSession(
-                user_id=_USER_ID,
-                session_date=_TODAY - datetime.timedelta(days=1),
-                status="completed",
-                puzzle_count=1,
-                expires_on=_TODAY,
-                completed_at=datetime.datetime.now(datetime.timezone.utc),
-            )
-        )
-        await db_session.flush()
-
-        result = await train_reminder_repository.has_completed_session_on(
-            db_session, user_id=_USER_ID, day=_TODAY
-        )
-        assert result is False
-
-
 # ---------------------------------------------------------------------------
 # Task 2: app.services.train_reminder_service
 # ---------------------------------------------------------------------------
@@ -424,7 +367,14 @@ async def _seed_committed_settings(
     shield_level: int = 0,
     streak_settled_through: datetime.date | None = None,
     pool_eligible_since: datetime.date | None = None,
+    blunder_check_per_session: int | None = None,
 ) -> None:
+    # Omitted from the insert when not given, so the server default (6) applies.
+    optional: dict[str, int] = (
+        {}
+        if blunder_check_per_session is None
+        else {"blunder_check_per_session": blunder_check_per_session}
+    )
     async with session_maker() as session:
         session.add(
             TrainSettings(
@@ -438,6 +388,7 @@ async def _seed_committed_settings(
                 shield_level=shield_level,
                 streak_settled_through=streak_settled_through,
                 pool_eligible_since=pool_eligible_since,
+                **optional,
             )
         )
         await session.commit()
@@ -480,6 +431,28 @@ async def _seed_committed_drill_session(
         await session.commit()
 
 
+async def _seed_committed_blunder_check_session(
+    session_maker: async_sessionmaker[AsyncSession],
+    *,
+    user_id: int,
+    session_date: datetime.date,
+) -> None:
+    """A completed blunder-check session dated `session_date` (header only, no windows)."""
+    completed_at = datetime.datetime.now(datetime.timezone.utc)
+    async with session_maker() as session:
+        session.add(
+            BlunderCheckSession(
+                user_id=user_id,
+                status="completed",
+                window_count=1,
+                session_date=session_date,
+                expires_on=session_date + datetime.timedelta(days=1),
+                completed_at=completed_at,
+            )
+        )
+        await session.commit()
+
+
 async def _seed_ready_candidate(
     session_maker: async_sessionmaker[AsyncSession],
     *,
@@ -492,6 +465,7 @@ async def _seed_ready_candidate(
     pool_eligible_since: datetime.date | None = None,
     is_guest: bool = False,
     n_subscriptions: int = 1,
+    blunder_check_per_session: int | None = None,
 ) -> int:
     """Seed a fully-eligible candidate (all gates open at `_NOW`, hour 12 UTC).
 
@@ -510,6 +484,7 @@ async def _seed_ready_candidate(
         shield_level=shield_level,
         streak_settled_through=streak_settled_through,
         pool_eligible_since=pool_eligible_since,
+        blunder_check_per_session=blunder_check_per_session,
     )
     for _ in range(n_subscriptions):
         await _seed_committed_subscription(session_maker, user_id=user_id)
@@ -630,7 +605,9 @@ class TestAlreadyTrained:
     async def test_already_trained_completed_session_suppressed_and_day_not_claimed(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        user_id = await _seed_ready_candidate(real_session_maker)
+        # Blunder check off: puzzles are the only required mode, so a completed puzzle session
+        # means the day is complete (the intent of "a user who finished every required mode").
+        user_id = await _seed_ready_candidate(real_session_maker, blunder_check_per_session=0)
         await _seed_committed_drill_session(
             real_session_maker,
             user_id=user_id,
@@ -666,6 +643,57 @@ class TestAlreadyTrained:
             summary = await train_reminder_service.send_due_reminders(_NOW)
         mock_send.assert_awaited_once()
         assert summary.claimed == 1
+
+    async def test_reminder_sent_when_puzzles_done_bc_pending(
+        self, real_session_maker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Puzzles done but blunder check (size 6) still owed: the nudge fires and claims."""
+        user_id = await _seed_ready_candidate(real_session_maker)
+        await _seed_committed_drill_session(
+            real_session_maker,
+            user_id=user_id,
+            session_date=datetime.date(2026, 8, 1),
+            completed=True,
+        )
+        with _mock_send_to_user() as mock_send:
+            summary = await train_reminder_service.send_due_reminders(_NOW)
+        mock_send.assert_awaited_once()
+        assert summary.claimed == 1
+
+    async def test_reminder_skipped_when_day_complete(
+        self, real_session_maker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Both required modes done today: no nudge and the day stays unclaimed."""
+        user_id = await _seed_ready_candidate(real_session_maker)
+        await _seed_committed_drill_session(
+            real_session_maker,
+            user_id=user_id,
+            session_date=datetime.date(2026, 8, 1),
+            completed=True,
+        )
+        await _seed_committed_blunder_check_session(
+            real_session_maker, user_id=user_id, session_date=datetime.date(2026, 8, 1)
+        )
+        with _mock_send_to_user() as mock_send:
+            summary = await train_reminder_service.send_due_reminders(_NOW)
+        mock_send.assert_not_called()
+        assert summary.claimed == 0
+
+    async def test_reminder_skipped_when_bc_off_and_puzzles_done(
+        self, real_session_maker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Blunder check at size 0 is not part of the day: puzzles done completes it."""
+        user_id = await _seed_ready_candidate(real_session_maker, blunder_check_per_session=0)
+        await _seed_committed_drill_session(
+            real_session_maker,
+            user_id=user_id,
+            session_date=datetime.date(2026, 8, 1),
+            completed=True,
+        )
+        with _mock_send_to_user() as mock_send:
+            summary = await train_reminder_service.send_due_reminders(_NOW)
+        mock_send.assert_not_called()
+        assert summary.claimed == 0
 
 
 class TestIdempotency:
@@ -884,20 +912,23 @@ class TestFailureIsolation:
         failing_user = await _seed_ready_candidate(real_session_maker)
         await _seed_ready_candidate(real_session_maker)
 
-        original = train_reminder_repository.has_completed_session_on
+        original = train_repository.day_complete_on
 
-        async def _raising_has_completed(
-            session: AsyncSession, *, user_id: int, day: datetime.date
+        async def _raising_day_complete(
+            session: AsyncSession,
+            *,
+            user_id: int,
+            day: datetime.date,
+            settings_row: train_repository.TrainSettingsRow,
         ) -> bool:
             if user_id == failing_user:
                 raise RuntimeError("simulated candidate failure")
-            return await original(session, user_id=user_id, day=day)
+            return await original(session, user_id=user_id, day=day, settings_row=settings_row)
 
         with (
             patch(
-                "app.services.train_reminder_service.train_reminder_repository"
-                ".has_completed_session_on",
-                new=AsyncMock(side_effect=_raising_has_completed),
+                "app.services.train_reminder_service.train_repository.day_complete_on",
+                new=AsyncMock(side_effect=_raising_day_complete),
             ),
             _mock_send_to_user(),
             patch(

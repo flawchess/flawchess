@@ -10,6 +10,7 @@ Coverage (this module grows task by task):
 from __future__ import annotations
 
 import asyncio
+import datetime
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -390,11 +391,19 @@ async def test_better_move_and_solution_of_another_users_window_are_404(test_eng
 
 
 @pytest.mark.asyncio
-async def test_better_move_non_beta_user_is_refused(test_engine, clock) -> None:
-    _, token = await register_user("bc-solution-nonbeta", beta=False, test_engine=test_engine)
-    other = _Setup(0, token, 1, [])
-    assert (await _better_move(other, 0, "e2e4")).status_code == 403
-    assert (await _solution(token, 1, 0)).status_code == 403
+async def test_better_move_non_beta_user_and_guest_reach_the_routes(test_engine, clock) -> None:
+    """D-18: no beta gate; a non-beta user and a guest get the scoped 404 for a foreign session."""
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _caught_at_one(s)
+        statuses: list[int] = []
+        for guest in (False, True):
+            _, token = await register_user(
+                "bc-solution-nonbeta", beta=False, test_engine=test_engine, guest=guest
+            )
+            other = _Setup(0, token, s.session_id, [])
+            statuses.append((await _better_move(other, 0, "e2e4")).status_code)
+            statuses.append((await _solution(token, s.session_id, 0)).status_code)
+    assert statuses == [404, 404, 404, 404]
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +575,12 @@ async def _foreign_setup(test_engine, spec: _Spec):
         async with maker() as session:
             async with session.begin():
                 session_id = await insert_session(
-                    session, user_id=solver_id, windows=[window], now_utc=_T0
+                    session,
+                    user_id=solver_id,
+                    windows=[window],
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
                 )
         assert session_id is not None
         yield _Setup(solver_id, token, session_id, [window.game_id])

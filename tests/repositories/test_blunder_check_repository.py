@@ -111,7 +111,12 @@ async def _insert(test_engine, user_id: int, windows: list[NewWindow]) -> int:
     async with maker() as session:
         async with session.begin():
             session_id = await repo.insert_session(
-                session, user_id=user_id, windows=windows, now_utc=_NOW
+                session,
+                user_id=user_id,
+                windows=windows,
+                now_utc=_NOW,
+                session_date=_NOW.date(),
+                expires_on=_NOW.date() + datetime.timedelta(days=1),
             )
     assert session_id is not None
     return session_id
@@ -297,7 +302,12 @@ async def test_insert_session_second_open_returns_none(test_engine) -> None:
         async with maker() as session:
             async with session.begin():
                 second = await repo.insert_session(
-                    session, user_id=user_id, windows=[_window(game_id)], now_utc=_NOW
+                    session,
+                    user_id=user_id,
+                    windows=[_window(game_id)],
+                    now_utc=_NOW,
+                    session_date=_NOW.date(),
+                    expires_on=_NOW.date() + datetime.timedelta(days=1),
                 )
         assert second is None
         async with maker() as session:
@@ -427,6 +437,56 @@ async def test_pick_foreign_game_ids_applies_every_filter(test_engine) -> None:
         # Other tests' leaked games may exist; only the seeded ids are asserted on.
         assert set(picked) & set(seeded) == {eligible}
         assert eligible not in excluding
+    finally:
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_pick_nearest_foreign_game_ids_keeps_the_closest_ratings(test_engine) -> None:
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-nearest-caller")
+    owner_id, _ = await register_user("bc-nearest-owner", beta=False, test_engine=test_engine)
+    guest_id, _ = await register_user(
+        "bc-nearest-guest", beta=False, test_engine=test_engine, guest=True
+    )
+    evals = _blunder_evals()
+    closest = await seed_judged_game(
+        test_engine, user_id=owner_id, evals_cp=evals, blunders=[], white_rating=2390
+    )
+    farther = await seed_judged_game(
+        test_engine, user_id=owner_id, evals_cp=evals, blunders=[], white_rating=2000
+    )
+    unevaluated = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        evals_cp=evals,
+        blunders=[],
+        white_rating=2400,
+        full_evals=False,
+    )
+    guest_game = await seed_judged_game(
+        test_engine, user_id=guest_id, evals_cp=evals, blunders=[], white_rating=2400
+    )
+    seeded = [caller_game, closest, farther, unevaluated, guest_game]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def pick(pool_size: int, exclude_ids: list[int]) -> list[int]:
+        async with maker() as session:
+            return await repo.pick_nearest_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                level=2400,
+                limit=100_000,
+                pool_size=pool_size,
+                exclude_ids=exclude_ids,
+                sample_percent=100,
+            )
+
+    try:
+        # No rating range: the one nearest eligible game wins, the next one follows when it is
+        # excluded; unevaluated, guest and own games never count, however close.
+        assert await pick(1, []) == [closest]
+        assert await pick(1, [closest]) == [farther]
+        assert set(await pick(100_000, [])) & set(seeded) == {closest, farther}
     finally:
         await delete_games(test_engine, seeded)
 

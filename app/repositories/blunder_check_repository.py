@@ -12,7 +12,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, exists, func, not_, select, tablesample, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    not_,
+    select,
+    tablesample,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +40,8 @@ from app.models.blunder_check import (
     WindowCase,
     WindowOutcome,
 )
-from app.models.drill_solve import DrillMoveQuality
+from app.models.drill_session import DrillSession
+from app.models.drill_solve import DrillMoveQuality, DrillSolve, DrillSource
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
@@ -69,18 +82,10 @@ class SessionProgress:
     windows: list[WindowProgressRow]
 
 
-async def open_session_progress(session: AsyncSession, *, user_id: int) -> SessionProgress | None:
-    """The user's open session with its window progress, or None when there is none."""
-    header = (
-        await session.execute(
-            select(BlunderCheckSession.id, BlunderCheckSession.window_count).where(
-                BlunderCheckSession.user_id == user_id,
-                BlunderCheckSession.status == "open",
-            )
-        )
-    ).one_or_none()
-    if header is None:
-        return None
+async def _progress_for_header(
+    session: AsyncSession, *, user_id: int, session_id: int, window_count: int
+) -> SessionProgress:
+    """The session's windows as progress rows, ordered by position."""
     rows = (
         await session.execute(
             select(
@@ -91,7 +96,7 @@ async def open_session_progress(session: AsyncSession, *, user_id: int) -> Sessi
                 BlunderCheckWindow.better_move_tier,
             )
             .where(
-                BlunderCheckWindow.session_id == header.id,
+                BlunderCheckWindow.session_id == session_id,
                 BlunderCheckWindow.user_id == user_id,
             )
             .order_by(BlunderCheckWindow.position)
@@ -109,7 +114,115 @@ async def open_session_progress(session: AsyncSession, *, user_id: int) -> Sessi
         )
         for row in rows
     ]
-    return SessionProgress(session_id=header.id, window_count=header.window_count, windows=windows)
+    return SessionProgress(session_id=session_id, window_count=window_count, windows=windows)
+
+
+async def open_session_progress(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> SessionProgress | None:
+    """The user's open session with its window progress, or None when there is none.
+
+    An open row whose window has elapsed (`expires_on <= today`) is not current: the read path
+    ignores it and never writes (the compose path expires it, see `expire_stale_sessions`).
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count).where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "open",
+                BlunderCheckSession.expires_on > today,
+            )
+        )
+    ).one_or_none()
+    if header is None:
+        return None
+    return await _progress_for_header(
+        session, user_id=user_id, session_id=header.id, window_count=header.window_count
+    )
+
+
+async def completed_session_in_window(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> SessionProgress | None:
+    """The user's newest completed session still inside its window, or None.
+
+    Bug fix: finishing a session flips it to 'completed', so the open-session lookup stopped
+    seeing it and a second Start on an already finished day composed a brand-new session. A done
+    day must show its recap until the next session day starts, so compose returns this session
+    instead of composing (same rule as the puzzle twin `train_repository.completed_session_in_window`).
+
+    In-window means `expires_on > today`; `expire_stale_sessions` never touches completed rows,
+    so this date predicate is the only window authority.
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "completed",
+                BlunderCheckSession.expires_on > today,
+            )
+            .order_by(BlunderCheckSession.id.desc())
+            .limit(1)
+        )
+    ).one_or_none()
+    if header is None:
+        return None
+    return await _progress_for_header(
+        session, user_id=user_id, session_id=header.id, window_count=header.window_count
+    )
+
+
+async def expire_stale_sessions(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> None:
+    """Close out the user's open sessions whose window has elapsed (`expires_on <= today`).
+
+    Flips them to 'expired', then deletes their windows that were never started (A9): a blunder
+    the user was never shown goes back to the pool. Windows that were shown stay stored (D-01),
+    so a shown blunder is never served again (the served-set lookup reads them).
+    """
+    expired_ids = (
+        (
+            await session.execute(
+                update(BlunderCheckSession)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "open",
+                    BlunderCheckSession.expires_on <= today,
+                )
+                .values(status="expired")
+                .returning(BlunderCheckSession.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not expired_ids:
+        return
+    await session.execute(
+        delete(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id.in_(expired_ids),
+            BlunderCheckWindow.user_id == user_id,
+            BlunderCheckWindow.started_at.is_(None),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def get_session_date(
+    session: AsyncSession, *, user_id: int, session_id: int
+) -> datetime.date | None:
+    """The local day the user's session was composed on; None for an unknown or foreign id."""
+    return (
+        await session.execute(
+            select(BlunderCheckSession.session_date).where(
+                BlunderCheckSession.id == session_id,
+                BlunderCheckSession.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -139,14 +252,43 @@ class NewWindow:
     prior_uci: str | None = None
 
 
+def _window_row(*, session_id: int, user_id: int, window: NewWindow) -> BlunderCheckWindow:
+    """The frozen window row for a composed `NewWindow` (shared by insert and extension)."""
+    return BlunderCheckWindow(
+        session_id=session_id,
+        position=window.position,
+        user_id=user_id,
+        game_id=window.game_id,
+        is_own=window.is_own,
+        window_length=window.window_length,
+        blunder_position=window.blunder_position,
+        first_ply=window.first_ply,
+        blunder_ply=window.blunder_ply,
+        window_case=int(window.window_case),
+        mover_elo=window.mover_elo,
+        start_fen=window.start_fen,
+        move_ucis=window.move_ucis,
+        lead_in_plies=window.lead_in_plies,
+        prior_uci=window.prior_uci,
+        key_uci=window.key_uci,
+        refutation_uci=window.refutation_uci,
+        points_possible=window.points_possible,
+    )
+
+
 async def insert_session(
     session: AsyncSession,
     *,
     user_id: int,
     windows: Sequence[NewWindow],
     now_utc: datetime.datetime,
+    session_date: datetime.date,
+    expires_on: datetime.date,
 ) -> int | None:
     """Insert an open session with its frozen windows; return the new id.
+
+    `session_date` is the user's local day (`train_scheduler.local_today`) and `expires_on` the
+    first local day the session is no longer current (`train_scheduler.session_window`).
 
     Returns None when a concurrent request already holds the user's open session (the
     partial unique index fired inside the SAVEPOINT); the caller resumes that session.
@@ -154,34 +296,18 @@ async def insert_session(
     try:
         async with session.begin_nested():
             header = BlunderCheckSession(
-                user_id=user_id, status="open", window_count=len(windows), started_at=now_utc
+                user_id=user_id,
+                status="open",
+                window_count=len(windows),
+                started_at=now_utc,
+                session_date=session_date,
+                expires_on=expires_on,
             )
             session.add(header)
             # Surfaces uq_blunder_check_sessions_user_open here if a concurrent request won.
             await session.flush()
             for w in windows:
-                session.add(
-                    BlunderCheckWindow(
-                        session_id=header.id,
-                        position=w.position,
-                        user_id=user_id,
-                        game_id=w.game_id,
-                        is_own=w.is_own,
-                        window_length=w.window_length,
-                        blunder_position=w.blunder_position,
-                        first_ply=w.first_ply,
-                        blunder_ply=w.blunder_ply,
-                        window_case=int(w.window_case),
-                        mover_elo=w.mover_elo,
-                        start_fen=w.start_fen,
-                        move_ucis=w.move_ucis,
-                        lead_in_plies=w.lead_in_plies,
-                        prior_uci=w.prior_uci,
-                        key_uci=w.key_uci,
-                        refutation_uci=w.refutation_uci,
-                        points_possible=w.points_possible,
-                    )
-                )
+                session.add(_window_row(session_id=header.id, user_id=user_id, window=w))
             await session.flush()
             return header.id
     except IntegrityError as exc:
@@ -197,12 +323,48 @@ async def insert_session(
 # ---------------------------------------------------------------------------
 
 
+async def puzzle_cooled_pairs(
+    session: AsyncSession, *, user_id: int, since: datetime.date
+) -> list[tuple[int, int]]:
+    """(game_id, ply) of every flaw served as a puzzle (SR row) to this user since `since`.
+
+    "Served" means actually shown (owner decision on WR-01): only a row that was attempted
+    (`solved_at IS NOT NULL`) counts. Composition pre-inserts every row of a puzzle session with
+    `solved_at = NULL` (a status read on every Today mount does it), so without this filter a
+    user who only plays blunder check would have their own flaws cooled for puzzles never shown.
+
+    Cross-mode cooldown (Phase 251 D-16): a flaw shown in a puzzle session is ineligible for blunder
+    check until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
+    `today - CROSS_MODE_COOLDOWN_DAYS` from the caller's resolved local today, compared with the
+    puzzle session's local `session_date`. The scan starts from drill_sessions (filtered on
+    user_id and session_date) because drill_solves has no user index. Herring and sharp-filler
+    rows carry no own flaw, and a row whose game was deleted has a NULL `game_id`.
+    """
+    rows = (
+        await session.execute(
+            select(DrillSolve.game_id, DrillSolve.ply)
+            .join(DrillSession, DrillSession.id == DrillSolve.session_id)
+            .where(
+                DrillSession.user_id == user_id,
+                DrillSession.session_date >= since,
+                DrillSolve.source == DrillSource.SR_ITEM,
+                DrillSolve.game_id.isnot(None),
+                # WR-01: only attempted rows were shown; pre-materialised rows have NULL solved_at.
+                DrillSolve.solved_at.isnot(None),
+            )
+            .distinct()
+        )
+    ).all()
+    return [(int(game_id), int(ply)) for game_id, ply in rows]
+
+
 def _unserved_qualifying_blunder_exists(
     game_id_col: SQLColumnExpression[int],
     user_color_col: SQLColumnExpression[str],
     user_id: int,
     *,
     flaw_owner_id: int | None = None,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> ColumnElement[bool]:
     """EXISTS a qualifying blunder (drill facepalm score >= FACEPALM_SCORE_MIN) this user was not served yet.
 
@@ -223,6 +385,9 @@ def _unserved_qualifying_blunder_exists(
     the caller knows it. Bug fix: without it the own-game pick had no selective predicate on
     game_flaws, so on prod the planner hashed a sequential scan of the whole table (17.8 s for
     one session start). With it the probe is a primary-key lookup per game (about 0.4 s).
+
+    `cooled_pairs` are (game_id, ply) flaws served as puzzles inside the cross-mode cooldown
+    (D-16); those flaw rows do not count as unserved here.
     """
     # correlate_except: the games table (or the TABLESAMPLE alias) sits two SELECT levels up, past
     # the flaw EXISTS, so auto-correlation would pull it into this FROM list as a cross join.
@@ -244,6 +409,8 @@ def _unserved_qualifying_blunder_exists(
     ]
     if flaw_owner_id is not None:
         conditions.append(GameFlaw.user_id == flaw_owner_id)
+    if cooled_pairs:
+        conditions.append(tuple_(GameFlaw.game_id, GameFlaw.ply).not_in(list(cooled_pairs)))
     return exists().where(and_(*conditions))
 
 
@@ -254,13 +421,15 @@ async def pick_own_game_ids(
     limit: int,
     exclude_ids: Sequence[int],
     require_facepalm: bool = False,
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> list[int]:
     """Random ids of the user's fully evaluated games (index scan on ix_games_user_full_evals).
 
     Platform is filtered at load time, not here, to keep the scan on the index. No age
     weighting: ordering by age needs the heap and defeats the index scan. `require_facepalm`
     keeps only games holding a qualifying blunder the user has not been served yet; the EXISTS
-    probes ix_game_flaws_game_id per candidate game.
+    probes ix_game_flaws_game_id per candidate game. `cooled_pairs` (flaws served as puzzles inside
+    the cross-mode cooldown, D-16) never count as such a blunder.
     """
     stmt = select(Game.id).where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
     if exclude_ids:
@@ -268,7 +437,11 @@ async def pick_own_game_ids(
     if require_facepalm:
         stmt = stmt.where(
             _unserved_qualifying_blunder_exists(
-                Game.id, Game.user_color, user_id, flaw_owner_id=user_id
+                Game.id,
+                Game.user_color,
+                user_id,
+                flaw_owner_id=user_id,
+                cooled_pairs=cooled_pairs,
             )
         )
     stmt = stmt.order_by(func.random()).limit(limit)
@@ -317,6 +490,57 @@ async def pick_foreign_game_ids(
             _unserved_qualifying_blunder_exists(sampled.c.id, sampled.c.user_color, user_id)
         )
     stmt = stmt.limit(limit)
+    return [int(i) for i in (await session.execute(stmt)).scalars().all()]
+
+
+async def pick_nearest_foreign_game_ids(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    level: int,
+    limit: int,
+    pool_size: int,
+    exclude_ids: Sequence[int],
+    sample_percent: float,
+    require_facepalm: bool = False,
+) -> list[int]:
+    """Ids of other users' fully evaluated games whose owner's rating is closest to `level`.
+
+    The fallback of `pick_foreign_game_ids` for a user whose rating band holds too little (a very
+    low or very high level, or a small table): no rating range, the `pool_size` sampled games
+    nearest to `level` are kept and `limit` of them are returned in random order. The distance is
+    on the raw rating, an approximation of the pinned Elo the composer ranks by after loading.
+    `require_facepalm` is applied to the nearest pool only, so the blunder probe runs at most
+    `pool_size` times however large the sample is. Same guest, own-game, platform and full-eval
+    filters as the band pick; only game ids leave the repository.
+    """
+    sampled = tablesample(Game.__table__, func.system(sample_percent), name="g")
+    owner_rating = case(
+        (sampled.c.user_color == "white", sampled.c.white_rating),
+        else_=sampled.c.black_rating,
+    )
+    nearest_stmt = (
+        select(sampled.c.id.label("id"), sampled.c.user_color.label("user_color"))
+        .join(User, User.id == sampled.c.user_id)
+        .where(
+            sampled.c.user_id != user_id,
+            User.is_guest.is_(False),
+            sampled.c.full_evals_completed_at.isnot(None),
+            sampled.c.platform.in_(ANALYTICS_INCLUDED_PLATFORMS),
+            owner_rating.isnot(None),
+        )
+    )
+    if exclude_ids:
+        nearest_stmt = nearest_stmt.where(sampled.c.id.notin_(exclude_ids))
+    nearest = (
+        nearest_stmt.order_by(func.abs(owner_rating - level)).limit(pool_size).subquery("nearest")
+    )
+    stmt = select(nearest.c.id)
+    if require_facepalm:
+        stmt = stmt.where(
+            _unserved_qualifying_blunder_exists(nearest.c.id, nearest.c.user_color, user_id)
+        )
+    stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
 
 
@@ -467,7 +691,11 @@ class ServedSets:
 
 
 async def served_for_games(
-    session: AsyncSession, *, user_id: int, game_ids: Sequence[int]
+    session: AsyncSession,
+    *,
+    user_id: int,
+    game_ids: Sequence[int],
+    cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> ServedSets:
     """Blunder plies of every window served and the judged ply ranges of every window served.
 
@@ -476,11 +704,19 @@ async def served_for_games(
     ended on a false alarm before the blunder was reached still burns that blunder, so the
     249 false-alarm exception is gone. The judged range of a window is (first_ply, last judged
     ply): the blunder ply for a blunder window, else the last user move of the window.
+
+    `cooled_pairs` (flaws served as puzzles inside the cross-mode cooldown, D-16) are added to the
+    served blunder plies, so the Python judge skips them like a window already served. They never
+    enter `judged_ranges`: only blunder plies are cooled, not the surrounding herring runs.
     """
     served: dict[int, set[int]] = defaultdict(set)
     ranges: dict[int, list[tuple[int, int]]] = defaultdict(list)
     if not game_ids:
         return ServedSets(served_blunder_plies=served, judged_ranges=ranges)
+    wanted = set(game_ids)
+    for cooled_game_id, cooled_ply in cooled_pairs:
+        if cooled_game_id in wanted:
+            served[cooled_game_id].add(cooled_ply)
     window_stmt = select(
         BlunderCheckWindow.game_id,
         BlunderCheckWindow.first_ply,
@@ -753,12 +989,166 @@ async def windows_for_session(
 
 async def complete_session(
     session: AsyncSession, *, session_id: int, now_utc: datetime.datetime
+) -> bool:
+    """Mark an open session completed; True only for the call that moved it from open.
+
+    A completed session is left untouched and reports False, so the caller (the streak credit)
+    acts exactly once per session however often finish is repeated.
+    """
+    moved = (
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.status == "open")
+            .values(status="completed", completed_at=now_utc)
+            .returning(BlunderCheckSession.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    return moved is not None
+
+
+# ---------------------------------------------------------------------------
+# Resize of an open session (Phase 251 D-06)
+# ---------------------------------------------------------------------------
+
+ResizeOutcome = Literal["none", "expired", "completed", "shortened", "needs_extension"]
+
+
+async def _delete_unstarted_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, from_position: int = 0
 ) -> None:
-    """Mark an open session completed; a completed session is left untouched."""
+    """Delete the session's windows at `from_position` or later that were never shown.
+
+    Only `started_at IS NULL` rows go: a shown window stays stored so its blunder is never
+    served again (D-01, A9). The rows were never shown, so no outcome or points exist to lose.
+    """
+    await session.execute(
+        delete(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id == session_id,
+            BlunderCheckWindow.user_id == user_id,
+            BlunderCheckWindow.position >= from_position,
+            BlunderCheckWindow.started_at.is_(None),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def _count_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, ended_only: bool = False
+) -> int:
+    """How many windows the session holds, optionally only the ended ones (outcome set)."""
+    stmt = (
+        select(func.count())
+        .select_from(BlunderCheckWindow)
+        .where(
+            BlunderCheckWindow.session_id == session_id,
+            BlunderCheckWindow.user_id == user_id,
+        )
+    )
+    if ended_only:
+        stmt = stmt.where(BlunderCheckWindow.outcome.isnot(None))
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def resize_open_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    new_size: int,
+    now_utc: datetime.datetime,
+) -> ResizeOutcome:
+    """Apply the D-06 resize rules to the user's open, unexpired session for a new size.
+
+    The session is locked (SELECT ... FOR UPDATE, scoped by `user_id`, never a client-supplied
+    session id, T-251-15). With `ended` = windows that have an outcome:
+
+    - `new_size == 0`: the session is marked 'expired' (the mode is not required today, A4) and
+      its never-started windows are deleted; points on ended windows stay. -> "expired".
+    - `0 < new_size <= ended`: never-started windows are deleted, `window_count` becomes the
+      number of rows left (a shown-but-unended window stays, D-01) and the session is completed
+      now via `complete_session`. -> "completed" (the caller credits the day).
+    - `ended < new_size < window_count`: windows at position >= new_size (all never started,
+      windows run in order) are deleted and `window_count` becomes `new_size`. -> "shortened".
+    - `new_size > window_count`: nothing is written; the service composes the extra windows and
+      appends them. -> "needs_extension".
+    - `new_size == window_count`, or no open session: nothing to do. -> "none".
+
+    A completed session is never found here (only `status = 'open'` rows are), so it never
+    reopens. No outcome or points value is ever written to an existing window.
+    """
+    header = (
+        await session.execute(
+            select(BlunderCheckSession.id, BlunderCheckSession.window_count)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.status == "open",
+                BlunderCheckSession.expires_on > today,
+            )
+            .with_for_update()
+        )
+    ).one_or_none()
+    if header is None:
+        return "none"
+    session_id, window_count = header.id, header.window_count
+    if new_size == 0:
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(status="expired")
+            .execution_options(synchronize_session=False)
+        )
+        await _delete_unstarted_windows(session, user_id=user_id, session_id=session_id)
+        return "expired"
+    ended = await _count_windows(session, user_id=user_id, session_id=session_id, ended_only=True)
+    if new_size <= ended:
+        await _delete_unstarted_windows(session, user_id=user_id, session_id=session_id)
+        remaining = await _count_windows(session, user_id=user_id, session_id=session_id)
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(window_count=remaining)
+            .execution_options(synchronize_session=False)
+        )
+        await complete_session(session, session_id=session_id, now_utc=now_utc)
+        return "completed"
+    if new_size < window_count:
+        await _delete_unstarted_windows(
+            session, user_id=user_id, session_id=session_id, from_position=new_size
+        )
+        await session.execute(
+            update(BlunderCheckSession)
+            .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+            .values(window_count=new_size)
+            .execution_options(synchronize_session=False)
+        )
+        return "shortened"
+    if new_size > window_count:
+        return "needs_extension"
+    return "none"
+
+
+async def append_windows(
+    session: AsyncSession, *, user_id: int, session_id: int, windows: Sequence[NewWindow]
+) -> None:
+    """Insert extra composed windows into the user's session and raise `window_count` to match.
+
+    The windows come from `compose_windows(start_position=<current window_count>)`, so their
+    positions continue after the existing ones. `window_count` is set to the number of rows the
+    session now holds, so a short extension (thin supply) leaves a consistent header. Scoped by
+    `user_id`: another user's session id updates nothing.
+    """
+    if not windows:
+        return
+    for window in windows:
+        session.add(_window_row(session_id=session_id, user_id=user_id, window=window))
+    await session.flush()
+    total = await _count_windows(session, user_id=user_id, session_id=session_id)
     await session.execute(
         update(BlunderCheckSession)
-        .where(BlunderCheckSession.id == session_id, BlunderCheckSession.status == "open")
-        .values(status="completed", completed_at=now_utc)
+        .where(BlunderCheckSession.id == session_id, BlunderCheckSession.user_id == user_id)
+        .values(window_count=total)
         .execution_options(synchronize_session=False)
     )
 

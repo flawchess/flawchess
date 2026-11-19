@@ -9,6 +9,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { blunderCheckApi } from '@/api/client';
+import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
 import type {
   AnswerRequest,
   AnswerResponse,
@@ -37,8 +38,14 @@ interface BetterMoveVariables extends WindowRef {
 
 export function useBlunderCheckSession() {
   const queryClient = useQueryClient();
-  const refreshOpenSession = (): Promise<void> =>
-    queryClient.invalidateQueries({ queryKey: OPEN_SESSION_QUERY_KEY });
+  // Composing and finishing change the Today card's Blunder Check row (pending, in progress,
+  // done) and the nav badge, so both refresh the shared train progress query too.
+  const refreshOpenSession = async (): Promise<void> => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: OPEN_SESSION_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: TRAIN_PROGRESS_QUERY_KEY }),
+    ]);
+  };
 
   const openSession = useQuery<BlunderCheckSessionResponse | null>({
     queryKey: OPEN_SESSION_QUERY_KEY,

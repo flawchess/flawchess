@@ -188,6 +188,11 @@ export interface SolutionCopy {
   parts: SolutionCopyPart[];
 }
 
+/** The window's total: the sum of the verdict's point badges (the phone strip's pill). */
+export function solutionCopyPoints(copy: SolutionCopy): number {
+  return copy.parts.reduce((sum, part) => (typeof part === 'string' ? sum : sum + part.points), 0);
+}
+
 /** How the better move is named, by the quality the board and the Move chip show it with. */
 const BETTER_MOVE_PHRASE: Record<TrainMoveQuality, string> = {
   best: 'found the best move',

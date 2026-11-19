@@ -175,7 +175,7 @@ interface NavIndicators {
   navUnlocked: boolean;
   /** The nav item carrying the route dot, or null when the dot is elsewhere or absent. */
   routeNav: RouteNav | null;
-  /** Rendered waiting-count label, or null when the numeric badge is hidden. */
+  /** Rendered pending-count label (both Train modes), or null when the numeric badge is hidden. */
   trainBadgeLabel: string | null;
 }
 
@@ -187,21 +187,16 @@ function useNavIndicators(): NavIndicators {
   const navUnlocked = useNavUnlocked();
   const placement = useRouteDotPlacement();
   const routeNav = placement?.slot.startsWith('nav:') ? (placement.slot.slice('nav:'.length) as RouteNav) : null;
-  // Numeric waiting-puzzles badge; it replaces the Train nav-level route dot
-  // (see NavIndicator). Gated off for guests and locked-nav accounts: waiting_count is 0 for
-  // every warm-up-only account (no own blunders yet to surface), even though
-  // Train itself is open to zero-game accounts.
+  // Numeric Train badge: the server-summed pending count of both modes (D-13); it replaces
+  // the Train nav-level route dot (see NavIndicator). Gated off for guests and locked-nav
+  // accounts. The server already applies the scheduled-day gating per mode, so the client
+  // does no schedule-mask/timezone math; undefined data (pending/errored) fails closed.
   const trainProgressQuery = useTrainProgress({ enabled: navUnlocked && profile != null && !profile.is_guest });
-  const trainWaitingCount = trainProgressQuery.data?.waiting_count ?? 0;
-  // Server-computed badge visibility (scheduled-day gating, with an
-  // open-unfinished-session carve-out) — fails closed (undefined data while
-  // pending/errored, or a payload missing the field) rather than guessing.
-  // No client-side schedule-mask/timezone math is performed here.
-  const trainBadgeVisible = trainProgressQuery.data?.badge_visible ?? false;
-  const showTrainBadge = trainWaitingCount > 0 && trainBadgeVisible;
-  const trainBadgeLabel = showTrainBadge
-    ? (trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : String(trainWaitingCount))
-    : null;
+  const trainPendingCount = trainProgressQuery.data?.pending_count ?? 0;
+  const trainBadgeLabel =
+    trainPendingCount > 0
+      ? (trainPendingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : String(trainPendingCount))
+      : null;
   return { navUnlocked, routeNav, trainBadgeLabel };
 }
 

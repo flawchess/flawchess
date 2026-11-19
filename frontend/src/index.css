@@ -485,6 +485,23 @@
   animation: blunder-check-pot-bust 0.55s ease-in-out;
 }
 
+/* Blunder-check countdown ring: one hard shake as the low-time sound plays. The class
+   stays on for the rest of the prompt, so the animation runs once per prompt; the
+   component gates it on !prefersReducedMotion(). */
+@keyframes blunder-check-timer-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  10%  { transform: translateX(-6px) rotate(-8deg); }
+  25%  { transform: translateX(6px) rotate(8deg); }
+  40%  { transform: translateX(-5px) rotate(-6deg); }
+  55%  { transform: translateX(5px) rotate(6deg); }
+  70%  { transform: translateX(-3px) rotate(-3deg); }
+  85%  { transform: translateX(2px) rotate(2deg); }
+}
+
+.animate-blunder-check-timer-shake {
+  animation: blunder-check-timer-shake 0.7s ease-in-out;
+}
+
 @keyframes blunder-check-pot-bank {
   0%   { opacity: 1; transform: translateX(0) scale(1); }
   25%  { opacity: 1; transform: translateX(0) scale(1.12); }

@@ -62,12 +62,15 @@ vi.mock('@/hooks/useAuth', () => ({
 // Mock useTrainProgress so tests control the badge's resolved data
 // without a real API or QueryClientProvider. trainProgressData undefined
 // stands in for BOTH the pending and errored states — App.tsx derives the
-// badge count from `.data?.waiting_count ?? 0` only, so both states collapse
+// badge count from `.data?.pending_count ?? 0` only (D-13), so both states collapse
 // to "no resolved data" from the component's point of view.
-// badge_visible is optional here (not required, unlike
-// the real TrainProgressResponse) precisely so a test can omit it to prove
-// the fail-closed `?? false` path in App.tsx.
-let trainProgressData: { waiting_count: number; badge_visible?: boolean } | undefined;
+// pending_count is optional here (not required, unlike the real
+// TrainProgressResponse) so a test can omit it to prove the fail-closed `?? 0`
+// path in App.tsx; the legacy waiting_count / badge_visible fields are kept
+// optional to prove the badge no longer reads them.
+let trainProgressData:
+  | { pending_count?: number; waiting_count?: number; badge_visible?: boolean }
+  | undefined;
 const useTrainProgressSpy = vi.fn();
 
 vi.mock('@/hooks/useTrainProgress', () => ({
@@ -707,10 +710,10 @@ describe('Train waiting badge', () => {
     impersonation: null,
   };
 
-  it('unlocked profile with waiting_count: 12, badge_visible: true -> badge reads 12 on desktop and mobile', () => {
+  it('unlocked profile with pending_count: 12 -> badge reads 12 on desktop and mobile', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 12, badge_visible: true };
+    trainProgressData = { pending_count: 12 };
 
     const { unmount } = renderNavHeader();
     expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
@@ -720,10 +723,10 @@ describe('Train waiting badge', () => {
     expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('12');
   });
 
-  it('waiting_count: 0, badge_visible: true -> badge absent on both surfaces (waiting_count guard preserved)', () => {
+  it('pending_count: 0 -> badge absent on both surfaces', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: true };
+    trainProgressData = { pending_count: 0 };
 
     const { unmount } = renderNavHeader();
     expect(screen.queryByTestId('train-notification-badge')).toBeNull();
@@ -733,10 +736,10 @@ describe('Train waiting badge', () => {
     expect(screen.queryByTestId('train-notification-badge-mobile')).toBeNull();
   });
 
-  it('waiting_count: 12, badge_visible: false -> badge absent on both surfaces (off-day)', () => {
+  it('legacy waiting_count 12 with badge_visible false but pending_count 0 -> badge absent (the badge reads pending_count only, D-13)', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 12, badge_visible: false };
+    trainProgressData = { pending_count: 0, waiting_count: 12, badge_visible: false };
 
     const { unmount } = renderNavHeader();
     expect(screen.queryByTestId('train-notification-badge')).toBeNull();
@@ -746,10 +749,10 @@ describe('Train waiting badge', () => {
     expect(screen.queryByTestId('train-notification-badge-mobile')).toBeNull();
   });
 
-  it('waiting_count: 12, badge_visible omitted -> badge absent on both surfaces (fails closed)', () => {
+  it('payload without pending_count -> badge absent on both surfaces (fails closed)', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 12 };
+    trainProgressData = {};
 
     const { unmount } = renderNavHeader();
     expect(screen.queryByTestId('train-notification-badge')).toBeNull();
@@ -787,10 +790,10 @@ describe('Train waiting badge', () => {
     expect(screen.queryByText(/failed to load/i)).toBeNull();
   });
 
-  it('waiting_count: 150, badge_visible: true -> badge reads 99+ on both surfaces, growing to fit (cap logic untouched)', () => {
+  it('pending_count: 150 -> badge reads 99+ on both surfaces, growing to fit (cap logic untouched)', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 150, badge_visible: true };
+    trainProgressData = { pending_count: 150 };
 
     const { unmount } = renderNavHeader();
     const desktopBadge = screen.getByTestId('train-notification-badge');
@@ -805,10 +808,10 @@ describe('Train waiting badge', () => {
     expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('99+');
   });
 
-  it('the numeric badge replaces the Train route dot when both apply (waiting_count: 12, import done, D-17)', () => {
+  it('the numeric badge replaces the Train route dot when both apply (pending_count: 12, import done, D-17)', () => {
     profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 12, badge_visible: true };
+    trainProgressData = { pending_count: 12 };
 
     const { unmount } = renderNavHeader('/bots');
     expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
@@ -823,7 +826,7 @@ describe('Train waiting badge', () => {
   it('the Train route dot shows on both surfaces once import is done and train is open', () => {
     profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     const { unmount } = renderNavHeader('/bots');
     expect(screen.queryByTestId('train-notification-dot')).not.toBeNull();
@@ -837,7 +840,7 @@ describe('Train waiting badge', () => {
   it('with import and train done the dot moves from Train to Bots', () => {
     profileState = { ...UNLOCKED_PROFILE, feature_route: routeWithDone(['import', 'train']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     const { unmount } = renderNavHeader('/library/games');
     expect(screen.queryByTestId('train-notification-dot')).toBeNull();
@@ -861,7 +864,7 @@ describe('Train waiting badge', () => {
   it('zero-game locked profile: useTrainProgress called with enabled: false, no badge renders', () => {
     profileState = ZERO_GAME_PROFILE;
     tier1State = false;
-    trainProgressData = { waiting_count: 12 };
+    trainProgressData = { pending_count: 12 };
 
     renderNavHeader();
     expect(useTrainProgressSpy).toHaveBeenCalledWith({ enabled: false });
@@ -871,7 +874,7 @@ describe('Train waiting badge', () => {
   it('guest profile: useTrainProgress called with enabled: false', () => {
     profileState = GUEST_PROFILE;
     tier1State = true;
-    trainProgressData = { waiting_count: 12 };
+    trainProgressData = { pending_count: 12 };
 
     renderNavHeader();
     expect(useTrainProgressSpy).toHaveBeenCalledWith({ enabled: false });
@@ -880,7 +883,7 @@ describe('Train waiting badge', () => {
   it('control: zero-game signup with no steps done shows library-notification-dot on both surfaces (D-18; Import completes when games exist)', () => {
     profileState = { ...ZERO_GAME_PROFILE, feature_route: { steps: {}, current: null } };
     tier1State = false;
-    trainProgressData = { waiting_count: 12 };
+    trainProgressData = { pending_count: 12 };
 
     // Rendered at /bots: at /library the import step's dot correctly moves off
     // the nav item onto the Import subtab (D-03).
@@ -983,7 +986,7 @@ describe('Feature route dot', () => {
   it('D-17: the Train badge and the Bots dot show together, and the drawer carries the Bots dot', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(['import', 'train']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 12, badge_visible: true };
+    trainProgressData = { pending_count: 12 };
 
     const { unmount } = renderNavHeader('/library/games');
     expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
@@ -996,7 +999,7 @@ describe('Feature route dot', () => {
   it('D-17: with train open and the badge visible the drawer has no Train dot', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 12, badge_visible: true };
+    trainProgressData = { pending_count: 12 };
 
     expect(drawerDotIds('/bots')).not.toContain('train-notification-dot-drawer');
     expect(headerDotIds('/bots')).not.toContain('train-notification-dot');
@@ -1005,7 +1008,7 @@ describe('Feature route dot', () => {
   it('the drawer carries the Train dot when train is open and no badge shows', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     expect(drawerDotIds('/bots')).toEqual(['train-notification-dot-drawer']);
   });
@@ -1023,7 +1026,7 @@ describe('Feature route dot', () => {
     for (const { profile, done, tier1 } of states) {
       profileState = { ...profile, feature_route: done == null ? null : routeWithDone(done) };
       tier1State = tier1;
-      trainProgressData = { waiting_count: 0, badge_visible: false };
+      trainProgressData = { pending_count: 0 };
 
       const header = headerDotIds('/analysis');
       const drawer = drawerDotIds('/analysis');
@@ -1045,7 +1048,7 @@ describe('Feature route dot', () => {
   it('D-23: the same account once unlocked shows the Openings dot on all three surfaces', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(['import', 'train', 'bots']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     expect(headerDotIds('/bots')).toEqual(['openings-notification-dot']);
     expect(drawerDotIds('/bots')).toEqual(['openings-notification-dot-drawer']);
@@ -1056,7 +1059,7 @@ describe('Feature route dot', () => {
   it('D-12: with every step but endgames resolved the Endgames nav item carries the dot', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(ALL_BUT_ENDGAMES) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     expect(headerDotIds('/bots')).toEqual(['endgames-notification-dot']);
     expect(drawerDotIds('/bots')).toEqual(['endgames-notification-dot-drawer']);
@@ -1072,7 +1075,7 @@ describe('Feature route dot', () => {
   it('D-03: inside the Train section the nav item and the drawer row carry no Train dot', () => {
     profileState = { ...UNLOCKED, feature_route: routeWithDone(['import']) };
     tier1State = true;
-    trainProgressData = { waiting_count: 0, badge_visible: false };
+    trainProgressData = { pending_count: 0 };
 
     expect(headerDotIds('/train')).not.toContain('train-notification-dot');
     expect(drawerDotIds('/train')).not.toContain('train-notification-dot-drawer');

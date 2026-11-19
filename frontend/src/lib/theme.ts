@@ -301,6 +301,10 @@ export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 export const ANALYSIS_PENDING_TINT_CLASS = 'border border-amber-500/30 bg-amber-500/10';
 export const ANALYSIS_PENDING_ICON_CLASS = 'text-amber-400';
 
+// One-time "what changed" notice on the Train Today card (the blunder-check launch notice,
+// Phase 251 D-21): a quiet brand-brown tint, deliberately not the amber warning tone.
+export const LAUNCH_NOTICE_TINT_CLASS = 'border border-brand-brown/40 bg-brand-brown/10';
+
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look
 export const GLASS_OVERLAY =
@@ -665,6 +669,14 @@ export const TRAIN_FOCUS_BADGE_DIM_OPACITY = 0.32;
 // without introducing a whole new hue family for a single-purpose outline.
 export const TRAIN_BUBBLE_BORDER = 'oklch(0.55 0.02 40)'; // neutral warm grey-brown
 export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same family as TRAIN_RATING_YELLOW
+
+// Blunder-check countdown ring (replaces the host avatar during the drill): green while
+// plenty of time is left, amber past half, red in the low-time window. The track is the
+// unfilled part of the ring, and the whole ring while no clock runs.
+export const BLUNDER_CHECK_TIMER_SAFE = ZONE_SUCCESS;
+export const BLUNDER_CHECK_TIMER_WARN = TRAIN_RATING_YELLOW;
+export const BLUNDER_CHECK_TIMER_DANGER = ZONE_DANGER;
+export const BLUNDER_CHECK_TIMER_TRACK = 'oklch(0.35 0.01 40)';
 
 // Train reveal tour spotlight: the one class every tour target
 // carries while its step is active. The rule, keyframes and the gold --tour-glow-halo
