@@ -16,9 +16,10 @@
  *
  * Every edit goes through the ONE shared settings draft (`useTrainSettingsDraft`, owned by
  * `TrainStartScreen`) so a size change made in the same burst as a days edit rides one
- * `PUT /train/settings` (T-251-26). The sliders track on commit through
- * `useDebouncedTrackFeature` (one `option-change` per adjustment burst, final value), never on
- * every change.
+ * `PUT /train/settings` (T-251-26). The sliders write the draft and track on commit only
+ * (WR-03: saves on release, so a drag position in transit never reaches the draft or the PUT);
+ * the tracking goes through `useDebouncedTrackFeature` (one `option-change` per adjustment
+ * burst, final value).
  */
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -155,14 +156,20 @@ interface SizeSliderProps {
 function SizeSlider({ config, size, isLastActive, disabled, onSizeChange }: SizeSliderProps): ReactElement {
   const trackCommit = useTrackSizeCommit(config.slug);
   const min = isLastActive ? MODE_SIZE_MIN_ACTIVE : config.min;
+  // WR-03: the drag position lives here and only reaches the shared draft on commit (pointer
+  // release or a keyboard step). Writing every onValueChange position into the draft let the
+  // 600 ms debounced save persist an intermediate size, and a resize to <= ended windows
+  // completes an open blunder-check session irreversibly (D-06). Null while not dragging.
+  const [dragValue, setDragValue] = useState<number | null>(null);
+  const shownSize = dragValue ?? size;
 
   return (
     <div className="w-full">
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <p>Per session</p>
-        {size !== null && (
+        {shownSize !== null && (
           <span className="font-medium tabular-nums text-foreground" data-testid={config.valueTestId}>
-            {size === 0 ? 'Off' : size}
+            {shownSize === 0 ? 'Off' : shownSize}
           </span>
         )}
       </div>
@@ -170,14 +177,17 @@ function SizeSlider({ config, size, isLastActive, disabled, onSizeChange }: Size
         min={min}
         max={config.max}
         step={config.step}
-        value={[size ?? min]}
+        value={[shownSize ?? min]}
         onValueChange={(values: number[]) => {
           const next = values[0];
-          if (next !== undefined) onSizeChange(next);
+          if (next !== undefined) setDragValue(next);
         }}
         onValueCommit={(values: number[]) => {
           const committed = values[0];
-          if (committed !== undefined) trackCommit(committed);
+          setDragValue(null);
+          if (committed === undefined) return;
+          onSizeChange(committed);
+          trackCommit(committed);
         }}
         disabled={disabled}
         thumbLabels={[config.thumbLabel]}

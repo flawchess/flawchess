@@ -227,6 +227,85 @@ function sizeThumb(slug: 'puzzles' | 'blunder-check'): HTMLElement {
   return screen.getByRole('slider', { name });
 }
 
+/**
+ * Drives a real pointer drag on the Radix slider (jsdom has no layout, so the track rect and
+ * pointer capture are stubbed): the track spans 0..TRACK_WIDTH_PX, so clientX maps linearly
+ * onto the slider's min..max.
+ */
+const TRACK_WIDTH_PX = 1000;
+
+function stubPointerLayout(slug: 'puzzles' | 'blunder-check'): HTMLElement {
+  const slider = screen.getByTestId(
+    slug === 'puzzles' ? 'filter-puzzles-per-session' : 'filter-blunder-check-per-session',
+  );
+  slider.getBoundingClientRect = () =>
+    ({ left: 0, right: TRACK_WIDTH_PX, width: TRACK_WIDTH_PX, top: 0, bottom: 20, height: 20, x: 0, y: 0 }) as DOMRect;
+  slider.setPointerCapture = vi.fn();
+  slider.releasePointerCapture = vi.fn();
+  slider.hasPointerCapture = () => true;
+  return slider;
+}
+
+describe('size slider saves on release (WR-03, D-06)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('an intermediate drag position never reaches the draft or the PUT; release sends one PUT with the final value', async () => {
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, blunder_check_per_session: 18 });
+    renderHarness();
+    await openRow('blunder-check');
+    const slider = stubPointerLayout('blunder-check');
+
+    // Slider range is 0..18; clientX 500 of 1000 is 9, 1000 is 18.
+    fireEvent.pointerDown(slider, { pointerId: 1, clientX: 500, button: 0 });
+    expect(screen.getByTestId('train-blunder-check-per-session-value').textContent).toBe('9');
+    // Rest on the intermediate value well past the save debounce: nothing may be sent.
+    await advanceDebounce();
+    expect(trainApi.updateSettings).not.toHaveBeenCalled();
+    // The collapsed summary reads the draft, which still holds the stored size.
+    expect(screen.getByTestId('btn-train-mode-settings-blunder-check').textContent).toContain('6 per session');
+
+    fireEvent.pointerMove(slider, { pointerId: 1, clientX: 1000 });
+    expect(screen.getByTestId('train-blunder-check-per-session-value').textContent).toBe('18');
+    expect(track.mock.calls).toEqual([]);
+    fireEvent.pointerUp(slider, { pointerId: 1, clientX: 1000 });
+    await advanceDebounce();
+
+    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(trainApi.updateSettings).mock.calls[0]?.[0] as TrainSettingsUpdate;
+    expect(body.blunder_check_per_session).toBe(18);
+    // Unmounting flushes the debounced option-change: exactly one event, the final value.
+    cleanup();
+    expect(track.mock.calls).toEqual([
+      ['option-change', { page: 'train', target: 'train-blunder-check-per-session', value: '18' }],
+    ]);
+  });
+
+  it('keeps the never-both-off clamp: the last active slider cannot be committed to 0', async () => {
+    mockSettings({ puzzles_per_session: 3, blunder_check_per_session: 0 });
+    renderHarness();
+    await openRow('puzzles');
+    const slider = stubPointerLayout('puzzles');
+
+    fireEvent.pointerDown(slider, { pointerId: 1, clientX: 0, button: 0 });
+    fireEvent.pointerUp(slider, { pointerId: 1, clientX: 0 });
+    await advanceDebounce();
+
+    expect(sizeThumb('puzzles').getAttribute('aria-valuenow')).toBe('3');
+    expect(trainApi.updateSettings).not.toHaveBeenCalled();
+  });
+});
+
 describe('slider grids (drift guard)', () => {
   it('the tracked value lists match the slider grids, 0 (Off) included', () => {
     const puzzles: string[] = [];
