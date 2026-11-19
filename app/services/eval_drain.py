@@ -99,6 +99,7 @@ from app.services.eval_entry import (
     _collect_midgame_eval_targets,  # noqa: F401 — backward-compat re-export (tests)
     _mark_evals_completed,
 )
+from app.services import blob_claim_lease
 from app.services.eval_queue_service import WORKER_ID_SERVER_POOL, claim_eval_job
 from app.services.eval_utils import (
     derive_is_lichess_eval_game,
@@ -1430,6 +1431,15 @@ async def _tier4_blob_drain_tick(game_id: int, user_id: int) -> bool:
         return False
 
     outcome = await apply_flaw_blob_results(game_id, evals)
+    if outcome.status == "nothing_pending":
+        # SEED-261119-c7l: the pool's searches for this game are discarded. The caller
+        # releases the server pool's lease only after this tick, so it is still checkable.
+        blob_claim_lease.record_discarded_submit(
+            game_id,
+            source="full_eval_drain",
+            owner=WORKER_ID_SERVER_POOL,
+            lease_held=blob_claim_lease.holds_lease(game_id, WORKER_ID_SERVER_POOL),
+        )
     if outcome.status == "game_missing":
         return False
     if outcome.status == "foreign_token":
@@ -1493,7 +1503,12 @@ async def _full_drain_tick() -> bool:
     # through eval non-determinism) and rebuilt both blobs. The server pool is now blob-only
     # like the remote lane, sharing its apply core.
     if tier == TIER_BLOB_BACKFILL:
-        return await _tier4_blob_drain_tick(game_id, user_id)
+        # claim_eval_job leased the game to the server pool (SEED-261119-c7l); release it
+        # once the tick is done, whatever its outcome, so the game is not held until expiry.
+        try:
+            return await _tier4_blob_drain_tick(game_id, user_id)
+        finally:
+            blob_claim_lease.release_lease(game_id, WORKER_ID_SERVER_POOL)
 
     # Step 2: load PGN + game_positions rows for this game.
     # Build targets via _collect_full_ply_targets; partition dedup candidates.

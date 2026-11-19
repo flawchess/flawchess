@@ -78,6 +78,7 @@ from app.models.eval_jobs import (
 )  # noqa: F401 — re-export constants for callers
 from app.models.game import Game
 from app.models.user import User
+from app.services import blob_claim_lease
 from app.services.eval_utils import derive_is_lichess_eval_game, selection_gate_clause
 
 # ─── Module-level constants (no magic numbers) ────────────────────────────────
@@ -348,6 +349,7 @@ async def _es_weighted_user_pick(
     tau_seconds: float,
     floor: float,
     include_guests: bool = False,
+    extra_params: dict[str, Any] | None = None,
 ) -> int | None:
     """Generic Efraimidis–Spirakis weighted user pick.
 
@@ -390,6 +392,9 @@ async def _es_weighted_user_pick(
     clause is composed from fixed in-code literals (no request/user input), so
     toggling it introduces no injection surface.
 
+    extra_params binds any params the caller's fragment references (e.g. tier-4's
+    :leased_ids); omitted, the params dict is exactly {tau_s, floor} as before.
+
     Returns the picked user_id, or None when no candidate exists.
     """
     if (candidate_exists_sql is None) == (candidate_where_sql is None):
@@ -426,7 +431,7 @@ async def _es_weighted_user_pick(
                 )
             LIMIT 1
         """),
-        {"tau_s": tau_seconds, "floor": floor},
+        {"tau_s": tau_seconds, "floor": floor, **(extra_params or {})},
     )
     row = result.one_or_none()
     return row[0] if row is not None else None
@@ -797,6 +802,17 @@ async def _claim_tier4_blob(
     # note on _claim_tier3_derived's identical _gate assignment above.
     _gate = selection_gate_clause()
 
+    # SEED-261119-c7l: games leased to a worker (or the server pool) are not drawn again
+    # until submitted or expired. The clause is an extra filter AFTER the indexed
+    # predicate, so ix_games_blob_backfill_pending still matches, and it is omitted
+    # entirely when nothing is leased (SQL byte-identical to the pre-lease shape). It
+    # goes into BOTH stages: excluding it from Stage 2 only would let Stage 1 pick a user
+    # whose every pending game is leased, and the claim would return None while other
+    # users still had claimable games.
+    leased_ids = blob_claim_lease.active_leased_game_ids()
+    lease_clause = " AND g.id <> ALL(CAST(:leased_ids AS bigint[]))" if leased_ids else ""
+    lease_params: dict[str, Any] = {"leased_ids": leased_ids} if leased_ids else {}
+
     # Stage 1: ES weighted user pick over users with a blob-pending analyzed game.
     # Games-only predicate, backed by ix_games_blob_backfill_pending.
     picked_user_id = await _es_weighted_user_pick(
@@ -805,11 +821,12 @@ async def _claim_tier4_blob(
                 SELECT 1 FROM games g
                 WHERE g.user_id = u.id
                   AND g.full_evals_completed_at IS NOT NULL
-                  AND g.blobs_completed_at IS NULL{(" " + _gate) if _gate else ""}
+                  AND g.blobs_completed_at IS NULL{(" " + _gate) if _gate else ""}{lease_clause}
         """,
         recency_col_sql="u.last_activity",
         tau_seconds=tau_u_seconds,
         floor=floor_u,
+        extra_params=lease_params or None,
     )
     if picked_user_id is None:
         return None
@@ -822,18 +839,45 @@ async def _claim_tier4_blob(
         game_where_sql=(
             "g.user_id = :picked_user"
             " AND g.full_evals_completed_at IS NOT NULL"
-            f" AND g.blobs_completed_at IS NULL{(' ' + _gate) if _gate else ''}"
+            f" AND g.blobs_completed_at IS NULL{(' ' + _gate) if _gate else ''}{lease_clause}"
         ),
         recency_col_sql="g.full_evals_completed_at",
         tau_seconds=tau_g_seconds,
         game_floor=floor_g,
         tc_weights=GAME_TC_WEIGHTS,
-        extra_params={"picked_user": picked_user_id},
+        extra_params={"picked_user": picked_user_id, **lease_params},
     )
     if game_id is None:
         return None
 
     return game_id, picked_user_id
+
+
+# A concurrent claimer can lease the drawn game while this one awaits the DB. The loser
+# re-draws with that game now excluded; each retry removes one game from the pool, so a
+# small cap suffices (it only bounds pathological contention, never normal operation).
+TIER4_LEASE_MAX_DRAWS: int = 3
+
+
+async def _lease_tier4_blob(
+    session: AsyncSession,
+    owner: str,
+) -> tuple[int, int] | None:
+    """Draw a tier-4 game with `_claim_tier4_blob` and lease it to `owner` (SEED-261119-c7l).
+
+    Every path that HANDS OUT a tier-4 game goes through here (/flaw-blob-lease and the
+    bundled `claim_eval_job` path); `_blob_backfill_pending` calls `_claim_tier4_blob`
+    directly because it only asks whether work exists. Returns None when every pending
+    game is leased: the caller reports "no work" and never falls back to a leased game.
+    The caller releases the lease after the submit (or when it hands out no positions).
+    """
+    for _ in range(TIER4_LEASE_MAX_DRAWS):
+        pick = await _claim_tier4_blob(session)
+        if pick is None:
+            return None
+        if blob_claim_lease.try_lease(pick[0], owner):
+            return pick
+    return None
 
 
 async def _claim_tier4_bestmove(
@@ -937,10 +981,11 @@ async def _blob_backfill_pending() -> bool:
         return await _claim_tier4_blob(session) is not None
 
 
-async def _claim_blob_backfill_job() -> ClaimedJob | None:
-    """Tier-4 pick wrapped as a ClaimedJob, or None when the lottery is empty."""
+async def _claim_blob_backfill_job(worker_id: str) -> ClaimedJob | None:
+    """Tier-4 pick, leased to `worker_id`, wrapped as a ClaimedJob, or None when the
+    lottery is empty or every pending game is leased."""
     async with async_session_maker() as session:
-        blob_pick = await _claim_tier4_blob(session)
+        blob_pick = await _lease_tier4_blob(session, worker_id)
     if blob_pick is None:
         return None
     game_id4, user_id4 = blob_pick
@@ -1057,7 +1102,7 @@ async def claim_eval_job(
 
     # BLOB_BACKFILL_BEFORE_IDLE (benchmark instance only): tier-4 ahead of tier-3.
     if settings.BLOB_BACKFILL_BEFORE_IDLE:
-        early_blob_job = await _claim_blob_backfill_job()
+        early_blob_job = await _claim_blob_backfill_job(worker_id)
         if early_blob_job is not None:
             return early_blob_job
 
@@ -1081,7 +1126,7 @@ async def claim_eval_job(
     # Retained here (unlike the idle scope) because the only bundled-path
     # consumer is the in-process server-pool drain (eval_drain._full_drain_tick),
     # which writes blobs via the MultiPV-2 pass.
-    blob_job = await _claim_blob_backfill_job()
+    blob_job = await _claim_blob_backfill_job(worker_id)
 
     if blob_job is None:
         # Tier-4 blob empty -> try tier-4b best-move backfill.

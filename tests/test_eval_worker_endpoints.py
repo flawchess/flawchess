@@ -1992,8 +1992,8 @@ class TestFlawBlobLeaseEndpoint:
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
 
-        # Patch _claim_tier4_blob to return None (empty queue)
-        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=None))
+        # Patch _lease_tier4_blob to return None (empty queue)
+        monkeypatch.setattr(eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=None))
 
         async with _make_client() as client:
             resp = await client.post(
@@ -2032,10 +2032,10 @@ class TestFlawBlobLeaseEndpoint:
             eval_worker_session_maker, user_id, game_id, 3, _WALKABLE_PV_PLY3
         )
 
-        # Patch _claim_tier4_blob to return this specific game
+        # Patch _lease_tier4_blob to return this specific game
         monkeypatch.setattr(
             eval_remote_module,
-            "_claim_tier4_blob",
+            "_lease_tier4_blob",
             AsyncMock(return_value=(game_id, user_id)),
         )
 
@@ -2091,7 +2091,7 @@ class TestFlawBlobLeaseEndpoint:
 
         monkeypatch.setattr(
             eval_remote_module,
-            "_claim_tier4_blob",
+            "_lease_tier4_blob",
             AsyncMock(return_value=(game_id, user_id)),
         )
 
@@ -2159,7 +2159,7 @@ class TestFlawBlobLeaseEndpoint:
 
         monkeypatch.setattr(
             eval_remote_module,
-            "_claim_tier4_blob",
+            "_lease_tier4_blob",
             AsyncMock(return_value=(game_id, user_id)),
         )
 
@@ -2257,7 +2257,7 @@ class TestFlawBlobLeaseEndpoint:
 
         monkeypatch.setattr(
             eval_remote_module,
-            "_claim_tier4_blob",
+            "_lease_tier4_blob",
             AsyncMock(return_value=(game_id, user_id)),
         )
         # Oversized lease: > MAX_SUBMIT_EVALS walkable positions, no sentinel_lines.
@@ -4799,7 +4799,7 @@ class TestFlawBlobSubmitEndpoint:
             await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
         try:
@@ -4920,7 +4920,7 @@ class TestFlawBlobSubmitEndpoint:
             await session.commit()
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
         stamped = await maia_flaw_scoring.score_game_flaws_after_apply(
             session_maker, game_id, targets=None, source="backfill"
@@ -5135,7 +5135,7 @@ class TestFlawBlobSubmitEndpoint:
         # ply=3 NOT inserted → pv_at_ply.get(3) is None → sentinel for allowed line
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
         try:
@@ -5226,7 +5226,7 @@ class TestFlawBlobSubmitEndpoint:
             await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
         try:
@@ -5282,7 +5282,7 @@ class TestFlawBlobSubmitEndpoint:
             await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
         try:
@@ -5384,7 +5384,7 @@ class TestFlawBlobSubmitEndpoint:
             await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
 
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
         try:
@@ -7410,7 +7410,7 @@ class TestTier4LeaseVersionGate:
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         spy = AsyncMock(return_value=None)
-        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", spy)
+        monkeypatch.setattr(eval_remote_module, "_lease_tier4_blob", spy)
 
         for params in self._OLD_VERSION_PARAMS:
             async with _make_client() as client:
@@ -7420,7 +7420,7 @@ class TestTier4LeaseVersionGate:
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 204, f"params={params}: {resp.status_code} {resp.text}"
-        assert spy.await_count == 0, "old workers must be gated before _claim_tier4_blob"
+        assert spy.await_count == 0, "old workers must be gated before _lease_tier4_blob"
 
     @pytest.mark.asyncio
     async def test_flaw_blob_lease_current_worker_reaches_claim(
@@ -7433,7 +7433,7 @@ class TestTier4LeaseVersionGate:
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         spy = AsyncMock(return_value=None)
-        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", spy)
+        monkeypatch.setattr(eval_remote_module, "_lease_tier4_blob", spy)
 
         async with _make_client() as client:
             resp = await client.post(
@@ -7712,7 +7712,7 @@ class TestFlawBlobSingleNullLine:
             eval_worker_session_maker, user_id, null_lines=frozenset({"missed"})
         )
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
         try:
             before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
@@ -7793,7 +7793,7 @@ class TestFlawBlobSingleNullLine:
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
         _patch_router_session(monkeypatch, session_maker)
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
 
     # ── sentinel branches ────────────────────────────────────────────────────
@@ -8120,7 +8120,7 @@ class TestMixedFleetRewalkSafety:
         blob_claim = AsyncMock(return_value=(game_id, user_id))
         bestmove_claim = AsyncMock(return_value=(game_id, user_id))
         monkeypatch.setattr(eval_remote_module, "claim_eval_job", atomic_claim)
-        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", blob_claim)
+        monkeypatch.setattr(eval_remote_module, "_lease_tier4_blob", blob_claim)
         monkeypatch.setattr(eval_remote_module, "_claim_tier4_bestmove", bestmove_claim)
         try:
             before = await _snapshot_rewalk_game(eval_worker_session_maker, game_id)
@@ -8262,7 +8262,7 @@ class TestMixedFleetRewalkSafety:
         user_id = mixed_fleet_test_user
         game_id = await _seed_fed_rewalk_game(eval_worker_session_maker, user_id)
         monkeypatch.setattr(
-            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+            eval_remote_module, "_lease_tier4_blob", AsyncMock(return_value=(game_id, user_id))
         )
         try:
             before = await _snapshot_rewalk_game(eval_worker_session_maker, game_id)
@@ -8277,5 +8277,131 @@ class TestMixedFleetRewalkSafety:
             assert tokens
             assert all(t.startswith(f"{_PER_LINE_FLAW_PLY}:missed:") for t in tokens), tokens
             assert await _snapshot_rewalk_game(eval_worker_session_maker, game_id) == before
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
+class TestFlawBlobClaimLease:
+    """SEED-261119-c7l: /flaw-blob-lease leases the drawn game to the worker.
+
+    Uses the REAL tier-4 lottery (no pick monkeypatch), so the endpoint, the lease
+    and the SQL exclusion are exercised together.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_worker_gets_no_work_and_duplicate_submit_is_counted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        import logging
+
+        from app.services import blob_claim_lease
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2), (3, _WALKABLE_PV_PLY3)]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+
+        def _headers(worker: str) -> dict[str, str]:
+            return {"X-Operator-Token": _TEST_TOKEN, "X-Worker-Id": worker}
+
+        try:
+            async with _make_client() as client:
+                lease_a = await client.post(
+                    _FLAW_BLOB_LEASE_URL, params=_CURRENT_WORKER_PARAMS, headers=_headers("wa")
+                )
+                lease_b = await client.post(
+                    _FLAW_BLOB_LEASE_URL, params=_CURRENT_WORKER_PARAMS, headers=_headers("wb")
+                )
+            assert lease_a.status_code == 200, lease_a.text
+            assert lease_a.json()["game_id"] == game_id
+            assert lease_b.status_code == 204, (
+                f"second worker drew the leased game {game_id}: {lease_b.status_code} "
+                f"{lease_b.text}"
+            )
+
+            submit_payload = {
+                "game_id": game_id,
+                "sf_version": "Stockfish 18",
+                "evals": [
+                    {
+                        "token": pos["token"],
+                        "best_cp": 70,
+                        "best_mate": None,
+                        "second_cp": None,
+                        "second_mate": None,
+                        "second_uci": None,
+                    }
+                    for pos in lease_a.json()["positions"]
+                ],
+            }
+            async with _make_client() as client:
+                submit_a = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL, json=submit_payload, headers=_headers("wa")
+                )
+            assert submit_a.status_code == 200 and submit_a.json()["blobs_written"] >= 1
+            assert not blob_claim_lease.holds_lease(game_id, "wa"), "submit must release"
+            assert blob_claim_lease.discarded_submit_count() == 0
+
+            # A late duplicate (e.g. a pre-lease draw, or a lease lost on restart) is
+            # still accepted as a no-op, but now leaves a trace.
+            with caplog.at_level(logging.WARNING, logger="app.services.blob_claim_lease"):
+                async with _make_client() as client:
+                    submit_b = await client.post(
+                        _FLAW_BLOB_SUBMIT_URL, json=submit_payload, headers=_headers("wb")
+                    )
+            assert submit_b.status_code == 200 and submit_b.json()["blobs_written"] == 0
+            assert blob_claim_lease.discarded_submit_count() == 1
+            assert any(
+                "discarded submit" in r.getMessage() and "lease_held=False" in r.getMessage()
+                for r in caplog.records
+            ), [r.getMessage() for r in caplog.records]
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_all_sentinel_branch_holds_no_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """The all-sentinel branch stamps the game and returns 204 without keeping a lease."""
+        from app.services import blob_claim_lease
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+
+        try:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN, "X-Worker-Id": "wa"},
+                )
+            assert resp.status_code == 204
+            assert blob_claim_lease.active_leased_game_ids() == []
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])

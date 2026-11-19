@@ -254,7 +254,7 @@ async def test_worker_heartbeat_accumulates_across_all_three_submit_lanes(
 
         monkeypatch.setattr(
             eval_remote_module,
-            "_claim_tier4_blob",
+            "_lease_tier4_blob",
             AsyncMock(return_value=(blob_game, user_id)),
         )
         async with _make_client() as client:
