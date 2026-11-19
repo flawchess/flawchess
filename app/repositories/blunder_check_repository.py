@@ -324,6 +324,11 @@ async def puzzle_cooled_pairs(
 ) -> list[tuple[int, int]]:
     """(game_id, ply) of every flaw served as a puzzle (SR row) to this user since `since`.
 
+    "Served" means actually shown (owner decision on WR-01): only a row that was attempted
+    (`solved_at IS NOT NULL`) counts. Composition pre-inserts every row of a puzzle session with
+    `solved_at = NULL` (a status read on every Today mount does it), so without this filter a
+    user who only plays blunder check would have their own flaws cooled for puzzles never shown.
+
     Cross-mode cooldown (Phase 251 D-16): a flaw shown in a puzzle session is ineligible for blunder
     check until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
     `today - CROSS_MODE_COOLDOWN_DAYS` from the caller's resolved local today, compared with the
@@ -340,6 +345,8 @@ async def puzzle_cooled_pairs(
                 DrillSession.session_date >= since,
                 DrillSolve.source == DrillSource.SR_ITEM,
                 DrillSolve.game_id.isnot(None),
+                # WR-01: only attempted rows were shown; pre-materialised rows have NULL solved_at.
+                DrillSolve.solved_at.isnot(None),
             )
             .distinct()
         )

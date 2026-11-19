@@ -108,9 +108,12 @@ async def _seed_due_item(db_session: AsyncSession, label: str) -> int:
 
 
 async def _seed_bc_serve(
-    db_session: AsyncSession, *, game_id: int, ply: int, days_ago: int
+    db_session: AsyncSession, *, game_id: int, ply: int, days_ago: int, started: bool = True
 ) -> None:
-    """A blunder-check session dated `days_ago` local days back with one window on (game, ply)."""
+    """A blunder-check session dated `days_ago` local days back with one window on (game, ply).
+
+    `started=False` models a composed-but-never-shown window (WR-01): it must not cool the flaw.
+    """
     session_date = _TODAY - datetime.timedelta(days=days_ago)
     header = BlunderCheckSession(
         user_id=_USER_ID,
@@ -137,6 +140,7 @@ async def _seed_bc_serve(
             move_ucis="e2e4",
             lead_in_plies=0,
             points_possible=3,
+            started_at=_NOW if started else None,
         )
     )
     await db_session.flush()
@@ -205,6 +209,32 @@ async def test_cooldown_due_puzzle_resurfaces_after_window(
         (control_game, _FLAW_PLY),
     }
     assert await _due_date(db_session, cooled_game) == _TODAY
+
+
+@pytest.mark.asyncio
+async def test_cooldown_unstarted_bc_window_does_not_cool_puzzle(
+    db_session: AsyncSession, puzzle_user
+) -> None:
+    """WR-01: a composed-but-never-started blunder-check window was never shown, so it cools nothing."""
+    unstarted_game = await _seed_due_item(db_session, "cool-unstarted")
+    started_game = await _seed_due_item(db_session, "cool-started")
+    await _seed_bc_serve(
+        db_session, game_id=unstarted_game, ply=_FLAW_PLY, days_ago=_INSIDE_DAYS, started=False
+    )
+    await _seed_bc_serve(db_session, game_id=started_game, ply=_FLAW_PLY, days_ago=_INSIDE_DAYS)
+    settings_row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+
+    waiting = await train_repository.get_waiting_puzzle_count(
+        db_session, user_id=_USER_ID, settings_row=settings_row, today=_TODAY
+    )
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert composed.session_id is not None
+    # Only the unstarted-window flaw stays eligible; the started one is cooled.
+    assert await _composed_pairs(db_session, composed.session_id) == {(unstarted_game, _FLAW_PLY)}
+    assert waiting == 1
 
 
 @pytest.mark.asyncio
@@ -286,14 +316,23 @@ def _force_own_blunder_slots(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("days_ago", "expect_window"),
-    [(_INSIDE_DAYS, False), (_OUTSIDE_DAYS, True)],
-    ids=["served_as_puzzle_inside_cooldown", "served_as_puzzle_outside_cooldown"],
+    ("days_ago", "attempted", "expect_window"),
+    [(_INSIDE_DAYS, True, False), (_OUTSIDE_DAYS, True, True), (_INSIDE_DAYS, False, True)],
+    ids=[
+        "served_as_puzzle_inside_cooldown",
+        "served_as_puzzle_outside_cooldown",
+        "composed_never_attempted_inside_cooldown",
+    ],
 )
 async def test_cooldown_puzzle_serve_hides_bc_own_blunder(
-    test_engine, monkeypatch: pytest.MonkeyPatch, days_ago: int, expect_window: bool
+    test_engine,
+    monkeypatch: pytest.MonkeyPatch,
+    days_ago: int,
+    attempted: bool,
+    expect_window: bool,
 ) -> None:
-    """An own blunder in a drill SR row of a recent puzzle session is not composed in blunder check."""
+    """An own blunder in an attempted drill SR row of a recent puzzle session is not composed in
+    blunder check; a composed-but-never-attempted row (WR-01) does not cool it."""
     _force_own_blunder_slots(monkeypatch)
     user_id, _ = await register_user("bc-cooldown", beta=False, test_engine=test_engine)
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -329,6 +368,7 @@ async def test_cooldown_puzzle_serve_hides_bc_own_blunder(
                         game_id=game_id,
                         ply=_BC_BLUNDER_PLY,
                         source=DrillSource.SR_ITEM,
+                        solved_at=_NOW if attempted else None,
                     )
                 )
         async with maker() as session:

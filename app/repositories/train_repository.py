@@ -1789,6 +1789,10 @@ async def blunder_check_cooled_pairs(
 ) -> list[tuple[int, int]]:
     """(game_id, blunder_ply) of every flaw served in a blunder-check window of this user since `since`.
 
+    "Served" means actually shown (owner decision on WR-01): only a started window counts
+    (`started_at IS NOT NULL`). A composed-but-never-started window is deleted by session expiry
+    or a resize and its blunder goes back to the pool, so it must not cool the flaw for puzzles.
+
     Cross-mode cooldown (Phase 251 D-16): a flaw shown in blunder check is ineligible for puzzles
     until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
     `today - CROSS_MODE_COOLDOWN_DAYS`, from the caller's already-resolved local today (never a
@@ -1809,6 +1813,8 @@ async def blunder_check_cooled_pairs(
                 BlunderCheckSession.session_date >= since,
                 BlunderCheckWindow.game_id.isnot(None),
                 BlunderCheckWindow.blunder_ply.isnot(None),
+                # WR-01: a window that was never started was never shown.
+                BlunderCheckWindow.started_at.isnot(None),
             )
             .distinct()
         )
