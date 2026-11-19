@@ -6380,6 +6380,31 @@ class TestTier4BlobDrainTick:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
+    async def test_tier4_tick_releases_the_server_pool_lease(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SEED-261119-c7l: claim_eval_job leases a tier-4 game to the server pool; the tick
+        releases it afterwards so the game is not held until the lease expires."""
+        from app.services import blob_claim_lease
+        from app.services.eval_queue_service import WORKER_ID_SERVER_POOL
+
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker, full_drain_test_user_252, null_lines=frozenset({"missed"})
+        )
+        drain_module, _engine, _maia, _full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+        # The mocked claim skips the real lease; take it the way claim_eval_job would.
+        assert blob_claim_lease.try_lease(game_id, WORKER_ID_SERVER_POOL)
+        try:
+            assert await drain_module._full_drain_tick() is True
+            assert blob_claim_lease.active_leased_game_ids() == []
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
     async def test_natural_tier4_game_gets_both_lines(
         self,
         full_drain_session_maker: async_sessionmaker[AsyncSession],

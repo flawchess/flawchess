@@ -130,9 +130,10 @@ from app.services.eval_drain import (
     _upsert_opening_cache,
 )
 from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
+from app.services import blob_claim_lease
 from app.services.eval_queue_service import (
     _claim_tier4_bestmove,
-    _claim_tier4_blob,
+    _lease_tier4_blob,
     claim_eval_job,
     release_job,
 )
@@ -513,6 +514,9 @@ async def atomic_lease_eval_game(
     # row), so there is nothing to release. No shipped worker omits scope; this closes the
     # path for any client of any version.
     if claim.tier in (TIER_BLOB_BACKFILL, TIER_BESTMOVE_BACKFILL):
+        # The bundled tier-4 pick leased the game to this worker; free it at once so
+        # the blob lane can draw it (SEED-261119-c7l). A no-op for tier-4b.
+        blob_claim_lease.release_lease(claim.game_id, worker_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     game_id = claim.game_id
@@ -850,6 +854,7 @@ async def entry_submit_eval(
 @router.post("/flaw-blob-lease", response_model=None)
 async def flaw_blob_lease(
     _auth: Annotated[None, Depends(require_operator_token)],
+    worker_id: Annotated[str, Depends(worker_id_label)],
     # Default 1 covers an un-updated worker binary that omits the param entirely — it must
     # 204 exactly like an explicit worker_schema_version=1 would.
     worker_schema_version: Annotated[int, Query()] = 1,
@@ -862,9 +867,11 @@ async def flaw_blob_lease(
     Flow:
     0. worker_schema_version below WORKER_SCHEMA_VERSION_MIN (or omitted) — 204
        before any claim (old workers store truncated engine lines).
-    1. Call _claim_tier4_blob — random pick of one analyzed non-guest game with
-       at least one NULL blob line (allowed_pv_lines or missed_pv_lines IS NULL).
-       Returns 204 when the backfill queue is empty.
+    1. Call _lease_tier4_blob — random pick of one analyzed non-guest game with
+       at least one NULL blob line (allowed_pv_lines or missed_pv_lines IS NULL),
+       leased to this worker so no other claimer draws it until the submit or the
+       lease expiry (SEED-261119-c7l). Returns 204 when the backfill queue is empty
+       or every pending game is leased.
     2. Build lease via _build_flaw_blob_lease_positions — walks each flaw's NULL PV
        lines (a flaw may have only one) from stored game_positions.pv. Walkable lines
        (>= 2 PV nodes) become FlawBlobLeasePosition entries with token="{flaw_ply}:{line}:{node_k}". Lines
@@ -886,7 +893,7 @@ async def flaw_blob_lease(
 
     # ── Tier-4 pick: open own session, close after pick ───────────────────────
     async with async_session_maker() as session:
-        blob_pick = await _claim_tier4_blob(session)
+        blob_pick = await _lease_tier4_blob(session, worker_id)
     # session closed
 
     if blob_pick is None:
@@ -915,6 +922,9 @@ async def flaw_blob_lease(
         # won't fill them. Fill-NULL-only (D-03): a kept non-NULL line is never clobbered.
         # An empty set still refreshes the stamp (forward-progress backstop).
         await stamp_flaw_blob_sentinels(game_id, {flaw_ply for flaw_ply, _line in sentinel_lines})
+        # No positions handed out, so no lease is needed (the stamp ends the game's
+        # tier-4 eligibility anyway).
+        blob_claim_lease.release_lease(game_id, worker_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Over-cap sentinel. Fat games (> MAX_SUBMIT_EVALS walkable flaw-blob
@@ -931,6 +941,7 @@ async def flaw_blob_lease(
     # leaves a flaw's non-NULL line (and its tags) untouched.
     elif len(lease_positions) > MAX_SUBMIT_EVALS:
         await stamp_flaw_blob_sentinels(game_id, None)
+        blob_claim_lease.release_lease(game_id, worker_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return FlawBlobLeaseResponse(
@@ -968,7 +979,19 @@ async def _apply_flaw_blob_submit(
             n_evals=len(body.evals),
         )
 
-    outcome = await apply_flaw_blob_results(game_id, body.evals, in_tx_hook=_heartbeat)
+    try:
+        outcome = await apply_flaw_blob_results(game_id, body.evals, in_tx_hook=_heartbeat)
+    finally:
+        # Release only after the apply committed: an earlier release would let another
+        # claimer draw the game before its stamp lands. On an exception the game is
+        # claimable again at once, as it was before the lease existed.
+        lease_held = blob_claim_lease.release_lease(game_id, worker_id)
+    if outcome.status == "nothing_pending":
+        # SEED-261119-c7l: this engine work is discarded. It returns before the heartbeat
+        # hook, so worker_heartbeats does not count it; the log line is the only trace.
+        blob_claim_lease.record_discarded_submit(
+            game_id, source="flaw_blob_submit", owner=worker_id, lease_held=lease_held
+        )
     if outcome.status == "game_missing":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

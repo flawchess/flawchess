@@ -3849,3 +3849,334 @@ class TestBenchmarkSelectionGate:
                 )
                 await session.commit()
             await _delete_games(queue_session_maker, [selected_game])
+
+
+class TestBlobBackfillBeforeIdle:
+    """BLOB_BACKFILL_BEFORE_IDLE (Phase 252): tier-4 ahead of tier-3 on the benchmark instance.
+
+    Both lotteries are mocked, so these tests pin only the ordering in claim_eval_job.
+    """
+
+    _TIER3_GAME_ID = 910_000_001
+    _TIER4_GAME_ID = 910_000_002
+    _USER_ID = 910_000_003
+
+    def _patch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        *,
+        flag: bool,
+        tier3_has_work: bool,
+        tier4_has_work: bool,
+    ) -> list[str]:
+        """Mock every claim source; return the list that records which lotteries ran."""
+        import app.services.eval_queue_service as svc
+
+        calls: list[str] = []
+
+        async def _tier3(session: object) -> tuple[int, int, bool] | None:
+            calls.append("tier3")
+            return (self._TIER3_GAME_ID, self._USER_ID, False) if tier3_has_work else None
+
+        async def _tier4(session: object) -> tuple[int, int] | None:
+            calls.append("tier4")
+            return (self._TIER4_GAME_ID, self._USER_ID) if tier4_has_work else None
+
+        async def _no_queued(session: object, worker_id: str, ttl: int) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _tier4)
+        monkeypatch.setattr(svc, "_claim_queued_job", _no_queued)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", False)
+        monkeypatch.setattr(svc.settings, "BLOB_BACKFILL_BEFORE_IDLE", flag)
+        return calls
+
+    async def test_idle_scope_yields_to_pending_blob_work(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on + blob work pending: idle answers None and never draws tier-3."""
+        import app.services.eval_queue_service as svc
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=True
+        )
+        assert await svc.claim_eval_job(scope="idle") is None
+        assert calls == ["tier4"]
+
+    async def test_idle_scope_serves_tier3_once_blob_work_is_drained(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on + no blob work: tier-3 is served, so the analysis tranche resumes."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=False
+        )
+        claimed = await svc.claim_eval_job(scope="idle")
+        assert claimed is not None
+        assert (claimed.tier, claimed.game_id) == (TIER_IDLE_BACKLOG, self._TIER3_GAME_ID)
+
+    async def test_idle_scope_default_order_ignores_blob_work(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag off (prod): tier-3 is served and the tier-4 lottery is not even consulted."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=False, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job(scope="idle")
+        assert claimed is not None
+        assert claimed.tier == TIER_IDLE_BACKLOG
+        assert calls == ["tier3"]
+
+    async def test_bundled_path_claims_blob_work_first(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on: the server-pool claim returns the tier-4 game although tier-3 has work."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job()
+        assert claimed is not None
+        assert (claimed.tier, claimed.game_id) == (TIER_BLOB_BACKFILL, self._TIER4_GAME_ID)
+        assert calls == ["tier4"]
+
+    async def test_bundled_path_default_order_claims_tier3_first(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag off (prod): tier-3 still preempts tier-4 on the bundled claim."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=False, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job()
+        assert claimed is not None
+        assert claimed.tier == TIER_IDLE_BACKLOG
+        assert calls == ["tier3"]
+
+
+# ─── Tier-4 claim lease (SEED-261119-c7l) ────────────────────────────────────
+
+
+class TestTier4ClaimLease:
+    """A tier-4 game handed out is not drawn again until submitted or expired.
+
+    Before the lease, `_claim_tier4_blob` was a lock-free lottery: every worker could
+    draw the same game until the first submit stamped it, and the second submit's
+    engine work was discarded (`nothing_pending`).
+    """
+
+    async def test_two_consecutive_claims_hand_out_one_pending_game_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """With one pending game, the first claim gets it and the second gets no work;
+        the pending check agrees (the lease applies to the pick itself)."""
+        import app.services.eval_queue_service as svc
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        user_id = tier4_test_users["user"]
+        game_id = await _insert_game(
+            queue_session_maker, user_id, full_evals_completed_at=datetime.now(timezone.utc)
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                first = await svc._lease_tier4_blob(session, "worker-a")
+                second = await svc._lease_tier4_blob(session, "worker-b")
+                plain_pick = await svc._claim_tier4_blob(session)
+            assert first == (game_id, user_id)
+            assert second is None, f"leased game {game_id} was handed out twice: {second!r}"
+            assert plain_pick is None, "_claim_tier4_blob must exclude leased games"
+            assert await svc._blob_backfill_pending() is False, (
+                "_blob_backfill_pending must agree with the leased-out pool"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_expired_lease_is_claimable_again(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A crashed worker never blocks a game: past the TTL the game is drawable."""
+        import time
+
+        import app.services.eval_queue_service as svc
+        from app.services import blob_claim_lease
+
+        user_id = tier4_test_users["user"]
+        game_id = await _insert_game(
+            queue_session_maker, user_id, full_evals_completed_at=datetime.now(timezone.utc)
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                assert await svc._lease_tier4_blob(session, "crashed") == (game_id, user_id)
+                assert await svc._lease_tier4_blob(session, "worker-b") is None
+
+                later = time.monotonic() + blob_claim_lease.BLOB_LEASE_TTL_S + 1.0
+                monkeypatch.setattr(blob_claim_lease.time, "monotonic", lambda: later)
+                assert await svc._lease_tier4_blob(session, "worker-b") == (game_id, user_id)
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_released_lease_is_claimable_and_only_owner_releases(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A late submit from a non-holder leaves the holder's lease in place."""
+        import app.services.eval_queue_service as svc
+        from app.services import blob_claim_lease
+
+        user_id = tier4_test_users["user"]
+        game_id = await _insert_game(
+            queue_session_maker, user_id, full_evals_completed_at=datetime.now(timezone.utc)
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            async with queue_session_maker() as session:
+                assert await svc._lease_tier4_blob(session, "worker-a") == (game_id, user_id)
+                assert blob_claim_lease.release_lease(game_id, "worker-b") is False
+                assert await svc._lease_tier4_blob(session, "worker-c") is None
+                assert blob_claim_lease.release_lease(game_id, "worker-a") is True
+                assert await svc._lease_tier4_blob(session, "worker-c") == (game_id, user_id)
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_bundled_claim_and_fleet_share_the_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """The server-pool path (claim_eval_job, bundled) and /flaw-blob-lease's pick
+        exclude each other's leases, so the pool never collides with the fleet."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", False)
+
+        async def _no_tier3(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _no_tier3)
+
+        user_id = tier4_test_users["user"]
+        game_id = await _insert_game(
+            queue_session_maker, user_id, full_evals_completed_at=datetime.now(timezone.utc)
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id)
+
+        try:
+            claimed = await svc.claim_eval_job(worker_id=svc.WORKER_ID_SERVER_POOL)
+            assert claimed is not None and claimed.tier == TIER_BLOB_BACKFILL
+            assert claimed.game_id == game_id
+            async with queue_session_maker() as session:
+                assert await svc._lease_tier4_blob(session, "fleet-worker") is None
+            assert await svc.claim_eval_job(worker_id=svc.WORKER_ID_SERVER_POOL) is None
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_concurrent_draw_loser_redraws_another_game(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Two coroutines can draw the same game while both await the DB; the one that
+        loses the check-and-set re-draws with the winner's game excluded."""
+        import app.services.eval_queue_service as svc
+        from app.services import blob_claim_lease
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+        game_a = await _insert_game(queue_session_maker, user_id, full_evals_completed_at=now)
+        game_b = await _insert_game(queue_session_maker, user_id, full_evals_completed_at=now)
+        await _insert_game_flaw(queue_session_maker, user_id, game_a)
+        await _insert_game_flaw(queue_session_maker, user_id, game_b)
+
+        real_pick = svc._claim_tier4_blob
+        draws: list[tuple[int, int] | None] = []
+
+        async def _racing_pick(session: AsyncSession) -> tuple[int, int] | None:
+            # First draw: the stale result a coroutine would hold if worker-a leased
+            # game_a while this one awaited its SELECT. Later draws: the real lottery.
+            pick = (game_a, user_id) if not draws else await real_pick(session)
+            draws.append(pick)
+            return pick
+
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _racing_pick)
+        assert blob_claim_lease.try_lease(game_a, "worker-a")
+
+        try:
+            async with queue_session_maker() as session:
+                pick = await svc._lease_tier4_blob(session, "worker-b")
+            assert pick == (game_b, user_id), f"expected the re-draw to land on game_b: {pick!r}"
+            assert len(draws) == 2
+        finally:
+            await _delete_games(queue_session_maker, [game_a, game_b])
+
+    async def test_no_lease_sql_is_unchanged(self) -> None:
+        """With nothing leased, the tier-4 pick binds no lease param and adds no clause,
+        so the prod plan on ix_games_blob_backfill_pending is untouched."""
+        import typing
+
+        import app.services.eval_queue_service as svc
+        from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
+
+        class _Result:
+            def one_or_none(self) -> None:
+                return None
+
+        class _Recorder:
+            def __init__(self) -> None:
+                self.sql: list[str] = []
+                self.params: list[dict[str, object]] = []
+
+            async def execute(self, clause: object, params: dict[str, object]) -> _Result:
+                self.sql.append(str(clause))
+                self.params.append(params)
+                return _Result()
+
+        rec = _Recorder()
+        assert await svc._claim_tier4_blob(typing.cast(_AsyncSession, rec)) is None
+        assert "leased_ids" not in rec.sql[0] and "leased_ids" not in rec.params[0]
+
+        from app.services import blob_claim_lease
+
+        assert blob_claim_lease.try_lease(123, "worker-a")
+        rec2 = _Recorder()
+        await svc._claim_tier4_blob(typing.cast(_AsyncSession, rec2))
+        assert "g.blobs_completed_at IS NULL AND g.id <> ALL(" in rec2.sql[0]
+        assert rec2.params[0]["leased_ids"] == [123]

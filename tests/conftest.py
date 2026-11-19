@@ -558,6 +558,19 @@ def reset_in_process_rate_limiters() -> None:
     reset_password_limiter._timestamps.clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_blob_claim_leases() -> None:
+    """Clear the in-process tier-4 claim leases before every test (SEED-261119-c7l).
+
+    Module-level state, like the limiters above: a test that leases a game through
+    /flaw-blob-lease or claim_eval_job without submitting would otherwise leave it
+    excluded from the lottery in later tests sharing the process.
+    """
+    from app.services import blob_claim_lease
+
+    blob_claim_lease.reset_for_tests()
+
+
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""

@@ -120,6 +120,7 @@ Starting the benchmark backend on port ${PORT}.
   database          benchmark (port 5433, write-capable role)
   selection gate    ON   — the fleet can only touch benchmark_selection games
   homogenization    ON   — the lichess arm is re-analyzed by our own engine
+  blob backfill     FIRST — flaw-line backfill is served before new analysis
   Stockfish pool    1    — this instance submits and runs Maia; the fleet
                           supplies Stockfish throughput (D-15)
 
@@ -129,13 +130,16 @@ afterwards. If Maia did not load, stop now rather than draining against it.
 
 MSG
 
-# The five mandatory flags (runbook §3), deliberately inline rather than in .env.
+# The mandatory flags (runbook §3), deliberately inline rather than in .env.
+# BLOB_BACKFILL_BEFORE_IDLE (Phase 252): flaw-line backfill ahead of the analysis
+# tranche, which otherwise starves it for weeks.
 # DATABASE_URL — plain, never DATABASE_URL_BENCHMARK: the app and Alembic only
 # read DATABASE_URL, so setting only the benchmark-specific name silently points
 # this backend at the DEV database.
 DATABASE_URL="$DB_URL" \
 EVAL_AUTO_DRAIN_ENABLED=true \
 BEST_MOVE_BACKFILL_ENABLED=true \
+BLOB_BACKFILL_BEFORE_IDLE=true \
 BENCHMARK_SELECTION_GATE_ENABLED=true \
 BENCHMARK_HOMOGENIZE_EVAL_SOURCE=true \
 STOCKFISH_POOL_SIZE=1 \
