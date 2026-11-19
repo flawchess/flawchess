@@ -108,9 +108,19 @@ function Harness() {
     <>
       <TrainModeSettings settingsDraft={settingsDraft} />
       <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={true} />
+      {/* Stands in for the launcher's Turn on, which writes the size through the same draft. */}
+      <button
+        type="button"
+        data-testid="test-outside-turn-on-blunder-check"
+        onClick={() => settingsDraft.update({ blunderCheckPerSession: TURN_ON_SIZE })}
+      >
+        Turn on
+      </button>
     </>
   );
 }
+
+const TURN_ON_SIZE = 6;
 
 function renderHarness(): void {
   const client = new QueryClient({
@@ -289,6 +299,21 @@ describe('size slider saves on release (WR-03, D-06)', () => {
     expect(track.mock.calls).toEqual([
       ['option-change', { page: 'train', target: 'train-blunder-check-per-session', value: '18' }],
     ]);
+  });
+
+  it('after a keyboard commit to Off, an outside size change (Turn on) moves the slider back', async () => {
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, blunder_check_per_session: 0 });
+    renderHarness();
+    await openRow('blunder-check');
+
+    // Radix fires onValueCommit before onValueChange on a keyboard step; the local drag
+    // position must not stay stuck at the committed value.
+    fireEvent.keyDown(sizeThumb('blunder-check'), { key: 'Home' });
+    expect(screen.getByTestId('train-blunder-check-per-session-value').textContent).toBe('Off');
+
+    fireEvent.click(screen.getByTestId('test-outside-turn-on-blunder-check'));
+    expect(screen.getByTestId('train-blunder-check-per-session-value').textContent).toBe(String(TURN_ON_SIZE));
+    expect(sizeThumb('blunder-check').getAttribute('aria-valuenow')).toBe(String(TURN_ON_SIZE));
   });
 
   it('keeps the never-both-off clamp: the last active slider cannot be committed to 0', async () => {

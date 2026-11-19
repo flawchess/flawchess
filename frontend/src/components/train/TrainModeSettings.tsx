@@ -161,6 +161,15 @@ function SizeSlider({ config, size, isLastActive, disabled, onSizeChange }: Size
   // 600 ms debounced save persist an intermediate size, and a resize to <= ended windows
   // completes an open blunder-check session irreversibly (D-06). Null while not dragging.
   const [dragValue, setDragValue] = useState<number | null>(null);
+  // On a keyboard step Radix fires onValueCommit BEFORE onValueChange, so the commit's reset
+  // was overwritten and dragValue stuck at the committed value: the slider then ignored every
+  // later outside change of `size` (Turn on left it showing Off). Drop the local position
+  // whenever the saved size changes (adjust-state-on-prop-change, no effect needed).
+  const [prevSize, setPrevSize] = useState(size);
+  if (size !== prevSize) {
+    setPrevSize(size);
+    setDragValue(null);
+  }
   const shownSize = dragValue ?? size;
 
   return (
