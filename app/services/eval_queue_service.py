@@ -925,6 +925,44 @@ async def _claim_tier4_bestmove(
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
+async def _blob_backfill_pending() -> bool:
+    """True when the tier-4 lottery currently has a claimable game.
+
+    Runs the real `_claim_tier4_blob` pick (two plain SELECTs, no lock, no write) instead
+    of a separate EXISTS, so "pending" can never disagree with what /flaw-blob-lease
+    would actually hand out — a looser check would starve tier-3 on a game the lottery
+    refuses to pick.
+    """
+    async with async_session_maker() as session:
+        return await _claim_tier4_blob(session) is not None
+
+
+async def _claim_blob_backfill_job() -> ClaimedJob | None:
+    """Tier-4 pick wrapped as a ClaimedJob, or None when the lottery is empty."""
+    async with async_session_maker() as session:
+        blob_pick = await _claim_tier4_blob(session)
+    if blob_pick is None:
+        return None
+    game_id4, user_id4 = blob_pick
+    # SEED-202 item 1: this used to hard-code is_lichess_eval_game=False ("resolved in
+    # the /flaw-blob-lease handler"), but the in-process drain (_full_drain_tick) also
+    # consumes this claim and trusts the flag. The tier-4 predicate admits lichess-eval
+    # games, so the drain overwrote their %evals with engine evals and donated them to
+    # the opening cache (prod, 2026-10-17). Resolve it from the row like tier-4b does.
+    async with async_session_maker() as session:
+        lichess_at_4 = await session.execute(
+            select(Game.lichess_evals_at).where(Game.id == game_id4)
+        )
+        is_lichess_4 = derive_is_lichess_eval_game(lichess_at_4.scalar_one_or_none())
+    return ClaimedJob(
+        game_id=game_id4,
+        user_id=user_id4,
+        tier=TIER_BLOB_BACKFILL,
+        is_lichess_eval_game=is_lichess_4,
+        job_id=None,  # table-less lottery, no eval_jobs row
+    )
+
+
 async def claim_eval_job(
     worker_id: str = WORKER_ID_SERVER_POOL,
     scope: Literal["explicit", "idle"] | None = None,
@@ -967,6 +1005,10 @@ async def claim_eval_job(
     # None → 204 so the remote worker drains tier-4 via /flaw-blob-lease instead.
     if scope == "idle":
         if not settings.EVAL_AUTO_DRAIN_ENABLED:
+            return None
+        # BLOB_BACKFILL_BEFORE_IDLE: while blob work is pending, answer "no idle
+        # work" so the remote worker falls through to its /flaw-blob-lease rung.
+        if settings.BLOB_BACKFILL_BEFORE_IDLE and await _blob_backfill_pending():
             return None
         async with async_session_maker() as session:
             derived = await _claim_tier3_derived(session)
@@ -1013,6 +1055,12 @@ async def claim_eval_job(
     if not settings.EVAL_AUTO_DRAIN_ENABLED:
         return None
 
+    # BLOB_BACKFILL_BEFORE_IDLE (benchmark instance only): tier-4 ahead of tier-3.
+    if settings.BLOB_BACKFILL_BEFORE_IDLE:
+        early_blob_job = await _claim_blob_backfill_job()
+        if early_blob_job is not None:
+            return early_blob_job
+
     async with async_session_maker() as session:
         derived = await _claim_tier3_derived(session)
         # No write needed for tier-3; session auto-closes.
@@ -1033,10 +1081,9 @@ async def claim_eval_job(
     # Retained here (unlike the idle scope) because the only bundled-path
     # consumer is the in-process server-pool drain (eval_drain._full_drain_tick),
     # which writes blobs via the MultiPV-2 pass.
-    async with async_session_maker() as session:
-        blob_pick = await _claim_tier4_blob(session)
+    blob_job = await _claim_blob_backfill_job()
 
-    if blob_pick is None:
+    if blob_job is None:
         # Tier-4 blob empty -> try tier-4b best-move backfill.
         # EVAL_AUTO_DRAIN_ENABLED is already True at this point (checked above);
         # only the dedicated gate needs checking here, BEFORE the DB round-trip
@@ -1065,24 +1112,7 @@ async def claim_eval_job(
             job_id=None,  # table-less lottery, no eval_jobs row
         )
 
-    game_id4, user_id4 = blob_pick
-    # SEED-202 item 1: this used to hard-code is_lichess_eval_game=False ("resolved in
-    # the /flaw-blob-lease handler"), but the in-process drain (_full_drain_tick) also
-    # consumes this claim and trusts the flag. The tier-4 predicate admits lichess-eval
-    # games, so the drain overwrote their %evals with engine evals and donated them to
-    # the opening cache (prod, 2026-10-17). Resolve it from the row like tier-4b does.
-    async with async_session_maker() as session:
-        lichess_at_4 = await session.execute(
-            select(Game.lichess_evals_at).where(Game.id == game_id4)
-        )
-        is_lichess_4 = derive_is_lichess_eval_game(lichess_at_4.scalar_one_or_none())
-    return ClaimedJob(
-        game_id=game_id4,
-        user_id=user_id4,
-        tier=TIER_BLOB_BACKFILL,
-        is_lichess_eval_game=is_lichess_4,
-        job_id=None,  # table-less lottery, no eval_jobs row
-    )
+    return blob_job
 
 
 async def report_job_complete(job_id: int) -> None:

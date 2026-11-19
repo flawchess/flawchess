@@ -3849,3 +3849,129 @@ class TestBenchmarkSelectionGate:
                 )
                 await session.commit()
             await _delete_games(queue_session_maker, [selected_game])
+
+
+class TestBlobBackfillBeforeIdle:
+    """BLOB_BACKFILL_BEFORE_IDLE (Phase 252): tier-4 ahead of tier-3 on the benchmark instance.
+
+    Both lotteries are mocked, so these tests pin only the ordering in claim_eval_job.
+    """
+
+    _TIER3_GAME_ID = 910_000_001
+    _TIER4_GAME_ID = 910_000_002
+    _USER_ID = 910_000_003
+
+    def _patch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        *,
+        flag: bool,
+        tier3_has_work: bool,
+        tier4_has_work: bool,
+    ) -> list[str]:
+        """Mock every claim source; return the list that records which lotteries ran."""
+        import app.services.eval_queue_service as svc
+
+        calls: list[str] = []
+
+        async def _tier3(session: object) -> tuple[int, int, bool] | None:
+            calls.append("tier3")
+            return (self._TIER3_GAME_ID, self._USER_ID, False) if tier3_has_work else None
+
+        async def _tier4(session: object) -> tuple[int, int] | None:
+            calls.append("tier4")
+            return (self._TIER4_GAME_ID, self._USER_ID) if tier4_has_work else None
+
+        async def _no_queued(session: object, worker_id: str, ttl: int) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _tier3)
+        monkeypatch.setattr(svc, "_claim_tier4_blob", _tier4)
+        monkeypatch.setattr(svc, "_claim_queued_job", _no_queued)
+        monkeypatch.setattr(svc.settings, "EVAL_AUTO_DRAIN_ENABLED", True)
+        monkeypatch.setattr(svc.settings, "BEST_MOVE_BACKFILL_ENABLED", False)
+        monkeypatch.setattr(svc.settings, "BLOB_BACKFILL_BEFORE_IDLE", flag)
+        return calls
+
+    async def test_idle_scope_yields_to_pending_blob_work(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on + blob work pending: idle answers None and never draws tier-3."""
+        import app.services.eval_queue_service as svc
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=True
+        )
+        assert await svc.claim_eval_job(scope="idle") is None
+        assert calls == ["tier4"]
+
+    async def test_idle_scope_serves_tier3_once_blob_work_is_drained(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on + no blob work: tier-3 is served, so the analysis tranche resumes."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=False
+        )
+        claimed = await svc.claim_eval_job(scope="idle")
+        assert claimed is not None
+        assert (claimed.tier, claimed.game_id) == (TIER_IDLE_BACKLOG, self._TIER3_GAME_ID)
+
+    async def test_idle_scope_default_order_ignores_blob_work(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag off (prod): tier-3 is served and the tier-4 lottery is not even consulted."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=False, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job(scope="idle")
+        assert claimed is not None
+        assert claimed.tier == TIER_IDLE_BACKLOG
+        assert calls == ["tier3"]
+
+    async def test_bundled_path_claims_blob_work_first(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag on: the server-pool claim returns the tier-4 game although tier-3 has work."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=True, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job()
+        assert claimed is not None
+        assert (claimed.tier, claimed.game_id) == (TIER_BLOB_BACKFILL, self._TIER4_GAME_ID)
+        assert calls == ["tier4"]
+
+    async def test_bundled_path_default_order_claims_tier3_first(
+        self,
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Flag off (prod): tier-3 still preempts tier-4 on the bundled claim."""
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_IDLE_BACKLOG
+
+        calls = self._patch(
+            monkeypatch, queue_session_maker, flag=False, tier3_has_work=True, tier4_has_work=True
+        )
+        claimed = await svc.claim_eval_job()
+        assert claimed is not None
+        assert claimed.tier == TIER_IDLE_BACKLOG
+        assert calls == ["tier3"]

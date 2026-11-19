@@ -118,6 +118,7 @@ values into `.env`**, and **never commit the benchmark DB password**:
 DATABASE_URL="postgresql+asyncpg://flawchess_benchmark:<password>@localhost:5433/flawchess_benchmark" \
 EVAL_AUTO_DRAIN_ENABLED=true \
 BEST_MOVE_BACKFILL_ENABLED=true \
+BLOB_BACKFILL_BEFORE_IDLE=true \
 BENCHMARK_SELECTION_GATE_ENABLED=true \
 BENCHMARK_HOMOGENIZE_EVAL_SOURCE=true \
 STOCKFISH_POOL_SIZE=1 \
@@ -143,6 +144,10 @@ All five environment flags above are mandatory, not tuning choices:
   required -- the best-move flag gates both the in-process tier-4b drain and the
   worker-facing `/bestmove-lease` endpoint, so without it the fleet's rung 5
   returns 204 forever and no gem tiers land.
+- `BLOB_BACKFILL_BEFORE_IDLE=true` serves the flaw-line backfill (tier 4) before new
+  full-game analysis (tier 3). With the default order a weeks-long analysis tranche
+  starves the backfill completely (Phase 252). Benchmark instance only; prod keeps
+  new user games first.
 - `BENCHMARK_SELECTION_GATE_ENABLED=true` scopes the lanes named in the table
   below to only the games in `benchmark_selection` -- it does NOT cover every
   lane the worker fleet can reach. Read the table before trusting this flag to

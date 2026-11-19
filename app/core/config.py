@@ -95,6 +95,16 @@ class Settings(BaseSettings):
     # Default False; enable in prod deliberately after observing backend RSS/CPU.
     BEST_MOVE_BACKFILL_ENABLED: bool = False
 
+    # Serve the tier-4 flaw-blob backfill BEFORE the tier-3 idle backlog (Phase 252).
+    # Default False: on prod tier-3 is new user games and must stay ahead. The
+    # benchmark instance on :8001 sets it True (bin/run_benchmark_backend.sh),
+    # because there tier-3 is a weeks-long analysis tranche nobody waits on, and
+    # with the default order it starved the flaw-line re-walk completely. See
+    # claim_eval_job: the idle scope answers "no work" while blob work is pending
+    # (so remote workers fall through to /flaw-blob-lease), and the bundled path
+    # tries tier-4 first.
+    BLOB_BACKFILL_BEFORE_IDLE: bool = False
+
     # Benchmark full-game-analysis lane selection gate. When True, every
     # lottery/claim lane the worker fleet can reach --
     # tier-3 derived, tier-4 blob, tier-4b bestmove (eval_queue_service.py), and
