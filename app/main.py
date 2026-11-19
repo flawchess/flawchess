@@ -94,6 +94,12 @@ def _sentry_before_send(event: Event, hint: dict[str, Any]) -> Event | None:
     return event
 
 
+def _maia_intra_op_threads() -> int | None:
+    """The lifespan's Maia thread count: settings.MAIA_INTRA_OP_THREADS, where 0
+    means "ORT's own default", which start_maia spells None."""
+    return settings.MAIA_INTRA_OP_THREADS or None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Bug fix: the app configured logging nowhere, so every
@@ -153,7 +159,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # after Stockfish, mirroring its lifecycle. NO-OP when onnxruntime is absent
     # (lean/worker images) — start_maia catches ImportError and disables Maia
     # gracefully, so this can never block boot.
-    await start_maia()
+    await start_maia(intra_op_num_threads=_maia_intra_op_threads())
     # Convention for whoever adds a SEVENTH lifespan background loop
     # below: wrap each per-tick body in `with sentry_sdk.isolation_scope():`
     # (enclosing the whole try/except, not just the awaited tick call) so a

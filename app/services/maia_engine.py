@@ -90,10 +90,11 @@ def _model_bytes_ok() -> bool:
 async def start_maia(*, intra_op_num_threads: int | None = None) -> None:
     """Eager-load the one process-wide Maia ONNX session at lifespan startup.
 
-    `intra_op_num_threads` (default None = ORT's own default, today's behavior, what
-    the backend lifespan uses) pins the session's intra-op thread count. The Phase 247
-    backfill passes 1 because one ORT thread per process measured 80.5 ms vs 95.3 ms
-    per position at the default, and throughput scales by processes, not threads.
+    `intra_op_num_threads` (default None = ORT's own default, one thread per core)
+    pins the session's intra-op thread count. The backend lifespan passes
+    settings.MAIA_INTRA_OP_THREADS (1) and the Phase 247 backfill passes 1: one ORT
+    thread measured 80.5 ms vs 95.3 ms per position at the default, at about an
+    eighth of the CPU, and throughput scales by concurrent callers, not threads.
 
     Idempotent: a second call is a no-op. onnxruntime lives in the isolated
     maia-inference group and may be absent (lean/worker images) — catch ImportError,

@@ -168,6 +168,16 @@ class Settings(BaseSettings):
     # random id is generated at each start, as before.
     EVAL_WORKER_ID: str = ""
 
+    # ONNX Runtime intra-op threads for the backend's one Maia session. 1 = each
+    # inference call runs on its caller's thread. 0 = ORT's own default (one thread
+    # per core), which was the behaviour until 2026-11-19: on the 8-core prod box
+    # every flaw-blob submit's inline Maia re-score then spread over all cores,
+    # concurrent submits fought over them, and the backend sat at 100% CPU with a
+    # 1.9 s median submit. Measured on 16 cores: same wall time per call (~78 ms),
+    # 78 ms CPU per position at 1 thread vs ~610 ms at the default, and 36 vs 24
+    # positions/s with three concurrent callers.
+    MAIA_INTRA_OP_THREADS: int = 1
+
     # The benchmark :8001 instance's OWN operator token. Read by
     # bin/run_benchmark_backend.sh, which passes it as that process's
     # EVAL_OPERATOR_TOKEN on the command line; declared here so it is documented
