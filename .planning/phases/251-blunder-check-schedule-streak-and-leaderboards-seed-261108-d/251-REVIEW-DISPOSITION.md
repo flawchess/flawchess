@@ -5,33 +5,33 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Cross-mode cooldown cools flaws that were composed but never shown"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Guest purge leaves blunder-check sessions and windows behind"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "A debounced settings save can complete a blunder-check session irreversibly mid-drag"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: deferred
     title: "Tapping Start within the debounce window silently drops the pending settings save"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Streak explainer popover still describes the puzzle-only rule"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: deferred
     title: "Level options and default level are duplicated in three components"
   - id: IN-03
     severity: info
-    disposition: open
+    disposition: deferred
     title: "Stale comment on the medal claim cap"
-open: 7
+open: 0
 total: 7
 recorded: 2026-11-18T23:47:17.415Z
 ---
@@ -40,13 +40,13 @@ recorded: 2026-11-18T23:47:17.415Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
+| WR-01 | warning | fixed | 9b454124b |
+| WR-02 | warning | fixed | c6b438318 |
+| WR-03 | warning | fixed | f188a23e2 |
+| WR-04 | warning | deferred | follow-up: narrow 600 ms window; flush draft before Start (owner chose not to fix in phase 251) |
+| IN-01 | info | fixed | 921e1c0ca |
+| IN-02 | info | deferred | follow-up: level options duplication, refactor later |
+| IN-03 | info | deferred | follow-up: stale comment on medal claim cap |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
