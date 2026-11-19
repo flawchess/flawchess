@@ -161,6 +161,13 @@ class Settings(BaseSettings):
     # failing that, the primary token) applies as before.
     EVAL_FALLBACK_OPERATOR_TOKEN: str = ""
 
+    # Name the remote eval worker reports as (X-Worker-Id; shows up in
+    # worker_heartbeats and the leased_by columns). Read ONLY by
+    # scripts/remote_eval_worker.py as the default for --worker-id, which
+    # overrides it; no backend reads this name. Must be < 10 chars. Empty = a
+    # random id is generated at each start, as before.
+    EVAL_WORKER_ID: str = ""
+
     # The benchmark :8001 instance's OWN operator token. Read by
     # bin/run_benchmark_backend.sh, which passes it as that process's
     # EVAL_OPERATOR_TOKEN on the command line; declared here so it is documented

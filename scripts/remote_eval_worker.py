@@ -10,6 +10,8 @@ engine results through UNCHANGED (D-2 / pitfall 1: no client-side post-move shif
 The operator token is read from EVAL_OPERATOR_TOKEN in the environment or the .env
 file (loaded via app settings); --token overrides it for one-off runs. --base-url
 defaults to the production API, so with the token in .env the worker needs no flags.
+EVAL_WORKER_ID (environment or .env) names the worker, e.g. EVAL_WORKER_ID=box1 (< 10
+chars); --worker-id overrides it. Without either a random id is generated at each start.
 
 Usage:
     # Connectivity test (lease + eval only, no submit):
@@ -1916,7 +1918,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Distinctive worker identity written to leased_by / entry_eval_leased_by columns "
             "for prod observability (D-10 / SEED-051). Must be < 10 chars (fits VARCHAR(16)). "
-            "Default: random ~8-char base36 generated at startup."
+            "Default: EVAL_WORKER_ID from the environment or the .env file, else a random "
+            "~8-char base36 id generated at startup."
         ),
     )
     parser.add_argument(
@@ -1970,9 +1973,15 @@ def parse_args() -> argparse.Namespace:
             "first progress mark would come too close to the stall watchdog. Lower "
             "--idle-sleep or --lanes."
         )
-    if args.worker_id is not None and len(args.worker_id) >= 10:
+    # EVAL_WORKER_ID (env / .env via app settings) names the worker when --worker-id is
+    # not given; the flag wins. Resolved here so the same length rule covers both sources.
+    worker_id_source = "--worker-id"
+    if args.worker_id is None and settings.EVAL_WORKER_ID.strip():
+        args.worker_id = settings.EVAL_WORKER_ID.strip()
+        worker_id_source = "EVAL_WORKER_ID"
+    if args.worker_id is not None and len(args.worker_id) > WORKER_ID_MAX_LEN:
         parser.error(
-            f"--worker-id must be < 10 chars, got {len(args.worker_id)} ({args.worker_id!r})"
+            f"{worker_id_source} must be < 10 chars, got {len(args.worker_id)} ({args.worker_id!r})"
         )
     if args.fallback_url is not None and not args.fallback_url.strip():
         parser.error("--fallback-url must not be empty")

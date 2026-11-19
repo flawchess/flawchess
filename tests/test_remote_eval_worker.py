@@ -149,6 +149,35 @@ def test_worker_id_override_short_accepted(monkeypatch: pytest.MonkeyPatch) -> N
     assert args.worker_id == "box1"
 
 
+def test_worker_id_env_names_the_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """EVAL_WORKER_ID (app settings) is used when --worker-id is not given."""
+    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", " hetzner1 ")
+    monkeypatch.setattr(sys, "argv", ["worker", "--once"])
+    assert parse_args().worker_id == "hetzner1"
+
+
+def test_worker_id_flag_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--worker-id wins over EVAL_WORKER_ID."""
+    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", "fromenv")
+    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "fromflag", "--once"])
+    assert parse_args().worker_id == "fromflag"
+
+
+def test_worker_id_env_too_long_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The < 10 chars rule applies to EVAL_WORKER_ID too."""
+    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", "a" * 10)
+    monkeypatch.setattr(sys, "argv", ["worker", "--once"])
+    with pytest.raises(SystemExit):
+        parse_args()
+
+
+def test_worker_id_unset_everywhere_stays_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No flag and an empty EVAL_WORKER_ID: parse_args leaves it None (random id in main)."""
+    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", "")
+    monkeypatch.setattr(sys, "argv", ["worker", "--once"])
+    assert parse_args().worker_id is None
+
+
 def test_worker_id_max_len_constant() -> None:
     """WORKER_ID_MAX_LEN matches the validation rule (len < 10 -> max 9)."""
     assert WORKER_ID_MAX_LEN == 9

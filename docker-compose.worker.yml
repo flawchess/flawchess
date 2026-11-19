@@ -2,7 +2,7 @@
 # See REMOTE_WORKER.md ("Advanced: Run in Docker") for usage.
 #
 # Reads EVAL_OPERATOR_TOKEN (required) and optional REMOTE_WORKER_COUNT /
-# REMOTE_WORKER_LANES / SENTRY_DSN
+# REMOTE_WORKER_LANES / EVAL_WORKER_ID / SENTRY_DSN
 # from a .env file in this directory.
 #
 #   docker compose -f docker-compose.worker.yml up -d --build
@@ -17,6 +17,8 @@ services:
       # Passed into the container; pydantic-settings reads it from the OS env.
       EVAL_OPERATOR_TOKEN: ${EVAL_OPERATOR_TOKEN:?set EVAL_OPERATOR_TOKEN in .env}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Optional worker name (< 10 chars). Empty = a random id per container start.
+      EVAL_WORKER_ID: ${EVAL_WORKER_ID:-}
       # SEED-063 D6: agreed path so the healthcheck below reads the same file the
       # worker's watchdog (_Heartbeat) writes to.
       FLAWCHESS_WORKER_HEARTBEAT_FILE: /tmp/flawchess-worker.heartbeat
