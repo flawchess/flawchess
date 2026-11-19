@@ -1,7 +1,8 @@
 # Optional Docker setup for the remote Stockfish eval worker.
 # See REMOTE_WORKER.md ("Advanced: Run in Docker") for usage.
 #
-# Reads EVAL_OPERATOR_TOKEN (required) and optional REMOTE_WORKER_COUNT / SENTRY_DSN
+# Reads EVAL_OPERATOR_TOKEN (required) and optional REMOTE_WORKER_COUNT /
+# REMOTE_WORKER_LANES / SENTRY_DSN
 # from a .env file in this directory.
 #
 #   docker compose -f docker-compose.worker.yml up -d --build
@@ -24,7 +25,10 @@ services:
     # --base-url to https://flawchess.com, so no URL flag is needed. The process
     # is now ALWAYS the self-supervising auto-restart worker (SEED-063 D3) -- no
     # flag needed to enable it.
-    command: python scripts/remote_eval_worker.py --workers ${REMOTE_WORKER_COUNT:-4}
+    # ${REMOTE_WORKER_LANES:-1} (quick 261119-k9s): concurrent lease/eval/submit cycles
+    # on the one engine pool. Default 1 is the unchanged single loop. Only useful with
+    # 12 or more engines; the worker rejects more than one lane per 6 engines.
+    command: python scripts/remote_eval_worker.py --workers ${REMOTE_WORKER_COUNT:-4} --lanes ${REMOTE_WORKER_LANES:-1}
     restart: unless-stopped
     # SEED-063 D6: cap the unbounded InvalidStateError log flood so it cannot fill
     # the host disk before the in-process watchdog fires and forces a restart.

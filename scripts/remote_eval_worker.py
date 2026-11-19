@@ -23,6 +23,20 @@ Usage:
 
     # Point at a local/staging server:
     uv run python scripts/remote_eval_worker.py --base-url http://localhost:8000
+
+    # Many-core machine: 4 concurrent cycles sharing 28 engines:
+    uv run python scripts/remote_eval_worker.py --workers 28 --lanes 4
+
+Lanes: --lanes N runs N concurrent lease/eval/submit cycles on the ONE engine pool, so the
+engines keep searching while other lanes wait on HTTP. All lanes share the worker id and
+walk the same ladder; entry-ply leases are taken one lane at a time (the server stamps every
+game leased to a worker id on /entry-submit). --once and --dry-run always run a single lane.
+Size it at about one lane per 6-8 engines (--workers 28 --lanes 3 or 4); more than
+--workers // 6 lanes is rejected. The default of 1 is the unchanged single loop.
+Known limits: with lanes > 1, priority work (explicit tier-1/2 games, entry-ply batches)
+queues for engines behind in-flight backfill searches, so it finishes later than on a
+single-lane worker, and an entry batch can occasionally outlive its 20 s server lease and be
+redone. Use lanes only on machines with many engines, and keep to the cap.
 """
 
 from __future__ import annotations
@@ -30,6 +44,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import contextvars
 import os
 import secrets
 import signal
@@ -74,6 +89,28 @@ from app.services.flaws_service import _run_all_moves_pass  # noqa: E402
 
 DEFAULT_BASE_URL: str = "https://flawchess.com"
 DEFAULT_WORKERS: int = 4
+# --lanes (quick 261119-k9s): concurrent lease -> eval -> submit cycles sharing the one
+# EnginePool. 1 keeps today's single-loop behavior exactly.
+DEFAULT_LANES: int = 1
+# Hard cap: lanes <= max(1, workers // ENGINES_PER_LANE) (28 -> 4, 16 -> 2, 8 -> 1). Why:
+# (1) throughput saturates early: one flaw-blob game's ~30 searches already fan out over
+# every engine, so about workers/8 lanes keep the pool busy and more lanes only add queue
+# time. (2) EnginePool takes an engine from one FIFO queue BEFORE the per-search timeout
+# starts, so queueing behind other lanes never creates eval holes, but it stretches every
+# cycle's wall clock; the server leases a slower cycle can outlive are the SHORT ones,
+# ENTRY_LEASE_TTL_SECONDS = 20 (app/services/eval_drain.py) and LEASE_TTL_SECONDS = 120
+# (app/services/eval_queue_service.py), not the 720s BLOB_LEASE_TTL_S. (3) The modelled
+# all-timeout cycle must stay under STALL_THRESHOLD_S, see the "Lanes" paragraph there.
+ENGINES_PER_LANE: int = 6
+# Lane idle sleep (idle_sleep x lanes) and start stagger (i x idle_sleep) are clamped to
+# these so a large --idle-sleep can never push a lane's first progress mark toward
+# STALL_THRESHOLD_S (the watchdog would kill a healthy idle worker). parse_args also
+# rejects a combination whose worst first-mark time exceeds the fraction below.
+MAX_LANE_IDLE_SLEEP_S: float = 60.0
+MAX_LANE_STAGGER_S: float = 60.0
+_FIRST_MARK_STALL_FRACTION: float = 0.5
+# asyncio task-name prefix of each lane (observability and tests).
+_LANE_TASK_PREFIX: str = "eval-lane-"
 # Lowered from 5.0 to 1.0 (Phase 121): only the empty-queue / 204 path sleeps,
 # so this affects only idle-pickup latency for a freshly-enqueued tier-1 job.
 # The busy path (a game was leased) is already a tight loop — unchanged.
@@ -154,6 +191,18 @@ EVAL_RETRY_MAX_POSITIONS: int = 8
 # to ~620s. 720s preserves the same ~100s margin the 600s value had over its own
 # ~500s worst case. Raising it only delays recovery from a genuine wedge, so it
 # can never mask a real hang (same invariant as before).
+#
+# Lanes (quick 261119-k9s): an atomic cycle (rungs 1 and 3) issues THREE gathers
+# (_eval_positions, _eval_atomic_blob_nodes, _eval_targeted_second_best), each followed by
+# a retry gather bounded by the per-cycle budget of EVAL_RETRY_MAX_POSITIONS x
+# EVAL_RETRY_TIMEOUT_S. Modelled all-timeout engine work of ONE cycle, with up to 100
+# positions per pass: 3 x 100 x 5s (engine._NODES_TIMEOUT_S) + 8 x 15s = 1620 engine-seconds.
+# With L lanes sharing W engines in the same state the last cycle finishes after about
+# L x 1620 / W seconds (+ HTTP). The cap L <= W // ENGINES_PER_LANE bounds that at
+# 1620 / 6 = 270s for every W >= 12, inside this 720s threshold. The model is a bound on
+# modelled engine work, not a guarantee: passes are not limited to 100 positions (the server
+# allows up to 1024 per lease) and a single lane at --workers 1 or 2 already exceeds it in
+# this all-timeout model; both are pre-existing and unchanged at --lanes 1.
 STALL_THRESHOLD_S: float = 720.0
 # How often the watchdog checker task wakes to compare now vs. last_progress.
 WATCHDOG_POLL_INTERVAL_S: float = 15.0
@@ -166,10 +215,17 @@ _DEFAULT_HEARTBEAT_FILE: Path = Path(tempfile.gettempdir()) / "flawchess-worker.
 # ─── Logging helper ───────────────────────────────────────────────────────────
 
 
+# Lane label for `_log` ("[lane 2] "), set per lane task by `_run_lane`. A ContextVar so the
+# label follows the lane into child tasks (asyncio.gather) without a module global; it is
+# never set at --lanes 1, so single-loop log output is unchanged.
+_LANE_LABEL: contextvars.ContextVar[str] = contextvars.ContextVar("_LANE_LABEL", default="")
+
+
 def _log(msg: str = "") -> None:
-    """Print a message prefixed with a UTC timestamp (second precision)."""
+    """Print a message prefixed with a UTC timestamp (second precision) and, inside a
+    `--lanes` lane, the lane label."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}")
+    print(f"[{ts}] {_LANE_LABEL.get()}{msg}")
 
 
 def _target(client: httpx.AsyncClient) -> str:
@@ -647,21 +703,41 @@ class _Heartbeat:
 
     Uses wall-clock `time.time()` (NOT monotonic) so a laptop sleep/resume produces
     a huge gap -> instant restart on resume (SEED-063).
+
+    One progress slot per `--lanes` lane (quick 261119-k9s). `last_progress` is the
+    OLDEST slot, so a wedged lane keeps it pinned and the in-memory watchdog fires even
+    while healthy lanes keep completing cycles. The heartbeat file is rewritten only
+    when the marking lane held the oldest slot, so a healthy lane can never freshen it
+    on behalf of a wedged one and the file goes stale too. At lanes=1 every mark is by
+    the oldest (only) lane, so the file is written on every mark, as before.
     """
 
-    def __init__(self, path: Path | None) -> None:
+    def __init__(
+        self,
+        path: Path | None,
+        lanes: int = 1,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self.path = path
-        self.last_progress: float = time.time()
+        # Injectable so tests can drive progress deterministically; production is wall clock.
+        self._clock = clock
+        self._lane_progress: list[float] = [clock()] * lanes
 
-    def mark(self) -> None:
-        """Record progress now; best-effort freshen the heartbeat file's mtime.
+    @property
+    def last_progress(self) -> float:
+        """Progress time of the oldest lane (what the watchdog compares against)."""
+        return min(self._lane_progress)
+
+    def mark(self, lane: int = 0) -> None:
+        """Record progress for `lane` now; best-effort freshen the heartbeat file.
 
         A file-write failure must NEVER kill the worker -- the heartbeat file is
         observability-only (it feeds the Docker healthcheck); the actual stall
         decision uses `self.last_progress` in memory, not the file.
         """
-        self.last_progress = time.time()
-        if self.path is not None:
+        was_oldest = self._lane_progress[lane] <= self.last_progress
+        self._lane_progress[lane] = self._clock()
+        if was_oldest and self.path is not None:
             try:
                 self.path.write_text(str(self.last_progress))
             except OSError:
@@ -734,6 +810,20 @@ class _CycleOutcome:
     should_stop: bool
 
 
+@dataclass(frozen=True)
+class _LaneContext:
+    """Per-lane view of the state shared by all `--lanes` cycles (quick 261119-k9s).
+
+    `index` is the lane number. `entry_lock` and `streak` are ONE object shared by every
+    lane: the lock serializes the entry-ply rung (see `_run_cycle`), the streak makes a
+    sustained outage escalate a single Sentry event across all lanes (`_TransientStreak`).
+    """
+
+    index: int
+    entry_lock: asyncio.Lock
+    streak: _TransientStreak
+
+
 def _is_expected_transient(exc: BaseException) -> bool:
     """True for operational churn a continuous polling daemon rides out silently.
 
@@ -765,6 +855,8 @@ async def _run_loop(
     dry_run: bool,
     loop: bool,
     heartbeat: _Heartbeat | None = None,
+    *,
+    lane: _LaneContext | None = None,
 ) -> None:
     """Inner lease → eval → submit loop, now iterating an ORDERED list of backend
     targets per cycle (D-13/Task 2).
@@ -784,48 +876,27 @@ async def _run_loop(
     all positions, then submit unless `dry_run`. Exits cleanly when `not loop`
     after one game cycle.
 
-    Each per-target `_run_cycle` call is wrapped in an exception boundary: a
-    transient network error, a 5xx (raise_for_status), or a bad FEN must not kill
-    a continuous daemon. D-14: when a target's ladder raises an EXPECTED transient
-    exception (see `_is_expected_transient`) and it is NOT the last target, that
-    target is treated as no-work and the loop advances to the next target in the
-    SAME cycle -- UNCONDITIONALLY, even when `not loop` (an unreachable primary
-    still falls through to a configured fallback on a bounded `--once` run,
-    since there is more work left to try before the run can conclude). Single-
-    target runs never take this branch (the only client is always "last"), so
-    the byte-identical single-target contract below is untouched.
-
-    When the LAST target's ladder raises a transient exception (every target in
-    the list has now been tried this cycle with none reaching its own
-    idle-sleep tail), the loop falls back to the pre-D-13 single-target
-    terminal shape: `not loop` captures and re-raises immediately (--once
-    surfaces a non-zero exit, exactly like today's single-target worker); when
-    looping it backs off `idle_sleep` once and retries from the first target
-    next cycle -- the streak tracking below still runs so a sustained outage
-    escalates exactly one Sentry event, same as the single-target case.
-
-    A NON-transient exception (a genuine defect) keeps the pre-D-13 behavior
-    exactly, on WHICHEVER target raises it: captured to Sentry immediately,
-    never falls through to a later target (a real bug must not be silently
-    masked by trying the next backend), re-raised when `not loop`, else backs
-    off `idle_sleep` and retries from the first target next cycle.
-
-    Sentry policy (quota hygiene): expected transient failures (_is_expected_transient)
-    are logged locally and NOT captured per-cycle — only ONE event escalates once a
-    failure streak has persisted past TRANSIENT_FAILURE_ALERT_S (a real sustained outage,
-    not a deploy blip). Unexpected exceptions (a genuine bug) are captured immediately.
-    A successful cycle resets the streak. `--once` runs surface everything.
+    Each per-target `_run_cycle` call is wrapped in an exception boundary (the
+    transient/defect policy lives in `_on_cycle_failure`): a transient network
+    error, a 5xx (raise_for_status), or a bad FEN must not kill a continuous
+    daemon. Sentry policy (quota hygiene): expected transient failures are logged
+    locally and NOT captured per-cycle; only ONE event escalates once a failure
+    streak has persisted past TRANSIENT_FAILURE_ALERT_S. Unexpected exceptions are
+    captured immediately. A successful cycle resets the streak. `--once` runs
+    surface everything.
 
     SEED-063: `heartbeat.mark()` is called after each per-target `_run_cycle` that
     returns WITHOUT raising -- BEFORE the stop check. A clean 204 idle cycle
     returns normally, so it counts as progress (an idle worker with an empty
-    queue is healthy, not stalled). A failed cycle (the except branch) is NOT
-    progress.
+    queue is healthy, not stalled). A failed cycle is NOT progress.
+
+    `lane` (quick 261119-k9s): None is the single-loop path, unchanged (a fresh local
+    streak, no entry lock). A `_LaneContext` makes this loop one of N `--lanes`: it
+    shares the context's streak and entry lock with the sibling lanes. An exception in
+    a lane's cycle is absorbed HERE, so the other lanes keep running.
     """
-    # Transient-failure streak tracking: start timestamp of the current uninterrupted
-    # run of expected-transient failures, and whether we've already escalated it once.
-    streak_start: float | None = None
-    streak_alerted: bool = False
+    streak = lane.streak if lane is not None else _TransientStreak()
+    entry_lock = lane.entry_lock if lane is not None else None
     last_index = len(clients) - 1
     while True:
         for i, client in enumerate(clients):
@@ -839,52 +910,25 @@ async def _run_loop(
                     dry_run,
                     loop,
                     sleep_when_idle=is_last,
+                    entry_lock=entry_lock,
                 )
             except KeyboardInterrupt, asyncio.CancelledError:
                 raise
             except Exception as exc:
-                if _is_expected_transient(exc):
-                    if not is_last:
-                        # D-14: treat this target as no-work and advance to the
-                        # next one in the SAME cycle -- UNCONDITIONALLY, even in
-                        # --once mode, since there is more work left to try
-                        # before this run can conclude. Single-target runs never
-                        # take this branch (is_last is always True when there is
-                        # only one client), so the byte-identical single-target
-                        # --once contract below is untouched.
-                        streak_start, streak_alerted = _handle_transient_failure(
-                            exc, streak_start, streak_alerted
-                        )
-                        continue
-                    # Last (or only) target: no more targets to try this cycle --
-                    # the same terminal shape as the pre-D-13 single-target case,
-                    # so --once surfaces it exactly as before (capture + raise,
-                    # no streak bookkeeping -- the process is about to exit).
-                    if not loop:
-                        sentry_sdk.capture_exception(exc)
-                        raise
-                    streak_start, streak_alerted = _handle_transient_failure(
-                        exc, streak_start, streak_alerted
-                    )
-                    await asyncio.sleep(idle_sleep)
-                    continue
-                # Genuine defect (bad payload, ValidationError, unexpected type):
-                # capture now, regardless of loop mode. Never falls through to
-                # another target -- a real bug must not be silently masked by
-                # trying the next backend.
-                sentry_sdk.capture_exception(exc)
-                if not loop:
+                action = await _on_cycle_failure(
+                    exc, streak, is_last=is_last, loop=loop, idle_sleep=idle_sleep
+                )
+                if action == "raise":
                     raise
-                _log("Cycle failed (unexpected); see Sentry. Backing off...")
-                await asyncio.sleep(idle_sleep)
+                if action == "next_target":
+                    continue
                 break
 
             # Success (this target's ladder completed without raising): reset the
             # transient-failure streak.
-            streak_start = None
-            streak_alerted = False
+            streak.reset()
             if heartbeat is not None:
-                heartbeat.mark()
+                heartbeat.mark(lane.index if lane is not None else 0)
             if outcome.did_work or is_last:
                 # Either this target did work (never touch later clients, D-13),
                 # or this was the last target's own fully-idle 204 (already slept
@@ -969,6 +1013,78 @@ def _handle_transient_failure(
     return streak_start, streak_alerted
 
 
+@dataclass
+class _TransientStreak:
+    """Mutable transient-failure streak state, shared by every lane of one process.
+
+    One instance per `_run_loop` in single-loop mode, ONE instance across all lanes
+    under `--lanes`, so a sustained outage escalates a single Sentry event rather than
+    one per lane, and a success in any lane resets it (today's "any successful cycle
+    resets" rule). Single event loop, no await between read and write, so no lock.
+    """
+
+    start: float | None = None
+    alerted: bool = False
+
+    def record(self, exc: BaseException) -> None:
+        """Log one transient failure and update the streak (see `_handle_transient_failure`)."""
+        self.start, self.alerted = _handle_transient_failure(exc, self.start, self.alerted)
+
+    def reset(self) -> None:
+        """A cycle completed without raising: end the streak."""
+        self.start = None
+        self.alerted = False
+
+
+async def _on_cycle_failure(
+    exc: Exception,
+    streak: _TransientStreak,
+    *,
+    is_last: bool,
+    loop: bool,
+    idle_sleep: float,
+) -> Literal["next_target", "next_cycle", "raise"]:
+    """Decide what `_run_loop` does after one target's ladder raised `exc`.
+
+    D-14: when the ladder raises an EXPECTED transient exception (see
+    `_is_expected_transient`) and it is NOT the last target, that target is treated as
+    no-work and the loop advances to the next target in the SAME cycle ("next_target")
+    -- UNCONDITIONALLY, even when `not loop` (an unreachable primary still falls
+    through to a configured fallback on a bounded `--once` run, since there is more
+    work left to try). Single-target runs never take this branch (the only client is
+    always "last").
+
+    When the LAST target's ladder raises a transient exception (every target has now
+    been tried this cycle), the pre-D-13 single-target terminal shape applies: `not loop`
+    captures and returns "raise" immediately (`--once` surfaces a non-zero exit, no
+    streak bookkeeping since the process is about to exit); when looping it records the
+    streak, backs off `idle_sleep` once and returns "next_cycle" (retry from the first
+    target), so a sustained outage escalates exactly one Sentry event.
+
+    A NON-transient exception (a genuine defect: bad payload, ValidationError,
+    unexpected type) is captured to Sentry immediately on WHICHEVER target raises it and
+    never falls through to a later target -- a real bug must not be silently masked by
+    trying the next backend. It returns "raise" when `not loop`, else backs off
+    `idle_sleep` and returns "next_cycle".
+    """
+    if _is_expected_transient(exc):
+        if not is_last:
+            streak.record(exc)
+            return "next_target"
+        if not loop:
+            sentry_sdk.capture_exception(exc)
+            return "raise"
+        streak.record(exc)
+        await asyncio.sleep(idle_sleep)
+        return "next_cycle"
+    sentry_sdk.capture_exception(exc)
+    if not loop:
+        return "raise"
+    _log("Cycle failed (unexpected); see Sentry. Backing off...")
+    await asyncio.sleep(idle_sleep)
+    return "next_cycle"
+
+
 async def _run_cycle(
     client: httpx.AsyncClient,
     pool: EnginePool,
@@ -978,6 +1094,7 @@ async def _run_cycle(
     loop: bool,
     *,
     sleep_when_idle: bool = True,
+    entry_lock: asyncio.Lock | None = None,
 ) -> _CycleOutcome:
     """Run one D-06 ladder cycle. Returns a `_CycleOutcome(did_work, should_stop)`.
 
@@ -996,7 +1113,8 @@ async def _run_cycle(
                /atomic-submit, done.
          204 → fall to rung 2.
       2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
-         200 → eval at depth-15, submit to /entry-submit, done.
+         200 → eval at depth-15, submit to /entry-submit, done. Under `--lanes` the whole
+               lease -> submit span runs inside `entry_lock` (see `_try_entry_rung`).
          204 → fall to rung 3.
       3. POST /atomic-lease?scope=idle&worker_schema_version=WORKER_SCHEMA_VERSION
          (tier-3 only)
@@ -1050,11 +1168,18 @@ async def _run_cycle(
         return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, lease_resp)
 
     # ── Rung 2: entry-ply (gated by D-5 backlog probe server-side) ───────────
-    entry_resp = await client.post("/api/eval/remote/entry-lease")
-
-    if entry_resp.status_code != 204:
-        # Got entry-ply positions — eval at depth-15, submit to /entry-submit.
-        return await _handle_entry_ply_response(client, pool, sf_version, dry_run, loop, entry_resp)
+    if entry_lock is None:
+        entry_outcome = await _try_entry_rung(client, pool, sf_version, dry_run, loop)
+    else:
+        # --lanes: /entry-submit stamps EVERY unexpired game whose entry_eval_leased_by
+        # equals this worker id as complete, so a sibling lane's submit would close this
+        # lane's in-flight batch with no evals. Hold the lock from /entry-lease through
+        # /entry-submit. A lane arriving here while another holds it WAITS rather than
+        # skipping to rung 3: skipping would change the ladder order.
+        async with entry_lock:
+            entry_outcome = await _try_entry_rung(client, pool, sf_version, dry_run, loop)
+    if entry_outcome is not None:
+        return entry_outcome
 
     # ── Rung 3: idle tier-3 (atomic eval+blob pair) ──────────────────────────
     idle_resp = await client.post(
@@ -1086,6 +1211,25 @@ async def _run_cycle(
         return await _handle_flaw_blob_response(client, pool, sf_version, dry_run, loop, blob_resp)
 
     return await _handle_atomic_response(client, pool, sf_version, dry_run, loop, idle_resp)
+
+
+async def _try_entry_rung(
+    client: httpx.AsyncClient,
+    pool: EnginePool,
+    sf_version: str,
+    dry_run: bool,
+    loop: bool,
+) -> _CycleOutcome | None:
+    """Rung 2: lease entry-ply positions and, on 200, evaluate and submit them.
+
+    Returns None on 204 (nothing leased, fall to rung 3), else the handled outcome.
+    Extracted from `_run_cycle` so `--lanes` can hold one lock across the whole span.
+    """
+    entry_resp = await client.post("/api/eval/remote/entry-lease")
+    if entry_resp.status_code == 204:
+        return None
+    # Got entry-ply positions — eval at depth-15, submit to /entry-submit.
+    return await _handle_entry_ply_response(client, pool, sf_version, dry_run, loop, entry_resp)
 
 
 async def _handle_atomic_response(
@@ -1416,6 +1560,117 @@ def _build_backend_targets(
     return targets
 
 
+def _lane_schedule(lanes: int, idle_sleep: float) -> list[tuple[float, float]]:
+    """Per-lane `(start_delay_s, lane_idle_sleep_s)`.
+
+    Lane i starts after `i * idle_sleep` and idles `idle_sleep * lanes`, so N lanes poll
+    an all-empty queue about once per `idle_sleep` in aggregate (the single-loop rate),
+    staggered rather than in lockstep. The stagger and the lane idle sleep are clamped to
+    MAX_LANE_STAGGER_S / MAX_LANE_IDLE_SLEEP_S so they can never approach
+    STALL_THRESHOLD_S (an idle lane marks progress only AFTER its idle sleep). The idle
+    sleep is never below `idle_sleep` itself, so lanes=1 is exactly `idle_sleep`.
+    """
+    lane_idle = max(idle_sleep, min(idle_sleep * lanes, MAX_LANE_IDLE_SLEEP_S))
+    return [(min(i * idle_sleep, MAX_LANE_STAGGER_S), lane_idle) for i in range(lanes)]
+
+
+def _worst_first_mark_s(lanes: int, idle_sleep: float) -> float:
+    """Longest time from startup to any lane's first progress mark on an idle queue:
+    its start delay plus one lane idle sleep."""
+    return max(delay + idle for delay, idle in _lane_schedule(lanes, idle_sleep))
+
+
+async def _run_lane(
+    lane: _LaneContext,
+    *,
+    clients: list[httpx.AsyncClient],
+    pool: EnginePool,
+    sf_version: str,
+    start_delay_s: float,
+    idle_sleep: float,
+    dry_run: bool,
+    heartbeat: _Heartbeat | None,
+) -> None:
+    """One lane: the unchanged `_run_loop` in looping mode, bound to its `_LaneContext`,
+    after its staggered start delay. Sets the lane log label for this task."""
+    _LANE_LABEL.set(f"[lane {lane.index}] ")
+    _log("Lane started.")
+    if start_delay_s > 0:
+        await asyncio.sleep(start_delay_s)
+    await _run_loop(
+        clients=clients,
+        pool=pool,
+        sf_version=sf_version,
+        idle_sleep=idle_sleep,
+        dry_run=dry_run,
+        loop=True,
+        heartbeat=heartbeat,
+        lane=lane,
+    )
+
+
+async def _run_lanes(
+    *,
+    clients: list[httpx.AsyncClient],
+    pool: EnginePool,
+    sf_version: str,
+    idle_sleep: float,
+    dry_run: bool,
+    lanes: int,
+    heartbeat: _Heartbeat | None,
+) -> None:
+    """Run `lanes` concurrent lease -> eval -> submit loops on ONE EnginePool.
+
+    Each lane is a task in one `asyncio.TaskGroup`, named `_LANE_TASK_PREFIX + index`,
+    walking the unchanged five-rung ladder and target order with the shared clients (one
+    X-Worker-Id). The lanes share one entry-rung lock and one transient streak.
+
+    Idle and outage volume stay at the single-loop rate: lane i starts after
+    `i * idle_sleep` and idles (and backs off) `idle_sleep * lanes` (`_lane_schedule`), so
+    the aggregate idle polling, the "Queue fully empty" log rate and the failure back-off
+    match one loop, while pickup latency for new work stays about `idle_sleep`. The shared
+    streak keeps a sustained outage at ONE Sentry event across all lanes.
+
+    Failure semantics: an `Exception` in one lane's cycle is absorbed by that lane's own
+    `_run_loop` boundary (loop=True never lets one escape), so the other lanes keep
+    completing cycles. Lanes are infinite loops, so ANY lane task ending while the group is
+    running (a return, a BaseException, or a CancelledError the group did not issue, which
+    a bare TaskGroup would silently ignore) is abnormal: this coroutine then raises
+    RuntimeError, the TaskGroup cancels the siblings and raises, `run_worker`'s finally
+    stops the pool, the child exits non-zero and the supervisor relaunches it. The process
+    never silently continues on fewer lanes.
+
+    Shutdown: cancelling this coroutine (SIGINT under `asyncio.Runner`) makes the
+    TaskGroup cancel and await every lane. Each lane's in-flight cycle is cancelled just
+    as the single loop's is today; the server lease TTLs recover the work.
+    """
+    entry_lock = asyncio.Lock()
+    streak = _TransientStreak()
+    schedule = _lane_schedule(lanes, idle_sleep)
+    async with asyncio.TaskGroup() as tg:
+        lane_tasks: list[asyncio.Task[None]] = []
+        for index, (start_delay_s, lane_idle_sleep) in enumerate(schedule):
+            lane = _LaneContext(index=index, entry_lock=entry_lock, streak=streak)
+            task = tg.create_task(
+                _run_lane(
+                    lane,
+                    clients=clients,
+                    pool=pool,
+                    sf_version=sf_version,
+                    start_delay_s=start_delay_s,
+                    idle_sleep=lane_idle_sleep,
+                    dry_run=dry_run,
+                    heartbeat=heartbeat,
+                ),
+                name=f"{_LANE_TASK_PREFIX}{index}",
+            )
+            lane_tasks.append(task)
+        # Returns only when a lane ENDS (cancelling this coroutine raises CancelledError
+        # here and the group tears the lanes down, as before).
+        await asyncio.wait(lane_tasks, return_when=asyncio.FIRST_COMPLETED)
+        raise RuntimeError("a lane ended unexpectedly")
+
+
 async def run_worker(
     targets: list[_BackendTarget],
     worker_id: str,
@@ -1424,6 +1679,7 @@ async def run_worker(
     dry_run: bool,
     loop: bool,
     heartbeat: _Heartbeat | None = None,
+    lanes: int = DEFAULT_LANES,
 ) -> None:
     """Start an EnginePool, read the SF version, then run the lease/eval/submit loop
     against an ORDERED list of backend targets (D-13/Task 2).
@@ -1443,9 +1699,15 @@ async def run_worker(
     the supervised "child" role passes a `_Heartbeat` instance so `_run_loop` marks
     progress on every completed cycle for the watchdog checker.
 
+    `lanes` (quick 261119-k9s): 1 awaits `_run_loop` exactly as before. Above 1 it awaits
+    `_run_lanes`, N concurrent cycles on the SAME pool and clients; that requires loop
+    mode (a bounded run is a single lane by definition).
+
     Handles KeyboardInterrupt gracefully — logs the interruption and ensures the
     pool is stopped via the finally block.
     """
+    if lanes > 1 and not loop:
+        raise ValueError("lanes > 1 requires loop mode")
     pool = EnginePool(workers)
     await pool.start()
     _log(f"EnginePool started with {workers} worker(s).")
@@ -1467,15 +1729,27 @@ async def run_worker(
                 )
                 for target in targets
             ]
-            await _run_loop(
-                clients=clients,
-                pool=pool,
-                sf_version=sf_version,
-                idle_sleep=idle_sleep,
-                dry_run=dry_run,
-                loop=loop,
-                heartbeat=heartbeat,
-            )
+            if lanes == 1:
+                await _run_loop(
+                    clients=clients,
+                    pool=pool,
+                    sf_version=sf_version,
+                    idle_sleep=idle_sleep,
+                    dry_run=dry_run,
+                    loop=loop,
+                    heartbeat=heartbeat,
+                )
+            else:
+                _log(f"Running {lanes} concurrent lane(s) on {workers} engine(s).")
+                await _run_lanes(
+                    clients=clients,
+                    pool=pool,
+                    sf_version=sf_version,
+                    idle_sleep=idle_sleep,
+                    dry_run=dry_run,
+                    lanes=lanes,
+                    heartbeat=heartbeat,
+                )
     except KeyboardInterrupt:
         _log("Interrupted by user. Shutting down...")
     finally:
@@ -1550,6 +1824,23 @@ def _run_supervisor() -> int:
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 
+def _max_lanes(workers: int) -> int:
+    """Largest accepted `--lanes` for `workers` engines: max(1, workers // ENGINES_PER_LANE).
+
+    Past about workers/8 lanes the pool is saturated and extra lanes only add engine queue
+    time, which is what the short server leases and the stall watchdog cannot absorb (see
+    the ENGINES_PER_LANE and STALL_THRESHOLD_S comments), so the cap is enforced rather
+    than clamped.
+    """
+    return max(1, workers // ENGINES_PER_LANE)
+
+
+def _effective_lanes(lanes: int, once: bool, dry_run: bool) -> int:
+    """`--once` is one game by definition, and a looping `--dry-run` leases without
+    submitting so N lanes would strand N leases per cycle: both run a single lane."""
+    return 1 if (once or dry_run) else lanes
+
+
 def parse_args() -> argparse.Namespace:
     """Parse and validate CLI arguments."""
     parser = argparse.ArgumentParser(
@@ -1581,6 +1872,21 @@ def parse_args() -> argparse.Namespace:
         help=(
             f"Number of parallel Stockfish workers (default {DEFAULT_WORKERS}). "
             "Each worker is an independent UCI process configured Threads=1."
+        ),
+    )
+    parser.add_argument(
+        "--lanes",
+        type=int,
+        default=DEFAULT_LANES,
+        metavar="N",
+        help=(
+            f"Concurrent lease/eval/submit cycles sharing the one engine pool (default "
+            f"{DEFAULT_LANES}). Keeps engines busy while other lanes wait on HTTP. Size it "
+            "at about one lane per 6-8 engines (e.g. --workers 28 --lanes 3 or 4); at most "
+            f"--workers // {ENGINES_PER_LANE}. Priority work queues for engines behind other "
+            "lanes' backfill, so use lanes only on machines with many engines. Each lane "
+            "sleeps --idle-sleep x lanes when idle (capped). Forced to 1 by --once and "
+            "--dry-run."
         ),
     )
     parser.add_argument(
@@ -1642,8 +1948,28 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.workers < 1:
         parser.error(f"--workers must be >= 1, got {args.workers}")
+    if args.lanes < 1:
+        parser.error(f"--lanes must be >= 1, got {args.lanes}")
+    if args.lanes > _max_lanes(args.workers):
+        parser.error(
+            f"--lanes {args.lanes} exceeds the cap of {_max_lanes(args.workers)} for "
+            f"--workers {args.workers} (workers // {ENGINES_PER_LANE}): the pool saturates "
+            "at about one lane per 6-8 engines, and more lanes only lengthen every cycle "
+            "(queueing for engines), which risks the short server leases and the stall "
+            "watchdog."
+        )
     if args.idle_sleep <= 0:
         parser.error(f"--idle-sleep must be > 0, got {args.idle_sleep}")
+    if (
+        args.lanes > 1
+        and _worst_first_mark_s(args.lanes, args.idle_sleep)
+        >= STALL_THRESHOLD_S * _FIRST_MARK_STALL_FRACTION
+    ):
+        parser.error(
+            f"--idle-sleep {args.idle_sleep} is too long for --lanes {args.lanes}: a lane's "
+            "first progress mark would come too close to the stall watchdog. Lower "
+            "--idle-sleep or --lanes."
+        )
     if args.worker_id is not None and len(args.worker_id) >= 10:
         parser.error(
             f"--worker-id must be < 10 chars, got {len(args.worker_id)} ({args.worker_id!r})"
@@ -1663,6 +1989,7 @@ async def _run_async(
     token: str,
     worker_id: str,
     supervised: bool,
+    lanes: int = DEFAULT_LANES,
 ) -> None:
     """Run the worker body for the "child" or "once" role.
 
@@ -1683,10 +2010,11 @@ async def _run_async(
             dry_run=args.dry_run,
             loop=not args.once,
             heartbeat=None,
+            lanes=lanes,
         )
         return
 
-    heartbeat = _Heartbeat(_heartbeat_file_path())
+    heartbeat = _Heartbeat(_heartbeat_file_path(), lanes=lanes)
     asyncio.get_running_loop().set_exception_handler(_loop_exception_handler)
     checker = asyncio.create_task(
         _watchdog_checker(heartbeat, STALL_THRESHOLD_S, WATCHDOG_POLL_INTERVAL_S)
@@ -1700,6 +2028,7 @@ async def _run_async(
             dry_run=args.dry_run,
             loop=not args.once,
             heartbeat=heartbeat,
+            lanes=lanes,
         )
     finally:
         checker.cancel()
@@ -1757,12 +2086,16 @@ def main() -> int:
 
     # Log startup info — NEVER log the token value (T-120-01).
     fallback_suffix = f" fallback_url={args.fallback_url}" if args.fallback_url else ""
+    lanes = _effective_lanes(args.lanes, args.once, args.dry_run)
+    if args.lanes > 1 and lanes == 1:
+        _log("--once/--dry-run run a single lane; ignoring --lanes.")
+    lanes_suffix = f" lanes={lanes}" if lanes > 1 else ""
     _log(
         f"Starting remote eval worker: base_url={args.base_url} "
-        f"workers={args.workers} worker_id={worker_id}{fallback_suffix}"
+        f"workers={args.workers} worker_id={worker_id}{lanes_suffix}{fallback_suffix}"
     )
 
-    asyncio.run(_run_async(args, token, worker_id, supervised=(role == "child")))
+    asyncio.run(_run_async(args, token, worker_id, supervised=(role == "child"), lanes=lanes))
     _log("Done.")
     return 0
 

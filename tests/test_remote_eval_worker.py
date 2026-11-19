@@ -20,8 +20,14 @@ All tests are unit-level -- no DB, no real Stockfish. Engine pool and httpx are 
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import heapq
+import itertools
 import sys
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -34,8 +40,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 
+import scripts.remote_eval_worker as worker_module
 from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
+from app.services.engine import _NODES_TIMEOUT_S
 from scripts.remote_eval_worker import (
+    _LANE_TASK_PREFIX,
+    DEFAULT_LANES,
+    ENGINES_PER_LANE,
     EVAL_RETRY_MAX_POSITIONS,
     EVAL_RETRY_TIMEOUT_S,
     STALL_THRESHOLD_S,
@@ -65,12 +76,24 @@ from scripts.remote_eval_worker import (
     _is_engine_failure,
     _is_expected_transient,
     _is_stalled,
+    _effective_lanes,
+    _lane_schedule,
+    _LaneContext,
+    _log,
+    _max_lanes,
+    _run_async,
+    _run_lane,
+    _on_cycle_failure,
     _RetryBudget,
     _retry_timed_out,
     _run_cycle,
+    _run_lanes,
     _run_loop,
+    _TransientStreak,
     _worker_role,
+    main,
     parse_args,
+    run_worker,
 )
 
 
@@ -1888,3 +1911,879 @@ async def test_unreachable_primary_falls_through() -> None:
     assert primary.post.call_count == 1
     assert fallback.post.call_count == 2
     assert fallback.post.call_args_list[0].args[0] == "/api/eval/remote/atomic-lease"
+
+
+# ─── Lanes (--lanes) ──────────────────────────────────────────────────────────
+#
+# quick 261119-k9s: N concurrent lease -> eval -> submit cycles on one EnginePool. Every
+# fake coroutine awaits a real asyncio.sleep so a lane can never spin without yielding.
+
+_LANE_SLEEP_S = 0.005
+_LANE_WAIT_S = 5.0
+# Captured at import: tests that patch asyncio.sleep (virtual clock, mocks) still need a
+# real yield to let other tasks run.
+_REAL_SLEEP = asyncio.sleep
+_URL_BLOB_LEASE = "/api/eval/remote/flaw-blob-lease"
+_URL_BLOB_SUBMIT = "/api/eval/remote/flaw-blob-submit"
+_URL_ENTRY_LEASE = "/api/eval/remote/entry-lease"
+_URL_ENTRY_SUBMIT = "/api/eval/remote/entry-submit"
+_MULTIPV2_RESULT = (0, None, "e2e4", "e2e4", 5, None, "d2d4")
+
+
+def _lane_task_name() -> str:
+    """Name of the asyncio task the caller runs in (a lane task for direct awaits)."""
+    task = asyncio.current_task()
+    assert task is not None
+    return task.get_name()
+
+
+@dataclass
+class _LaneStats:
+    """Observations recorded by the lane fakes, plus optional behavior hooks."""
+
+    entry_mode: bool = False
+    blob_lease_hook: Callable[[str], Awaitable[None]] | None = None
+    eval_hook: Callable[[], Awaitable[None]] | None = None
+    leased_ids: list[int] = field(default_factory=list)
+    submits_by_task: dict[str, int] = field(default_factory=dict)
+    total_submits: int = 0
+    in_flight: int = 0
+    max_in_flight: int = 0
+    entry_outstanding: int = 0
+    max_entry_outstanding: int = 0
+    entry_submits: int = 0
+    ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
+    progress: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+def _make_lane_client(stats: _LaneStats) -> AsyncMock:
+    """A client whose rungs route by URL: flaw-blob (or entry-ply when entry_mode) has
+    work, every other rung is 204."""
+
+    async def post(url: str, **kwargs: object) -> MagicMock:
+        await asyncio.sleep(_LANE_SLEEP_S)
+        name = _lane_task_name()
+        if url == _URL_BLOB_LEASE and not stats.entry_mode:
+            if stats.blob_lease_hook is not None:
+                await stats.blob_lease_hook(name)
+            game_id = next(stats.ids)
+            stats.leased_ids.append(game_id)
+            positions = [{"token": "3:missed:0", "fen": chess.STARTING_FEN}]
+            return _make_response(200, {"game_id": game_id, "positions": positions})
+        if url == _URL_BLOB_SUBMIT:
+            stats.submits_by_task[name] = stats.submits_by_task.get(name, 0) + 1
+            stats.total_submits += 1
+            stats.progress.set()
+            return _make_response(200, {"game_id": 0, "blobs_written": 1})
+        if url == _URL_ENTRY_LEASE and stats.entry_mode:
+            stats.entry_outstanding += 1
+            stats.max_entry_outstanding = max(stats.max_entry_outstanding, stats.entry_outstanding)
+            await asyncio.sleep(_LANE_SLEEP_S)  # let sibling lanes interleave here
+            positions = [{"game_id": next(stats.ids), "ply": 1, "fen": chess.STARTING_FEN}]
+            return _make_response(200, {"positions": positions})
+        if url == _URL_ENTRY_SUBMIT:
+            stats.entry_outstanding -= 1
+            stats.entry_submits += 1
+            stats.total_submits += 1
+            stats.progress.set()
+            return _make_response(200, {"game_ids": [], "stamped_count": 0})
+        return _make_response(204)
+
+    client = AsyncMock()
+    client.post = AsyncMock(side_effect=post)
+    return client
+
+
+def _make_lane_pool(stats: _LaneStats) -> AsyncMock:
+    pool = AsyncMock()
+
+    async def multipv2(*_args: object, **_kwargs: object) -> tuple[object, ...]:
+        stats.in_flight += 1
+        stats.max_in_flight = max(stats.max_in_flight, stats.in_flight)
+        try:
+            if stats.eval_hook is not None:
+                await stats.eval_hook()
+            await asyncio.sleep(_LANE_SLEEP_S)
+            return _MULTIPV2_RESULT
+        finally:
+            stats.in_flight -= 1
+
+    async def depth15(*_args: object, **_kwargs: object) -> tuple[int, None]:
+        await asyncio.sleep(_LANE_SLEEP_S)
+        return (10, None)
+
+    pool.evaluate_nodes_multipv2 = AsyncMock(side_effect=multipv2)
+    pool.evaluate = AsyncMock(side_effect=depth15)
+    return pool
+
+
+def _start_lanes(stats: _LaneStats, lanes: int = 3) -> asyncio.Task[None]:
+    return asyncio.create_task(
+        _run_lanes(
+            clients=[_make_lane_client(stats)],
+            pool=_make_lane_pool(stats),
+            sf_version="sf18",
+            idle_sleep=0.01,
+            dry_run=False,
+            lanes=lanes,
+            heartbeat=None,
+        )
+    )
+
+
+async def _cancel_lane_tasks(*tasks: asyncio.Task[None]) -> None:
+    """Cancel the given tasks and any leaked lane task; swallow every outcome."""
+    leaked = [
+        t
+        for t in asyncio.all_tasks()
+        if t.get_name().startswith(_LANE_TASK_PREFIX) and not t.done()
+    ]
+    everything = [*tasks, *leaked]
+    for t in everything:
+        t.cancel()
+    await asyncio.gather(*everything, return_exceptions=True)
+
+
+def _surviving_lane_tasks() -> list[str]:
+    return [
+        t.get_name()
+        for t in asyncio.all_tasks()
+        if t.get_name().startswith(_LANE_TASK_PREFIX) and not t.done()
+    ]
+
+
+async def _run_worker_with_patches(lanes: int, loop: bool = True) -> tuple[MagicMock, MagicMock]:
+    """Call run_worker with EnginePool/_run_loop/_run_lanes patched; return the two mocks."""
+    pool = AsyncMock()
+    with (
+        patch("scripts.remote_eval_worker.EnginePool", MagicMock(return_value=pool)) as pool_cls,
+        patch(
+            "scripts.remote_eval_worker.get_stockfish_version",
+            AsyncMock(return_value="sf18"),
+        ),
+        patch("scripts.remote_eval_worker._run_loop", new_callable=AsyncMock) as run_loop,
+        patch("scripts.remote_eval_worker._run_lanes", new_callable=AsyncMock) as run_lanes,
+    ):
+        await run_worker(
+            targets=[_BackendTarget(base_url="http://127.0.0.1:9", token="t", label="primary")],
+            worker_id="wid",
+            workers=6,
+            idle_sleep=0.01,
+            dry_run=False,
+            loop=loop,
+            lanes=lanes,
+        )
+    assert pool_cls.call_count == 1, "the EnginePool is built once however many lanes run"
+    pool_cls.assert_called_once_with(6)
+    return run_loop, run_lanes
+
+
+def test_default_lanes_is_one() -> None:
+    assert DEFAULT_LANES == 1
+
+
+async def test_run_worker_single_lane_awaits_run_loop_once() -> None:
+    """lanes=1 is today's path: one _run_loop with no lane context, no _run_lanes."""
+    run_loop, run_lanes = await _run_worker_with_patches(lanes=1)
+
+    run_loop.assert_awaited_once()
+    assert run_loop.await_args is not None
+    assert run_loop.await_args.kwargs.get("lane") is None
+    run_lanes.assert_not_awaited()
+
+
+async def test_run_worker_multi_lane_awaits_run_lanes_once() -> None:
+    run_loop, run_lanes = await _run_worker_with_patches(lanes=3)
+
+    run_lanes.assert_awaited_once()
+    assert run_lanes.await_args is not None
+    assert run_lanes.await_args.kwargs["lanes"] == 3
+    run_loop.assert_not_awaited()
+
+
+async def test_run_worker_multi_lane_requires_loop_mode() -> None:
+    """A bounded run is a single lane by definition."""
+    with pytest.raises(ValueError, match="lanes > 1 requires loop mode"):
+        await _run_worker_with_patches(lanes=2, loop=False)
+
+
+async def test_lanes_run_concurrently_on_one_pool() -> None:
+    """Three lanes have three evaluations in flight at once, for three distinct games."""
+    stats = _LaneStats()
+    all_in = asyncio.Event()
+
+    async def barrier() -> None:
+        if stats.in_flight >= 3:
+            all_in.set()
+        await asyncio.wait_for(all_in.wait(), timeout=2)
+
+    stats.eval_hook = barrier
+    task = _start_lanes(stats, lanes=3)
+    try:
+        with patch("scripts.remote_eval_worker.sentry_sdk.capture_exception"):
+            await asyncio.wait_for(all_in.wait(), timeout=_LANE_WAIT_S)
+        assert stats.max_in_flight == 3
+        assert len(set(stats.leased_ids[:3])) == 3
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+async def test_lane_exception_is_isolated_to_that_lane() -> None:
+    """One lane's lease raising is captured once and absorbed by that lane's own loop;
+    afterwards EVERY lane (the failing one included) still completes cycles."""
+    stats = _LaneStats()
+    failed = False
+
+    async def fail_lane_one_once(name: str) -> None:
+        nonlocal failed
+        if name == f"{_LANE_TASK_PREFIX}1" and not failed:
+            failed = True
+            raise RuntimeError("boom")
+
+    stats.blob_lease_hook = fail_lane_one_once
+    task = _start_lanes(stats, lanes=3)
+    expected = {f"{_LANE_TASK_PREFIX}{i}" for i in range(3)}
+    try:
+        with patch("scripts.remote_eval_worker.sentry_sdk.capture_exception") as capture:
+            deadline = time.monotonic() + _LANE_WAIT_S
+            while set(stats.submits_by_task) != expected and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+                assert not task.done(), "a lane's exception must not end the lane runner"
+            assert set(stats.submits_by_task) == expected
+            assert failed is True
+            assert capture.call_count == 1
+            assert isinstance(capture.call_args.args[0], RuntimeError)
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+async def test_entry_rung_is_serialized_across_lanes() -> None:
+    """/entry-submit stamps every unexpired game leased to the worker id, so at most one
+    entry lease may be outstanding per process however many lanes run."""
+    stats = _LaneStats(entry_mode=True)
+    task = _start_lanes(stats, lanes=3)
+    try:
+        deadline = time.monotonic() + _LANE_WAIT_S
+        while stats.entry_submits < 6 and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert stats.entry_submits >= 6
+        assert stats.max_entry_outstanding == 1
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+async def test_cancelling_run_lanes_cancels_every_lane() -> None:
+    stats = _LaneStats()
+    task = _start_lanes(stats, lanes=3)
+    try:
+        await asyncio.wait_for(stats.progress.wait(), timeout=_LANE_WAIT_S)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert _surviving_lane_tasks() == []
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+def _parse(monkeypatch: pytest.MonkeyPatch, *argv: str) -> argparse.Namespace:
+    monkeypatch.setattr(sys, "argv", ["worker", *argv])
+    return parse_args()
+
+
+def test_lanes_parse_defaults_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _parse(monkeypatch, "--once").lanes == 1
+
+
+def test_lanes_below_one_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(SystemExit):
+        _parse(monkeypatch, "--lanes", "0")
+
+
+@pytest.mark.parametrize(("workers", "lanes"), [(4, 2), (11, 2), (28, 5), (8, 2), (6, 2)])
+def test_lanes_above_cap_rejected(
+    monkeypatch: pytest.MonkeyPatch, workers: int, lanes: int
+) -> None:
+    with pytest.raises(SystemExit):
+        _parse(monkeypatch, "--workers", str(workers), "--lanes", str(lanes))
+
+
+@pytest.mark.parametrize(
+    ("workers", "lanes"), [(28, 4), (28, 3), (16, 2), (12, 2), (8, 1), (1, 1), (11, 1), (64, 10)]
+)
+def test_lanes_within_cap_accepted(
+    monkeypatch: pytest.MonkeyPatch, workers: int, lanes: int
+) -> None:
+    args = _parse(monkeypatch, "--workers", str(workers), "--lanes", str(lanes))
+    assert args.lanes == lanes
+
+
+def test_max_lanes_is_one_lane_per_engines_per_lane() -> None:
+    assert ENGINES_PER_LANE == 6
+    assert [_max_lanes(w) for w in (1, 5, 6, 8, 11, 12, 16, 28)] == [1, 1, 1, 1, 1, 2, 2, 4]
+
+
+def test_lanes_with_a_huge_idle_sleep_rejected_but_single_lane_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane's first progress mark comes after its stagger plus its idle sleep, so a huge
+    --idle-sleep with several lanes could trip the stall watchdog on a healthy idle worker:
+    rejected at parse time. lanes=1 is deliberately not constrained (today's behavior)."""
+    with pytest.raises(SystemExit):
+        _parse(monkeypatch, "--workers", "12", "--lanes", "2", "--idle-sleep", "400")
+    assert _parse(monkeypatch, "--workers", "12", "--lanes", "2", "--idle-sleep", "100").lanes == 2
+    assert _parse(monkeypatch, "--idle-sleep", "400").lanes == 1
+
+
+def test_effective_lanes_forces_one_for_once_and_dry_run() -> None:
+    assert _effective_lanes(7, once=True, dry_run=False) == 1
+    assert _effective_lanes(7, once=False, dry_run=True) == 1
+    assert _effective_lanes(7, once=False, dry_run=False) == 7
+
+
+# Model of one atomic cycle's all-timeout worst case: three first-pass gathers (full-ply,
+# blob nodes, targeted second-best), each bounded here at 100 positions, every search
+# running to the engine's per-search timeout, plus the per-cycle retry budget.
+_MODEL_PASSES_PER_ATOMIC_CYCLE = 3
+_MODEL_POSITIONS_PER_PASS = 100
+_MODEL_HTTP_CALLS_PER_CYCLE = 5
+
+
+def test_lane_cap_keeps_modelled_worst_case_cycle_inside_the_stall_threshold() -> None:
+    """With L = _max_lanes(W) lanes all in the all-timeout state, the last cycle finishes
+    after about L x (own engine-seconds) / W; computed from the module's real constants
+    (no literals), plus the HTTP time budget, it stays under STALL_THRESHOLD_S for every
+    worker count where more than one lane is allowed."""
+    cycle_engine_s = (
+        _MODEL_PASSES_PER_ATOMIC_CYCLE * _MODEL_POSITIONS_PER_PASS * _NODES_TIMEOUT_S
+        + EVAL_RETRY_MAX_POSITIONS * EVAL_RETRY_TIMEOUT_S
+    )
+    http_s = _MODEL_HTTP_CALLS_PER_CYCLE * HTTP_TIMEOUT_S
+    for workers in range(2 * ENGINES_PER_LANE, 129):
+        lanes = _max_lanes(workers)
+        assert lanes >= 2
+        worst_s = lanes * cycle_engine_s / workers + http_s
+        assert worst_s < STALL_THRESHOLD_S, f"workers={workers} lanes={lanes} worst={worst_s}"
+
+
+@pytest.mark.parametrize(
+    ("exc", "is_last", "loop", "expected", "slept", "captured"),
+    [
+        (httpx.ConnectError("x"), False, True, "next_target", False, 0),
+        (httpx.ConnectError("x"), True, True, "next_cycle", True, 0),
+        (httpx.ConnectError("x"), True, False, "raise", False, 1),
+        (ValueError("bug"), True, True, "next_cycle", True, 1),
+        (ValueError("bug"), True, False, "raise", False, 1),
+    ],
+)
+async def test_on_cycle_failure_decision_table(
+    exc: Exception, is_last: bool, loop: bool, expected: str, slept: bool, captured: int
+) -> None:
+    streak = _TransientStreak()
+    with (
+        patch("scripts.remote_eval_worker.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("scripts.remote_eval_worker.sentry_sdk.capture_exception") as capture,
+    ):
+        action = await _on_cycle_failure(exc, streak, is_last=is_last, loop=loop, idle_sleep=2.5)
+
+    assert action == expected
+    assert capture.call_count == captured
+    if slept:
+        mock_sleep.assert_awaited_once_with(2.5)
+    else:
+        mock_sleep.assert_not_awaited()
+
+
+# ─── Lanes: per-lane watchdog, staggered idle, lane-labelled logs ─────────────
+
+
+def test_heartbeat_last_progress_is_the_oldest_lane() -> None:
+    heartbeat = _Heartbeat(None, lanes=3)
+    initial = heartbeat.last_progress
+
+    time.sleep(0.01)
+    heartbeat.mark(1)
+    time.sleep(0.01)
+    heartbeat.mark(2)
+    # Lane 0 never marked: healthy siblings cannot advance the minimum.
+    assert heartbeat.last_progress == initial
+
+    time.sleep(0.01)
+    heartbeat.mark(0)
+    # Now lane 1 holds the oldest slot.
+    assert heartbeat.last_progress == heartbeat._lane_progress[1]
+    assert heartbeat.last_progress > initial
+    assert heartbeat.last_progress == min(heartbeat._lane_progress)
+
+
+def test_heartbeat_file_is_freshened_only_by_the_oldest_lane(tmp_path: Path) -> None:
+    heartbeat_file = tmp_path / "worker.heartbeat"
+    heartbeat = _Heartbeat(heartbeat_file, lanes=3)
+    time.sleep(0.01)
+    heartbeat.mark(1)
+    time.sleep(0.01)
+    heartbeat.mark(2)
+    time.sleep(0.01)
+    heartbeat.mark(0)  # lane 1 is now the oldest, lanes 2 and 0 are fresher
+
+    heartbeat_file.unlink()
+    time.sleep(0.01)
+    heartbeat.mark(0)  # lane 0 is NOT the oldest: must not recreate the file
+    assert not heartbeat_file.exists()
+
+    time.sleep(0.01)
+    heartbeat.mark(1)  # lane 1 held the oldest slot: recreates it
+    assert heartbeat_file.exists()
+    assert float(heartbeat_file.read_text()) == heartbeat.last_progress
+
+
+def test_lane_schedule_staggers_starts_and_scales_idle() -> None:
+    assert _lane_schedule(3, 1.0) == [(0.0, 3.0), (1.0, 3.0), (2.0, 3.0)]
+    assert _lane_schedule(1, 1.0) == [(0.0, 1.0)]
+
+
+def test_lane_schedule_clamps_stagger_and_idle_below_the_watchdog() -> None:
+    """The scaled idle sleep and the stagger never exceed their caps, so a large
+    --idle-sleep cannot push a lane's first mark toward STALL_THRESHOLD_S; lanes=1 stays
+    exactly the user's --idle-sleep, whatever its size."""
+    assert _lane_schedule(3, 30.0) == [(0.0, 60.0), (30.0, 60.0), (60.0, 60.0)]
+    assert _lane_schedule(4, 100.0) == [(0.0, 100.0), (60.0, 100.0), (60.0, 100.0), (60.0, 100.0)]
+    assert _lane_schedule(1, 500.0) == [(0.0, 500.0)]
+
+
+async def test_run_lanes_wires_schedule_and_shared_state() -> None:
+    """Each lane's _run_loop gets idle_sleep x lanes, loop=True and a distinct index; the
+    entry lock and the transient streak are ONE object across every lane."""
+    block = asyncio.Event()
+
+    async def lane_loop(**_kwargs: object) -> None:
+        await block.wait()  # lanes are infinite loops
+
+    with (
+        patch("scripts.remote_eval_worker._run_loop", side_effect=lane_loop) as run_loop,
+        patch("scripts.remote_eval_worker.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        task = asyncio.create_task(
+            _run_lanes(
+                clients=[AsyncMock()],
+                pool=AsyncMock(),
+                sf_version="sf18",
+                idle_sleep=0.5,
+                dry_run=False,
+                lanes=3,
+                heartbeat=None,
+            )
+        )
+        try:
+            for _ in range(50):
+                await _REAL_SLEEP(0)
+            assert run_loop.await_count == 3
+            awaited_delays = sorted(c.args[0] for c in mock_sleep.await_args_list)
+        finally:
+            await _cancel_lane_tasks(task)
+
+    kwargs_list = [c.kwargs for c in run_loop.await_args_list]
+    assert all(k["idle_sleep"] == 1.5 and k["loop"] is True for k in kwargs_list)
+    contexts = sorted((k["lane"] for k in kwargs_list), key=lambda lane: lane.index)
+    assert [lane.index for lane in contexts] == [0, 1, 2]
+    assert len({id(lane.entry_lock) for lane in contexts}) == 1
+    assert len({id(lane.streak) for lane in contexts}) == 1
+    assert awaited_delays == [0.5, 1.0]
+
+
+async def test_log_carries_the_lane_label_only_inside_a_lane(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def log_from_loop(**_kwargs: object) -> None:
+        _log("hello from the loop")
+
+    lane = _LaneContext(index=2, entry_lock=asyncio.Lock(), streak=_TransientStreak())
+    with patch("scripts.remote_eval_worker._run_loop", side_effect=log_from_loop):
+        # A task gets its own context copy, so the label set by _run_lane stays inside it.
+        await asyncio.create_task(
+            _run_lane(
+                lane,
+                clients=[AsyncMock()],
+                pool=AsyncMock(),
+                sf_version="sf18",
+                start_delay_s=0.0,
+                idle_sleep=1.0,
+                dry_run=False,
+                heartbeat=None,
+            )
+        )
+    _log("plain line")
+
+    out = capsys.readouterr().out
+    assert "[lane 2] hello from the loop" in out
+    plain = next(line for line in out.splitlines() if "plain line" in line)
+    assert "[lane" not in plain
+
+
+# ─── Lanes: deterministic watchdog tests on a virtual clock ───────────────────
+#
+# The watchdog tests must not race a wall-clock threshold against work done. A virtual clock
+# replaces asyncio.sleep: time only advances when every task has settled, by jumping to the
+# earliest sleeper. Progress is read from the heartbeat (injected clock) and judged with the
+# same predicate the watchdog uses (`_is_stalled`).
+
+_SETTLE_YIELDS = 20
+_VIRTUAL_STALL_THRESHOLD_S = 1.0
+_VIRTUAL_RUN_S = 10.0
+_VIRTUAL_MAX_STEPS = 20_000
+
+
+class _VirtualClock:
+    def __init__(self) -> None:
+        self.now = 1_000_000.0
+        self._waiters: list[tuple[float, int, asyncio.Future[None]]] = []
+        self._seq = itertools.count()
+
+    def time(self) -> float:
+        return self.now
+
+    async def sleep(self, delay: float) -> None:
+        future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        heapq.heappush(self._waiters, (self.now + max(delay, 0.0), next(self._seq), future))
+        await future
+
+    async def settle(self) -> None:
+        for _ in range(_SETTLE_YIELDS):
+            await _REAL_SLEEP(0)
+
+    async def step(self) -> bool:
+        """Wake the earliest live sleeper (jumping time to it), then let everything settle."""
+        while self._waiters:
+            wake_at, _, future = heapq.heappop(self._waiters)
+            if future.done():
+                continue  # a cancelled sleeper
+            self.now = max(self.now, wake_at)
+            future.set_result(None)
+            await self.settle()
+            return True
+        return False
+
+
+@pytest.fixture
+def virtual_clock(monkeypatch: pytest.MonkeyPatch) -> _VirtualClock:
+    clock = _VirtualClock()
+    monkeypatch.setattr(worker_module.asyncio, "sleep", clock.sleep)
+    return clock
+
+
+async def _run_virtual(
+    clock: _VirtualClock,
+    heartbeat: _Heartbeat,
+    *,
+    threshold_s: float,
+    run_for_s: float,
+) -> bool:
+    """Advance virtual time until the watchdog predicate trips or `run_for_s` elapsed.
+    Returns True when it tripped."""
+    start = clock.now
+    await clock.settle()
+    for _ in range(_VIRTUAL_MAX_STEPS):
+        if _is_stalled(clock.now, heartbeat.last_progress, threshold_s):
+            return True
+        if clock.now - start > run_for_s or not await clock.step():
+            return False
+    raise AssertionError("virtual run did not finish within the step budget")
+
+
+def _start_virtual_lanes(
+    stats: _LaneStats, clock: _VirtualClock, *, lanes: int, idle_sleep: float, client: AsyncMock
+) -> tuple[asyncio.Task[None], _Heartbeat]:
+    heartbeat = _Heartbeat(None, lanes=lanes, clock=clock.time)
+    task = asyncio.create_task(
+        _run_lanes(
+            clients=[client],
+            pool=_make_lane_pool(stats),
+            sf_version="sf18",
+            idle_sleep=idle_sleep,
+            dry_run=False,
+            lanes=lanes,
+            heartbeat=heartbeat,
+        )
+    )
+    return task, heartbeat
+
+
+async def test_wedged_lane_trips_the_watchdog_while_siblings_keep_working(
+    virtual_clock: _VirtualClock,
+) -> None:
+    """A lane that never finishes keeps the oldest progress slot pinned, so the watchdog
+    predicate trips even though the other lanes keep completing cycles and marking."""
+    stats = _LaneStats()
+    never = asyncio.Event()
+    wedged = False
+
+    async def wedge_first_search() -> None:
+        nonlocal wedged
+        if not wedged:
+            wedged = True
+            await never.wait()
+
+    stats.eval_hook = wedge_first_search
+    task, heartbeat = _start_virtual_lanes(
+        stats, virtual_clock, lanes=3, idle_sleep=0.01, client=_make_lane_client(stats)
+    )
+    try:
+        tripped = await _run_virtual(
+            virtual_clock,
+            heartbeat,
+            threshold_s=_VIRTUAL_STALL_THRESHOLD_S,
+            run_for_s=_VIRTUAL_RUN_S,
+        )
+        assert tripped, "a wedged lane must trip the watchdog"
+        assert stats.total_submits >= 5, "the healthy lanes were working while one lane wedged"
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+async def test_healthy_lanes_never_trip_the_watchdog(virtual_clock: _VirtualClock) -> None:
+    """Every lane completes cycles and marks ITS OWN slot, so the oldest slot keeps
+    advancing and the watchdog never fires over many thresholds' worth of time."""
+    stats = _LaneStats()
+    task, heartbeat = _start_virtual_lanes(
+        stats, virtual_clock, lanes=3, idle_sleep=0.01, client=_make_lane_client(stats)
+    )
+    try:
+        tripped = await _run_virtual(
+            virtual_clock,
+            heartbeat,
+            threshold_s=_VIRTUAL_STALL_THRESHOLD_S,
+            run_for_s=_VIRTUAL_RUN_S,
+        )
+        assert not tripped
+        assert set(stats.submits_by_task) == {f"{_LANE_TASK_PREFIX}{i}" for i in range(3)}
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+async def test_idle_lanes_with_scaled_idle_sleep_never_trip_the_watchdog(
+    virtual_clock: _VirtualClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's scenario scaled down 1000x: a stall threshold of 0.72 s, an idle sleep
+    of 0.06 s and 7 lanes on empty queues. Unclamped, the last lane's first mark would come
+    at (2L-1) x idle = 0.78 s and trip the watchdog; the lane idle sleep and the stagger are
+    clamped, so no healthy idle worker is ever killed."""
+    scaled_threshold_s = 0.72
+    monkeypatch.setattr(worker_module, "MAX_LANE_IDLE_SLEEP_S", 0.1)
+    monkeypatch.setattr(worker_module, "MAX_LANE_STAGGER_S", 0.1)
+    idle_client = AsyncMock()
+    idle_client.post = AsyncMock(return_value=_make_response(204))
+    task, heartbeat = _start_virtual_lanes(
+        _LaneStats(), virtual_clock, lanes=7, idle_sleep=0.06, client=idle_client
+    )
+    try:
+        tripped = await _run_virtual(
+            virtual_clock, heartbeat, threshold_s=scaled_threshold_s, run_for_s=_VIRTUAL_RUN_S
+        )
+        assert not tripped
+    finally:
+        await _cancel_lane_tasks(task)
+
+
+# ─── Lanes: transient streak, wiring, lane-end semantics ──────────────────────
+
+_ALERT_S = TRANSIENT_FAILURE_ALERT_S
+
+
+def _scripted_client(
+    clock: dict[str, float], script: list[tuple[float, BaseException | None]]
+) -> AsyncMock:
+    """A client whose Nth post sets the fake wall clock, then raises the scripted exception
+    or answers 204 (a fully idle ladder takes five posts)."""
+    remaining = iter(script)
+
+    async def post(*_args: object, **_kwargs: object) -> MagicMock:
+        at, outcome = next(remaining)
+        clock["t"] = at
+        if outcome is not None:
+            raise outcome
+        return _make_response(204)
+
+    client = AsyncMock()
+    client.post = AsyncMock(side_effect=post)
+    return client
+
+
+async def _run_scripted_loop(
+    client: AsyncMock, clock: dict[str, float], *, lane: _LaneContext | None = None
+) -> MagicMock:
+    """Run _run_loop (looping) until the script's CancelledError; return capture_message."""
+    with (
+        patch("scripts.remote_eval_worker.time.time", side_effect=lambda: clock["t"]),
+        patch("scripts.remote_eval_worker.asyncio.sleep", new_callable=AsyncMock),
+        patch("scripts.remote_eval_worker.sentry_sdk.capture_message") as capture_message,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _run_loop(
+            clients=[client],
+            pool=AsyncMock(),
+            sf_version="sf18",
+            idle_sleep=1.0,
+            dry_run=False,
+            loop=True,
+            lane=lane,
+        )
+    return capture_message
+
+
+def _idle_ladder() -> list[tuple[float, BaseException | None]]:
+    return [(0.0, None)] * 5
+
+
+def _transient(at: float) -> tuple[float, BaseException | None]:
+    return (at, httpx.ConnectError("down"))
+
+
+_STOP: tuple[float, BaseException | None] = (0.0, asyncio.CancelledError())
+
+
+async def test_sustained_outage_escalates_exactly_one_event_single_loop() -> None:
+    clock = {"t": 0.0}
+    client = _scripted_client(
+        clock, [_transient(0.0), _transient(_ALERT_S + 1), _transient(_ALERT_S + 2), _STOP]
+    )
+    capture_message = await _run_scripted_loop(client, clock)
+    assert capture_message.call_count == 1
+
+
+async def test_successful_cycle_resets_the_streak_single_loop() -> None:
+    """After a success a new failure starts a NEW streak instead of continuing the old one,
+    so a failure far later than the alert threshold does not escalate."""
+    clock = {"t": 0.0}
+    client = _scripted_client(
+        clock, [_transient(0.0), *_idle_ladder(), _transient(_ALERT_S + 10), _STOP]
+    )
+    capture_message = await _run_scripted_loop(client, clock)
+    assert capture_message.call_count == 0
+
+
+async def test_lanes_share_one_streak_and_escalate_one_event() -> None:
+    """Two lanes failing in turn on ONE shared streak escalate a single event; a lane with
+    its own streak would restart the clock and never escalate."""
+    clock = {"t": 0.0}
+    streak = _TransientStreak()
+    shared = {"entry_lock": asyncio.Lock(), "streak": streak}
+    lane_a = _LaneContext(index=0, **shared)
+    lane_b = _LaneContext(index=1, **shared)
+    await _run_scripted_loop(_scripted_client(clock, [_transient(0.0), _STOP]), clock, lane=lane_a)
+    capture_message = await _run_scripted_loop(
+        _scripted_client(clock, [_transient(_ALERT_S + 1), _transient(_ALERT_S + 2), _STOP]),
+        clock,
+        lane=lane_b,
+    )
+    assert capture_message.call_count == 1
+
+
+async def test_success_in_any_lane_resets_the_shared_streak() -> None:
+    clock = {"t": 0.0}
+    streak = _TransientStreak()
+    shared = {"entry_lock": asyncio.Lock(), "streak": streak}
+    await _run_scripted_loop(
+        _scripted_client(clock, [_transient(0.0), _STOP]),
+        clock,
+        lane=_LaneContext(index=0, **shared),
+    )
+    assert streak.start is not None
+    await _run_scripted_loop(
+        _scripted_client(clock, [*_idle_ladder(), _STOP]),
+        clock,
+        lane=_LaneContext(index=1, **shared),
+    )
+    assert streak.start is None
+    assert streak.alerted is False
+
+
+def _run_async_args() -> argparse.Namespace:
+    return argparse.Namespace(
+        base_url="http://127.0.0.1:9",
+        fallback_url=None,
+        fallback_token=None,
+        workers=18,
+        idle_sleep=1.0,
+        dry_run=False,
+        once=False,
+    )
+
+
+@pytest.mark.parametrize("lanes", [1, 3])
+async def test_run_async_builds_one_heartbeat_slot_per_lane(lanes: int) -> None:
+    """A heartbeat with fewer slots than lanes would IndexError on the first mark of a
+    higher lane and take the whole group down."""
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    try:
+        with patch(
+            "scripts.remote_eval_worker.run_worker", new_callable=AsyncMock
+        ) as run_worker_mock:
+            await _run_async(_run_async_args(), "tok", "wid", supervised=True, lanes=lanes)
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    kwargs = run_worker_mock.await_args.kwargs if run_worker_mock.await_args else {}
+    assert kwargs["lanes"] == lanes
+    assert len(kwargs["heartbeat"]._lane_progress) == lanes
+
+
+@pytest.mark.parametrize(
+    ("once", "dry_run", "expected"), [(True, False, 1), (False, True, 1), (False, False, 7)]
+)
+def test_main_hands_the_effective_lane_count_to_run_async(
+    monkeypatch: pytest.MonkeyPatch, once: bool, dry_run: bool, expected: int
+) -> None:
+    args = _run_async_args()
+    args.token = "tok"
+    args.worker_id = "wid"
+    args.lanes = 7
+    args.once = once
+    args.dry_run = dry_run
+    monkeypatch.setenv(worker_module._CHILD_MARKER_ENV, worker_module._CHILD_MARKER_VALUE)
+    fake_settings = MagicMock(
+        EVAL_OPERATOR_TOKEN="tok", EVAL_FALLBACK_OPERATOR_TOKEN="", SENTRY_DSN="", ENVIRONMENT="t"
+    )
+    run_async_mock = AsyncMock()
+    with (
+        patch.object(worker_module, "parse_args", return_value=args),
+        patch.object(worker_module, "settings", fake_settings),
+        patch.object(worker_module, "_run_async", run_async_mock),
+    ):
+        assert main() == 0
+
+    run_async_mock.assert_awaited_once()
+    assert run_async_mock.await_args is not None
+    assert run_async_mock.await_args.kwargs["lanes"] == expected
+
+
+@pytest.mark.parametrize("ending", ["returns", "cancelled"])
+async def test_run_lanes_fails_the_group_when_one_lane_ends(ending: str) -> None:
+    """Lanes are infinite loops: one that returns, or ends with a CancelledError nobody
+    issued (a bare TaskGroup ignores it), must take the whole group down instead of the
+    process silently continuing on fewer lanes."""
+    block = asyncio.Event()
+
+    async def lane_loop(**kwargs: object) -> None:
+        lane = cast(_LaneContext, kwargs["lane"])
+        if lane.index == 1:
+            if ending == "cancelled":
+                raise asyncio.CancelledError
+            return
+        await block.wait()
+
+    with patch("scripts.remote_eval_worker._run_loop", side_effect=lane_loop):
+        with pytest.raises(ExceptionGroup) as info:
+            await asyncio.wait_for(
+                _run_lanes(
+                    clients=[AsyncMock()],
+                    pool=AsyncMock(),
+                    sf_version="sf18",
+                    idle_sleep=0.001,
+                    dry_run=False,
+                    lanes=3,
+                    heartbeat=None,
+                ),
+                timeout=_LANE_WAIT_S,
+            )
+    assert any(isinstance(exc, RuntimeError) for exc in info.value.exceptions)
+    assert _surviving_lane_tasks() == []
