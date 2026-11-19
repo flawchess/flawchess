@@ -847,7 +847,7 @@ export const BLUNDER_CHECK_RULES: readonly string[] = [
  * clock is ticking. It describes the flow, not the scoring (that is `BLUNDER_CHECK_RULES`). */
 export function blunderCheckIntroSteps(moveTimerSeconds: number): readonly string[] {
   return [
-    'Sequences of moves are replayed on the board. Some of them occurred in your own games.',
+    'Sequences of moves are replayed on the board. Some may come from your own games.',
     `Before each of your side's moves is played, an arrow shows it. Call it: Good or Blunder? You have ${moveTimerSeconds} seconds.`,
     'If you catch a blunder, you get to find a better move. Then the solution shows what was going on.',
     'Not every sequence has a blunder, so stay alert on every move.',
