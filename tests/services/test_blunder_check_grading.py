@@ -32,6 +32,7 @@ from app.services.blunder_check_grading import (
     fen_before_ply,
     grade_answer,
     is_legal_uci,
+    is_past_ceiling,
     judged_ply,
     resolve_better_move_tier,
     score_pct,
@@ -122,6 +123,13 @@ def test_effective_answer_at_the_ceiling_stays_and_one_ms_later_times_out() -> N
     assert effective_answer("safe", ceiling_ms) == "safe"
     assert effective_answer("safe", ceiling_ms + 1) == "timeout"
     assert effective_answer("blunder", ceiling_ms + 1) == "timeout"
+
+
+def test_is_past_ceiling_is_strict_at_the_ceiling() -> None:
+    ceiling_ms = ANSWER_CEILING_S * MS_PER_SECOND
+    assert is_past_ceiling(0) is False
+    assert is_past_ceiling(ceiling_ms) is False
+    assert is_past_ceiling(ceiling_ms + 1) is True
 
 
 def test_effective_answer_timeout_stays_timeout() -> None:

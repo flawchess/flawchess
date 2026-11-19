@@ -50,6 +50,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Engine analysis: opening positions whose saved Stockfish line had been cut short are now re-analyzed and repaired the next time they come up, instead of passing the short line on to newly analyzed games.
 - Analysis board and puzzle and blunder-check solutions: the Stockfish lines no longer shrink to one or two moves, or show the same move twice, when a search ends. They keep the last complete line, and the analysis board's move grades and gem badges no longer take their evaluation from a cut-off search.
 - Engine analysis: Stockfish lines that were saved cut to one or two moves in older games are being re-searched in the background, so puzzle solutions and tactic tags fill in for those games too (Phase 252).
+- Blunder check: coming back to a sequence you left in the middle of a move no longer drops you onto a clock that has already run out. Once the move's time is up it counts as a timeout, as it would have if you had stayed, and the sequence waits on the Ready gate with the position so far, so the next move's clock starts only when you press Ready. If the timed-out move was the blunder or the sequence's last move, the sequence's solution opens instead.
 
 ## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
 
