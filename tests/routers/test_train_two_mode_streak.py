@@ -11,7 +11,7 @@ Covers:
     0 ticks the streak by exactly one.
   - test_bc_size_zero_composes_nothing: size 0 makes POST /blunder-check/sessions answer 409
     and writes no session row.
-  - test_bc_compose_uses_settings_size: the composed session holds at most the configured number
+  - test_bc_compose_uses_settings_size: the composed session holds exactly the configured number
     of windows.
 
 Every non-guest Game insert is deleted in `finally` (the eval lottery is global).
@@ -33,6 +33,7 @@ from app.models.drill_session import DrillSession
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
 from app.services import blunder_check_selection, sharp_filler
+from app.services.blunder_check_rules import SlotPlan, WindowShape
 from app.services.sharp_filler import SharpPuzzle
 from app.services.train_scheduler import (
     ALL_WEEKDAYS_MASK,
@@ -250,10 +251,17 @@ async def test_bc_size_zero_composes_nothing(test_engine) -> None:
 async def test_bc_compose_uses_settings_size(test_engine, monkeypatch: pytest.MonkeyPatch) -> None:
     """D-04: the composed session holds at most the user's configured number of windows.
 
-    Thin test supply can fall short of the default 6 windows on its own, so the size handed to
-    the composer is also captured: a regression that ignores the settings row cannot hide
-    behind a short pool.
+    Supply is made deterministic (W-05): every slot is forced to an own blunder window, so the
+    random slot-shape draw cannot come up short over the few seeded own games and turn the
+    compose into a 409 under heavy `-n auto` runs. The size handed to the composer is also
+    captured: a regression that ignores the settings row cannot hide behind a short pool.
     """
+    shape = WindowShape(3, 1)
+    monkeypatch.setattr(
+        blunder_check_selection, "draw_slot_plan", lambda rng: SlotPlan("own", shape)
+    )
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: shape)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: shape)
     seen_counts: list[int | None] = []
     original = blunder_check_selection.compose_windows
 
@@ -275,7 +283,7 @@ async def test_bc_compose_uses_settings_size(test_engine, monkeypatch: pytest.Mo
         assert resp.status_code == 200, resp.text
         body = resp.json()
         session_ids.append(int(body["session_id"]))
-        assert 0 < body["window_count"] <= _CUSTOM_BC_SIZE
+        assert body["window_count"] == _CUSTOM_BC_SIZE
         assert seen_counts == [_CUSTOM_BC_SIZE]
     finally:
         await delete_blunder_check_sessions(test_engine, session_ids)
