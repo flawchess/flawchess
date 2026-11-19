@@ -40,6 +40,14 @@ You don't need to be a programmer to set this up, and you don't need a database 
    ```
    `--workers 4` means it uses 4 CPU cores. 4 is a good default. If your computer is powerful and you want it to do more, don't set `--workers` above your machine's physical core count — each worker runs its own copy of Stockfish on one thread, and a position that runs out of time gets thrown away rather than just taking longer, so more workers than cores can make even a fast machine quietly submit gaps in its analysis.
 
+   **Naming your worker (optional).** By default the worker picks a new random name every time it starts. To give it a fixed name, add a line like `EVAL_WORKER_ID=box1` to your `.env` file (letters and digits, at most 16 characters). `--worker-id box1` on the command line does the same and wins if both are set.
+
+   **Most computers should leave `--lanes` alone.** On a machine with many cores (24 or more), `--lanes` lets one worker keep its cores busy while it waits on the network: it runs several games through the same set of Stockfish workers at once. Use about one lane per 6 to 8 workers, for example:
+   ```
+   uv run python scripts/remote_eval_worker.py --workers 28 --lanes 3
+   ```
+   The worker refuses more than one lane per 6 workers (so 4 lanes at most with `--workers 28`). More lanes than that do not make it faster, they only make each game take longer. Start with 2 or 3 lanes, because every lane is another stream of requests to the FlawChess server. Two limits to know about: with more than one lane, urgent work (games a user asked to be analyzed, and the short opening-position batches) waits for the Stockfish workers behind other lanes' background work, so it finishes a little later than on a single-lane worker, and an opening-position batch can occasionally take too long and be redone by the server. That is why lanes are only for machines with many cores.
+
 7. **Leave it running** as long as you like. If it crashes or freezes up, it restarts itself automatically, no need to babysit it. To stop it, press `Ctrl-C` in the terminal — that always stops it cleanly and it will not restart on its own.
 
 ## Setup (Windows)
@@ -67,7 +75,7 @@ If you already use Docker, you can run the worker in a container instead of inst
    EVAL_OPERATOR_TOKEN=your-token-here
    REMOTE_WORKER_COUNT=4
    ```
-   `REMOTE_WORKER_COUNT` is optional and defaults to `4` if you leave it out.
+   `REMOTE_WORKER_COUNT` is optional and defaults to `4` if you leave it out. On a machine with 12 or more cores you can also add `REMOTE_WORKER_LANES=2` (the Docker name for `--lanes`, see above; default `1`, at most one lane per 6 workers). To give the worker a fixed name, add `EVAL_WORKER_ID=box1` (see "Naming your worker" above).
 
 2. **Start the worker:**
    ```

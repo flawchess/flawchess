@@ -225,7 +225,7 @@ def test_full_policy_symmetric_elo_feed() -> None:
 
 async def test_start_maia_thread_option_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
     """start_maia(intra_op_num_threads=1) passes sess_options with that thread count;
-    a plain start_maia() passes no sess_options (backend behavior unchanged)."""
+    a plain start_maia() passes no sess_options (ORT's own default)."""
     ort = pytest.importorskip("onnxruntime")
     calls: list[dict[str, object]] = []
 
@@ -259,3 +259,17 @@ async def test_start_maia_single_thread_loads() -> None:
         assert maia_engine.is_maia_available()
     finally:
         await maia_engine.stop_maia()
+
+
+def test_backend_lifespan_maia_thread_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backend starts Maia with one intra-op thread by default (the ORT default
+    pinned every prod core during concurrent flaw-blob submits); 0 opts back into
+    the ORT default, which start_maia takes as None."""
+    from app import main as app_main
+    from app.core.config import Settings, settings
+
+    assert Settings.model_fields["MAIA_INTRA_OP_THREADS"].default == _THREADS_ONE
+    monkeypatch.setattr(settings, "MAIA_INTRA_OP_THREADS", _THREADS_ONE)
+    assert app_main._maia_intra_op_threads() == _THREADS_ONE
+    monkeypatch.setattr(settings, "MAIA_INTRA_OP_THREADS", 0)
+    assert app_main._maia_intra_op_threads() is None

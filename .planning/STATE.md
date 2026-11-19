@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 256
 status: completed
 stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-18T21:49:19.737Z"
-last_activity: 2026-11-17
+last_updated: "2026-11-19T14:29:02.409Z"
+last_activity: 2026-11-18
 last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: 030270bd707a1a72ac2de73caaec234b374a9ae0
+state_head: 635487a1810d1583400cba18ada97e551595624e
 progress:
   total_phases: 10
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-18 - Completed quick task 261118-v32: opponent facepalm line facts (reader gates, scorer and line pass, SEED-261114-iuv Part A)
+Last activity: 2026-11-19 - Completed quick task 261119-m4t: backend Maia session runs one intra-op thread (MAIA_INTRA_OP_THREADS)
 
 Open threads carried forward (not blockers):
 
@@ -1144,6 +1144,8 @@ None active.
 | 261116-spc | Maia columns for opponent blunders: full-mode hook plus --mode opponent backfill (SEED-261114-iuv Part A) | 2026-11-16 | f58d8e90f | [261116-spc-maia-columns-for-opponent-blunders-full-](./quick/261116-spc-maia-columns-for-opponent-blunders-full-/) |
 | 261117-sfh | Blunder-check Ready gate: show the start position and wait for a Ready tap in the avatar bubble before the lead-in; clock starts only after Ready | 2026-11-17 | bca5a9b4d | [261117-sfh-blunder-check-ready-gate-show-the-start-](./quick/261117-sfh-blunder-check-ready-gate-show-the-start-/) |
 | 261118-v32 | Opponent facepalm line facts: user-side reader gates, scorer and line pass write opponent line facts (SEED-261114-iuv Part A) | 2026-11-18 | 030270bd7 | [261118-v32-opponent-facepalm-line-facts-reader-gate](./quick/261118-v32-opponent-facepalm-line-facts-reader-gate/) |
+| 261119-k9s | Remote eval worker --lanes: concurrent lease cycles on one engine pool (cap one lane per 6 engines, Docker REMOTE_WORKER_LANES) | 2026-11-19 | 635487a18 | [261119-k9s-remote-eval-worker-lanes-n-concurrent-le](./quick/261119-k9s-remote-eval-worker-lanes-n-concurrent-le/) |
+| 261119-m4t | Backend Maia session runs one intra-op thread (MAIA_INTRA_OP_THREADS=1): prod CPU was pinned by concurrent flaw-blob submit re-scores | 2026-11-19 | 99ed3f087 | [261119-m4t-maia-intra-op-threads](./quick/261119-m4t-maia-intra-op-threads/) |
 
 ## Deferred Items
 
