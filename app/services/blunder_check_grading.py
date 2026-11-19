@@ -156,9 +156,18 @@ def elapsed_ms(prompted_at: datetime.datetime, now: datetime.datetime) -> int:
     return max(0, int((now - prompted_at).total_seconds() * MS_PER_SECOND))
 
 
+def is_past_ceiling(server_elapsed_ms: int) -> bool:
+    """True when `server_elapsed_ms` is strictly past the answer ceiling.
+
+    Used by the answer path (D-18) and by the stale-prompt settle on resume, so the two can never
+    drift apart. Strict `>`: an answer exactly at the ceiling still counts as on time.
+    """
+    return server_elapsed_ms > ANSWER_CEILING_S * MS_PER_SECOND
+
+
 def effective_answer(answer: AnswerKindName, server_elapsed_ms: int) -> AnswerKindName:
     """A non-timeout answer arriving past the ceiling is graded as a timeout (D-18)."""
-    if answer != "timeout" and server_elapsed_ms > ANSWER_CEILING_S * MS_PER_SECOND:
+    if answer != "timeout" and is_past_ceiling(server_elapsed_ms):
         return "timeout"
     return answer
 

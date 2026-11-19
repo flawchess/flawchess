@@ -1,10 +1,10 @@
 """Blunder-check session orchestration (Phase 249).
 
 Business logic between the router and the repository: start a session or resume the open one,
-open a window on its Ready gate (`start_window`), issue its first prompt when the user presses
-Ready (`begin_window`), grade answers (the server owns every grade, D-12/D-13/D-18) and finish a
-session. `blunder_check_windows.started_at` marks the gate opening and the first answer row's
-`prompted_at` marks Ready, so the answer clock never runs while the user studies the position.
+open a window on its Ready gate (`start_window`), issue a prompt when the user presses Ready
+(`begin_window`), grade answers (the server owns every grade, D-12/D-13/D-18) and finish a
+session. `blunder_check_windows.started_at` marks the gate opening and each Ready stamps the gate
+move's row `prompted_at`, so the answer clock never runs while the user studies the position.
 """
 
 from __future__ import annotations
@@ -49,6 +49,8 @@ from app.services.blunder_check_grading import (
     fen_before_ply,
     grade_answer,
     is_legal_uci,
+    is_past_ceiling,
+    judged_ply,
     resolve_better_move_tier,
     score_pct,
     timer_remaining_ms,
@@ -150,8 +152,11 @@ class WindowStart:
     session_points: int
     # The still-open better-move task of a caught window (a reload during that step), else None.
     better_move: BetterMoveData | None = None
-    # True while the window sits on its Ready gate: no prompt is issued and no clock runs.
+    # True while the window sits on its Ready gate (no open prompt row): no clock runs.
     awaiting_ready: bool = False
+    # The window's outcome when the payload describes an ended window (a caught window waiting
+    # for its better move, or a stale timeout that ended the window), else None.
+    outcome: OutcomeName | None = None
     # The game move that led to `start_fen` (the Ready gate's last-move highlight), else None.
     prior_uci: str | None = None
 
@@ -395,6 +400,53 @@ def _better_move_pending(window: BlunderCheckWindow) -> bool:
     return window.outcome == int(WindowOutcome.CAUGHT) and window.better_move_tier is None
 
 
+def _next_move_index(window: BlunderCheckWindow, rows: list[BlunderCheckAnswer]) -> int:
+    """The move the Ready gate stands before: the last answered `move_index` + 1, else move 1."""
+    answered = [row.move_index for row in rows if row.answered_at is not None]
+    index = max(answered, default=_FIRST_MOVE_INDEX - 1) + 1
+    if index > window.window_length:
+        # Defensive: answering the last judged move always ends the window.
+        raise BlunderCheckConflictError("window_ended")
+    return index
+
+
+async def _ended_window_start(
+    session: AsyncSession,
+    window: BlunderCheckWindow,
+    *,
+    session_id: int,
+    rows: list[BlunderCheckAnswer],
+    window_points: int,
+    outcome: OutcomeName,
+    better_move: BetterMoveData | None,
+) -> WindowStart:
+    """The payload for a window that already ended: every answered move, the last one as the prompt.
+
+    No clock runs and no Ready gate shows. The client routes it to the better-move step (a caught
+    window) or to the window's solution (a missed or cleared one).
+    """
+    answered = [row for row in rows if row.answered_at is not None]
+    if not answered:
+        raise BlunderCheckConflictError("window_ended")
+    last = answered[-1]
+    return WindowStart(
+        position=window.position,
+        start_fen=window.start_fen,
+        orientation="white" if mover_is_white_at_ply(window.first_ply) else "black",
+        lead_in_ucis=window_ucis(window.move_ucis)[: window.lead_in_plies],
+        answered=[_answered_move(window, row) for row in answered],
+        prompt=PromptData(last.move_index, _arrow_uci(window, last.ply)),
+        timer_remaining_ms=0,
+        window_points=window_points,
+        session_points=await blunder_check_repository.session_points(
+            session, session_id=session_id
+        ),
+        better_move=better_move,
+        outcome=outcome,
+        prior_uci=window.prior_uci,
+    )
+
+
 async def _resume_better_move(
     session: AsyncSession, window: BlunderCheckWindow, *, session_id: int
 ) -> WindowStart:
@@ -404,24 +456,14 @@ async def _resume_better_move(
     points stayed in `points_possible` but could never be earned.
     """
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
-    answered = [row for row in rows if row.answered_at is not None]
-    if not answered:
-        raise BlunderCheckConflictError("window_ended")
-    caught = answered[-1]
-    return WindowStart(
-        position=window.position,
-        start_fen=window.start_fen,
-        orientation="white" if mover_is_white_at_ply(window.first_ply) else "black",
-        lead_in_ucis=window_ucis(window.move_ucis)[: window.lead_in_plies],
-        answered=[_answered_move(window, row) for row in answered],
-        prompt=PromptData(caught.move_index, _arrow_uci(window, caught.ply)),
-        timer_remaining_ms=0,
+    return await _ended_window_start(
+        session,
+        window,
+        session_id=session_id,
+        rows=rows,
         window_points=window.points_scored,
-        session_points=await blunder_check_repository.session_points(
-            session, session_id=session_id
-        ),
+        outcome="caught",
         better_move=await _better_move_task(session, window),
-        prior_uci=window.prior_uci,
     )
 
 
@@ -431,15 +473,18 @@ async def _window_start(
     *,
     session_id: int,
     rows: list[BlunderCheckAnswer],
+    window_points: int,
     now_utc: datetime.datetime,
 ) -> WindowStart:
-    """The shared start/begin payload: the Ready gate when no prompt row exists yet, else the open prompt."""
+    """The shared start/begin payload: the open prompt, or the Ready gate when no prompt row is open.
+
+    The gate stands before the next unanswered move (move 1 on a fresh window, a later move after
+    a stale prompt was settled on resume) and runs no clock.
+    """
     open_row = _open_row(rows)
-    if rows and open_row is None:
-        raise BlunderCheckConflictError("window_ended")
     if open_row is None:
-        # Ready gate: the first judged move and the full countdown it will get, no clock yet.
-        prompt = PromptData(_FIRST_MOVE_INDEX, _arrow_uci(window, window.first_ply))
+        index = _next_move_index(window, rows)
+        prompt = PromptData(index, _arrow_uci(window, judged_ply(window.first_ply, index)))
         timer_ms = _FULL_TIMER_MS
     else:
         prompt = PromptData(open_row.move_index, _arrow_uci(window, open_row.ply))
@@ -452,12 +497,45 @@ async def _window_start(
         answered=[_answered_move(window, row) for row in rows if row.answered_at is not None],
         prompt=prompt,
         timer_remaining_ms=timer_ms,
-        window_points=window.points_scored,
+        window_points=window_points,
         session_points=await blunder_check_repository.session_points(
             session, session_id=session_id
         ),
-        awaiting_ready=not rows,
+        awaiting_ready=open_row is None,
         prior_uci=window.prior_uci,
+    )
+
+
+async def _resume_after_settle(
+    session: AsyncSession,
+    window: BlunderCheckWindow,
+    *,
+    session_id: int,
+    grade: AnswerGrade,
+    now_utc: datetime.datetime,
+) -> WindowStart:
+    """The resume payload after a stale prompt was settled: the ended window, else the Ready gate."""
+    # The in-memory window is stale after the SQL UPDATE (same hand-computed total as `answer_prompt`).
+    window_points = window.points_scored + grade.points_awarded - grade.points_forfeited
+    rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
+    if grade.window_ends and grade.outcome is not None:
+        # A timeout never catches, so there is no better-move task (L-04).
+        return await _ended_window_start(
+            session,
+            window,
+            session_id=session_id,
+            rows=rows,
+            window_points=window_points,
+            outcome=grade.outcome,
+            better_move=None,
+        )
+    return await _window_start(
+        session,
+        window,
+        session_id=session_id,
+        rows=rows,
+        window_points=window_points,
+        now_utc=now_utc,
     )
 
 
@@ -473,11 +551,16 @@ async def start_window(
 
     A fresh window gets no prompt row and no clock (the user is still looking at the start
     position, L-01/L-05); a reload during the gate returns the gate again with the full
-    countdown. After Ready the open prompt keeps its original `prompted_at`, so a reload reports
-    the real time left and never buys time (D-18).
+    countdown. After Ready the open prompt keeps its original `prompted_at`, so a reload within
+    the answer ceiling reports the real time left and never buys time (D-18). An open prompt
+    past the ceiling is settled as a timeout and the window reopens on a Ready gate before its
+    next move (or, when the timeout ended the window, as an ended window).
+
+    The window row is locked like the answer path, so a double resume, or a resume racing an
+    answer or a begin, serializes and the stale prompt is graded once.
     """
     found = await blunder_check_repository.get_window_for_user(
-        session, user_id=user_id, session_id=session_id, position=position
+        session, user_id=user_id, session_id=session_id, position=position, for_update=True
     )
     if found is None:
         raise BlunderCheckNotFoundError
@@ -497,7 +580,19 @@ async def start_window(
     # (and the answer ceiling) ran while the user was still orienting on the start position.
     # It is inserted by `begin_window` when the user presses Ready.
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
-    return await _window_start(session, window, session_id=session_id, rows=rows, now_utc=now_utc)
+    grade = await _settle_stale_prompt(session, window=window, rows=rows, now_utc=now_utc)
+    if grade is not None:
+        return await _resume_after_settle(
+            session, window, session_id=session_id, grade=grade, now_utc=now_utc
+        )
+    return await _window_start(
+        session,
+        window,
+        session_id=session_id,
+        rows=rows,
+        window_points=window.points_scored,
+        now_utc=now_utc,
+    )
 
 
 async def begin_window(
@@ -508,13 +603,16 @@ async def begin_window(
     position: int,
     now_utc: datetime.datetime,
 ) -> WindowStart:
-    """Ready on the gate: issue the first prompt, whose clock starts now (L-05).
+    """Ready on the gate: issue the gate's prompt, whose clock starts now (L-05).
 
-    Idempotent: `insert_prompt` is ON CONFLICT DO NOTHING, so a repeat keeps the original
-    `prompted_at` and reports the real time left; it never buys time.
+    The gate's move is move 1 on a fresh window, or the next move after a stale prompt was
+    settled on resume. Idempotent: when a prompt row is already open nothing is inserted, so a
+    repeat keeps the original `prompted_at` and reports the real time left; it never buys time.
+    Begin never settles anything: `start_window` is the only resume path. The window row is
+    locked so the next index is read and written after any concurrent settle.
     """
     found = await blunder_check_repository.get_window_for_user(
-        session, user_id=user_id, session_id=session_id, position=position
+        session, user_id=user_id, session_id=session_id, position=position, for_update=True
     )
     if found is None:
         raise BlunderCheckNotFoundError
@@ -522,15 +620,25 @@ async def begin_window(
     _check_startable(header, window)
     if window.started_at is None:
         raise BlunderCheckConflictError("not_started")
-    await blunder_check_repository.insert_prompt(
-        session,
-        window_id=window.id,
-        move_index=_FIRST_MOVE_INDEX,
-        ply=window.first_ply,
-        prompted_at=now_utc,
-    )
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
-    return await _window_start(session, window, session_id=session_id, rows=rows, now_utc=now_utc)
+    if _open_row(rows) is None:
+        index = _next_move_index(window, rows)
+        await blunder_check_repository.insert_prompt(
+            session,
+            window_id=window.id,
+            move_index=index,
+            ply=judged_ply(window.first_ply, index),
+            prompted_at=now_utc,
+        )
+        rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
+    return await _window_start(
+        session,
+        window,
+        session_id=session_id,
+        rows=rows,
+        window_points=window.points_scored,
+        now_utc=now_utc,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +679,7 @@ async def _persist_grade(
     row: BlunderCheckAnswer,
     grade: AnswerGrade,
     answer: AnswerKindName,
-    client_elapsed_ms: int,
+    client_elapsed_ms: int | None,
     server_elapsed_ms: int,
     now_utc: datetime.datetime,
 ) -> None:
@@ -598,6 +706,61 @@ async def _persist_grade(
         outcome=None if grade.outcome is None else OUTCOME_BY_NAME[grade.outcome],
         ended_at=now_utc,
     )
+
+
+def _grade_row(
+    window: BlunderCheckWindow,
+    row: BlunderCheckAnswer,
+    *,
+    answer: AnswerKindName,
+    server_elapsed_ms: int,
+) -> AnswerGrade:
+    """The one grading call, shared by an answer and by the stale-prompt settle."""
+    return grade_answer(
+        is_blunder_move=row.ply == window.blunder_ply,
+        is_last_judged_move=row.move_index == window.window_length,
+        answer=effective_answer(answer, server_elapsed_ms),
+        window_points=window.points_scored,
+    )
+
+
+async def _settle_stale_prompt(
+    session: AsyncSession,
+    *,
+    window: BlunderCheckWindow,
+    rows: list[BlunderCheckAnswer],
+    now_utc: datetime.datetime,
+) -> AnswerGrade | None:
+    """Grade an open prompt that is past the answer ceiling as the timeout it already is.
+
+    Bug fix (quick 261119-x7t): a resume that found an open prompt hours past its ceiling used
+    to report 0 ms left with no Ready gate, so the client auto-submitted a timeout and the next
+    move's clock started at once, before the user had looked at the board (prod, 2026-11-19).
+    The stale prompt is now settled here with the normal timeout grading and NO next prompt row
+    is created: the missing row is the Ready gate, and `begin_window` stamps the next move when
+    the user presses Ready. `client_elapsed_ms` stays NULL (the client never answered).
+
+    Returns the grade, or None when there is no open prompt or it is still within the ceiling
+    (a reload then keeps its original `prompted_at`, D-18).
+    """
+    open_row = _open_row(rows)
+    if open_row is None:
+        return None
+    server_elapsed_ms = elapsed_ms(open_row.prompted_at, now_utc)
+    if not is_past_ceiling(server_elapsed_ms):
+        return None
+    grade = _grade_row(window, open_row, answer="timeout", server_elapsed_ms=server_elapsed_ms)
+    await _persist_grade(
+        session,
+        window=window,
+        row=open_row,
+        grade=grade,
+        answer="timeout",
+        client_elapsed_ms=None,
+        server_elapsed_ms=server_elapsed_ms,
+        now_utc=now_utc,
+    )
+    return grade
 
 
 async def _better_move_task(session: AsyncSession, window: BlunderCheckWindow) -> BetterMoveData:
@@ -687,12 +850,7 @@ async def answer_prompt(
     )
     server_elapsed_ms = elapsed_ms(row.prompted_at, now_utc)
     window_points = window.points_scored
-    grade = grade_answer(
-        is_blunder_move=row.ply == window.blunder_ply,
-        is_last_judged_move=move_index == window.window_length,
-        answer=effective_answer(answer, server_elapsed_ms),
-        window_points=window_points,
-    )
+    grade = _grade_row(window, row, answer=answer, server_elapsed_ms=server_elapsed_ms)
     await _persist_grade(
         session,
         window=window,

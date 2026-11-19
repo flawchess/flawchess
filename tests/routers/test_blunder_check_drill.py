@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.core.dev_clock import dev_now_utc
 from app.main import app
 from app.models.blunder_check import (
+    AnswerKind,
     AnswerResult,
     BlunderCheckAnswer,
     BlunderCheckSession,
@@ -74,6 +75,7 @@ _START_KEYS = {
     "session_points",
     "better_move",
     "awaiting_ready",
+    "outcome",
     "prior_uci",
 }
 _ANSWER_KEYS = {
@@ -400,7 +402,9 @@ async def _started(s: _Setup, position: int = 0) -> dict[str, Any]:
     """Start a window the way the client does: press Ready when the start lands on the gate.
 
     A reload after Ready (or a caught window waiting for its better move) is not on the gate,
-    so its start body is returned as is and begin is not called.
+    so its start body is returned as is and begin is not called. A stale reload (an open prompt
+    past the ceiling) now also lands on a gate, so it presses Ready here too; tests that need to
+    inspect that gate call the raw `_start` instead.
     """
     resp = await _start(s.token, s.session_id, position)
     assert resp.status_code == 200, resp.text
@@ -940,3 +944,111 @@ async def test_ready_gate_every_window_opens_on_the_gate(test_engine, clock) -> 
     assert second.status_code == 200, second.text
     assert second.json()["awaiting_ready"] is True
     assert second_rows == []
+
+
+# ---------------------------------------------------------------------------
+# Stale prompt on resume (quick 261119-x7t): settle it as a timeout, reopen on a gate
+# ---------------------------------------------------------------------------
+
+_ABANDON_S = 2 * 60 * 60  # two hours, like the prod incident
+
+
+@pytest.mark.asyncio
+async def test_stale_resume_settles_the_prompt_and_reopens_on_a_gate(test_engine, clock) -> None:
+    mainline = _mainline_ucis()
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        clock.advance(_ABANDON_S)
+        resp = await _start(s.token, s.session_id, 0)
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["awaiting_ready"] is True and body["outcome"] is None
+    assert body["better_move"] is None
+    assert body["prompt"] == {"move_index": 3, "move_uci": mainline[34]}
+    assert body["timer_remaining_ms"] == _FULL_TIMER_MS
+    assert body["window_points"] == 0 and body["session_points"] == 0
+    assert body["answered"] == [
+        {
+            "move_index": 1,
+            "move_uci": mainline[30],
+            "reply_uci": mainline[31],
+            "result": "correct_safe",
+            "points_awarded": 1,
+            "points_forfeited": 0,
+        },
+        {
+            "move_index": 2,
+            "move_uci": mainline[32],
+            "reply_uci": mainline[33],
+            "result": "timeout_safe",
+            "points_awarded": 0,
+            "points_forfeited": 1,
+        },
+    ]
+    # No row for move 3 yet: its absence is the gate.
+    assert [row.move_index for row in rows] == [1, 2]
+    settled = rows[1]
+    assert settled.answer == int(AnswerKind.TIMEOUT)
+    assert settled.result == int(AnswerResult.TIMEOUT_SAFE)
+    assert settled.points_forfeited == 1
+    assert settled.client_elapsed_ms is None
+    assert settled.server_elapsed_ms == _ABANDON_S * MS_PER_SECOND
+    assert window.outcome is None and window.points_scored == 0
+
+
+@pytest.mark.asyncio
+async def test_stale_resume_ready_issues_the_next_move_with_a_full_clock(
+    test_engine, clock
+) -> None:
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        clock.advance(_ABANDON_S)
+        await _start(s.token, s.session_id, 0)
+        clock.advance(_GATE_STUDY_S)
+        begun = await _begin(s.token, s.session_id, 0)
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+        clock.advance(_BEFORE_CEILING_S)
+        final = await _ok(s, 3, "safe")
+    assert begun.status_code == 200, begun.text
+    body = begun.json()
+    assert body["awaiting_ready"] is False
+    assert body["prompt"]["move_index"] == 3
+    assert body["timer_remaining_ms"] == _FULL_TIMER_MS
+    assert [row.move_index for row in rows] == [1, 2, 3]
+    assert rows[2].prompted_at == _T0 + datetime.timedelta(seconds=_ABANDON_S + _GATE_STUDY_S)
+    # Graded on its merits: the clock started at Ready, not at the abandoned prompt.
+    assert final["result"] == "correct_safe" and final["outcome"] == "cleared"
+    assert final["window_points"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_timeout_on_the_blunder_ends_the_window(test_engine, clock) -> None:
+    mainline = _mainline_ucis()
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        await _ok(s, 2, "safe")
+        clock.advance(_ABANDON_S)
+        resp = await _start(s.token, s.session_id, 0)
+        window = await _window_row(test_engine, s.session_id, 0)
+        rows = await _answer_rows(test_engine, window.id)
+        again = await _start(s.token, s.session_id, 0)
+        begin_again = await _begin(s.token, s.session_id, 0)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["awaiting_ready"] is False and body["outcome"] == "missed"
+    assert body["better_move"] is None and body["timer_remaining_ms"] == 0
+    assert body["prompt"] == {"move_index": 3, "move_uci": mainline[40]}
+    assert body["answered"][-1]["result"] == "timeout_blunder"
+    assert body["answered"][-1]["points_forfeited"] == 2
+    assert len(body["answered"]) == 3
+    assert body["window_points"] == 0 and body["session_points"] == 0
+    assert window.outcome == int(WindowOutcome.MISSED) and window.points_scored == 0
+    assert rows[2].answer == int(AnswerKind.TIMEOUT)
+    for later in (again, begin_again):
+        assert later.status_code == 409 and later.json()["detail"] == "window_ended"

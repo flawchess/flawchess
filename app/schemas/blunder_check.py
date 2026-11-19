@@ -100,10 +100,16 @@ class WindowStartResponse(BaseModel):
     # Set only on a reload after a caught blunder whose better move is still open: `answered`
     # then ends with the caught move, `prompt` repeats it and no prompt timer runs.
     better_move: BetterMoveTask | None
-    # True while the window sits on its Ready gate (start was called but no prompt is issued yet,
-    # so no clock runs): `prompt` is then the first judged move and `timer_remaining_ms` the full
-    # countdown it will get. False on every begin response and on any reload after Ready.
+    # True while the window sits on its Ready gate (no open prompt row, so no clock runs):
+    # `prompt` is then the gate's judged move (the first on a fresh window, the next one after a
+    # settled stale prompt), `answered` holds the moves already played and `timer_remaining_ms`
+    # is the full countdown the prompt will get. False on every begin response and on any reload
+    # after Ready.
     awaiting_ready: bool
+    # The window's outcome when this payload describes an ended window: a caught window waiting
+    # for its better move ("caught"), or a stale timeout that ended the window ("missed" or
+    # "cleared"). None otherwise.
+    outcome: WindowOutcomeWire | None
     # The game move that led to `start_fen`, for the last-move highlight before any window move
     # is shown. None at the game's first position and on windows composed before it was stored.
     prior_uci: str | None

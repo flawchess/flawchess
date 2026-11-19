@@ -867,11 +867,14 @@ async def claim_answer(
     result: AnswerResult,
     points_awarded: int,
     points_forfeited: int,
-    client_elapsed_ms: int,
+    client_elapsed_ms: int | None,
     server_elapsed_ms: int,
     answered_at: datetime.datetime,
 ) -> bool:
     """Claim the open prompt row: True when this call answered it, False when already answered.
+
+    `client_elapsed_ms=None` means the server settled the prompt (a stale resume) and the client
+    never answered it.
 
     The `answered_at IS NULL` guard makes a double submit award nothing twice
     (the drill_solves claiming-UPDATE precedent).
