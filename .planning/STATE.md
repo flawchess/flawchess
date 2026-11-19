@@ -5,10 +5,10 @@ current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
 stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-19T06:05:03.038Z"
+last_updated: "2026-11-19T23:21:45.647Z"
 last_activity: 2026-11-19
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: 92bb6a866eafdd34920c26a9bcf72a18bcd58771
+state_head: 48316651d58bab1886df293d48d11e8f5c6d89f6
 progress:
   total_phases: 10
   completed_phases: 63
@@ -27,7 +27,7 @@ Plan: 6
 
 Status: Ready to execute
 
-Last activity: 2026-11-19 - Completed quick task 261119-m4t: backend Maia session runs one intra-op thread (MAIA_INTRA_OP_THREADS)
+Last activity: 2026-11-20 - Completed quick task 261119-x7t: blunder check settles a stale open prompt as a timeout on resume and reopens on a Ready gate
 
 Open threads carried forward (not blockers):
 
@@ -1153,6 +1153,7 @@ None active.
 | 261118-v32 | Opponent facepalm line facts: user-side reader gates, scorer and line pass write opponent line facts (SEED-261114-iuv Part A) | 2026-11-18 | 030270bd7 | [261118-v32-opponent-facepalm-line-facts-reader-gate](./quick/261118-v32-opponent-facepalm-line-facts-reader-gate/) |
 | 261119-k9s | Remote eval worker --lanes: concurrent lease cycles on one engine pool (cap one lane per 6 engines, Docker REMOTE_WORKER_LANES) | 2026-11-19 | 635487a18 | [261119-k9s-remote-eval-worker-lanes-n-concurrent-le](./quick/261119-k9s-remote-eval-worker-lanes-n-concurrent-le/) |
 | 261119-m4t | Backend Maia session runs one intra-op thread (MAIA_INTRA_OP_THREADS=1): prod CPU was pinned by concurrent flaw-blob submit re-scores | 2026-11-19 | 99ed3f087 | [261119-m4t-maia-intra-op-threads](./quick/261119-m4t-maia-intra-op-threads/) |
+| 261119-x7t | Blunder check: settle a stale open prompt as a timeout on resume and reopen the sequence on a Ready gate | 2026-11-20 | 48316651d | [261119-x7t-blunder-check-settle-a-stale-open-prompt](./quick/261119-x7t-blunder-check-settle-a-stale-open-prompt/) |
 
 ## Deferred Items
 
