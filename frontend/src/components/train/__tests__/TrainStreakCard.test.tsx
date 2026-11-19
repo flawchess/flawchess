@@ -350,6 +350,7 @@ describe('TrainStreakCard', () => {
       fireEvent.click(screen.getByTestId('train-shield-explainer'));
       await waitFor(() => expect(screen.getByText(/earns a freeze/)).not.toBeNull());
       const body = screen.getByText(/earns a freeze/).textContent ?? '';
+      expect(body).toContain('every mode you have switched on is done');
       expect(body).toContain('streak goes up by 1');
       expect(body).toContain(`(${FREEZE_CAP} max)`);
       expect(body).toContain('missed scheduled day uses one');

@@ -55,11 +55,12 @@ const FROST_AFTER_CRACKS_PAD_MS = 100;
  * "fulfilled" is +1 streak +1 freeze, "credit_only" (an off-day session) is
  * +1 freeze and NO streak change, "missed" is -1 freeze with the streak held
  * until the freezes hit 0 and it resets, "neutral" changes nothing. Prose only — the client holds no
- * copy of that arithmetic beyond the cap, which is interpolated.
+ * copy of that arithmetic beyond the cap, which is interpolated. A "session" in the arithmetic is a
+ * day done in every active mode (Phase 251 D-02).
  */
 const STREAK_EXPLAINER =
-  `Complete a session on a scheduled training day and your streak goes up by 1. Sessions on other days don't count toward it. ` +
-  `Every completed session earns a freeze (${FREEZE_CAP} max). Each missed scheduled day uses one; when you have none left, your streak resets to 0.`;
+  `A day counts when every mode you have switched on is done. Finish it on a scheduled training day and your streak goes up by 1. Days that aren't scheduled don't count toward it. ` +
+  `Every day you finish earns a freeze (${FREEZE_CAP} max). Each missed scheduled day uses one; when you have none left, your streak resets to 0.`;
 
 /** The weekly tally under the "Session streak" heading. */
 function thisWeekCaption(completed: number, required: number | null): string {
