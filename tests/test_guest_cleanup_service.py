@@ -42,6 +42,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.guest_cleanup_service as guest_cleanup_service
+from app.models.blunder_check import BlunderCheckSession, BlunderCheckWindow, WindowCase
 from app.models.bot_game_settings import BotGameSettings
 from app.models.drill_item import DrillItem
 from app.models.drill_session import DrillSession
@@ -530,6 +531,59 @@ class TestPurgeGuestDrillCascade:
         assert await _count(TrainSettings, TrainSettings.user_id == guest_id) == 0, (
             "train_settings must be deleted by the guest purge (D-08)"
         )
+
+    @pytest.mark.asyncio
+    async def test_purge_guest_deletes_blunder_check_sessions_and_windows(
+        self, real_session_maker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """WR-02: a purged guest's blunder-check sessions and windows go with their games.
+
+        The purge keeps the users row, so the users CASCADE never reaches them; the explicit
+        session delete does, and the windows follow through the session FK CASCADE.
+        """
+        async with real_session_maker() as seed_session:
+            guest_id, game_id = await _seed_eligible_guest_with_game(seed_session)
+            header = BlunderCheckSession(
+                user_id=guest_id,
+                status="completed",
+                window_count=1,
+                session_date=date(2026, 7, 25),
+                expires_on=date(2026, 7, 26),
+            )
+            seed_session.add(header)
+            await seed_session.flush()
+            seed_session.add(
+                BlunderCheckWindow(
+                    session_id=header.id,
+                    position=0,
+                    user_id=guest_id,
+                    game_id=game_id,
+                    is_own=True,
+                    window_length=3,
+                    blunder_position=1,
+                    first_ply=6,
+                    blunder_ply=6,
+                    window_case=int(WindowCase.ALLOWED),
+                    start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    move_ucis="e2e4",
+                    lead_in_plies=0,
+                    points_possible=3,
+                )
+            )
+            await seed_session.commit()
+
+        async def _count(model, *predicates) -> int:
+            async with real_session_maker() as s:
+                result = await s.execute(select(func.count()).select_from(model).where(*predicates))
+                return result.scalar_one()
+
+        assert await _count(BlunderCheckSession, BlunderCheckSession.user_id == guest_id) == 1
+        assert await _count(BlunderCheckWindow, BlunderCheckWindow.user_id == guest_id) == 1
+
+        await _purge_guest(guest_id)
+
+        assert await _count(BlunderCheckSession, BlunderCheckSession.user_id == guest_id) == 0
+        assert await _count(BlunderCheckWindow, BlunderCheckWindow.user_id == guest_id) == 0
 
     @pytest.mark.asyncio
     async def test_purge_guest_without_drill_rows_is_noop(
