@@ -856,8 +856,9 @@ export function blunderCheckIntroSteps(moveTimerSeconds: number): readonly strin
 
 /**
  * The blunder-check Ready gate bubble (L-02): which side the user plays and whose turn it is.
- * The turn sentence follows the start FEN, so a window with no lead-in ply (the first judged
- * move is also the first ply) does not claim the opponent moves first.
+ * The turn sentence follows the gate's position: the start FEN on a fresh window (so a window
+ * with no lead-in ply, where the first judged move is also the first ply, does not claim the
+ * opponent moves first), or the position after the answered moves on a mid-sequence gate.
  */
 export function blunderCheckReadyCopy(
   side: 'white' | 'black',

@@ -3,7 +3,10 @@
  *
  * One window runs: loading -> Ready gate -> lead-in replay -> prompt -> grading -> feedback ->
  * (move + reply -> next prompt) ... -> window ended. The Ready gate is untimed: the server
- * issues the first prompt and starts its clock only at begin (L-05). A caught blunder then asks
+ * issues the gate's prompt and starts its clock only at begin (L-05). The gate stands before
+ * move 1 on a fresh window, or mid-sequence on the position reached so far when the server
+ * settled a stale prompt on resume; a stale timeout that ended the window resumes straight onto
+ * its solution (quick 261119-x7t). A caught blunder then asks
  * for a better move (better_move -> grading -> feedback); every ended window ends on its
  * solution screen (solution_loading -> solution). After the last window the session is
  * finished. The reducer is pure: no timers, no I/O. The component that hosts it
@@ -216,34 +219,39 @@ function answeredUcis(answered: readonly AnsweredMove[]): string[] {
 }
 
 /**
- * A reload during the better-move step: back into it, on the board before the caught blunder.
- * Bug fix (Phase 249 review): the drill used to skip to the next sequence, so the better
- * move's points could never be earned. The catch's grade is rebuilt from its answered row.
+ * A reload onto a window that already ended: the better-move step for a caught blunder, else the
+ * window's solution. The ending answer's grade is rebuilt from the last answered row, and the
+ * ending move itself was never played on the board (as after an in-session ending answer).
+ *
+ * Bug fix (Phase 249 review): the drill used to skip to the next sequence on a better-move
+ * reload, so the better move's points could never be earned.
+ * Bug fix (quick 261119-x7t): a stale prompt the server settled as a window-ending timeout
+ * (missed on the blunder ply, cleared on a herring's last move) resumes onto the window's
+ * solution instead of an error or a dead clock.
  */
-function betterMoveResumed(
+function endedWindowResumed(
   session: DrillSession,
   response: WindowStartResponse,
-  task: BetterMoveTask,
+  outcome: WindowOutcome,
+  task: BetterMoveTask | null,
 ): DrillState {
-  const caught = response.answered[response.answered.length - 1];
-  if (caught === undefined) return { phase: 'error', message: UNEXPECTED_RESPONSE_MESSAGE };
+  const last = response.answered[response.answered.length - 1];
+  if (last === undefined) return { phase: 'error', message: UNEXPECTED_RESPONSE_MESSAGE };
   const graded: AnswerResponse = {
-    move_index: caught.move_index,
-    result: caught.result,
-    points_awarded: caught.points_awarded,
-    points_forfeited: caught.points_forfeited,
+    move_index: last.move_index,
+    result: last.result,
+    points_awarded: last.points_awarded,
+    points_forfeited: last.points_forfeited,
     window_points: response.window_points,
     session_points: response.session_points,
     window_ended: true,
-    outcome: 'caught',
+    outcome,
     reply_uci: null,
     next_prompt: null,
     timer_remaining_ms: null,
     better_move: task,
   };
-  return {
-    phase: 'better_move',
-    task,
+  const ended: WindowEnded = {
     session,
     sessionPoints: response.session_points,
     window: {
@@ -251,7 +259,7 @@ function betterMoveResumed(
       startFen: response.start_fen,
       orientation: response.orientation,
       leadInUcis: response.lead_in_ucis,
-      // The caught blunder itself was never played on the board.
+      // The ending move itself was never played on the board.
       shownUcis: [...response.lead_in_ucis, ...answeredUcis(response.answered.slice(0, -1))],
       priorUci: response.prior_uci,
       moveTimerMs: response.move_timer_seconds * MS_PER_SECOND,
@@ -259,16 +267,20 @@ function betterMoveResumed(
     },
     prompt: response.prompt,
     graded,
-    outcome: 'caught',
+    outcome,
   };
+  if (task !== null) return { phase: 'better_move', task, ...ended };
+  return { phase: 'solution_loading', ...ended };
 }
 
 /**
- * The window as the server describes it. A reload during the better-move step goes back into
- * it. A fresh window (`awaiting_ready`) waits on its Ready gate with nothing shown. After Ready
- * (or a reload past it) the window resumes: with answers, or after a stale_prompt from grading
- * (the server's state wins), it goes straight to the prompt, because a replay would burn the
- * user's real countdown time; with none answered it replays its lead-in.
+ * The window as the server describes it. A reload of an ended window goes back into its
+ * better-move step or on to its solution. A window on its Ready gate (`awaiting_ready`) waits
+ * there untimed: a fresh one shows nothing, a mid-sequence one (the server settled a stale
+ * prompt) shows the lead-in and the answered moves with their replies. After Ready (or a reload
+ * past it) the window resumes: with answers, or after a stale_prompt from grading (the server's
+ * state wins), it goes straight to the prompt, because a replay would burn the user's real
+ * countdown time; with none answered it replays its lead-in.
  */
 function windowFromServer(
   session: DrillSession,
@@ -276,15 +288,23 @@ function windowFromServer(
   forceResume: boolean,
 ): DrillState {
   if (response.better_move !== null) {
-    return betterMoveResumed(session, response, response.better_move);
+    return endedWindowResumed(session, response, 'caught', response.better_move);
+  }
+  if (response.outcome !== null) {
+    return endedWindowResumed(session, response, response.outcome, null);
   }
   const resumed = !response.awaiting_ready && (response.answered.length > 0 || forceResume);
+  // Bug fix (quick 261119-x7t): a gate could only be the start position before. After a stale
+  // prompt was settled it opens mid-sequence, on the position reached so far.
+  const showsPlayedMoves = resumed || response.answered.length > 0;
   const window: DrillWindow = {
     position: response.position,
     startFen: response.start_fen,
     orientation: response.orientation,
     leadInUcis: response.lead_in_ucis,
-    shownUcis: resumed ? [...response.lead_in_ucis, ...answeredUcis(response.answered)] : [],
+    shownUcis: showsPlayedMoves
+      ? [...response.lead_in_ucis, ...answeredUcis(response.answered)]
+      : [],
     priorUci: response.prior_uci,
     moveTimerMs: response.move_timer_seconds * MS_PER_SECOND,
     windowPoints: response.window_points,

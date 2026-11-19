@@ -460,14 +460,16 @@ function SolutionLoadingView({
 function ReadyGateBubble({
   persona,
   orientation,
-  startFen,
+  fen,
   beginning,
   rulesTimerMs,
   onReady,
 }: {
   persona: Persona;
   orientation: 'white' | 'black';
-  startFen: string;
+  /** The board on the gate: the start position, or the position after the answered moves on a
+   * mid-sequence gate (a stale prompt settled on resume). */
+  fen: string;
   beginning: boolean;
   /** The per-move countdown when this gate is a candidate for the rules (a session's first
    * sequence), else null. */
@@ -507,7 +509,7 @@ function ReadyGateBubble({
           </div>
         )}
         <p data-testid="blunder-check-ready-copy">
-          {blunderCheckReadyCopy(orientation, sideToMoveFromFen(startFen))}
+          {blunderCheckReadyCopy(orientation, sideToMoveFromFen(fen))}
         </p>
       </TrainBotBubble>
     </div>
@@ -609,7 +611,7 @@ function WindowView({
         <ReadyGateBubble
           persona={persona}
           orientation={window.orientation}
-          startFen={window.startFen}
+          fen={fen}
           beginning={state.phase === 'beginning'}
           rulesTimerMs={window.position === 0 ? window.moveTimerMs : null}
           onReady={onReady}

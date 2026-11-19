@@ -75,11 +75,19 @@ export interface WindowStartResponse {
    */
   better_move: BetterMoveTask | null;
   /**
-   * True while the window waits on its Ready gate (start was called, no prompt is issued yet,
-   * so no clock runs): `prompt` is then the first judged move and `timer_remaining_ms` the
-   * full countdown it will get. False on begin and on reloads after Ready.
+   * True while the window waits on its Ready gate (no open prompt row, so no clock runs):
+   * `prompt` is then the gate's judged move (the first on a fresh window, the next one after
+   * the server settled a stale prompt), `answered` holds the moves already played and
+   * `timer_remaining_ms` is the full countdown the prompt will get. False on begin and on
+   * reloads after Ready.
    */
   awaiting_ready: boolean;
+  /**
+   * The window's outcome when this response describes an ended window: a stale timeout that
+   * ended it gives 'missed' or 'cleared', a caught window waiting for its better move gives
+   * 'caught'. Null otherwise.
+   */
+  outcome: WindowOutcome | null;
 }
 
 /** One answer to the open prompt; the server grades it. */
