@@ -22,6 +22,13 @@ without a database:
   non-hidden users. A hidden viewer sees a private would-be row, a guest viewer a
   ghost row, each ranked among the visible users.
 
+- Blunder check (Phase 251, D-14) adds two more boards over `blunder_check_windows`: Points
+  (sum of points scored, never tentative) and Score % (floored points scored / points
+  possible, tentative below `BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS` ended windows). A
+  per-board spec (`_BOARD_SPECS`) says how each board builds its entry from its mode's
+  aggregate, so the ranking, slicing, visibility and finalization code is shared by all four.
+  Guests and hidden users never enter another viewer's blunder-check board (D-25).
+
 The closed-week side: `final_standings` / `medal_for` freeze a week's
 public standings with the SAME `_entry_for` / `_tiered_order` as the live board (no
 second ranking implementation), and `build_last_week` turns the stored rows into the
@@ -34,17 +41,20 @@ from __future__ import annotations
 
 import datetime
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Final
+from typing import Final, Literal, get_args
 
 from app.models.train_weekly_standing import Medal
 from app.repositories.train_leaderboard_repository import (
+    BlunderCheckAggregate,
+    BlunderCheckTotals,
     SolveTotals,
     WeeklyAggregate,
     fetch_session_contribution,
     fetch_week_aggregates,
+    fetch_week_bc_aggregates,
 )
 from app.repositories.train_medals_repository import (
     StandingRow,
@@ -57,6 +67,9 @@ from app.services.train_score import TRAIN_POINTS_PER_PUZZLE
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ACCURACY_QUALIFY_MIN_PUZZLES: Final = 20
+# D-22: the blunder-check Score % board ranks a player only from this many ended windows in the
+# week (three full sessions of the default six); below it the entry is tentative and unranked.
+BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS: Final = 18
 LEADERBOARD_TOP_N: Final = 5
 LEADERBOARD_NEIGHBOURS: Final = 2
 DAYS_PER_WEEK: Final = 7
@@ -87,10 +100,10 @@ ZERO_TALLY: Final = MedalTally(gold=0, silver=0, bronze=0)
 
 @dataclass(frozen=True)
 class BoardRow:
-    rank: int | None  # None marks a tentative Accuracy entry (unranked)
+    rank: int | None  # None marks a tentative Accuracy / Score % entry (unranked)
     name: str
     value: int
-    puzzles: int
+    puzzles: int  # the board's count: solves, or ended windows on the blunder-check boards
     tentative: bool
     is_viewer: bool
     visibility: LeaderboardVisibility
@@ -101,7 +114,7 @@ class BoardRow:
 
 @dataclass(frozen=True)
 class ViewerStanding:
-    rank: int | None  # None while the viewer is a tentative Accuracy entry
+    rank: int | None  # None while the viewer is a tentative Accuracy / Score % entry
     rank_without_session: int | None
     tentative: bool
     puzzles_to_qualify: int
@@ -150,6 +163,8 @@ class WeeklyLeaderboard:
     seconds_remaining: int
     points: Board
     accuracy: Board
+    blunder_check_points: Board
+    blunder_check_score: Board
 
 
 @dataclass(frozen=True)
@@ -191,6 +206,13 @@ def accuracy_percent(non_filler_points: int, non_filler_puzzles: int) -> int | N
     return (PERCENT_SCALE * non_filler_points) // (TRAIN_POINTS_PER_PUZZLE * non_filler_puzzles)
 
 
+def score_percent(points_scored: int, points_possible: int) -> int | None:
+    """Blunder-check score as a floored integer percent, None when no points were possible."""
+    if points_possible == 0:
+        return None
+    return (PERCENT_SCALE * points_scored) // points_possible
+
+
 def puzzles_to_qualify(non_filler_puzzles: int) -> int:
     """Non-filler puzzles still needed to leave the tentative Accuracy state."""
     return max(0, ACCURACY_QUALIFY_MIN_PUZZLES - non_filler_puzzles)
@@ -204,23 +226,105 @@ def resolve_viewer_visibility(*, is_guest: bool, leaderboard_hidden: bool) -> Le
     return "public"
 
 
-def _entry_for(kind: LeaderboardBoardKind, aggregate: WeeklyAggregate) -> _Entry | None:
-    """The user's entry on one board, or None when they have no place on it."""
-    totals = aggregate.totals
-    name = display_name(aggregate.lichess_username, aggregate.chess_com_username)
-    is_public = not aggregate.is_guest and not aggregate.leaderboard_hidden
-    if kind == "points":
-        return _Entry(aggregate.user_id, name, totals.points, totals.puzzles, False, is_public)
+# One aggregate type per mode; a board's spec only reads the totals of its own mode.
+Aggregate = WeeklyAggregate | BlunderCheckAggregate
+_Totals = SolveTotals | BlunderCheckTotals
+BoardMode = Literal["puzzle", "blunder_check"]
+# Every board key, in display order (puzzle boards first); derived so a new key cannot be missed.
+BOARD_KINDS: Final[tuple[LeaderboardBoardKind, ...]] = get_args(LeaderboardBoardKind)
+
+
+@dataclass(frozen=True)
+class _Metric:
+    """A board's value and count for one user (e.g. accuracy percent and non-filler puzzles)."""
+
+    value: int
+    count: int
+
+
+@dataclass(frozen=True)
+class _BoardSpec:
+    """How one board reads its mode's aggregate; the ranking code below is shared by all boards."""
+
+    mode: BoardMode
+    metric: Callable[[_Totals], _Metric | None]
+    qualify_min: int | None  # count below this is tentative (unranked); None means never
+    count_in_rank_key: bool  # equal value, more count ranks higher (Accuracy and Score %)
+    has_session_delta: bool  # only puzzle boards report rank_without_session
+
+
+def _points_metric(totals: _Totals) -> _Metric | None:
+    if not isinstance(totals, SolveTotals):
+        return None
+    return _Metric(totals.points, totals.puzzles)
+
+
+def _accuracy_metric(totals: _Totals) -> _Metric | None:
+    if not isinstance(totals, SolveTotals):
+        return None
     percent = accuracy_percent(totals.non_filler_points, totals.non_filler_puzzles)
-    if percent is None:
+    return None if percent is None else _Metric(percent, totals.non_filler_puzzles)
+
+
+def _bc_points_metric(totals: _Totals) -> _Metric | None:
+    if not isinstance(totals, BlunderCheckTotals):
+        return None
+    return _Metric(totals.points_scored, totals.windows)
+
+
+def _bc_score_metric(totals: _Totals) -> _Metric | None:
+    if not isinstance(totals, BlunderCheckTotals):
+        return None
+    percent = score_percent(totals.points_scored, totals.points_possible)
+    return None if percent is None else _Metric(percent, totals.windows)
+
+
+_BOARD_SPECS: Final[Mapping[LeaderboardBoardKind, _BoardSpec]] = MappingProxyType(
+    {
+        "points": _BoardSpec("puzzle", _points_metric, None, False, True),
+        "accuracy": _BoardSpec(
+            "puzzle", _accuracy_metric, ACCURACY_QUALIFY_MIN_PUZZLES, True, True
+        ),
+        "blunder_check_points": _BoardSpec("blunder_check", _bc_points_metric, None, False, False),
+        "blunder_check_score": _BoardSpec(
+            "blunder_check",
+            _bc_score_metric,
+            BLUNDER_CHECK_SCORE_QUALIFY_MIN_WINDOWS,
+            True,
+            False,
+        ),
+    }
+)
+
+
+def aggregates_for_board(
+    kind: LeaderboardBoardKind,
+    puzzle_aggregates: Sequence[WeeklyAggregate],
+    bc_aggregates: Sequence[BlunderCheckAggregate],
+) -> Sequence[Aggregate]:
+    """The aggregates a board ranks: puzzle solves or blunder-check windows by its mode."""
+    return puzzle_aggregates if _BOARD_SPECS[kind].mode == "puzzle" else bc_aggregates
+
+
+def _count_to_qualify(kind: LeaderboardBoardKind, count: int) -> int:
+    """Count (puzzles or windows) still needed to leave the tentative state; 0 if never tentative."""
+    qualify_min = _BOARD_SPECS[kind].qualify_min
+    return 0 if qualify_min is None else max(0, qualify_min - count)
+
+
+def _entry_for(kind: LeaderboardBoardKind, aggregate: Aggregate) -> _Entry | None:
+    """The user's entry on one board, or None when they have no place on it."""
+    spec = _BOARD_SPECS[kind]
+    metric = spec.metric(aggregate.totals)
+    if metric is None:
         return None
     return _Entry(
         aggregate.user_id,
-        name,
-        percent,
-        totals.non_filler_puzzles,
-        totals.non_filler_puzzles < ACCURACY_QUALIFY_MIN_PUZZLES,
-        is_public,
+        display_name(aggregate.lichess_username, aggregate.chess_com_username),
+        metric.value,
+        metric.count,
+        spec.qualify_min is not None and metric.count < spec.qualify_min,
+        not aggregate.is_guest and not aggregate.leaderboard_hidden,
     )
 
 
@@ -234,12 +338,13 @@ def _tentative_order_key(entry: _Entry) -> tuple[int, int, str, int]:
 
 
 def _rank_key(kind: LeaderboardBoardKind, entry: _Entry) -> tuple[int, int]:
-    """What a rank compares: Points by value alone, Accuracy by value then puzzles.
+    """What a rank compares: Points by value alone, Accuracy and Score % by value then count.
 
     Accuracy is a floored integer percent over small puzzle counts, so equal percents
-    were common; at equal percent the user who solved more ranks higher.
+    were common; at equal percent the user who solved more ranks higher. Score % mirrors it
+    over ended windows.
     """
-    return (entry.value, entry.puzzles if kind == "accuracy" else 0)
+    return (entry.value, entry.puzzles if _BOARD_SPECS[kind].count_in_rank_key else 0)
 
 
 def _competition_ranks(kind: LeaderboardBoardKind, ordered: Sequence[_Entry]) -> list[int]:
@@ -297,7 +402,7 @@ def totals_without(total: SolveTotals, contribution: SolveTotals) -> SolveTotals
 def _rank_without(
     kind: LeaderboardBoardKind,
     entries: Sequence[_Entry],
-    viewer_aggregate: WeeklyAggregate,
+    viewer_aggregate: Aggregate,
     contribution: SolveTotals,
 ) -> int | None:
     """The viewer's rank with one session's solves removed, None if nothing remains.
@@ -308,8 +413,12 @@ def _rank_without(
     session, so the client never computes a delta across the qualification cutoff.
     Points can only worsen without a session; Accuracy can improve, and the value is
     returned as computed, never clamped to the real rank (the "(up N)" copy rule
-    is the client's).
+    is the client's). Always None on the blunder-check boards (no session delta, D-24).
     """
+    if not _BOARD_SPECS[kind].has_session_delta or not isinstance(
+        viewer_aggregate, WeeklyAggregate
+    ):
+        return None
     remaining = totals_without(viewer_aggregate.totals, contribution)
     if kind == "points" and remaining.puzzles == 0:
         return None
@@ -335,7 +444,7 @@ def medal_for(rank: int, value: int) -> Medal | None:
 
 
 def final_standings(
-    kind: LeaderboardBoardKind, aggregates: Sequence[WeeklyAggregate]
+    kind: LeaderboardBoardKind, aggregates: Sequence[Aggregate]
 ) -> list[FinalStanding]:
     """The public final standings of one closed week on one board.
 
@@ -425,7 +534,7 @@ class _RankedBoard:
 
 
 def _rank_board(
-    kind: LeaderboardBoardKind, aggregates: Sequence[WeeklyAggregate], *, viewer_id: int
+    kind: LeaderboardBoardKind, aggregates: Sequence[Aggregate], *, viewer_id: int
 ) -> _RankedBoard:
     """Rank one board and pick the rows to show; the one implementation `build_board` and
     `visible_keys` share, so the tally lookup can never drift from the rows displayed."""
@@ -438,7 +547,7 @@ def _rank_board(
 
 
 def visible_keys(
-    kind: LeaderboardBoardKind, aggregates: Sequence[WeeklyAggregate], *, viewer_id: int
+    kind: LeaderboardBoardKind, aggregates: Sequence[Aggregate], *, viewer_id: int
 ) -> list[int]:
     """User ids behind the rows `build_board` shows for the same inputs (internal use only).
 
@@ -453,7 +562,10 @@ def fold_medal_tallies(
     rows: Sequence[TallyCount],
 ) -> dict[LeaderboardBoardKind, dict[int, MedalTally]]:
     """Per-board, per-user lifetime tallies from grouped (board, user, medal, count) rows."""
-    counts: dict[LeaderboardBoardKind, dict[int, dict[Medal, int]]] = {"points": {}, "accuracy": {}}
+    # Initialised from every board key so a new key can never raise KeyError.
+    counts: dict[LeaderboardBoardKind, dict[int, dict[Medal, int]]] = {
+        board: {} for board in BOARD_KINDS
+    }
     for row in rows:
         per_user = counts[row.board].setdefault(row.user_id, {})
         per_user[row.medal] = per_user.get(row.medal, 0) + row.count
@@ -472,7 +584,7 @@ def fold_medal_tallies(
 
 def build_board(
     kind: LeaderboardBoardKind,
-    aggregates: Sequence[WeeklyAggregate],
+    aggregates: Sequence[Aggregate],
     *,
     viewer_id: int,
     viewer_visibility: LeaderboardVisibility,
@@ -526,9 +638,7 @@ def build_board(
             rank=ranks[viewer_index],
             rank_without_session=without,
             tentative=viewer_entry.tentative,
-            puzzles_to_qualify=puzzles_to_qualify(viewer_entry.puzzles)
-            if kind == "accuracy"
-            else 0,
+            puzzles_to_qualify=_count_to_qualify(kind, viewer_entry.puzzles),
             visibility=viewer_visibility,
         )
     return Board(
@@ -549,9 +659,22 @@ def build_leaderboard(
     session_contribution: SolveTotals | None = None,
     medal_tallies: Mapping[LeaderboardBoardKind, Mapping[int, MedalTally]] | None = None,
     last_week: Mapping[LeaderboardBoardKind, LastWeek | None] | None = None,
+    bc_aggregates: Sequence[BlunderCheckAggregate] = (),
 ) -> WeeklyLeaderboard:
     tallies = medal_tallies or {}
     last = last_week or {}
+
+    def board(kind: LeaderboardBoardKind) -> Board:
+        return build_board(
+            kind,
+            aggregates_for_board(kind, aggregates, bc_aggregates),
+            viewer_id=viewer_id,
+            viewer_visibility=viewer_visibility,
+            session_contribution=session_contribution,
+            medal_tallies=tallies.get(kind),
+            last_week=last.get(kind),
+        )
+
     return WeeklyLeaderboard(
         week_start=week_start,
         week_end=week_end,
@@ -559,24 +682,10 @@ def build_leaderboard(
         # reach 0 up to ~1 s before the real deadline, so its rollover refetch could
         # land while the old week was still current.
         seconds_remaining=max(0, math.ceil((week_end - now_utc).total_seconds())),
-        points=build_board(
-            "points",
-            aggregates,
-            viewer_id=viewer_id,
-            viewer_visibility=viewer_visibility,
-            session_contribution=session_contribution,
-            medal_tallies=tallies.get("points"),
-            last_week=last.get("points"),
-        ),
-        accuracy=build_board(
-            "accuracy",
-            aggregates,
-            viewer_id=viewer_id,
-            viewer_visibility=viewer_visibility,
-            session_contribution=session_contribution,
-            medal_tallies=tallies.get("accuracy"),
-            last_week=last.get("accuracy"),
-        ),
+        points=board("points"),
+        accuracy=board("accuracy"),
+        blunder_check_points=board("blunder_check_points"),
+        blunder_check_score=board("blunder_check_score"),
     )
 
 
@@ -589,14 +698,17 @@ async def get_weekly_leaderboard(
     now_utc: datetime.datetime,
     session_id: int | None = None,
 ) -> WeeklyLeaderboard:
-    """Both weekly boards for the viewer. Sequential awaits, no concurrency on the session.
+    """The four weekly boards for the viewer. Sequential awaits, no concurrency on the session.
 
     With `session_id`, the viewer's own in-window solves of that session are fetched
-    after the aggregate and passed on so each board also reports the viewer's rank
+    after the aggregate and passed on so each puzzle board also reports the viewer's rank
     without them. The fetch is scoped to the viewer, so a foreign id is inert.
     """
     week_start, week_end = week_window(now_utc)
     aggregates = await fetch_week_aggregates(session, week_start=week_start, week_end=week_end)
+    bc_aggregates = await fetch_week_bc_aggregates(
+        session, week_start=week_start, week_end=week_end
+    )
     contribution: SolveTotals | None = None
     if session_id is not None:
         contribution = await fetch_session_contribution(
@@ -606,18 +718,20 @@ async def get_weekly_leaderboard(
             week_start=week_start,
             week_end=week_end,
         )
-    # One grouped COUNT for the user ids behind every visible row of both boards
+    # One grouped COUNT for the user ids behind every visible row of all four boards
     # (Locked tally). Skipped when no row is visible. The ids stay in this service.
     visible_ids = {
         user_id
-        for kind in ("points", "accuracy")
-        for user_id in visible_keys(kind, aggregates, viewer_id=viewer_id)
+        for kind in BOARD_KINDS
+        for user_id in visible_keys(
+            kind, aggregates_for_board(kind, aggregates, bc_aggregates), viewer_id=viewer_id
+        )
     }
     tally_rows = (
         await fetch_medal_tallies(session, user_ids=sorted(visible_ids)) if visible_ids else []
     )
     # Only the immediately previous ISO week. Before the first deadline (and
-    # during the finalize grace window) no rows exist, so both blocks come back None.
+    # during the finalize grace window) no rows exist, so every block comes back None.
     previous_week = (week_start - datetime.timedelta(days=DAYS_PER_WEEK)).date()
     standing_rows = await fetch_last_week_rows(
         session, week_start=previous_week, viewer_id=viewer_id
@@ -637,6 +751,7 @@ async def get_weekly_leaderboard(
             kind: build_last_week(
                 kind, standing_rows, viewer_id=viewer_id, week_start=previous_week
             )
-            for kind in ("points", "accuracy")
+            for kind in BOARD_KINDS
         },
+        bc_aggregates=bc_aggregates,
     )

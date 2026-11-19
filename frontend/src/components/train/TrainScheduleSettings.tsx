@@ -1,28 +1,28 @@
 /**
  * TrainScheduleSettings — the inline, auto-saving weekly schedule block on
- * the Train start screen. No Save button anywhere: every chip/slider change
- * debounces into exactly one `PUT /train/settings` (via `useTrainSettings`),
- * with an inline "Saved"/"Couldn't save. Try again." indicator.
+ * the Train start screen (days and reminders; each mode's session size lives in
+ * `TrainModeSettings`). No Save button anywhere: every change goes through the
+ * shared settings draft (`useTrainSettingsDraft`, owned by `TrainStartScreen`), which
+ * debounces into exactly one `PUT /train/settings`, with an inline
+ * "Saved"/"Couldn't save. Try again." indicator.
  *
- * Renders below the Start/Resume CTA, deliberately quiet, `text-sm` labels.
- * It is boxed in the standard `Card`/`CardHeader` ("Train schedule") below
- * `TrainStreakCard`, always open, and the completed state's
+ * Renders below the Today card and the mode rows, deliberately quiet, `text-sm` labels.
+ * It is boxed in the standard `Card`/`CardHeader` ("Train schedule"),
+ * always open, and the completed state's
  * "Next session" line lives in here: it describes the schedule, so it
  * belongs with the pickers that determine it rather than floating above
  * them as loose page text.
  *
- * The pickers match the game filter panel's own: "Train on" reuses
+ * The picker matches the game filter panel's own: "Train on" reuses
  * `ToggleChipButton` (FilterPanel's multi-select "Time control"/"Platform"
  * pattern, in `@/components/ui/toggle-chip-button` so both call sites share
- * one source of truth). "Puzzles per session" is a single-thumb `Slider`
- * with its live value at the right of the label row. Both labels use
- * FilterPanel's own `text-sm text-muted-foreground` treatment (not
- * `font-semibold`) so this block reads as part of the same design language.
+ * one source of truth), with FilterPanel's own `text-sm text-muted-foreground`
+ * label treatment (not `font-semibold`) so this block reads as part of the same
+ * design language.
  *
- * A third sibling block adds a master "Remind me to train" `Switch` and a
+ * A second sibling block adds a master "Remind me to train" `Switch` and a
  * 24-hour `Select`. Toggle-OFF and hour changes ride the SAME
- * debounced-draft/`hasEditedRef` machine as the weekday chips and the
- * puzzles-per-session slider above — one `PUT`, one indicator.
+ * shared draft as the weekday chips — one `PUT`, one indicator.
  * Toggle-ON is a DELIBERATE, DOCUMENTED EXCEPTION to that pattern: writing
  * `reminderEnabled: true` into the draft synchronously (the way every other
  * control does) risks the debounced `PUT` landing before
@@ -35,7 +35,7 @@
  * consistency with the other controls — that reintroduces the exact bug this
  * design avoids.
  *
- * A fourth sibling block is the QR handoff's PERMANENT home in this card —
+ * A third sibling block is the QR handoff's PERMANENT home in this card —
  * never gated on `reminderEnabled`/`showReminderBlock`. It is the one thing
  * in this component that does NOT ride any save/debounce path at all (it is a
  * pure client-side transform, no settings field involved). It is three
@@ -61,22 +61,19 @@
  * screen. `resolveScheduleCardVisibility` is the single place both `isGuest`
  * terms live.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Check, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
 import { ToggleChipButton } from '@/components/ui/toggle-chip-button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainInstallQr } from '@/components/train/TrainInstallQr';
-import { useDebounce } from '@/hooks/useDebounce';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
-import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { ensureDeviceSubscribed, formatReminderHour, REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
@@ -84,23 +81,10 @@ import {
   enumeratedValue,
   onOff,
   REMINDER_HOUR_VALUES,
-  TRAIN_PUZZLES_PER_SESSION_VALUES,
   trackFeature,
   type TrainDayToggleTarget,
 } from '@/lib/analytics';
-import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
-
-export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
-export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
-
-/** A 3-30 slider in steps of 3, for users who want to train longer without a
- * second daily session. The default 6 (`DEFAULT_PUZZLES_PER_SESSION`) and the
- * older 3/6/9/12/15 presets all sit on this grid, so no stored value needs
- * remapping. The backend's `puzzles_per_session` CHECK stays at 1-50 on
- * purpose: raising the max later is this constant only. */
-export const PUZZLES_PER_SESSION_MIN = 3;
-export const PUZZLES_PER_SESSION_MAX = 30;
-export const PUZZLES_PER_SESSION_STEP = 3;
+import type { SettingsSaveIndicator, TrainSettingsDraftApi } from '@/hooks/useTrainSettingsDraft';
 
 const PHONE_SECTION_HEADING = 'Reminders work better with FlawChess on your phone';
 
@@ -126,35 +110,13 @@ export const WEEKDAY_CHIPS: readonly WeekdayChip[] = [
   { bit: 6, label: 'Su', testId: 'filter-weekday-su', toggleTarget: 'train-day-sun' },
 ];
 
-interface Draft {
-  weekdayMask: number;
-  puzzlesPerSession: number;
-  /** Edited by ReminderControls; toggle-ON is written only after a
-   * successful subscribe. */
-  reminderEnabled: boolean;
-  reminderHour: number;
-}
-
 function isWeekdayBitSet(mask: number, bit: number): boolean {
   return (mask & (1 << bit)) !== 0;
 }
 
-type IndicatorState = 'idle' | 'saved' | 'error' | 'reminder-error';
-
 export interface TrainScheduleSettingsProps {
-  /**
-   * Called after a save actually persists (not on mount, not on a no-op
-   * re-save of the same values). `useTrainLoop` composes
-   * the day's session once on the first Today visit — before the user has a chance to
-   * edit this component on the same visit (see `useTrainSession.ts`'s
-   * module docstring) — and pressing Start/Resume never re-fetches it. An
-   * untouched session whose size no longer matches the new setting is only
-   * corrected server-side on the NEXT `POST /train/sessions` call
-   * (`app.repositories.train_repository._discard_if_untouched_and_resized`),
-   * so the caller must re-fire that call itself once a save lands, or the
-   * stale session keeps rendering until the next full page load.
-   */
-  onSaved?: () => void;
+  /** The one shared settings draft (`useTrainSettingsDraft`, owned by `TrainStartScreen`). */
+  settingsDraft: TrainSettingsDraftApi;
   /**
    * The next scheduled session day (an ISO date), rendered as the card's
    * first line. Only the 'completed' landing state passes it — while a
@@ -184,11 +146,11 @@ export interface TrainScheduleSettingsProps {
  * can't shift the layout when it appears.
  */
 interface ScheduleCardShellProps {
-  indicator: IndicatorState;
+  indicator: SettingsSaveIndicator;
   children: ReactNode;
 }
 
-function SaveIndicator({ indicator }: { indicator: IndicatorState }): ReactElement | null {
+function SaveIndicator({ indicator }: { indicator: SettingsSaveIndicator }): ReactElement | null {
   if (indicator === 'saved') {
     return (
       <span
@@ -230,7 +192,7 @@ function ScheduleCardShell({ indicator, children }: ScheduleCardShellProps): Rea
 }
 
 interface ReminderControlsProps {
-  draft: Draft | null;
+  draft: TrainSettingsDraftApi['draft'];
   /** The component's existing `isPending || draft === null` gate. */
   disabled: boolean;
   /** True while `ensureDeviceSubscribed()` is in flight for this toggle. */
@@ -304,71 +266,6 @@ function ReminderControls({
   );
 }
 
-interface PuzzlesPerSessionControlProps {
-  /** The draft's value, or null while settings are still loading. */
-  value: number | null;
-  disabled: boolean;
-  onChange: (puzzlesPerSession: number) => void;
-}
-
-/**
- * The puzzles-per-session slider with its live value in the label
- * row. Extracted like `ReminderControls`. Every drag step calls `onChange` (so the label
- * tracks the thumb); the parent's debounced save collapses a drag into one
- * `PUT`. Always controlled: while loading, the disabled thumb parks at the
- * minimum rather than switching Radix from uncontrolled to controlled.
- * Tracking happens on commit, debounced to one `option-change` per adjustment
- * burst (the committed value is always on the 3-30 step-3 grid).
- */
-function PuzzlesPerSessionControl({
-  value,
-  disabled,
-  onChange,
-}: PuzzlesPerSessionControlProps): ReactElement {
-  const trackCommit = useDebouncedTrackFeature('option-change');
-
-  const handleValueChange = (values: number[]): void => {
-    const next = values[0];
-    if (next === undefined) return;
-    onChange(next);
-  };
-
-  const handleValueCommit = (values: number[]): void => {
-    const committed = values[0];
-    if (committed === undefined) return;
-    const trackedValue = enumeratedValue(TRAIN_PUZZLES_PER_SESSION_VALUES, committed);
-    if (trackedValue === null) return;
-    trackCommit({ target: 'train-puzzles-per-session', value: trackedValue });
-  };
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <p>Puzzles per session</p>
-        {value !== null && (
-          <span
-            className="font-medium tabular-nums text-foreground"
-            data-testid="train-puzzles-per-session-value"
-          >
-            {value}
-          </span>
-        )}
-      </div>
-      <Slider
-        min={PUZZLES_PER_SESSION_MIN}
-        max={PUZZLES_PER_SESSION_MAX}
-        step={PUZZLES_PER_SESSION_STEP}
-        value={[value ?? PUZZLES_PER_SESSION_MIN]}
-        onValueChange={handleValueChange}
-        onValueCommit={handleValueCommit}
-        disabled={disabled}
-        thumbLabels={['Puzzles per session']}
-        data-testid="filter-puzzles-per-session"
-      />
-    </div>
-  );
-}
-
 /** Resolver inputs — the same signals the component already
  * reads (`usePushCapability`'s resolved/available flags, `useInstallPrompt`'s
  * mobile/standalone/canInstall) plus `isGuest`. */
@@ -424,82 +321,19 @@ function resolveScheduleCardVisibility({
 }
 
 export function TrainScheduleSettings({
-  onSaved,
+  settingsDraft,
   nextSessionDate,
   isGuest,
 }: TrainScheduleSettingsProps): ReactElement {
-  const { data, isPending, isError, save } = useTrainSettings();
+  const { draft, update, indicator, setIndicator, isPending, isError } = settingsDraft;
   const capability = usePushCapability();
   const { isMobile, isStandalone, canInstall, triggerInstall } = useInstallPrompt();
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const hasEditedRef = useRef(false);
-  const [indicator, setIndicator] = useState<IndicatorState>('idle');
-  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while ensureDeviceSubscribed() is in flight for the master toggle.
   const [subscribing, setSubscribing] = useState(false);
   // A denial that happens during THIS mount must take effect immediately,
   // without waiting for a remount to re-read capability.permission.
   const [deniedNow, setDeniedNow] = useState(false);
-
-  // Seed the local draft exactly once from the resolved settings — never
-  // re-seeded on a later background refetch (e.g. our own cache write below).
-  useEffect(() => {
-    if (data !== undefined && draft === null) {
-      setDraft({
-        weekdayMask: data.weekday_mask,
-        puzzlesPerSession: data.puzzles_per_session,
-        reminderEnabled: data.reminder_enabled,
-        reminderHour: data.reminder_hour,
-      });
-    }
-  }, [data, draft]);
-
-  const debouncedDraft = useDebounce(draft, TRAIN_SETTINGS_SAVE_DEBOUNCE_MS);
-
-  // Fire the save only once the user has actually edited something, and only
-  // when the debounced draft differs from what the server last confirmed —
-  // mounting (seed effect above) must never itself trigger a save.
-  useEffect(() => {
-    if (!hasEditedRef.current || debouncedDraft === null || data === undefined) return;
-    if (
-      debouncedDraft.weekdayMask === data.weekday_mask &&
-      debouncedDraft.puzzlesPerSession === data.puzzles_per_session &&
-      debouncedDraft.reminderEnabled === data.reminder_enabled &&
-      debouncedDraft.reminderHour === data.reminder_hour
-    ) {
-      return;
-    }
-    save(
-      {
-        weekdayMask: debouncedDraft.weekdayMask,
-        puzzlesPerSession: debouncedDraft.puzzlesPerSession,
-        reminderEnabled: debouncedDraft.reminderEnabled,
-        reminderHour: debouncedDraft.reminderHour,
-        // Echo the current server value — this debounced
-        // weekday/puzzle-count/reminder save never writes a new intent; only
-        // the iOS install-affordance tap does.
-        reminderIntentAt: data.reminder_intent_at,
-      },
-      {
-        onSuccess: () => {
-          setIndicator('saved');
-          if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-          savedTimeoutRef.current = setTimeout(() => setIndicator('idle'), TRAIN_SETTINGS_SAVED_INDICATOR_MS);
-          onSaved?.();
-        },
-        onError: () => {
-          setIndicator('error');
-        },
-      },
-    );
-  }, [debouncedDraft, data, save, onSaved]);
-
-  useEffect(() => {
-    return () => {
-      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-    };
-  }, []);
 
   // A per-device block never mutates the account-wide reminder_enabled (see
   // the toggle handler below and the module docstring's toggle-ON note).
@@ -513,8 +347,7 @@ export function TrainScheduleSettings({
     trackFeature('toggle', { target: 'train-reminder', value: onOff(checked) });
     setIndicator((prev) => (prev === 'reminder-error' ? 'idle' : prev));
     if (!checked) {
-      hasEditedRef.current = true;
-      setDraft((prev) => (prev ? { ...prev, reminderEnabled: false } : prev));
+      update({ reminderEnabled: false });
       return;
     }
     const { vapidPublicKey } = capability;
@@ -535,8 +368,7 @@ export function TrainScheduleSettings({
           outcome: result.status,
         });
         if (result.status === 'subscribed') {
-          hasEditedRef.current = true;
-          setDraft((prev) => (prev ? { ...prev, reminderEnabled: true } : prev));
+          update({ reminderEnabled: true });
           return;
         }
         if (result.status === 'denied') {
@@ -549,22 +381,15 @@ export function TrainScheduleSettings({
   };
 
   const handleReminderHourChange = (hour: number): void => {
-    hasEditedRef.current = true;
-    setDraft((prev) => (prev ? { ...prev, reminderHour: hour } : prev));
+    update({ reminderHour: hour });
     const trackedHour = enumeratedValue(REMINDER_HOUR_VALUES, hour);
     if (trackedHour !== null) trackFeature('option-change', { target: 'train-reminder-hour', value: trackedHour });
   };
 
   const handleWeekdayToggle = (chip: WeekdayChip): void => {
     const currentlyOn = draft !== null && isWeekdayBitSet(draft.weekdayMask, chip.bit);
-    hasEditedRef.current = true;
-    setDraft((prev) => (prev ? { ...prev, weekdayMask: prev.weekdayMask ^ (1 << chip.bit) } : prev));
+    update((prev) => ({ weekdayMask: prev.weekdayMask ^ (1 << chip.bit) }));
     trackFeature('toggle', { target: chip.toggleTarget, value: onOff(!currentlyOn) });
-  };
-
-  const handlePuzzlesPerSessionChange = (puzzlesPerSession: number): void => {
-    hasEditedRef.current = true;
-    setDraft((prev) => (prev ? { ...prev, puzzlesPerSession } : prev));
   };
 
   if (isError) {
@@ -613,12 +438,10 @@ export function TrainScheduleSettings({
       {nextSessionLine}
       <div className="flex w-full flex-col gap-4">
         {/*
-          Matches the game filter panel exactly:
-          - "Train on" mirrors FilterPanel's multi-select "Time control" —
-            the hand-rolled ToggleChipButton grid, not the Radix ToggleGroup.
-          - "Puzzles per session" is a full-width Slider.
-          Both labels use FilterPanel's own `text-sm text-muted-foreground`
-          (not font-semibold) and sit at the top-left of a full-width block.
+          Matches the game filter panel exactly: "Train on" mirrors FilterPanel's
+          multi-select "Time control" — the hand-rolled ToggleChipButton grid, not the
+          Radix ToggleGroup — with FilterPanel's own `text-sm text-muted-foreground`
+          label (not font-semibold) at the top-left of a full-width block.
         */}
         <div className="w-full">
           <p className="mb-1 text-sm text-muted-foreground">Train on</p>
@@ -637,11 +460,6 @@ export function TrainScheduleSettings({
             ))}
           </div>
         </div>
-        <PuzzlesPerSessionControl
-          value={draft?.puzzlesPerSession ?? null}
-          disabled={disabled}
-          onChange={handlePuzzlesPerSessionChange}
-        />
         {!reminderBesideQr && reminderControls}
         {/* This section's permanent home in the card — never gated on the
             reminder toggle state or push capability, but gated on device

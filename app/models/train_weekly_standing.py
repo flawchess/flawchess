@@ -5,7 +5,9 @@ row per (week, board, user), so a later opt-out or account deletion never change
 won a past week. A row exists for the public board exactly: Points rows for
 every registered, non-hidden user with at least one solve; Accuracy rows only for
 qualified users (20+ non-filler solves). Hidden users, guests and tentative Accuracy
-users get no row.
+users get no row. Phase 251 adds the two blunder-check boards the same way: Points rows for
+every registered, non-hidden user with an ended window, Score % rows only from 18 ended
+windows; `puzzles` then holds the window count.
 
 The `medal` column is written explicitly from the competition rank and is the ONLY
 medal source. Never derive a medal from `final_rank` at read time: a zero-value entry
@@ -71,7 +73,11 @@ class TrainWeeklyStanding(Base):
 
     __tablename__ = "train_weekly_standings"
     __table_args__ = (
-        CheckConstraint("board IN ('points', 'accuracy')", name="ck_train_weekly_standings_board"),
+        # Phase 251: two blunder-check boards join the two puzzle boards (D-14).
+        CheckConstraint(
+            "board IN ('points', 'accuracy', 'blunder_check_points', 'blunder_check_score')",
+            name="ck_train_weekly_standings_board",
+        ),
         CheckConstraint(
             "medal IS NULL OR medal IN (1, 2, 3)", name="ck_train_weekly_standings_medal"
         ),
@@ -98,8 +104,8 @@ class TrainWeeklyStanding(Base):
     )
     display_name: Mapped[str] = mapped_column(Text, nullable=False)  # as of finalization
     final_rank: Mapped[int] = mapped_column(Integer, nullable=False)
-    value: Mapped[int] = mapped_column(Integer, nullable=False)  # points, or floored accuracy %
-    puzzles: Mapped[int] = mapped_column(Integer, nullable=False)
+    value: Mapped[int] = mapped_column(Integer, nullable=False)  # points, or floored percent
+    puzzles: Mapped[int] = mapped_column(Integer, nullable=False)  # windows on blunder-check boards
     medal: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     celebrated_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

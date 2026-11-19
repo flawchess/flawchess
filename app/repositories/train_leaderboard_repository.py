@@ -1,4 +1,4 @@
-"""Weekly Train leaderboard aggregate query.
+"""Weekly Train leaderboard aggregate queries (puzzle solves and blunder-check windows).
 
 One `GROUP BY user_id` over the week window returns a few hundred rows at most.
 Ranking, slicing and visibility live in `app.services.train_leaderboard`.
@@ -15,6 +15,7 @@ from datetime import datetime
 from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.blunder_check import BlunderCheckWindow
 from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.user import User
 from app.services.train_score import GUESS_POINTS, MOVE_QUALITY_TIER, MOVE_TIER_POINTS
@@ -36,6 +37,27 @@ class WeeklyAggregate:
 
     user_id: int
     totals: SolveTotals
+    lichess_username: str | None
+    chess_com_username: str | None
+    is_guest: bool
+    leaderboard_hidden: bool
+
+
+@dataclass(frozen=True)
+class BlunderCheckTotals:
+    """Summed points and ended-window count of one user's blunder-check week."""
+
+    points_scored: int
+    points_possible: int
+    windows: int
+
+
+@dataclass(frozen=True)
+class BlunderCheckAggregate:
+    """One user's weekly blunder-check totals plus the fields the visibility policy needs."""
+
+    user_id: int
+    totals: BlunderCheckTotals
     lichess_username: str | None
     chess_com_username: str | None
     is_guest: bool
@@ -103,6 +125,54 @@ async def fetch_week_aggregates(
     ]
 
 
+async def fetch_week_bc_aggregates(
+    session: AsyncSession, *, week_start: datetime, week_end: datetime
+) -> list[BlunderCheckAggregate]:
+    """Per-user blunder-check totals for windows ended in [week_start, week_end).
+
+    Counts every ended window (`outcome IS NOT NULL`) by `ended_at`, whatever the owning
+    session's status: a window that ended counts even if its session was later abandoned or
+    expired, while a started but never ended window does not (A5). The partial index
+    ix_blunder_check_windows_ended_at serves the range. Selects columns only, never the User
+    entity (oauth_accounts is lazy="joined").
+    """
+    stmt = (
+        select(
+            BlunderCheckWindow.user_id,
+            func.coalesce(func.sum(BlunderCheckWindow.points_scored), 0),
+            func.coalesce(func.sum(BlunderCheckWindow.points_possible), 0),
+            func.count(),
+            User.lichess_username,
+            User.chess_com_username,
+            User.is_guest,
+            User.leaderboard_hidden,
+        )
+        .join(User, User.id == BlunderCheckWindow.user_id)
+        .where(
+            BlunderCheckWindow.outcome.is_not(None),
+            BlunderCheckWindow.ended_at >= week_start,
+            BlunderCheckWindow.ended_at < week_end,
+        )
+        .group_by(BlunderCheckWindow.user_id, User.id)
+    )
+    result = await session.execute(stmt)
+    return [
+        BlunderCheckAggregate(
+            user_id=int(row[0]),
+            totals=BlunderCheckTotals(
+                points_scored=int(row[1]),
+                points_possible=int(row[2]),
+                windows=int(row[3]),
+            ),
+            lichess_username=row[4],
+            chess_com_username=row[5],
+            is_guest=bool(row[6]),
+            leaderboard_hidden=bool(row[7]),
+        )
+        for row in result.all()
+    ]
+
+
 async def fetch_session_contribution(
     session: AsyncSession,
     *,
@@ -139,8 +209,11 @@ async def fetch_session_contribution(
 
 
 __all__ = [
+    "BlunderCheckAggregate",
+    "BlunderCheckTotals",
     "SolveTotals",
     "WeeklyAggregate",
     "fetch_session_contribution",
     "fetch_week_aggregates",
+    "fetch_week_bc_aggregates",
 ]

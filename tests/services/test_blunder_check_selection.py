@@ -51,6 +51,7 @@ from app.services.blunder_check_selection import (
     REFERENCE_ELO_GAMES,
     build_snapshot,
     compose_windows,
+    level_fallback_elo,
     user_level_elo,
 )
 from tests.facepalm_seed import SEED_FACEPALM_MARGIN
@@ -77,6 +78,9 @@ _TS = datetime.datetime(2026, 11, 10, 12, 0, tzinfo=datetime.timezone.utc)
 # Inside the raw-rating prefilter (band + FOREIGN_RAW_PREFILTER_MARGIN) but outside the pinned-Elo
 # band, so only the exact post-load band check can exclude it.
 _FOREIGN_RATING_FAR = _RATING + FOREIGN_RATING_BAND + 100
+# Outside the band on the same side, so the nearer group must be served before the farther one.
+_NEAR_GAP = 400
+_FAR_GAP = 800
 _BLUNDER_SHAPE = WindowShape(3, 1)
 _HERRING_SHAPE = WindowShape(3, None)
 
@@ -146,6 +150,8 @@ async def _insert_prior_window(
                 window_count=1,
                 started_at=_TS,
                 completed_at=_TS,
+                session_date=_TS.date(),
+                expires_on=_TS.date() + datetime.timedelta(days=1),
             )
             session.add(header)
             await session.flush()
@@ -284,7 +290,7 @@ async def test_own_herrings_are_served_when_no_own_game_holds_a_blunder(
 
 
 @pytest.mark.asyncio
-async def test_foreign_games_within_rating_band_only(test_engine, monkeypatch) -> None:
+async def test_foreign_band_games_come_first_then_the_nearest(test_engine, monkeypatch) -> None:
     monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
     _force_shape(monkeypatch, _BLUNDER_SHAPE)
     caller = await _user(test_engine, "bcs-band")
@@ -307,14 +313,52 @@ async def test_foreign_games_within_rating_band_only(test_engine, monkeypatch) -
             )
     finally:
         await delete_games(test_engine, all_ids)
-    # Only two games are in band; the six too-strong ones must not top the session up.
-    assert {w.game_id for w in windows} == set(at_level)
+    # Both in-band games are used; the out-of-band ones only top the session up (Phase 251 UAT:
+    # a slot the band cannot fill is no longer dropped).
+    picked = {w.game_id for w in windows}
+    assert len(windows) == BLUNDER_CHECK_SESSION_WINDOWS
+    assert set(at_level) <= picked <= set(at_level + too_strong)
     assert all(not w.is_own for w in windows)
     assert all(owners[w.game_id] != caller and owners[w.game_id] not in guests for w in windows)
-    assert not {w.game_id for w in windows} & set(guest_ids + too_strong + own_ids)
-    for window in windows:
-        assert window.mover_elo is not None
-        assert abs(window.mover_elo - _RATING) <= FOREIGN_RATING_BAND
+    assert all(w.mover_elo is not None for w in windows)
+
+
+@pytest.mark.asyncio
+async def test_foreign_out_of_band_slots_take_the_closest_games(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_shape(monkeypatch, _BLUNDER_SHAPE)
+    caller = await _user(test_engine, "bcs-near")
+    stranger = await _user(test_engine, "bcs-near-stranger")
+    # No game in the caller's band at all: the level sits at the edge of the supply.
+    own_ids = await _seed_games(test_engine, caller, 3, full_evals=False)
+    near = await _seed_games(test_engine, stranger, 2, rating=_RATING + _NEAR_GAP)
+    far = await _seed_games(test_engine, stranger, 6, rating=_RATING + _FAR_GAP)
+    try:
+        async with _maker(test_engine)() as session:
+            windows = await compose_windows(
+                session, user_id=caller, rng=random.Random(3), count=len(near)
+            )
+    finally:
+        await delete_games(test_engine, own_ids + near + far)
+    assert {w.game_id for w in windows} == set(near)
+
+
+@pytest.mark.asyncio
+async def test_foreign_slot_without_foreign_supply_goes_to_own_games(
+    test_engine, monkeypatch
+) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_plans(monkeypatch, [SlotPlan("foreign", _BLUNDER_SHAPE)] * 2)
+    caller = await _user(test_engine, "bcs-own-last")
+    own_ids = await _seed_games(test_engine, caller, 2)
+    try:
+        async with _maker(test_engine)() as session:
+            windows = await compose_windows(session, user_id=caller, rng=random.Random(1), count=2)
+    finally:
+        await delete_games(test_engine, own_ids)
+    # Nobody else has a game: the two foreign slots are served from the caller's own games.
+    assert {w.game_id for w in windows} == set(own_ids)
+    assert all(w.is_own for w in windows)
 
 
 # ---------------------------------------------------------------------------
@@ -579,3 +623,32 @@ def test_user_level_without_bucketed_rows_is_the_median_of_all_rows() -> None:
 
 def test_user_level_without_rows_is_the_named_default() -> None:
     assert user_level_elo([]) == DEFAULT_USER_LEVEL_ELO == 1500.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 251 D-17: the stored level is the Elo of a user without rated games
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("level", "elo"),
+    [("beginner", 1000.0), ("intermediate", 1500.0), ("advanced", 2000.0), (None, 1500.0)],
+)
+def test_level_fallback_elo_maps_each_stored_level(level, elo) -> None:
+    assert level_fallback_elo(level) == elo
+
+
+def test_level_stored_level_is_used_when_the_user_has_no_rated_games() -> None:
+    assert user_level_elo([], fallback=level_fallback_elo("beginner")) == 1000.0
+    assert user_level_elo([], fallback=level_fallback_elo("advanced")) == 2000.0
+
+
+def test_level_no_stored_level_gives_the_1500_default() -> None:
+    assert user_level_elo([], fallback=level_fallback_elo(None)) == 1500.0
+
+
+def test_level_rated_games_win_over_the_stored_level() -> None:
+    rows = [_row(r) for r in (1400, 1500, 1600, 1700)]
+    expected = statistics.median([1400, 1500, 1600, 1700])
+    assert user_level_elo(rows, fallback=level_fallback_elo("beginner")) == expected
+    assert user_level_elo(rows, fallback=level_fallback_elo("advanced")) == expected

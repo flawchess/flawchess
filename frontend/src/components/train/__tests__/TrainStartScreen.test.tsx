@@ -5,6 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
 import { MemoryRouter } from 'react-router';
 import { GUEST_SIGNUP_ASK_SCORE, IMPORT_ASK_LANDING, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
@@ -27,6 +30,7 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   pool_state: 'available',
   next_due_date: null,
   badge_visible: false,
+  ...PHASE_251_PROGRESS_FIELDS,
 };
 
 let trainProgressMock: {
@@ -85,6 +89,8 @@ let mockTrainSettingsData: {
   timezone: string;
   weekday_mask: number;
   puzzles_per_session: number;
+  blunder_check_per_session: number;
+  blunder_check_level: 'beginner' | 'intermediate' | 'advanced' | null;
   intro_seen_at: string | null;
   reveal_tour_stage: 0 | 1 | 2 | 3;
   sr_explained_at: string | null;
@@ -93,6 +99,8 @@ let mockTrainSettingsData: {
   timezone: 'UTC',
   weekday_mask: 127,
   puzzles_per_session: 6,
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
   intro_seen_at: null,
   reveal_tour_stage: 0,
   sr_explained_at: null,
@@ -109,13 +117,14 @@ const SESSION_COMPLETED = {
 
 const saveMock = vi.fn(
   (
-    body: { weekdayMask: number; puzzlesPerSession: number },
+    body: { weekdayMask: number; puzzlesPerSession: number; blunderCheckPerSession: number },
     opts?: { onSuccess?: () => void },
   ) => {
     mockTrainSettingsData = {
       ...mockTrainSettingsData,
       weekday_mask: body.weekdayMask,
       puzzles_per_session: body.puzzlesPerSession,
+      blunder_check_per_session: body.blunderCheckPerSession,
     };
     opts?.onSuccess?.();
   },
@@ -198,17 +207,21 @@ vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
 
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
-import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
+import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/hooks/useTrainSettingsDraft';
 import type { TrainProgressResponse, TrainPuzzle, TrainSessionResponse } from '@/types/train';
 
 afterEach(() => {
   cleanup();
+  startPuzzles.mockReset();
+  startBlunderCheck.mockReset();
   trainProgressMock = { data: DEFAULT_TRAIN_PROGRESS, isPending: false, isError: false };
   saveMock.mockClear();
   mockTrainSettingsData = {
     timezone: 'UTC',
     weekday_mask: 127,
     puzzles_per_session: 6,
+    blunder_check_per_session: 6,
+    blunder_check_level: null,
     intro_seen_at: null,
     reveal_tour_stage: 0,
     sr_explained_at: null,
@@ -257,17 +270,29 @@ const EMPTY_SESSION: TrainSessionResponse = {
   blob_pending_count: 0,
 };
 
+const startPuzzles = vi.fn();
+const startBlunderCheck = vi.fn();
+
+/** Router plus the Today actions the launcher rows' Start / Resume buttons call. */
+function TestWrapper({ children }: { children: ReactNode }) {
+  return (
+    <MemoryRouter>
+      <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
+        {children}
+      </TrainTodayActionsContext.Provider>
+    </MemoryRouter>
+  );
+}
+
 function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {}) {
-  const onEnterLoop = vi.fn();
   const onSettingsSaved = vi.fn();
   render(
-    <MemoryRouter>
+    <TestWrapper>
       <TrainStartScreen
         session={BASE_SESSION}
         isLoading={false}
         isError={false}
         sessionScore={0}
-        onEnterLoop={onEnterLoop}
         onSettingsSaved={onSettingsSaved}
         isGuest={false}
         hasGames={true}
@@ -276,9 +301,28 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         showRouteDot={false}
         {...props}
       />
-    </MemoryRouter>,
+    </TestWrapper>,
   );
-  return { onEnterLoop, onSettingsSaved };
+  return { onSettingsSaved };
+}
+
+/**
+ * A scheduled day with puzzles counted toward the badge: the launcher badge only shows a
+ * pending row's count when the server counts it (`pending` > 0), and since Phase 251 UAT the
+ * badge is the only place the count appears.
+ */
+function onScheduledDay(): void {
+  trainProgressMock = {
+    data: {
+      ...DEFAULT_TRAIN_PROGRESS,
+      modes: {
+        ...DEFAULT_TRAIN_PROGRESS.modes,
+        puzzles: { ...DEFAULT_TRAIN_PROGRESS.modes.puzzles, remaining: 6, pending: 6 },
+      },
+    },
+    isPending: false,
+    isError: false,
+  };
 }
 
 describe('TrainStartScreen — refetch after a schedule save', () => {
@@ -287,7 +331,6 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       session: BASE_SESSION,
       isError: false,
       sessionScore: 0,
-      onEnterLoop: vi.fn(),
       onSettingsSaved: vi.fn(),
       isGuest: false,
       hasGames: true,
@@ -296,25 +339,25 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       showRouteDot: false,
     };
     const { rerender } = render(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={true} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isLoading={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(false);
@@ -335,49 +378,79 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
   });
 
-  it('empty: session_id null and puzzle_count 0 renders the plain placeholder, no crash, no action button', () => {
+  it('empty: session_id null and puzzle_count 0 renders the placeholder under the Today card, puzzles Start disabled', () => {
     renderScreen({
       session: { ...BASE_SESSION, session_id: null, puzzle_count: 0, solved_count: 0, blob_pending_count: 0 },
     });
     expect(screen.getByText('No puzzles available yet')).not.toBeNull();
     expect(screen.getByText('Analyze more games to build your training pool.')).not.toBeNull();
-    expect(screen.queryByTestId('btn-train-start')).toBeNull();
+    expect(screen.getByTestId('train-streak-card')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
+    // Blunder Check stays reachable from the card.
+    expect(screen.getByTestId('btn-train-blunder-check-start').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('empty with puzzles off: the card and settings render, never the no-puzzles copy', () => {
+    trainProgressMock = {
+      data: {
+        ...DEFAULT_TRAIN_PROGRESS,
+        pool_state: 'no_material',
+        modes: {
+          ...DEFAULT_TRAIN_PROGRESS.modes,
+          puzzles: { ...DEFAULT_TRAIN_PROGRESS.modes.puzzles, state: 'off', size: 0 },
+        },
+      },
+      isPending: false,
+      isError: false,
+    };
+    renderScreen({ session: EMPTY_SESSION });
+
+    expect(screen.getByTestId('train-streak-card')).not.toBeNull();
+    expect(screen.getByTestId('train-launcher-row-puzzles').dataset.state).toBe('off');
+    expect(screen.queryByText('No puzzles available yet')).toBeNull();
+    expect(screen.queryByTestId('train-empty-no-material')).toBeNull();
+    expect(screen.queryByTestId('train-empty-exhausted')).toBeNull();
+    expect(screen.getByTestId('train-schedule-settings')).not.toBeNull();
   });
 
   // The puzzle count lives INSIDE the
   // button label, matching the shape 'resume' already used. The state
   // distinction that used to live in two different count sentences ("waiting"
   // vs. "ready") is now carried solely by the still-being-analyzed notice.
-  it('fresh: full session with zero pending blobs labels Start with the count, no notice', () => {
-    const { onEnterLoop } = renderScreen({
+  it('fresh: full session shows the puzzle count on its launcher row; Start enters the loop', () => {
+    onScheduledDay();
+    renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 10, requested_count: 10, blob_pending_count: 0 },
     });
     const btn = screen.getByTestId('btn-train-start');
-    expect(btn.textContent).toBe('Start session — 10 puzzles');
+    expect(btn.textContent).toBe('Start');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('10');
     expect(screen.queryByText(/still being analyzed/)).toBeNull();
     expect(screen.getByTestId('train-streak-card')).not.toBeNull();
     btn.click();
-    expect(onEnterLoop).toHaveBeenCalledTimes(1);
+    expect(startPuzzles).toHaveBeenCalledTimes(1);
   });
 
-  it('fresh: a one-puzzle session says "1 puzzle" (singular)', () => {
+  it('fresh: a one-puzzle session shows 1 on its badge', () => {
+    onScheduledDay();
     renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 1, requested_count: 1, blob_pending_count: 0 },
     });
-    expect(screen.getByTestId('btn-train-start').textContent).toBe('Start session — 1 puzzle');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('1');
   });
 
-  it('resume: an open session with solved > 0 and solved < total shows the Resume button labelled with counts', () => {
+  it('resume: an open session with solved > 0 and solved < total shows Resume and the puzzles left', () => {
     // A real resume response always carries the remaining unsolved puzzles
     // (load_session_puzzles) — an empty array with progress means completed.
-    const { onEnterLoop } = renderScreen({
+    renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] },
     });
     const btn = screen.getByTestId('btn-train-resume');
-    expect(btn.textContent).toBe('Resume session — 4 of 12 done');
+    expect(btn.textContent).toBe('Resume');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('8');
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     btn.click();
-    expect(onEnterLoop).toHaveBeenCalledTimes(1);
+    expect(startPuzzles).toHaveBeenCalledTimes(1);
   });
 
   it('completed: solved === puzzle_count shows the score recap + next-session date, no Start/Resume button', () => {
@@ -385,13 +458,9 @@ describe('TrainStartScreen — six landing states', () => {
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6, expires_on: '2026-08-01' },
       sessionScore: 9,
     });
-    // The max is puzzle_count * TRAIN_POINTS_PER_PUZZLE (3),
-    // not a hardcoded * 2.
-    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 9/18');
-    // Points today sits in the streak card's details column, ahead of the freeze row.
-    const pointsToday = screen.getByTestId('train-points-today');
-    const shieldRow = screen.getByTestId('train-shield-row');
-    expect(pointsToday.compareDocumentPosition(shieldRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The puzzles launcher row carries the done line with the session score.
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 9 points');
+    expect(screen.getByTestId('train-launcher-check-puzzles')).not.toBeNull();
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -405,7 +474,7 @@ describe('TrainStartScreen — six landing states', () => {
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 5, expires_on: '2026-08-01' },
       sessionScore: 7,
     });
-    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 7/18');
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 7 points');
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -495,12 +564,14 @@ describe('TrainStartScreen — six landing states', () => {
 
 describe('TrainStartScreen — no warm-up info card, guest sign-up ask in the host bubble', () => {
   it('is_warmup true: renders no warm-up card and the plain Start CTA', () => {
+    onScheduledDay();
     renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true },
     });
     expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
     expect(screen.queryByText(/analyzing your games/)).toBeNull();
-    expect(screen.getByTestId('btn-train-start').textContent).toBe('Start session — 8 puzzles');
+    expect(screen.getByTestId('btn-train-start').textContent).toBe('Start');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('8');
   });
 
   it('guest: the host bubble carries the score-screen sign-up sentence and both action buttons', () => {
@@ -648,7 +719,9 @@ describe('TrainStartScreen — tailored cold/exhausted empty states', () => {
     expect(screen.getByText("Train drills your own blunders once they're analyzed.")).not.toBeNull();
     const link = screen.getByTestId('btn-train-import-games');
     expect(link.getAttribute('href')).toBe('/library/import');
-    expect(screen.queryByTestId('train-streak-card')).toBeNull();
+    // The Today card still renders (Blunder Check is reachable), with the puzzles Start disabled.
+    expect(screen.getByTestId('train-streak-card')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
   });
 
   it('exhausted: renders "All caught up!", the mastered count, a Next review line, and the progress row', () => {
@@ -806,15 +879,15 @@ describe('TrainStartScreen: no leaderboard card on the landing', () => {
 });
 
 describe('TrainStartScreen: Points today and the retired stats card', () => {
-  it('only the completed landing shows Points today', () => {
+  it('only the completed landing shows the puzzles done line (Points today lives on the row now)', () => {
     renderScreen();
-    expect(screen.queryByTestId('train-points-today')).toBeNull();
+    expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
     cleanup();
     renderScreen({ session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] } });
-    expect(screen.queryByTestId('train-points-today')).toBeNull();
+    expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
     cleanup();
     renderScreen({ session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true } });
-    expect(screen.queryByTestId('train-points-today')).toBeNull();
+    expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
     cleanup();
     trainProgressMock = {
       data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'exhausted', mastered_count: 4 },
@@ -822,6 +895,10 @@ describe('TrainStartScreen: Points today and the retired stats card', () => {
       isError: false,
     };
     renderScreen({ session: EMPTY_SESSION });
+    expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
+    cleanup();
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 }, sessionScore: 6 });
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 6 points');
     expect(screen.queryByTestId('train-points-today')).toBeNull();
   });
 
@@ -934,17 +1011,17 @@ describe('TrainStartScreen: isVisible gates the one-shot landing children', () =
       showRouteDot: false,
     };
     const { rerender } = render(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isVisible={false} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     const hiddenNode = screen.getByTestId('train-schedule-settings');
     expectNoOneShotChildren();
 
     rerender(
-      <MemoryRouter>
+      <TestWrapper>
         <TrainStartScreen {...props} isVisible={true} />
-      </MemoryRouter>,
+      </TestWrapper>,
     );
     expect(screen.getByTestId('train-schedule-settings')).toBe(hiddenNode);
     expect(screen.getByTestId('train-landing-host')).not.toBeNull();
@@ -977,5 +1054,113 @@ describe('TrainStartScreen — route dot (D-21 / D-03)', () => {
   it('showRouteDot false renders no dot', () => {
     renderScreen({ showRouteDot: false });
     expect(screen.queryByTestId('train-start-notification-dot')).toBeNull();
+  });
+});
+
+describe('TrainStartScreen: mode settings rows, Turn on and the two-column layout (plan 251-09)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  function setModeOff(mode: 'puzzles' | 'blunder_check'): void {
+    const modes = DEFAULT_TRAIN_PROGRESS.modes;
+    trainProgressMock = {
+      data: {
+        ...DEFAULT_TRAIN_PROGRESS,
+        modes: { ...modes, [mode]: { ...modes[mode], state: 'off', size: 0, remaining: 0, pending: 0 } },
+      },
+      isPending: false,
+      isError: false,
+    };
+    mockTrainSettingsData = {
+      ...mockTrainSettingsData,
+      ...(mode === 'puzzles' ? { puzzles_per_session: 0 } : { blunder_check_per_session: 0 }),
+    };
+  }
+
+  async function waitPastDebounce(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, TRAIN_SETTINGS_SAVE_DEBOUNCE_MS + 100));
+    });
+  }
+
+  it('renders both collapsed mode rows between the Today card and the schedule card', () => {
+    renderScreen();
+    const card = screen.getByTestId('train-streak-card');
+    const puzzlesRow = screen.getByTestId('train-mode-settings-puzzles');
+    const blunderRow = screen.getByTestId('train-mode-settings-blunder-check');
+    const schedule = screen.getByTestId('train-schedule-settings');
+    expect(card.compareDocumentPosition(puzzlesRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(puzzlesRow.compareDocumentPosition(blunderRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(blunderRow.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Collapsed by default: no slider yet.
+    expect(screen.queryByTestId('filter-puzzles-per-session')).toBeNull();
+    expect(screen.queryByTestId('filter-blunder-check-per-session')).toBeNull();
+  });
+
+  it('Turn on in an off puzzles row sets the size to 6 through the draft (one PUT) and sends the action event', async () => {
+    setModeOff('puzzles');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+    expect(track.mock.calls).toEqual([['action', { page: 'train', target: 'train-mode-turn-on-puzzles' }]]);
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.puzzlesPerSession).toBe(6);
+    expect(body?.blunderCheckPerSession).toBe(6);
+  });
+
+  it('Turn on in an off blunder-check row sets that mode to 6 and leaves puzzles unchanged', async () => {
+    setModeOff('blunder_check');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-blunder-check'));
+    expect(track.mock.calls).toEqual([
+      ['action', { page: 'train', target: 'train-mode-turn-on-blunder-check' }],
+    ]);
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.blunderCheckPerSession).toBe(6);
+    expect(body?.puzzlesPerSession).toBe(6);
+  });
+
+  it('Turn on and a days edit in one burst ride the same PUT', async () => {
+    setModeOff('puzzles');
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+    fireEvent.click(screen.getByTestId('filter-weekday-fr'));
+    await waitPastDebounce();
+
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const body = saveMock.mock.calls[0]?.[0];
+    expect(body?.puzzlesPerSession).toBe(6);
+    expect(body?.weekdayMask).toBe(127 ^ (1 << 4));
+  });
+
+  it('lays the landing out as a grid: one column on phones, the Today card and the settings side by side from lg', () => {
+    renderScreen();
+    const grid = screen.getByTestId('train-landing-grid');
+    expect(grid.className).toContain('grid-cols-1');
+    expect(grid.className).toContain('lg:grid-cols-2');
+    // Today card on the left, the settings rows on the right (DOM order in the grid).
+    expect(grid.contains(screen.getByTestId('train-streak-card'))).toBe(true);
+    expect(grid.contains(screen.getByTestId('train-mode-settings-puzzles'))).toBe(true);
+    expect(grid.contains(screen.getByTestId('train-schedule-settings'))).toBe(true);
+    // The host bubble stays above the grid, full width.
+    expect(grid.contains(screen.getByTestId('train-landing-host'))).toBe(false);
   });
 });

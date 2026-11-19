@@ -57,6 +57,11 @@ export interface TrainBotBubbleProps {
   actions?: ReactNode;
   /** Avatar size step; only the /train landing page uses `'large'`. */
   avatarSize?: TrainBotAvatarSize;
+  /**
+   * Replaces the avatar + name column (the blunder-check countdown ring). It sits BESIDE the
+   * bubble on every breakpoint, phones included, so it costs no extra row under the board.
+   */
+  leading?: ReactNode;
 }
 
 /** The persona's round avatar (art, or the emoji placeholder on its tint). */
@@ -92,7 +97,9 @@ export function TrainBotBubble({
   children,
   actions,
   avatarSize = 'default',
+  leading,
 }: TrainBotBubbleProps): ReactElement {
+  const sideBySide = leading !== undefined;
   const isNudge = state === 'drop-nudge';
   // `resolveBubbleState` ranks `intro` above `drop-nudge`, so a piece dropped
   // while Hilda's guess step is up keeps the intro copy: a nudge must not
@@ -104,20 +111,27 @@ export function TrainBotBubble({
 
   return (
     <div
-      className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:gap-3"
+      className={cn(
+        'flex w-full',
+        sideBySide ? 'flex-row items-start gap-3' : 'flex-col gap-2 sm:flex-row sm:items-start sm:gap-3',
+      )}
       data-testid="train-bot-bubble"
       data-state={state}
       data-nudge={isNudge ? 'true' : undefined}
     >
-      <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:gap-1">
-        <TrainBotAvatar
-          persona={persona}
-          className={cn('text-xl sm:text-3xl', AVATAR_SIZE_CLASS[avatarSize])}
-        />
-        <span className="text-sm font-medium text-foreground" data-testid="train-bot-name">
-          {persona.name}
-        </span>
-      </div>
+      {sideBySide ? (
+        leading
+      ) : (
+        <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:gap-1">
+          <TrainBotAvatar
+            persona={persona}
+            className={cn('text-xl sm:text-3xl', AVATAR_SIZE_CLASS[avatarSize])}
+          />
+          <span className="text-sm font-medium text-foreground" data-testid="train-bot-name">
+            {persona.name}
+          </span>
+        </div>
+      )}
       <div
         key={nudgeNonce}
         className={cn(
@@ -133,7 +147,12 @@ export function TrainBotBubble({
             points up from the top-left corner instead. */}
         <div
           aria-hidden="true"
-          className="absolute h-3 w-3 rotate-45 bg-background max-sm:-top-[7px] max-sm:left-4 max-sm:border-l-2 max-sm:border-t-2 sm:-left-[7px] sm:top-4 sm:border-b-2 sm:border-l-2"
+          className={cn(
+            'absolute h-3 w-3 rotate-45 bg-background',
+            sideBySide
+              ? '-left-[7px] top-4 border-b-2 border-l-2'
+              : 'max-sm:-top-[7px] max-sm:left-4 max-sm:border-l-2 max-sm:border-t-2 sm:-left-[7px] sm:top-4 sm:border-b-2 sm:border-l-2',
+          )}
           style={{ borderColor }}
         />
         <div className="text-sm" data-testid="train-bot-copy">

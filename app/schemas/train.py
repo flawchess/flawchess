@@ -36,7 +36,13 @@ from pydantic import (
 )
 
 from app.schemas.normalization import TimeControlBucket
-from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
+from app.services.train_scheduler import (
+    BLUNDER_CHECK_PER_SESSION_MAX,
+    PUZZLES_PER_SESSION_MAX,
+    REMINDER_HOUR_MAX,
+    REMINDER_HOUR_MIN,
+    BlunderCheckLevel,
+)
 
 
 class ServerGradedMove(BaseModel):
@@ -731,6 +737,10 @@ class TrainSettingsResponse(BaseModel):
     timezone: str
     weekday_mask: int
     puzzles_per_session: int
+    # Phase 251: the second mode's size (0 = off) and the stored level a user without rated
+    # games composes at (None until chosen).
+    blunder_check_per_session: int
+    blunder_check_level: BlunderCheckLevel | None
     reminder_enabled: bool
     reminder_hour: int
     reminder_intent_at: datetime | None
@@ -755,14 +765,36 @@ class TrainSettingsUpdate(BaseModel):
     field would let a payload that omits the key silently clear a
     previously-recorded install intent. Omitting the key must 422 loudly
     instead. No bound validator: a timestamp has no injection surface.
+
+    `blunder_check_per_session` and `blunder_check_level` are the documented exception to
+    the full-replace rule: both are optional and an absent (or null) value keeps the stored
+    one. Pre-release PWA bundles PUT without them and must keep saving instead of 422ing
+    (RESEARCH Pitfall 6); a defaulted value here would silently overwrite the stored size
+    with the default. Either session size may be 0 (mode off), but never both (D-05).
     """
 
     timezone: str
     weekday_mask: int = Field(ge=0, le=127)
-    puzzles_per_session: int = Field(ge=1, le=50)
+    puzzles_per_session: int = Field(ge=0, le=PUZZLES_PER_SESSION_MAX)
+    blunder_check_per_session: int | None = Field(
+        default=None, ge=0, le=BLUNDER_CHECK_PER_SESSION_MAX
+    )
+    blunder_check_level: BlunderCheckLevel | None = None
     reminder_enabled: bool
     reminder_hour: int = Field(ge=REMINDER_HOUR_MIN, le=REMINDER_HOUR_MAX)
     reminder_intent_at: datetime | None
+
+    @model_validator(mode="after")
+    def _reject_both_modes_off(self) -> TrainSettingsUpdate:
+        """422 when the body switches both modes off (D-05); the DB CHECK is only the backstop.
+
+        Only an explicit 0 in both fields is caught here. A body that omits
+        `blunder_check_per_session` keeps the stored size, so the service re-checks the
+        RESOLVED pair against the stored row.
+        """
+        if self.puzzles_per_session == 0 and self.blunder_check_per_session == 0:
+            raise ValueError("At least one of puzzles and blunder check must stay on")
+        return self
 
     @field_validator("timezone")
     @classmethod
@@ -781,8 +813,53 @@ class TrainSettingsUpdate(BaseModel):
         return value
 
 
+TrainModeState = Literal["pending", "in_progress", "done", "off"]
+
+
+class TrainModeProgress(BaseModel):
+    """One Train mode's row on the Today card (Phase 251 D-09).
+
+    `state` is `off` at session size 0, `done` once today's session is complete, `in_progress`
+    once the user started it, else `pending`. `remaining` is what is left to do in the session
+    (puzzles still to solve, windows still to finish). `pending` is what counts toward the nav
+    badge: `remaining` on a day the mode is due, else 0 (D-13). `first_session_done` is true once
+    any session of this mode ever completed (D-10, D-19).
+    """
+
+    size: int
+    state: TrainModeState
+    remaining: int
+    pending: int
+    first_session_done: bool
+
+
+class TrainBlunderCheckModeProgress(TrainModeProgress):
+    """The blunder-check row: the common fields plus the points earned today and the level step.
+
+    `has_rated_games` is true when the user has any rated human game to derive a rating band
+    from; `needs_level` is true when there is neither, so the client asks for a level once (D-17,
+    D-20).
+    """
+
+    points_today: int
+    has_rated_games: bool
+    needs_level: bool
+
+
+class TrainModesProgress(BaseModel):
+    """Both Train modes' rows."""
+
+    puzzles: TrainModeProgress
+    blunder_check: TrainBlunderCheckModeProgress
+
+
 class TrainProgressResponse(BaseModel):
     """Response for GET /train/progress.
+
+    `modes` is the per-mode read model the Today card renders; `day_complete` is the both-modes
+    day rule (D-02); `pending_count` is the sum of both modes' badge counts (D-13);
+    `blunder_check_notice` is true while the one-time launch notice shows (D-21). The older
+    fields keep their meaning for installed clients.
 
     A per-scheduled-day tick plus a 0-7 depletable shield:
     `session_streak_count` (completed scheduled-day SESSIONS, not settled
@@ -838,6 +915,10 @@ class TrainProgressResponse(BaseModel):
     pool_state: Literal["no_material", "exhausted", "available"]
     next_due_date: date | None
     badge_visible: bool
+    modes: TrainModesProgress
+    day_complete: bool
+    pending_count: int
+    blunder_check_notice: bool
 
 
 ArchiveList = Literal["mastered", "parked"]
@@ -889,7 +970,9 @@ class TrainArchiveResponse(BaseModel):
     total: int
 
 
-LeaderboardBoardKind = Literal["points", "accuracy"]
+# Two puzzle boards plus two blunder-check boards (Phase 251, D-14). The stored values of
+# `train_weekly_standings.board`: one-way names, never renamed (installed PWAs cache them).
+LeaderboardBoardKind = Literal["points", "accuracy", "blunder_check_points", "blunder_check_score"]
 LeaderboardVisibility = Literal["public", "hidden", "guest"]
 MedalKind = Literal["gold", "silver", "bronze"]
 
@@ -933,11 +1016,14 @@ class LeaderboardRow(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int | None  # None marks a tentative Accuracy entry (listed below every qualified row)
+    rank: int | None  # None marks a tentative Accuracy / Score % entry (below every qualified row)
     name: str
-    value: int  # points (Points board) or floored accuracy percent (Accuracy board)
-    puzzles: int  # all solves (Points) or non-filler solves (Accuracy)
-    tentative: bool  # Accuracy only: puzzles < 20; always False on Points
+    value: int  # points (Points boards) or floored percent (Accuracy and Score % boards)
+    # All solves (Points) or non-filler solves (Accuracy); on the blunder-check boards the
+    # number of ended windows.
+    puzzles: int
+    # Accuracy: puzzles < 20; blunder-check Score %: windows < 18. Always False on Points boards.
+    tentative: bool
     is_viewer: bool
     # "public" on every row except the viewer's own hidden/guest row.
     visibility: LeaderboardVisibility
@@ -951,13 +1037,16 @@ class LeaderboardViewer(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int | None  # None while the viewer is a tentative Accuracy entry (unranked)
+    rank: int | None  # None while the viewer is a tentative Accuracy / Score % entry (unranked)
     # Rank without the current session's solves. Null when no session_id
     # was supplied, the viewer had no entry before the session, or the viewer is
-    # tentative with or without the session (no delta across the cutoff).
+    # tentative with or without the session (no delta across the cutoff). Always null on the
+    # blunder-check boards (the blunder-check score screen links to the boards instead, D-24).
     rank_without_session: int | None
     tentative: bool
-    puzzles_to_qualify: int  # 0 on Points and once qualified
+    # Puzzles still needed on Accuracy, windows still needed on blunder-check Score %;
+    # 0 on the Points boards and once qualified.
+    puzzles_to_qualify: int
     visibility: LeaderboardVisibility
 
 
@@ -974,8 +1063,9 @@ class LeaderboardBoard(BaseModel):
 
 
 class TrainLeaderboardResponse(BaseModel):
-    """Response for GET /train/leaderboard: both weekly boards for the viewer.
+    """Response for GET /train/leaderboard: the four weekly boards for the viewer.
 
+    The two blunder-check boards are additive (Phase 251): installed PWAs ignore unknown fields.
     No user ids or emails, by design; rows key only by position.
     """
 
@@ -986,6 +1076,8 @@ class TrainLeaderboardResponse(BaseModel):
     seconds_remaining: int
     points: LeaderboardBoard
     accuracy: LeaderboardBoard
+    blunder_check_points: LeaderboardBoard
+    blunder_check_score: LeaderboardBoard
 
 
 # About a year of both boards. Caps the unclaimed read and the claim body, so a dialog's
@@ -1005,12 +1097,12 @@ class UnclaimedMedal(BaseModel):
     week_start: date  # the Monday (UTC)
     board: LeaderboardBoardKind
     medal: MedalKind
-    value: int  # final points, or floored accuracy percent
+    value: int  # final points, or floored percent
     shared: bool  # another row of the same week, board and medal exists (a tie)
 
 
 class UnclaimedMedalsResponse(BaseModel):
-    """Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy."""
+    """Response for GET /train/medals/unclaimed: newest week first, puzzle boards before blunder-check boards."""
 
     model_config = ConfigDict(from_attributes=True)
 

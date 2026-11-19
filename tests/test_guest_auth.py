@@ -682,7 +682,7 @@ class TestGuestPromotion:
         truthful. No row is created or deleted by promotion; only the
         existing `users` row is UPDATEd (`is_guest=False`, `promoted_at`).
         """
-        from sqlalchemy import delete, select
+        from sqlalchemy import delete, select, update
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
         from app.models.drill_session import DrillSession
@@ -708,6 +708,22 @@ class TestGuestPromotion:
                 session_id = compose_body["session_id"]
                 puzzle_count = compose_body["puzzle_count"]
                 assert puzzle_count > 0
+
+                # Phase 251: this test's intent is "promotion keeps a non-zero streak", not the
+                # two-mode rule, so blunder check is switched off for the guest (size 0 = not
+                # part of the day) and the puzzle-only session completes the day.
+                bc_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+                async with bc_session_maker() as bc_session, bc_session.begin():
+                    guest_user_id = (
+                        await bc_session.execute(
+                            select(DrillSession.user_id).where(DrillSession.id == session_id)
+                        )
+                    ).scalar_one()
+                    await bc_session.execute(
+                        update(TrainSettings)
+                        .where(TrainSettings.user_id == guest_user_id)
+                        .values(blunder_check_per_session=0)
+                    )
 
                 last_solve_body: dict[str, object] = {}
                 for position in range(puzzle_count):

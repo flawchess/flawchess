@@ -43,7 +43,9 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
 
 // The reveal action bar renders under the board from `sm` up (phones publish it to the fixed
 // bottom bar, which these tests do not mount); jsdom has no matchMedia.
-vi.mock('@/hooks/useIsDesktop', () => ({ useIsDesktop: () => true, useIsSmUp: () => true }));
+// `desktop` is flipped per test for the tablet verdict strip (Phase 251 UAT).
+const viewport = vi.hoisted(() => ({ desktop: true }));
+vi.mock('@/hooks/useIsDesktop', () => ({ useIsDesktop: () => viewport.desktop, useIsSmUp: () => true }));
 
 vi.mock('@/lib/sounds', () => ({ playSound: vi.fn(), unlockAudio: vi.fn() }));
 
@@ -205,6 +207,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  viewport.desktop = true;
   cleanup();
 });
 
@@ -404,6 +407,30 @@ describe('own copy and actions', () => {
     expect(screen.getByTestId('blunder-check-pill-call').textContent).toBe('+3');
     expect(screen.getByTestId('blunder-check-pill-move').textContent).toBe('+2');
     expect(within(screen.getByTestId('blunder-check-solution')).getByTestId('board-mock')).not.toBeNull();
+  });
+});
+
+describe('verdict strip below desktop (Phase 251 UAT)', () => {
+  it('shows the total and the heading collapsed, and unfolds the full verdict on tap', () => {
+    viewport.desktop = false;
+    renderSolution(blunderSolution({ safe_points: 2 }), scriptedEngine());
+
+    expect(screen.queryByTestId('train-verdict-card')).toBeNull();
+    // 3 for the call + 2 for the better move + 2 for the earlier calls.
+    expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe('+7');
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Blunder caught');
+    expect(screen.queryByTestId('blunder-check-solution-summary')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('train-verdict-strip'));
+    expect(screen.getByTestId('blunder-check-solution-summary').textContent).toBe(
+      'Nf3 was a blunder. You called it +3 and played a good move, Nc3 +2. Best was d4. Your earlier calls earned +2.',
+    );
+  });
+
+  it('keeps the always-open card on desktop', () => {
+    renderSolution(blunderSolution(), scriptedEngine());
+    expect(screen.getByTestId('train-verdict-card')).not.toBeNull();
+    expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
   });
 });
 

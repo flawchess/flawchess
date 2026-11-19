@@ -41,8 +41,8 @@ from app.services.train_pool import (
 # ---------------------------------------------------------------------------
 
 MS_PER_SECOND: Final[int] = 1000
-# D-13: the per-move countdown.
-MOVE_TIMER_SECONDS: Final[int] = 10
+# D-13: the per-move countdown (Phase 251 UAT: 10 -> 12 s).
+MOVE_TIMER_SECONDS: Final[int] = 12
 # The client animation before a freshly shown prompt's countdown starts (the lead-in replay,
 # or the feedback display plus move + reply). Used ONLY in the answer ceiling, never in the
 # remaining-time report, so a reload cannot buy time (D-18).

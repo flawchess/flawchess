@@ -37,6 +37,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.services.train_scheduler import (
+    BLUNDER_CHECK_LEVELS,
+    BLUNDER_CHECK_PER_SESSION_MAX,
+    PUZZLES_PER_SESSION_MAX,
     REMINDER_HOUR_MAX,
     REMINDER_HOUR_MIN,
     REVEAL_TOUR_STAGE_MAX,
@@ -51,7 +54,25 @@ class TrainSettings(Base):
     __tablename__ = "train_settings"
     __table_args__ = (
         CheckConstraint("weekday_mask BETWEEN 0 AND 127", name="ck_train_settings_weekday_mask"),
-        CheckConstraint("puzzles_per_session BETWEEN 1 AND 50", name="ck_train_settings_puzzles"),
+        # Phase 251 D-07: 0 is allowed (blunder check only); D-05 forbids both sizes at 0.
+        CheckConstraint(
+            f"puzzles_per_session BETWEEN 0 AND {PUZZLES_PER_SESSION_MAX}",
+            name="ck_train_settings_puzzles",
+        ),
+        CheckConstraint(
+            f"blunder_check_per_session BETWEEN 0 AND {BLUNDER_CHECK_PER_SESSION_MAX}",
+            name="ck_train_settings_blunder_check",
+        ),
+        CheckConstraint(
+            "puzzles_per_session > 0 OR blunder_check_per_session > 0",
+            name="ck_train_settings_some_mode_on",
+        ),
+        CheckConstraint(
+            "blunder_check_level IS NULL OR blunder_check_level IN ("
+            + ", ".join(f"'{level}'" for level in BLUNDER_CHECK_LEVELS)
+            + ")",
+            name="ck_train_settings_blunder_check_level",
+        ),
         CheckConstraint(
             f"shield_level BETWEEN 0 AND {SHIELD_CAP}", name="ck_train_settings_shield_level"
         ),
@@ -152,6 +173,23 @@ class TrainSettings(Base):
         DateTime(timezone=True), nullable=True
     )
     reveal_tour_stage: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+    # Phase 251: blunder check as a second Train mode. The server default is the constant
+    # DEFAULT_BLUNDER_CHECK_PER_SESSION (D-03), so every pre-existing row reads 6.
+    blunder_check_per_session: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="6"
+    )
+    # D-17: NULL until the user picks a level once. TEXT + CHECK, no native enum.
+    blunder_check_level: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # D-21: when the "blunder check is now a Train mode" notice started for this user. Stamped by
+    # the migration for existing non-guest rows; NULL for guests and rows created later.
+    blunder_check_notice_from: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # D-18: the user's local launch day. Days before it are judged with blunder check not
+    # required, so pre-launch days stay as judged. NULL (rows created later) = rule always applies.
+    blunder_check_streak_from: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    # Idempotency key of the eager day credit: the last local day the streak was credited for.
+    streak_credited_on: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
 
 
 __all__ = ["TrainSettings"]

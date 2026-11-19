@@ -10,7 +10,7 @@
  * mirroring `useTrainProgress`'s existing pattern.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import type { ReactNode } from 'react';
@@ -22,12 +22,14 @@ vi.mock('@/api/client', async () => {
     trainApi: {
       ...actual.trainApi,
       getSettings: vi.fn(),
+      updateSettings: vi.fn(),
     },
   };
 });
 
 import { trainApi } from '@/api/client';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
+import type { TrainSettingsDraft } from '@/hooks/useTrainSettings';
 import type { TrainSettingsResponse } from '@/types/train';
 
 const SETTINGS: TrainSettingsResponse = {
@@ -86,5 +88,56 @@ describe('useTrainSettings — enabled gate (regression)', () => {
       expect(result.current.data).toEqual(SETTINGS);
     });
     expect(trainApi.getSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useTrainSettings — optional blunder-check fields (plan 04 PUT contract)', () => {
+  const DRAFT: TrainSettingsDraft = {
+    weekdayMask: 5,
+    puzzlesPerSession: 12,
+    reminderEnabled: false,
+    reminderHour: 18,
+    reminderIntentAt: null,
+  };
+
+  afterEach(() => {
+    vi.mocked(trainApi.getSettings).mockReset();
+    vi.mocked(trainApi.updateSettings).mockReset();
+  });
+
+  async function saveDraft(draft: TrainSettingsDraft): Promise<Record<string, unknown>> {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue(SETTINGS);
+    const { result } = renderHook(() => useTrainSettings(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.data).toEqual(SETTINGS));
+
+    act(() => {
+      result.current.save(draft);
+    });
+
+    await waitFor(() => expect(trainApi.updateSettings).toHaveBeenCalledTimes(1));
+    return vi.mocked(trainApi.updateSettings).mock.calls[0]![0] as unknown as Record<string, unknown>;
+  }
+
+  it('sends blunder_check_per_session and blunder_check_level when the draft sets them', async () => {
+    const body = await saveDraft({ ...DRAFT, blunderCheckPerSession: 9, blunderCheckLevel: 'advanced' });
+
+    expect(body.blunder_check_per_session).toBe(9);
+    expect(body.blunder_check_level).toBe('advanced');
+  });
+
+  it('sends a zero blunderCheckPerSession (the mode off), not omits it', async () => {
+    const body = await saveDraft({ ...DRAFT, blunderCheckPerSession: 0 });
+
+    expect(body.blunder_check_per_session).toBe(0);
+    expect('blunder_check_level' in body).toBe(false);
+  });
+
+  it('sends neither key when the draft omits them (absent keeps the stored value)', async () => {
+    const body = await saveDraft(DRAFT);
+
+    expect('blunder_check_per_session' in body).toBe(false);
+    expect('blunder_check_level' in body).toBe(false);
+    expect(body.puzzles_per_session).toBe(12);
   });
 });

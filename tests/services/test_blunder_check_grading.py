@@ -131,7 +131,7 @@ def test_effective_answer_timeout_stays_timeout() -> None:
 
 @pytest.mark.parametrize(
     ("elapsed_s", "expected_ms"),
-    [(0, 10000), (2, 8000), (5, 5000), (10, 0), (20, 0)],
+    [(0, 12000), (2, 10000), (5, 7000), (12, 0), (20, 0)],
 )
 def test_timer_remaining_has_no_animation_allowance(elapsed_s: int, expected_ms: int) -> None:
     now = _T0 + datetime.timedelta(seconds=elapsed_s)
@@ -139,7 +139,10 @@ def test_timer_remaining_has_no_animation_allowance(elapsed_s: int, expected_ms:
 
 
 def test_timer_remaining_clamps_a_future_stamp_to_the_full_timer() -> None:
-    assert timer_remaining_ms(_T0 + datetime.timedelta(seconds=5), _T0) == 10000
+    assert (
+        timer_remaining_ms(_T0 + datetime.timedelta(seconds=5), _T0)
+        == MOVE_TIMER_SECONDS * MS_PER_SECOND
+    )
 
 
 @pytest.mark.parametrize(

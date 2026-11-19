@@ -92,6 +92,8 @@ function leaderboard(
     seconds_remaining: DEMO_SECONDS_REMAINING,
     points: board(points),
     accuracy: board(accuracy),
+    blunder_check_points: board(null),
+    blunder_check_score: board(null),
   };
 }
 

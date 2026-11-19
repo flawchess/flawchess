@@ -66,7 +66,7 @@ describe('LeaderboardMedalsDemo tracer', () => {
     clickCelebrate('gold-points');
     const dialog = screen.getByTestId('train-medal-dialog');
     expect(dialog.textContent).toContain('You won a medal!');
-    expect(dialog.textContent).toContain('Gold, Points');
+    expect(dialog.textContent).toContain('Gold, Puzzles Points');
     fireEvent.click(screen.getByTestId('btn-train-medal-claim'));
     expect(screen.queryByTestId('train-medal-dialog')).toBeNull();
   });
@@ -101,7 +101,7 @@ describe('LeaderboardMedalsDemo scenarios', () => {
   it('renders the full tally with its aria-label for all three medal types', () => {
     render(<LeaderboardMedalsDemo />);
     clickBoard('tallies-all-three');
-    expect(screen.getByLabelText('12 gold, 10 silver, 11 bronze Points medals')).toBeTruthy();
+    expect(screen.getByLabelText('12 gold, 10 silver, 11 bronze Puzzles Points medals')).toBeTruthy();
   });
 
   it('lists a deleted user on the podium as plain text', () => {
@@ -116,15 +116,15 @@ describe('LeaderboardMedalsDemo scenarios', () => {
     expect(screen.getByRole('dialog').textContent).toContain('You won 3 medals!');
     const entries = DEMO_CELEBRATE_SCENARIOS['three-weeks'].medals;
     const labels = entries.map((_, index) => screen.getByTestId(`train-medal-dialog-entry-${index}`).textContent ?? '');
-    expect(labels[0]).toContain('Gold, Points');
-    expect(labels[1]).toContain('Silver, Accuracy');
-    expect(labels[2]).toContain('Bronze, Points');
+    expect(labels[0]).toContain('Gold, Puzzles Points');
+    expect(labels[1]).toContain('Silver, Puzzles Accuracy');
+    expect(labels[2]).toContain('Bronze, Puzzles Points');
   });
 
   it('labels a shared gold in the dialog', () => {
     render(<LeaderboardMedalsDemo />);
     clickCelebrate('shared-gold');
-    expect(screen.getByTestId('train-medal-dialog-entry-0').textContent).toContain('Gold, Points (shared)');
+    expect(screen.getByTestId('train-medal-dialog-entry-0').textContent).toContain('Gold, Puzzles Points (shared)');
   });
 });
 

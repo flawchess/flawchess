@@ -1,41 +1,58 @@
 /**
- * BlunderCheckTab: the beta-only "Blunder check" Train tab (Phase 249, D-01).
+ * BlunderCheckTab: the blunder-check drill host, mounted by the Train page under Today
+ * (Phase 251 D-18, D-20). There is no start screen and no beta gate: the Today card's
+ * Start button mounts this host, which composes (or resumes) the session on mount.
  *
- * The session host: it owns the drill reducer (`lib/blunderCheckDrill.ts`), shows the
- * start screen while the drill is idle. The board loop, timer and solution render in the
- * drill area, each with the progress row (window counter, bar, the server's points) on top
- * of the board; the end screen replaces it.
+ * It owns the drill reducer (`lib/blunderCheckDrill.ts`). The board loop, timer and
+ * solution render in the drill area, each with the progress row (window counter, bar,
+ * the server's points) on top of the board; the end screen replaces it. `onExit` hands
+ * control back to the page, which unmounts the host and shows the Today card again (the
+ * end screen's Done, the error and "nothing available" Back buttons, and a stale
+ * restored solution).
  *
- * Mounted only for beta users (Train.tsx redirects everyone else), and nothing here
- * tracks an Umami event: the tab is URL-routed and sessions live in the database
- * (D-19).
+ * The only Umami event here is the level step's option-change: the level is a settings row
+ * overwritten in place, so the event is the only record of the change. Sessions live in the
+ * database and send nothing (D-19).
+ *
+ * One-time level step (D-20): when the progress says a level is needed, the host shows the level
+ * step instead of composing, saves the pick, and composes only after the save succeeded.
  */
 
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactElement } from 'react';
 import axios from 'axios';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { BlunderCheckDrill } from '@/components/train/blunder-check/BlunderCheckDrill';
 import { BlunderCheckEndScreen } from '@/components/train/blunder-check/BlunderCheckEndScreen';
+import { BlunderCheckLevelStep } from '@/components/train/blunder-check/BlunderCheckLevelStep';
 import { BlunderCheckStageMessage } from '@/components/train/blunder-check/BlunderCheckStage';
 import { useBlunderCheckSession } from '@/hooks/useBlunderCheckSession';
 import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import { useTrainProgress } from '@/hooks/useTrainProgress';
+import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { drillProgress, drillReducer, initialDrillState } from '@/lib/blunderCheckDrill';
 import {
   clearBlunderCheckSolutionCache,
   readBlunderCheckSolutionCache,
 } from '@/lib/blunderCheckSolutionCache';
-import type { DrillEvent, DrillState } from '@/lib/blunderCheckDrill';
+import { trackFeature } from '@/lib/analytics';
 import { unlockAudio } from '@/lib/sounds';
-import type { BlunderCheckSessionResponse, SessionResultResponse } from '@/types/blunderCheck';
+import type { DrillEvent, DrillState } from '@/lib/blunderCheckDrill';
+import type { SessionResultResponse } from '@/types/blunderCheck';
+import type { BlunderCheckLevel } from '@/types/train';
 
 const HTTP_CONFLICT = 409;
 
+/** The level preselected on the one-time level step (D-20). */
+const DEFAULT_LEVEL: BlunderCheckLevel = 'intermediate';
+
 /** The phases that take over the page (the tab bar and medal host are hidden). */
 const IMMERSIVE_PHASES: ReadonlySet<DrillState['phase']> = new Set([
+  // idle is the composing wait (and its failure with a Back button): immersive from the
+  // first paint, so the tab bar does not flash between the Start tap and the first window.
+  'idle',
   // loading_window is immersive too, so the tab bar does not flash between two windows.
   'loading_window',
   'ready_gate',
@@ -52,101 +69,119 @@ const IMMERSIVE_PHASES: ReadonlySet<DrillState['phase']> = new Set([
   'solution',
 ]);
 
-interface StartScreenProps {
-  isLoading: boolean;
-  isError: boolean;
-  /** The caller's open session, null when there is none. */
-  openSession: BlunderCheckSessionResponse | null;
-  isStarting: boolean;
+interface ComposeStatusProps {
   composeError: unknown;
-  onStart: () => void;
+  onExit: () => void;
 }
 
-function StartScreen({
-  isLoading,
-  isError,
-  openSession,
-  isStarting,
-  composeError,
-  onStart,
-}: StartScreenProps): ReactElement {
+/** What the host shows while the session is composing (idle phase): a loading line, or the
+ * failure with a Back button. A 409 means the pool has no sequence to hand out yet. */
+function ComposeStatus({ composeError, onExit }: ComposeStatusProps): ReactElement {
   const composeFailed = composeError !== null && composeError !== undefined;
+  if (!composeFailed) {
+    return (
+      <p className="text-center text-sm text-muted-foreground" data-testid="blunder-check-composing">
+        Preparing your blunder check...
+      </p>
+    );
+  }
   const nothingComposable =
     axios.isAxiosError(composeError) && composeError.response?.status === HTTP_CONFLICT;
   return (
     <div
       className="mx-auto flex w-full max-w-md flex-col gap-4"
-      data-testid="blunder-check-start-screen"
+      data-testid="blunder-check-compose-failed"
     >
-      <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Blunder Check</h2>
-        <Badge
-          variant="default"
-          className="px-2.5 text-sm font-semibold uppercase tracking-wide"
-          data-testid="blunder-check-beta-badge"
-        >
-          Beta
-        </Badge>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Check each move before it is played: Good move or blunder?
-      </p>
-      {openSession?.current_position != null && (
-        <p className="text-sm" data-testid="blunder-check-open-session">
-          Session in progress: sequence {openSession.current_position + 1} of{' '}
-          {openSession.window_count}
-        </p>
-      )}
-      {isError && <LoadError resource="blunder check" data-testid="blunder-check-load-error" />}
-      {nothingComposable && (
+      {nothingComposable ? (
         <p className="text-sm text-muted-foreground" data-testid="blunder-check-none-available">
           No blunder-check sequences are available yet. Import and analyze more games, then try
           again.
         </p>
-      )}
-      {composeFailed && !nothingComposable && (
+      ) : (
         <LoadError resource="blunder check" data-testid="blunder-check-compose-error" />
       )}
-      {!isError && (
-        <Button
-          variant="default"
-          className={TRAIN_CTA_BUTTON_CLASS}
-          disabled={isLoading || isStarting}
-          onClick={onStart}
-          data-testid="blunder-check-btn-start"
-        >
-          {openSession !== null ? 'Resume' : 'Start'}
-        </Button>
-      )}
-      <p className="text-sm text-muted-foreground" data-testid="blunder-check-idea">
-        Most games are decided by blunders, not brilliancies. Strong players avoid them by
-        checking every move before they play it. This drill turns that check into a habit.
-      </p>
-      <ul
-        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
-        data-testid="blunder-check-how-it-works"
+      <Button
+        variant="brand-outline"
+        className={TRAIN_CTA_BUTTON_CLASS}
+        onClick={onExit}
+        data-testid="blunder-check-btn-back"
       >
-        <li>
-          You replay short sequences from real games, your own and those of similarly rated
-          players. Each of your moves is shown as an arrow, and you judge it against the clock.
-        </li>
-        <li>
-          The blunders are ones a player at your level should spot, including missed chances to
-          punish the opponent.
-        </li>
-        <li>Some sequences have no blunder at all, so you can never tell when one is coming.</li>
-      </ul>
-      <ul
-        className="list-disc space-y-1 pl-5 text-sm text-muted-foreground"
-        data-testid="blunder-check-pot-rule"
-      >
-        <li>Every correct Good call adds a point to the sequence's pot.</li>
-        <li>Catch the blunder for bonus points, then find a better move for more.</li>
-        <li>Miss the blunder and the pot is lost. Running out of time on a good move costs a point.</li>
-        <li>A false alarm ends the sequence, but you keep the pot.</li>
-      </ul>
+        Back
+      </Button>
     </div>
   );
+}
+
+interface LevelGate {
+  /** The progress response is in: it is safe to choose between the level step and composing. */
+  ready: boolean;
+  /** The progress could not be loaded: composing blind could skip a needed level step. */
+  loadError: unknown;
+  awaitingLevel: boolean;
+  /** The level save, or the settings fetch it needs, is in flight. */
+  saving: boolean;
+  saveFailed: boolean;
+  confirm: (level: BlunderCheckLevel) => void;
+}
+
+/**
+ * The one-time level step's gate (D-20). The server says in `modes.blunder_check.needs_level`
+ * whether this user must pick a level before the first drill (no rated games, no stored level,
+ * guests included). The host waits for the progress response before composing, shows the step
+ * while a level is needed, and composes only once the level save succeeded, so the first session
+ * is built from the stored level (RESEARCH Pattern 8).
+ */
+function useLevelGate(): LevelGate {
+  const progress = useTrainProgress();
+  const {
+    data: settings,
+    isPending,
+    isError,
+    isSaving,
+    isSaveError,
+    save,
+    refetch,
+  } = useTrainSettings();
+  const [levelSaved, setLevelSaved] = useState(false);
+  const needsLevel = progress.data?.modes.blunder_check.needs_level ?? false;
+  const confirm = useCallback(
+    (level: BlunderCheckLevel): void => {
+      // Inside the tap, before the async save: the lead-in's move sounds play from timers.
+      unlockAudio();
+      // The PUT is a full replace of the schedule fields, so it needs the stored values.
+      if (settings === undefined) {
+        void refetch();
+        return;
+      }
+      save(
+        {
+          weekdayMask: settings.weekday_mask,
+          puzzlesPerSession: settings.puzzles_per_session,
+          reminderEnabled: settings.reminder_enabled,
+          reminderHour: settings.reminder_hour,
+          reminderIntentAt: settings.reminder_intent_at,
+          blunderCheckLevel: level,
+        },
+        {
+          onSuccess: () => {
+            // A settings row overwritten in place: the event is the only record of the change.
+            trackFeature('option-change', { target: 'train-blunder-check-level', value: level });
+            setLevelSaved(true);
+          },
+        },
+      );
+    },
+    [settings, save, refetch],
+  );
+  return {
+    ready: progress.data !== undefined,
+    loadError: progress.data === undefined && progress.isError ? progress.error : null,
+    awaitingLevel: needsLevel && !levelSaved,
+    // The settings fetch counts as saving: Start stays off until the values to send are known.
+    saving: isSaving || isPending,
+    saveFailed: isSaveError || isError,
+    confirm,
+  };
 }
 
 /**
@@ -209,11 +244,14 @@ function FinishingView({ failed, onRetry }: { failed: boolean; onRetry: () => vo
 
 export function BlunderCheckTab({
   onImmersiveChange,
+  onExit,
 }: {
   onImmersiveChange: (immersive: boolean) => void;
+  /** Leave the drill and return to the Today card. */
+  onExit: () => void;
 }): ReactElement {
   // Analyze -> browser Back: a cached solution, read once at mount. The drill mounts straight
-  // into it (immersive from the first paint) instead of the start screen.
+  // into it (immersive from the first paint) instead of composing a session.
   const [restored] = useState(readBlunderCheckSolutionCache);
   const [state, dispatch] = useReducer(
     drillReducer,
@@ -221,6 +259,7 @@ export function BlunderCheckTab({
     (cached): DrillState => cached?.state ?? initialDrillState,
   );
   const session = useBlunderCheckSession();
+  const levelGate = useLevelGate();
   const { openSession, compose } = session;
   // The cache lives only while its solution is on screen: Next, a reset or an error drops it.
   const onSolution = state.phase === 'solution';
@@ -228,7 +267,7 @@ export function BlunderCheckTab({
     if (!onSolution) clearBlunderCheckSolutionCache();
   }, [onSolution]);
   // A restored solution must belong to the caller's open session (a stale entry from an
-  // older session, or another account in the same browser tab, falls back to the start screen).
+  // older session, or another account in the same browser tab, drops back to Today).
   const restoredSessionId =
     restored !== null && state.phase === 'solution' && state.solution === restored.state.solution
       ? restored.state.session.sessionId
@@ -236,15 +275,18 @@ export function BlunderCheckTab({
   const openSessionId = openSession.isSuccess ? (openSession.data?.session_id ?? null) : undefined;
   useEffect(() => {
     if (restoredSessionId === null || openSessionId === undefined) return;
-    if (openSessionId !== restoredSessionId) dispatch({ type: 'RESET' });
-  }, [restoredSessionId, openSessionId]);
-  // One grading Worker for the whole session, created only once the drill has started (a tab
-  // visit before Start constructs none): it grades off-key better moves and searches the
+    if (openSessionId === restoredSessionId) return;
+    dispatch({ type: 'RESET' });
+    onExit();
+  }, [restoredSessionId, openSessionId, onExit]);
+  // One grading Worker for the whole session, created only once the drill has started (a
+  // composing host constructs none): it grades off-key better moves and searches the
   // solution lines.
   const gradingEngine = useTrainGradingEngine({ enabled: state.phase !== 'idle' });
   const finishSession = useFinishSession(state, dispatch, session.finish.mutateAsync);
-  // A synchronous guard: `compose.isPending` only flips after the next render, so a fast
-  // double click would otherwise send two requests (T-249-29).
+  // A synchronous guard: `compose.isPending` only flips after the next render, so a double
+  // tap on the card's Start (or a StrictMode effect re-run) would otherwise send two
+  // requests (T-249-29, T-251-22).
   const startInFlight = useRef(false);
 
   const immersive = IMMERSIVE_PHASES.has(state.phase);
@@ -253,18 +295,24 @@ export function BlunderCheckTab({
     return () => onImmersiveChange(false);
   }, [immersive, onImmersiveChange]);
 
-  function handleStart(): void {
+  const { mutate: composeSession } = compose;
+  const handleStart = useCallback((): void => {
     if (startInFlight.current) return;
     startInFlight.current = true;
-    // The lead-in's move sounds play from timers, not from a tap: unlock audio in this one.
-    unlockAudio();
-    compose.mutate(undefined, {
-      onSuccess: (session) => dispatch({ type: 'SESSION_READY', session }),
+    composeSession(undefined, {
+      onSuccess: (composed) => dispatch({ type: 'SESSION_READY', session: composed }),
       onSettled: () => {
         startInFlight.current = false;
       },
     });
-  }
+  }, [composeSession]);
+  // Compose (or resume) on mount unless the host mounted into a restored solution, once the
+  // progress says no level step is pending. Audio was unlocked in the Start tap that mounted this
+  // host, or in the level step's own Start (the lead-in's move sounds play from timers).
+  const { ready: levelGateReady, awaitingLevel } = levelGate;
+  useEffect(() => {
+    if (restored === null && levelGateReady && !awaitingLevel) handleStart();
+  }, [restored, levelGateReady, awaitingLevel, handleStart]);
 
   if (state.phase === 'error') {
     return (
@@ -275,35 +323,36 @@ export function BlunderCheckTab({
           className={TRAIN_CTA_BUTTON_CLASS}
           onClick={() => {
             dispatch({ type: 'RESET' });
-            // Bug fix (Phase 249 review): the start screen showed the progress fetched when
-            // the session was composed ("sequence 1 of N") after a failure mid-session.
+            // Bug fix (Phase 249 review): the open-session query kept the progress fetched
+            // when the session was composed after a failure mid-session.
             void session.refreshOpenSession();
+            onExit();
           }}
           data-testid="blunder-check-btn-reset"
         >
-          Back to start
+          Back
         </Button>
       </div>
     );
   }
 
   if (state.phase === 'idle') {
-    return (
-      <StartScreen
-        isLoading={openSession.isPending}
-        isError={openSession.isError}
-        openSession={openSession.data ?? null}
-        isStarting={compose.isPending}
-        composeError={compose.error}
-        onStart={handleStart}
-      />
-    );
+    if (restored === null && levelGate.ready && levelGate.awaitingLevel) {
+      return (
+        <BlunderCheckLevelStep
+          initialLevel={DEFAULT_LEVEL}
+          saving={levelGate.saving}
+          error={levelGate.saveFailed}
+          onConfirm={levelGate.confirm}
+          onBack={onExit}
+        />
+      );
+    }
+    return <ComposeStatus composeError={compose.error ?? levelGate.loadError} onExit={onExit} />;
   }
 
   if (state.phase === 'session_end') {
-    return (
-      <BlunderCheckEndScreen result={state.result} onDone={() => dispatch({ type: 'RESET' })} />
-    );
+    return <BlunderCheckEndScreen result={state.result} onDone={onExit} />;
   }
 
   const progress = drillProgress(state);

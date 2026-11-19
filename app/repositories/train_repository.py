@@ -22,10 +22,13 @@ import chess
 from sqlalchemy import (
     ColumnElement,
     and_,
+    case,
     delete,
     exists,
     func,
     literal,
+    null,
+    true,
     Select,
     or_,
     select,
@@ -37,7 +40,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
+from sqlalchemy.sql.expression import SQLColumnExpression
 
+from app.models.blunder_check import BlunderCheckSession, BlunderCheckWindow
 from app.models.drill_item import DrillItem, DrillStatus
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillGuess, DrillMoveQuality, DrillSolve, DrillSource
@@ -46,6 +51,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
+from app.repositories import blunder_check_repository
 from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.schemas.normalization import TimeControlBucket
 from app.schemas.train import (
@@ -89,17 +95,22 @@ from app.services.train_pool import (
     vetted_moves_from_pv_node,
 )
 from app.services.train_scheduler import (
+    BLUNDER_CHECK_NOTICE_DAYS,
+    CROSS_MODE_COOLDOWN_DAYS,
+    DEFAULT_BLUNDER_CHECK_PER_SESSION,
     DEFAULT_PUZZLES_PER_SESSION,
     DEFAULT_REMINDER_ENABLED,
     DEFAULT_REMINDER_HOUR,
     DEFAULT_TIMEZONE,
     DEFAULT_WEEKDAY_MASK,
     DayOutcome,
+    BlunderCheckLevel,
     ItemState,
     TickSnapshot,
     TickView,
     _judge_one_day,
     apply_result,
+    day_is_complete,
     is_scheduled_day,
     is_session_expired,
     local_today,
@@ -195,6 +206,18 @@ class TrainSettingsRow:
     intro_seen_at: datetime.datetime | None
     sr_explained_at: datetime.datetime | None
     reveal_tour_stage: int
+    # Phase 251 two-mode Train. Defaults sit at the end so a hand-built row keeps compiling;
+    # every reader below passes all five explicitly.
+    # `blunder_check_per_session` is the blunder-check session size (0 = mode off, D-02: a mode
+    # at 0 is not part of the day). `blunder_check_streak_from` is the local launch day: days
+    # before it keep the old puzzle-only rule (D-18); NULL on rows created after launch (the
+    # both-modes rule always applies). `streak_credited_on` is the idempotency key of the eager
+    # day credit (`apply_day_completion`).
+    blunder_check_per_session: int = DEFAULT_BLUNDER_CHECK_PER_SESSION
+    blunder_check_level: BlunderCheckLevel | None = None
+    blunder_check_notice_from: datetime.datetime | None = None
+    blunder_check_streak_from: datetime.date | None = None
+    streak_credited_on: datetime.date | None = None
 
 
 @dataclass(frozen=True)
@@ -333,6 +356,11 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
         intro_seen_at=row.intro_seen_at,
         sr_explained_at=row.sr_explained_at,
         reveal_tour_stage=row.reveal_tour_stage,
+        blunder_check_per_session=row.blunder_check_per_session,
+        blunder_check_level=cast("BlunderCheckLevel | None", row.blunder_check_level),
+        blunder_check_notice_from=row.blunder_check_notice_from,
+        blunder_check_streak_from=row.blunder_check_streak_from,
+        streak_credited_on=row.streak_credited_on,
     )
 
 
@@ -379,6 +407,10 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         intro_seen_at=None,
         sr_explained_at=None,
         reveal_tour_stage=0,
+        # D-03: a row created after the deploy gets the default blunder-check size; the other
+        # four Phase 251 columns stay NULL so the row never sees the launch notice and the
+        # both-modes rule applies from its first day.
+        blunder_check_per_session=DEFAULT_BLUNDER_CHECK_PER_SESSION,
     )
     # ON CONFLICT DO NOTHING: a concurrent first-touch may have already
     # inserted the row between the get_settings check above and this insert;
@@ -400,6 +432,11 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         intro_seen_at=None,
         sr_explained_at=None,
         reveal_tour_stage=0,
+        blunder_check_per_session=DEFAULT_BLUNDER_CHECK_PER_SESSION,
+        blunder_check_level=None,
+        blunder_check_notice_from=None,
+        blunder_check_streak_from=None,
+        streak_credited_on=None,
     )
 
 
@@ -414,6 +451,8 @@ async def upsert_settings(
     reminder_hour: int,
     reminder_intent_at: datetime.datetime | None,
     now_utc: datetime.datetime,
+    blunder_check_per_session: int | None = None,
+    blunder_check_level: BlunderCheckLevel | None = None,
 ) -> TrainSettingsRow:
     """Insert or update one user's `train_settings` row (PUT /train/settings).
 
@@ -469,7 +508,7 @@ async def upsert_settings(
         user_id: Authenticated user's internal PK (V4: never client-supplied).
         timezone: A validated IANA timezone string.
         weekday_mask: 7-bit scheduled-day mask, 0-127.
-        puzzles_per_session: Requested session size, 1-50.
+        puzzles_per_session: Requested puzzle session size, 0-50 (0 = puzzles off).
         reminder_enabled: Whether Train reminder push notifications are on.
         reminder_hour: The local hour (0-23) reminders fire at.
         reminder_intent_at: The instant the user last expressed install
@@ -478,16 +517,35 @@ async def upsert_settings(
         now_utc: The current UTC instant. Used ONLY to resolve `today` from
             the OLD (pre-mutation) timezone for the settle-before-mutate
             step — never converted against the NEW timezone being applied.
+        blunder_check_per_session: The blunder-check session size, 0-30 (0 = off). None keeps the
+            stored value (the PUT contract: pre-release PWA bodies omit it; it also keeps every
+            pre-251 direct caller valid). When the written size differs from the stored one the
+            same UPSERT clears `blunder_check_notice_from` (D-21: the launch notice's amount
+            claim is stale once the user picked a size).
+        blunder_check_level: The stored level a user without rated games composes at. None keeps
+            the stored value.
     """
     old_row = await get_or_create_settings(session, user_id=user_id)
     today = local_today(old_row.timezone, now_utc)
     await settle_streak_snapshot(session, user_id=user_id, settings_row=old_row, today=today)
 
+    # None keeps the stored value; the row always exists here (get_or_create above), so the
+    # resolved values are what both the INSERT clause and the UPDATE write.
+    resolved_bc_size = (
+        old_row.blunder_check_per_session
+        if blunder_check_per_session is None
+        else blunder_check_per_session
+    )
+    resolved_bc_level = (
+        old_row.blunder_check_level if blunder_check_level is None else blunder_check_level
+    )
     stmt = pg_insert(TrainSettings).values(
         user_id=user_id,
         timezone=timezone,
         weekday_mask=weekday_mask,
         puzzles_per_session=puzzles_per_session,
+        blunder_check_per_session=resolved_bc_size,
+        blunder_check_level=resolved_bc_level,
         reminder_enabled=reminder_enabled,
         reminder_hour=reminder_hour,
         reminder_intent_at=reminder_intent_at,
@@ -498,6 +556,19 @@ async def upsert_settings(
             "timezone": stmt.excluded.timezone,
             "weekday_mask": stmt.excluded.weekday_mask,
             "puzzles_per_session": stmt.excluded.puzzles_per_session,
+            # D-21: a changed blunder-check amount clears the launch notice. Evaluated in SQL
+            # against the stored size (SET expressions read the pre-update row), so it cannot
+            # race a concurrent write the way a Python-side compare could.
+            "blunder_check_notice_from": case(
+                (
+                    TrainSettings.blunder_check_per_session
+                    != stmt.excluded.blunder_check_per_session,
+                    null(),
+                ),
+                else_=TrainSettings.blunder_check_notice_from,
+            ),
+            "blunder_check_per_session": stmt.excluded.blunder_check_per_session,
+            "blunder_check_level": stmt.excluded.blunder_check_level,
             "reminder_enabled": stmt.excluded.reminder_enabled,
             "reminder_hour": stmt.excluded.reminder_hour,
             "reminder_intent_at": stmt.excluded.reminder_intent_at,
@@ -529,6 +600,13 @@ async def upsert_settings(
         TrainSettings.intro_seen_at,
         TrainSettings.sr_explained_at,
         TrainSettings.reveal_tour_stage,
+        # The size and level are written above; the notice is read back because the UPSERT may
+        # just have cleared it. The two launch-day stamps are never written here.
+        TrainSettings.blunder_check_per_session,
+        TrainSettings.blunder_check_level,
+        TrainSettings.blunder_check_notice_from,
+        TrainSettings.blunder_check_streak_from,
+        TrainSettings.streak_credited_on,
     )
     result = await session.execute(stmt)
     (
@@ -540,6 +618,11 @@ async def upsert_settings(
         intro_seen_at,
         sr_explained_at,
         reveal_tour_stage,
+        blunder_check_per_session,
+        blunder_check_level,
+        blunder_check_notice_from,
+        blunder_check_streak_from,
+        streak_credited_on,
     ) = result.one()
     return TrainSettingsRow(
         timezone=timezone,
@@ -556,6 +639,11 @@ async def upsert_settings(
         intro_seen_at=intro_seen_at,
         sr_explained_at=sr_explained_at,
         reveal_tour_stage=reveal_tour_stage,
+        blunder_check_per_session=blunder_check_per_session,
+        blunder_check_level=blunder_check_level,
+        blunder_check_notice_from=blunder_check_notice_from,
+        blunder_check_streak_from=blunder_check_streak_from,
+        streak_credited_on=streak_credited_on,
     )
 
 
@@ -773,6 +861,38 @@ async def get_archive_page(
     return ArchivePage(rows=rows, total=total)
 
 
+# A mode row's state on the Today card (Phase 251 D-09). Mirrors `app.schemas.train.TrainModeState`.
+ModeState = Literal["pending", "in_progress", "done", "off"]
+
+
+@dataclass(frozen=True)
+class ModeProgress:
+    """One mode's row: mirrors `app.schemas.train.TrainModeProgress`."""
+
+    size: int
+    state: ModeState
+    remaining: int
+    pending: int
+    first_session_done: bool
+
+
+@dataclass(frozen=True)
+class BlunderCheckModeProgress(ModeProgress):
+    """The blunder-check row: mirrors `app.schemas.train.TrainBlunderCheckModeProgress`."""
+
+    points_today: int
+    has_rated_games: bool
+    needs_level: bool
+
+
+@dataclass(frozen=True)
+class ModesProgress:
+    """Both modes' rows: mirrors `app.schemas.train.TrainModesProgress`."""
+
+    puzzles: ModeProgress
+    blunder_check: BlunderCheckModeProgress
+
+
 @dataclass(frozen=True)
 class ProgressSnapshot:
     """Internal dataclass mirroring `app.schemas.train.TrainProgressResponse`.
@@ -782,7 +902,8 @@ class ProgressSnapshot:
     `streak_reset_notice` is derived from the resulting state, so it survives a
     page reload. `badge_visible` is a display hint only — it gates no
     server-side authorization; the badge's own number still comes from
-    `waiting_count`.
+    `waiting_count`. `modes`, `day_complete`, `pending_count` and
+    `blunder_check_notice` are the Phase 251 two-mode read model.
     """
 
     session_streak_count: int
@@ -796,6 +917,10 @@ class ProgressSnapshot:
     pool_state: Literal["no_material", "exhausted", "available"]
     next_due_date: datetime.date | None
     badge_visible: bool
+    modes: ModesProgress
+    day_complete: bool
+    pending_count: int
+    blunder_check_notice: bool
 
 
 async def _material_flags(session: AsyncSession, *, user_id: int) -> tuple[bool, bool]:
@@ -844,7 +969,9 @@ async def _stamp_pool_eligibility(
             a session may additionally OR in `sharp_filler_available()` — a
             filler-only session is still a real, completable session, so the
             eligibility floor `tick_days` reads must exist for a warm-up-only
-            user too.
+            user too. Both callers also OR in `blunder_check_per_session > 0`
+            (Phase 251): blunder check always has foreign supply, so a user
+            with it on has material from day one.
 
     Returns:
         `settings_row.pool_eligible_since` unchanged when already set;
@@ -953,6 +1080,112 @@ async def stamp_onboarding_step(
     return refreshed
 
 
+def _bc_size_for_day(day: datetime.date, settings_row: TrainSettingsRow) -> int:
+    """The blunder-check size that applies to `day`: 0 before the launch day (D-18).
+
+    Days before `blunder_check_streak_from` keep the old puzzle-only rule, so pre-launch days
+    stay as judged and the "N of M this week" caption does not drop on launch day. NULL (a row
+    created after launch) means the current size always applies.
+    """
+    streak_from = settings_row.blunder_check_streak_from
+    if streak_from is not None and day < streak_from:
+        return 0
+    return settings_row.blunder_check_per_session
+
+
+async def complete_days_for(
+    session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow
+) -> list[datetime.date]:
+    """Every local day that is complete for the streak (D-02), feeding `tick_days`.
+
+    Reads the dates of the user's completed puzzle sessions and completed blunder-check
+    sessions (two sequential awaits, never `asyncio.gather`) and keeps the days for which
+    `day_is_complete` holds with the CURRENT per-mode sizes. A mode at size 0 is not part of
+    the day, and days before `blunder_check_streak_from` ignore blunder check (D-18).
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        settings_row: The user's current `TrainSettingsRow` (sizes and launch day).
+    """
+    puzzle_days = {
+        row[0]
+        for row in (
+            await session.execute(
+                select(DrillSession.session_date).where(
+                    DrillSession.user_id == user_id, DrillSession.status == "completed"
+                )
+            )
+        ).all()
+    }
+    bc_days = {
+        row[0]
+        for row in (
+            await session.execute(
+                select(BlunderCheckSession.session_date).where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                )
+            )
+        ).all()
+    }
+    return sorted(
+        day
+        for day in puzzle_days | bc_days
+        if day_is_complete(
+            puzzles_done=day in puzzle_days,
+            bc_done=day in bc_days,
+            puzzles_size=settings_row.puzzles_per_session,
+            bc_size=_bc_size_for_day(day, settings_row),
+        )
+    )
+
+
+async def day_complete_on(
+    session: AsyncSession, *, user_id: int, day: datetime.date, settings_row: TrainSettingsRow
+) -> bool:
+    """The same rule as `complete_days_for` for one day (two EXISTS reads).
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        day: The local day to test.
+        settings_row: The user's current `TrainSettingsRow` (sizes and launch day).
+    """
+    puzzles_done = (
+        await session.execute(
+            select(
+                select(DrillSession.id)
+                .where(
+                    DrillSession.user_id == user_id,
+                    DrillSession.session_date == day,
+                    DrillSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    bc_done = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.session_date == day,
+                    BlunderCheckSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return day_is_complete(
+        puzzles_done=puzzles_done,
+        bc_done=bc_done,
+        puzzles_size=settings_row.puzzles_per_session,
+        bc_size=_bc_size_for_day(day, settings_row),
+    )
+
+
 async def settle_streak_snapshot(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> TickView:
@@ -960,9 +1193,10 @@ async def settle_streak_snapshot(
     persist the advance.
 
     THE SINGLE settlement entry point, shared by `GET /train/progress` (here)
-    and `PUT /train/settings` (settle-before-mutate). Reads the user's
-    `status='completed'` `drill_sessions.session_date` values (order-
-    insensitive — `tick_days` buckets internally), builds the input
+    and `PUT /train/settings` (settle-before-mutate). Reads the user's complete
+    days (`complete_days_for`: the both-modes rule over completed puzzle and
+    blunder-check sessions, order-insensitive — `tick_days` buckets
+    internally), builds the input
     `TickSnapshot` from `settings_row`'s three snapshot fields, calls
     `tick_days` (passing `settings_row.pool_eligible_since` as the eligibility
     watermark), and persists the advanced snapshot IF AND ONLY IF
@@ -987,12 +1221,9 @@ async def settle_streak_snapshot(
             from `_stamp_pool_eligibility` in the SAME transaction).
         today: The local calendar day (from `local_today`).
     """
-    dates_result = await session.execute(
-        select(DrillSession.session_date).where(
-            DrillSession.user_id == user_id, DrillSession.status == "completed"
-        )
+    completed_session_dates = await complete_days_for(
+        session, user_id=user_id, settings_row=settings_row
     )
-    completed_session_dates = [row[0] for row in dates_result.all()]
 
     snapshot = TickSnapshot(
         streak_count=settings_row.streak_count,
@@ -1028,6 +1259,221 @@ async def settle_streak_snapshot(
     return view
 
 
+async def _completed_session_exists(session: AsyncSession, *, user_id: int) -> tuple[bool, bool]:
+    """`(puzzles, blunder_check)`: whether any session of each mode ever completed (D-10, D-19).
+
+    Two sequential EXISTS reads, no new column: the flag drives the How it works auto-collapse
+    and the pitch line, and a completed row is exactly "the user finished this mode once".
+    """
+    puzzles = (
+        await session.execute(
+            select(
+                select(DrillSession.id)
+                .where(DrillSession.user_id == user_id, DrillSession.status == "completed")
+                .exists()
+            )
+        )
+    ).scalar_one()
+    blunder_check = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return puzzles, blunder_check
+
+
+async def _open_session_has_solves(
+    session: AsyncSession, *, user_id: int, today: datetime.date
+) -> bool:
+    """Whether the user's open, unexpired puzzle session has at least one solved puzzle.
+
+    An expired-but-still-open row is treated as absent (read-only, like the waiting count).
+    """
+    open_session = await open_session_for_user(session, user_id=user_id)
+    if open_session is None or is_session_expired(open_session.expires_on, today):
+        return False
+    solved_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(DrillSolve)
+            .where(DrillSolve.session_id == open_session.id, DrillSolve.solved_at.isnot(None))
+        )
+    ).scalar_one()
+    return solved_count > 0
+
+
+async def _puzzles_mode_progress(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+    waiting_count: int,
+    badge_visible: bool,
+    first_session_done: bool,
+) -> ModeProgress:
+    """The puzzles row (D-09): off at size 0, done after today's session, in_progress once a
+    puzzle is solved in the open session, else pending.
+
+    `remaining` is the existing `waiting_count`; `pending` keeps the nav badge's semantics
+    (`waiting_count` only when `badge_visible`).
+    """
+    size = settings_row.puzzles_per_session
+    state: ModeState = "pending"
+    if size == 0:
+        state = "off"
+    elif await completed_session_in_window(session, user_id=user_id, today=today) is not None:
+        state = "done"
+    elif await _open_session_has_solves(session, user_id=user_id, today=today):
+        state = "in_progress"
+    return ModeProgress(
+        size=size,
+        state=state,
+        remaining=waiting_count,
+        pending=waiting_count if badge_visible else 0,
+        first_session_done=first_session_done,
+    )
+
+
+@dataclass(frozen=True)
+class _BlunderCheckSessionState:
+    """The session-derived part of the blunder-check row."""
+
+    state: ModeState
+    remaining: int
+    pending: int
+    points_today: int
+
+
+async def _blunder_check_session_state(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+) -> _BlunderCheckSessionState:
+    """State, remaining, badge contribution and points of the blunder-check row (D-09, D-13).
+
+    Off at size 0; done when a completed session is still in its window (its points are the
+    summed window scores); in_progress or pending from an open unexpired session (expired rows
+    are treated as absent, read-only like the waiting count); otherwise pending with the whole
+    size remaining. `pending` is the badge contribution: the remaining count when today is
+    scheduled or an unexpired session is open, else 0.
+    """
+    size = settings_row.blunder_check_per_session
+    if size == 0:
+        return _BlunderCheckSessionState(state="off", remaining=0, pending=0, points_today=0)
+    completed = await blunder_check_repository.completed_session_in_window(
+        session, user_id=user_id, today=today
+    )
+    if completed is not None:
+        points = sum(window.points_scored for window in completed.windows)
+        return _BlunderCheckSessionState(state="done", remaining=0, pending=0, points_today=points)
+    open_progress = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+    if open_progress is None:
+        pending = size if is_scheduled_day(today, settings_row.weekday_mask) else 0
+        return _BlunderCheckSessionState(
+            state="pending", remaining=size, pending=pending, points_today=0
+        )
+    ended = sum(1 for window in open_progress.windows if window.outcome is not None)
+    started = any(window.started_at is not None for window in open_progress.windows)
+    remaining = open_progress.window_count - ended
+    return _BlunderCheckSessionState(
+        state="in_progress" if started else "pending",
+        remaining=remaining,
+        pending=remaining,
+        points_today=0,
+    )
+
+
+async def _blunder_check_mode_progress(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    today: datetime.date,
+    first_session_done: bool,
+) -> BlunderCheckModeProgress:
+    """The blunder-check row: the session state plus the level step flags (D-17, D-20).
+
+    `has_rated_games` is a limit-1 read of the rated-human-games source the level derivation
+    uses; `needs_level` is true only with neither rated games nor a stored level, so the
+    client shows the level step exactly once.
+    """
+    state = await _blunder_check_session_state(
+        session, user_id=user_id, settings_row=settings_row, today=today
+    )
+    has_rated_games = bool(
+        await blunder_check_repository.recent_rated_games(session, user_id=user_id, limit=1)
+    )
+    return BlunderCheckModeProgress(
+        size=settings_row.blunder_check_per_session,
+        state=state.state,
+        remaining=state.remaining,
+        pending=state.pending,
+        first_session_done=first_session_done,
+        points_today=state.points_today,
+        has_rated_games=has_rated_games,
+        needs_level=not has_rated_games and settings_row.blunder_check_level is None,
+    )
+
+
+async def _launch_notice_visible(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings_row: TrainSettingsRow,
+    now_utc: datetime.datetime,
+) -> bool:
+    """Whether the one-time "blunder check is now a Train mode" notice shows (D-21).
+
+    True only for a row stamped at launch (`blunder_check_notice_from`), within
+    `BLUNDER_CHECK_NOTICE_DAYS` of the stamp, with no blunder-check session completed since the
+    stamp. Derived on read, so completing a session needs no write. New users and guests carry
+    a NULL stamp and never see it; a blunder-check amount change nulls it (plan 04).
+    """
+    stamp = settings_row.blunder_check_notice_from
+    if stamp is None:
+        return False
+    if now_utc >= stamp + datetime.timedelta(days=BLUNDER_CHECK_NOTICE_DAYS):
+        return False
+    completed_since = (
+        await session.execute(
+            select(
+                select(BlunderCheckSession.id)
+                .where(
+                    BlunderCheckSession.user_id == user_id,
+                    BlunderCheckSession.status == "completed",
+                    BlunderCheckSession.completed_at >= stamp,
+                )
+                .exists()
+            )
+        )
+    ).scalar_one()
+    return not completed_since
+
+
+async def dismiss_blunder_check_notice(session: AsyncSession, *, user_id: int) -> None:
+    """Clear the caller's launch notice (sets the stamp to NULL). Idempotent; caller commits.
+
+    Scoped by `user_id` only (V4: never client-supplied), so it can touch no other user's row.
+    """
+    await session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == user_id)
+        .values(blunder_check_notice_from=None)
+    )
+
+
 async def get_progress(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> ProgressSnapshot:
@@ -1057,7 +1503,12 @@ async def get_progress(
     today = local_today(settings_row.timezone, now_utc)
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
-    has_material = has_drill_items or has_pool_candidates
+    # Blunder check always has foreign supply, so a user with it switched on has trainable
+    # material from day one (Phase 251, RESEARCH Pitfall 3). Without this a blunder-check-only
+    # user keeps a NULL watermark and every scheduled day resolves neutral.
+    has_material = (
+        has_drill_items or has_pool_candidates or settings_row.blunder_check_per_session > 0
+    )
     stamped_pool_eligible_since = await _stamp_pool_eligibility(
         session,
         user_id=user_id,
@@ -1066,22 +1517,7 @@ async def get_progress(
         has_material=has_material,
     )
     if stamped_pool_eligible_since != settings_row.pool_eligible_since:
-        settings_row = TrainSettingsRow(
-            timezone=settings_row.timezone,
-            weekday_mask=settings_row.weekday_mask,
-            puzzles_per_session=settings_row.puzzles_per_session,
-            streak_count=settings_row.streak_count,
-            shield_level=settings_row.shield_level,
-            streak_settled_through=settings_row.streak_settled_through,
-            pool_eligible_since=stamped_pool_eligible_since,
-            reminder_enabled=settings_row.reminder_enabled,
-            reminder_hour=settings_row.reminder_hour,
-            reminder_last_sent_on=settings_row.reminder_last_sent_on,
-            reminder_intent_at=settings_row.reminder_intent_at,
-            intro_seen_at=settings_row.intro_seen_at,
-            sr_explained_at=settings_row.sr_explained_at,
-            reveal_tour_stage=settings_row.reveal_tour_stage,
-        )
+        settings_row = replace(settings_row, pool_eligible_since=stamped_pool_eligible_since)
 
     view = await settle_streak_snapshot(
         session, user_id=user_id, settings_row=settings_row, today=today
@@ -1121,6 +1557,30 @@ async def get_progress(
         or await _open_unfinished_exists(session, user_id=user_id, today=today)
     )
 
+    puzzles_first_done, bc_first_done = await _completed_session_exists(session, user_id=user_id)
+    puzzles_mode = await _puzzles_mode_progress(
+        session,
+        user_id=user_id,
+        settings_row=settings_row,
+        today=today,
+        waiting_count=waiting_count,
+        badge_visible=badge_visible,
+        first_session_done=puzzles_first_done,
+    )
+    blunder_check_mode = await _blunder_check_mode_progress(
+        session,
+        user_id=user_id,
+        settings_row=settings_row,
+        today=today,
+        first_session_done=bc_first_done,
+    )
+    notice = await _launch_notice_visible(
+        session, user_id=user_id, settings_row=settings_row, now_utc=now_utc
+    )
+    day_complete = await day_complete_on(
+        session, user_id=user_id, day=today, settings_row=settings_row
+    )
+
     return ProgressSnapshot(
         session_streak_count=view.settled.streak_count,
         shield_level=view.settled.shield_level,
@@ -1133,6 +1593,10 @@ async def get_progress(
         pool_state=pool_state,
         next_due_date=next_due_date,
         badge_visible=badge_visible,
+        modes=ModesProgress(puzzles=puzzles_mode, blunder_check=blunder_check_mode),
+        day_complete=day_complete,
+        pending_count=puzzles_mode.pending + blunder_check_mode.pending,
+        blunder_check_notice=notice,
     )
 
 
@@ -1163,6 +1627,31 @@ async def expire_stale_sessions(
         )
         .values(status="expired")
     )
+
+
+async def expire_open_session(session: AsyncSession, *, user_id: int) -> bool:
+    """Flip the user's open puzzle session to 'expired' regardless of its window; True if one moved.
+
+    Used when puzzles are switched off (size 0, D-04): the mode is no longer required today, so
+    the open session is closed instead of lingering as an unfinished obligation. Recorded
+    `drill_solves` rows (and the leaderboard points they carry) are untouched, exactly like
+    `expire_stale_sessions`, and unsolved SR items keep their `due_date`. A completed session is
+    never matched (`status = 'open'` only), so it never reopens. Scoped by the auth-derived
+    `user_id`.
+
+    Args:
+        session: AsyncSession. Caller commits.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+    """
+    moved = (
+        await session.execute(
+            update(DrillSession)
+            .where(DrillSession.user_id == user_id, DrillSession.status == "open")
+            .values(status="expired")
+            .returning(DrillSession.id)
+        )
+    ).scalar_one_or_none()
+    return moved is not None
 
 
 async def stamp_session_entered(
@@ -1295,6 +1784,55 @@ async def _is_untouched_and_resized(
     return solved_so_far == 0
 
 
+async def blunder_check_cooled_pairs(
+    session: AsyncSession, *, user_id: int, since: datetime.date
+) -> list[tuple[int, int]]:
+    """(game_id, blunder_ply) of every flaw served in a blunder-check window of this user since `since`.
+
+    "Served" means actually shown (owner decision on WR-01): only a started window counts
+    (`started_at IS NOT NULL`). A composed-but-never-started window is deleted by session expiry
+    or a resize and its blunder goes back to the pool, so it must not cool the flaw for puzzles.
+
+    Cross-mode cooldown (Phase 251 D-16): a flaw shown in blunder check is ineligible for puzzles
+    until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
+    `today - CROSS_MODE_COOLDOWN_DAYS`, from the caller's already-resolved local today (never a
+    `.date()` on a UTC instant), compared with the session's own local `session_date`. Windows
+    without a flaw (herrings, `blunder_ply` NULL) and windows whose game was deleted
+    (`game_id` NULL) carry nothing to cool.
+
+    Read by composition and by the waiting count so they filter the same set. The cooldown only
+    filters: `drill_items.due_date` is never written, so a cooled due item resurfaces
+    most-overdue-first once the window passes (A7).
+    """
+    rows = (
+        await session.execute(
+            select(BlunderCheckWindow.game_id, BlunderCheckWindow.blunder_ply)
+            .join(BlunderCheckSession, BlunderCheckSession.id == BlunderCheckWindow.session_id)
+            .where(
+                BlunderCheckSession.user_id == user_id,
+                BlunderCheckSession.session_date >= since,
+                BlunderCheckWindow.game_id.isnot(None),
+                BlunderCheckWindow.blunder_ply.isnot(None),
+                # WR-01: a window that was never started was never shown.
+                BlunderCheckWindow.started_at.isnot(None),
+            )
+            .distinct()
+        )
+    ).all()
+    return [(int(game_id), int(ply)) for game_id, ply in rows]
+
+
+def _not_cooled(
+    game_id_col: SQLColumnExpression[int],
+    ply_col: SQLColumnExpression[int],
+    cooled: Sequence[tuple[int, int]],
+) -> ColumnElement[bool]:
+    """Predicate keeping rows whose (game_id, ply) is not in the cooled set (true when empty)."""
+    if not cooled:
+        return true()
+    return tuple_(game_id_col, ply_col).not_in(list(cooled))
+
+
 async def get_waiting_puzzle_count(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> int:
@@ -1349,6 +1887,11 @@ async def get_waiting_puzzle_count(
         today: The local calendar day (from `local_today`, resolved once per
             request by the caller).
     """
+    if settings_row.puzzles_per_session == 0:
+        # Puzzles are switched off (D-04): nothing waits, whatever is due or still open. Without
+        # this an open session left over from before the switch would keep advertising its
+        # unsolved remainder on the nav badge.
+        return 0
     open_session = await open_session_for_user(session, user_id=user_id)
     if open_session is not None and not is_session_expired(open_session.expires_on, today):
         # Bug fix: an UNTOUCHED open session whose size has drifted from the
@@ -1378,6 +1921,11 @@ async def get_waiting_puzzle_count(
     completed = await completed_session_in_window(session, user_id=user_id, today=today)
     if completed is not None:
         return 0
+
+    # Cross-mode cooldown (D-16): the same exclusion composition applies, so the count mirrors it.
+    cooled = await blunder_check_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
 
     # Due drill_items — mirrors compose_and_materialize_session's due_stmt
     # eligibility exactly (status/due_date/flaw-row-presence/answer-key/
@@ -1410,6 +1958,7 @@ async def get_waiting_puzzle_count(
             answer_key_present(GameFlaw.missed_pv_lines),
             dead_band_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
             second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+            _not_cooled(DrillItem.game_id, DrillItem.ply, cooled),
         )
     )
     due_count = (await session.execute(due_count_stmt)).scalar_one()
@@ -1427,7 +1976,8 @@ async def get_waiting_puzzle_count(
                     DrillItem.game_id == pool_subq.c.game_id,
                     DrillItem.ply == pool_subq.c.ply,
                 )
-            )
+            ),
+            _not_cooled(pool_subq.c.game_id, pool_subq.c.ply, cooled),
         )
     )
     untracked_pool_count = (await session.execute(untracked_pool_stmt)).scalar_one()
@@ -1878,6 +2428,14 @@ async def _select_candidates(
     # are otherwise resolved independently.
     per_game_counts: Counter[int] = Counter()
 
+    # Cross-mode cooldown (D-16): flaws served in blunder check recently are skipped for THIS
+    # session only, in both the due and the pool statements below. A cooled due item keeps its
+    # due_date (never written here) and resurfaces once the cooldown ends. Deliberately NOT in
+    # pool_entry_stmt, which also feeds _material_flags and the eligibility watermark.
+    cooled = await blunder_check_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
+
     # --- SR side: due drill_items first, most-overdue-first ---
     due_stmt = (
         select(DrillItem, Game)
@@ -1924,6 +2482,7 @@ async def _select_candidates(
             # is skipped for THIS session only (status/due_date untouched)
             # so it resurfaces automatically if re-analysis moves it back.
             second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+            _not_cooled(DrillItem.game_id, DrillItem.ply, cooled),
         )
         .order_by(DrillItem.due_date.asc(), DrillItem.game_id.asc(), DrillItem.ply.asc())
         # Over-fetch (bounded by _DUE_OVERFETCH_FACTOR, never unbounded)
@@ -1959,8 +2518,10 @@ async def _select_candidates(
     )
     existing_pairs = {(gid, ply) for gid, ply in existing_pairs_result.all()}
 
-    pool_stmt = pool_entry_stmt(user_id).order_by(
-        Game.played_at.desc().nulls_last(), GameFlaw.game_id.desc(), GameFlaw.ply.asc()
+    pool_stmt = (
+        pool_entry_stmt(user_id)
+        .where(_not_cooled(GameFlaw.game_id, GameFlaw.ply, cooled))
+        .order_by(Game.played_at.desc().nulls_last(), GameFlaw.game_id.desc(), GameFlaw.ply.asc())
     )
     pool_rows = (await session.execute(pool_stmt)).all()
     deduped_pool: list[tuple[int, int, Game]] = []
@@ -2751,6 +3312,9 @@ async def compose_and_materialize_session(
 ) -> ComposedSession:
     """Compose or resume a Train session at the full 75/25 mix.
 
+    0. Puzzles switched off (`puzzles_per_session == 0`, D-04): right after the settings are
+       resolved, return the empty `ComposedSession` (no session row, counts 0) before any other
+       read or write, so the Today mount's status read neither composes nor discards anything.
     1. Resolve `train_settings` (create-on-first-touch), today's local date,
        and the `(sr_slots, herring_slots)` split (`compose_slots`).
     1b. Stamp the `pool_eligible_since` watermark if it is still NULL and
@@ -2833,6 +3397,25 @@ async def compose_and_materialize_session(
     n = settings_row.puzzles_per_session
     today = local_today(settings_row.timezone, now_utc)
 
+    if n == 0:
+        # Puzzles are switched off (D-04). POST /train/sessions runs on every Today mount as a
+        # status read, so without this guard the mount would try to compose an empty session or
+        # `_discard_if_untouched_and_resized` an untouched one whose frozen size no longer
+        # matches 0. Nothing is read or written: the settings PUT already closed any open
+        # session (`expire_open_session`), and the eligibility stamp is owned by get_progress.
+        return ComposedSession(
+            session_id=None,
+            session_date=today,
+            expires_on=session_window(today, settings_row.weekday_mask),
+            puzzle_count=0,
+            requested_count=0,
+            solved_count=0,
+            blob_pending_count=0,
+            puzzles=[],
+            solved_results=[],
+            is_warmup=False,
+        )
+
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
     # The third term, sharp_filler_available(), lets a filler-only session
     # still stamp the eligibility floor tick_days reads — without it a warm-up
@@ -2843,7 +3426,12 @@ async def compose_and_materialize_session(
         user_id=user_id,
         settings_row=settings_row,
         today=today,
-        has_material=has_drill_items or has_pool_candidates or sharp_filler_available(),
+        has_material=(
+            has_drill_items
+            or has_pool_candidates
+            or sharp_filler_available()
+            or settings_row.blunder_check_per_session > 0
+        ),
     )
 
     await expire_stale_sessions(session, user_id=user_id, today=today)
@@ -3467,12 +4055,17 @@ async def _mark_session_complete_if_done(
     return remaining == 0
 
 
-async def _apply_completion_tick(
-    session: AsyncSession, *, user_id: int, session_id: int, now_utc: datetime.datetime
-) -> None:
-    """Tick the shield/count IMMEDIATELY when a session completes,
+async def apply_day_completion(
+    session: AsyncSession, *, user_id: int, day: datetime.date, now_utc: datetime.datetime
+) -> bool:
+    """Credit `day` to the streak IMMEDIATELY when it becomes complete (D-02),
     correctly composed with the lazy miss walk so neither path can
     double-count or skip a scheduled day.
+
+    THE single eager entry point: a puzzle session's last solve (`record_solve`)
+    and a blunder-check finish both call it, and the call that completes the
+    LAST required mode for `day` is the one that credits. Returns True when it
+    credited, False when it wrote nothing.
 
     Both branches below route through `_judge_one_day` — the SAME shared
     primitive `tick_days`'s lazy walk uses — so this function derives NO
@@ -3483,11 +4076,10 @@ async def _apply_completion_tick(
     Order of operations, all sequential awaits on this ONE `AsyncSession`
     (CLAUDE.md — never `asyncio.gather`):
 
-    1. Resolve `session_date` scoped by `(id, user_id)` together (IDOR
-       guard) — a foreign or invented `session_id` resolves to nothing
-       and this function returns without writing.
-    2. `get_or_create_settings` + `local_today` for the current settings row.
-    3. `settle_streak_snapshot` FIRST — the lazy walk runs before the
+    1. `get_or_create_settings` + `local_today` for the current settings row.
+       `day` comes from a session row the caller already resolved scoped by
+       `(id, user_id)` (IDOR guard), never from the client.
+    2. `settle_streak_snapshot` FIRST — the lazy walk runs before the
        completion is applied, so every scheduled day whose window has
        already closed is judged before this write, and a completion on a
        later day can never let an earlier missed scheduled day escape
@@ -3495,10 +4087,13 @@ async def _apply_completion_tick(
        strictly after `today`, so today's own scheduled day is never judged
        by this walk — there is no conflict between the two paths on the
        current day.
+    3. Return False without writing when `day_complete_on(day)` is False (a
+       required mode is still pending) or `streak_credited_on == day` (see the
+       bug-fix paragraph below).
     4. Choose exactly ONE `DayOutcome` from the POST-settle snapshot
        (`view.settled`), never a stale pre-settle one:
-       `"fulfilled"` when `session_date` is scheduled AND
-       (`settled_through` is None OR `session_date > settled_through`);
+       `"fulfilled"` when `day` is scheduled AND
+       (`settled_through` is None OR `day > settled_through`);
        otherwise `"credit_only"` — an off-day session or a late
        completion of an already-frozen day. `"credit_only"` returns
        `streak_count`/`settled_through`
@@ -3510,33 +4105,29 @@ async def _apply_completion_tick(
        write keeps the same compare-and-set guard `settle_streak_snapshot`
        uses (so a concurrent settler cannot be overwritten with an older
        boundary); the credit-only write needs no boundary guard because it
-       never moves the boundary.
+       never moves the boundary. Both also set `streak_credited_on = day`.
 
-    An abandoned session needs no code here: only `status='completed'`
-    sessions ever reach this function (the caller gates on the claim that
-    just completed the session), so a started-and-abandoned session is judged
-    by the lazy walk as a plain missed scheduled day, never by this eager
-    path.
+    Bug fix: two completion events per day are now normal (puzzles, then
+    blunder check), and a day's completeness depends on the CURRENT sizes. A
+    `was_complete_before` guard computed from the current sizes misses the
+    sequence "puzzles done with blunder check at 0 -> day credited -> blunder
+    check raised -> blunder check done", which would mint a second freeze. The
+    stored `streak_credited_on` ("last credited day") is the idempotency key:
+    a day already credited is never credited again, and both UPDATEs are
+    guarded on `streak_credited_on IS DISTINCT FROM day` so a concurrent
+    duplicate cannot credit twice either.
+
+    An abandoned session needs no code here: only completed sessions ever
+    complete a day (the callers gate on the claim that just completed the
+    session), so a started-and-abandoned session is judged by the lazy walk as
+    a plain missed scheduled day, never by this eager path.
 
     Args:
         session: AsyncSession. Caller commits.
         user_id: Authenticated user's internal PK (V4: never client-supplied).
-        session_id: The `drill_sessions.id` that just completed (untrusted
-            client input upstream — resolved only in combination with
-            `user_id`).
+        day: The local day (`session_date`) of the session that just completed.
         now_utc: The current UTC instant.
     """
-    session_date_row = (
-        await session.execute(
-            select(DrillSession.session_date).where(
-                DrillSession.id == session_id, DrillSession.user_id == user_id
-            )
-        )
-    ).scalar_one_or_none()
-    if session_date_row is None:
-        return
-    session_date: datetime.date = session_date_row
-
     settings_row = await get_or_create_settings(session, user_id=user_id)
     today = local_today(settings_row.timezone, now_utc)
 
@@ -3545,18 +4136,25 @@ async def _apply_completion_tick(
     )
     settled = view.settled
 
-    fulfilled = is_scheduled_day(session_date, settings_row.weekday_mask) and (
-        settled.settled_through is None or session_date > settled.settled_through
+    if settings_row.streak_credited_on == day:
+        return False
+    if not await day_complete_on(session, user_id=user_id, day=day, settings_row=settings_row):
+        return False
+
+    fulfilled = is_scheduled_day(day, settings_row.weekday_mask) and (
+        settled.settled_through is None or day > settled.settled_through
     )
     outcome: DayOutcome = "fulfilled" if fulfilled else "credit_only"
-    judged = _judge_one_day(settled, day=session_date, outcome=outcome)
+    judged = _judge_one_day(settled, day=day, outcome=outcome)
 
+    not_yet_credited = TrainSettings.streak_credited_on.is_distinct_from(day)
     if outcome == "fulfilled":
         new_settled_through = judged.settled_through
-        await session.execute(
+        result = await session.execute(
             update(TrainSettings)
             .where(
                 TrainSettings.user_id == user_id,
+                not_yet_credited,
                 or_(
                     TrainSettings.streak_settled_through.is_(None),
                     TrainSettings.streak_settled_through < new_settled_through,
@@ -3566,14 +4164,16 @@ async def _apply_completion_tick(
                 streak_count=judged.streak_count,
                 shield_level=judged.shield_level,
                 streak_settled_through=new_settled_through,
+                streak_credited_on=day,
             )
         )
     else:
-        await session.execute(
+        result = await session.execute(
             update(TrainSettings)
-            .where(TrainSettings.user_id == user_id)
-            .values(shield_level=judged.shield_level)
+            .where(TrainSettings.user_id == user_id, not_yet_credited)
+            .values(shield_level=judged.shield_level, streak_credited_on=day)
         )
+    return result.rowcount > 0  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
 
 
 def _merged_telemetry(patch: dict[str, object]) -> ColumnElement[Any]:
@@ -3688,7 +4288,7 @@ async def record_solve(
        every call, win or lose — idempotent via the `status = 'open'` guard.
     6. When THIS call's claim (`solved_at IS NULL` -> now
        set) is what just completed the session, call
-       `_apply_completion_tick` inside the SAME transaction — a rollback can
+       `apply_day_completion` inside the SAME transaction — a rollback can
        never leave a half-applied tick. Gated on `claimed AND
        session_complete`, not `session_complete` alone: a lost-claim
        re-submit of an already-solved final puzzle also sees
@@ -3883,9 +4483,17 @@ async def record_solve(
     # (the acceptance test this guards: re-submitting an already-solved
     # final puzzle must not grant another shield credit).
     if claimed and session_complete:
-        await _apply_completion_tick(
-            session, user_id=user_id, session_id=session_id, now_utc=now_utc
-        )
+        # Resolve the session day scoped by (id, user_id) (IDOR guard): a foreign or invented
+        # session_id resolves to nothing and credits nothing.
+        session_date = (
+            await session.execute(
+                select(DrillSession.session_date).where(
+                    DrillSession.id == session_id, DrillSession.user_id == user_id
+                )
+            )
+        ).scalar_one_or_none()
+        if session_date is not None:
+            await apply_day_completion(session, user_id=user_id, day=session_date, now_utc=now_utc)
 
     return RecordedSolve(
         correct_guess=stored_correct_guess,
@@ -4123,8 +4731,11 @@ __all__ = [
     "RecordedSolve",
     "RevealedPuzzle",
     "TrainSettingsRow",
+    "apply_day_completion",
+    "complete_days_for",
     "completed_session_in_window",
     "compose_and_materialize_session",
+    "day_complete_on",
     "expire_stale_sessions",
     "get_or_create_settings",
     "get_progress",

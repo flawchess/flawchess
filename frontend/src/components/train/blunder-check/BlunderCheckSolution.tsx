@@ -39,7 +39,7 @@ import {
   TrainRevealFooter,
 } from '@/components/train/TrainRevealActionBar';
 import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
-import { TrainVerdictCard } from '@/components/train/TrainVerdictStrip';
+import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import { useBoardNavigationInput } from '@/hooks/useBoardNavigationInput';
 import { useIsDesktop, useIsSmUp } from '@/hooks/useIsDesktop';
 import type { TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
@@ -52,6 +52,7 @@ import {
   buildSolutionChips,
   buildSolutionOverlay,
   solutionCopy,
+  solutionCopyPoints,
   solutionLineUcis,
 } from '@/lib/blunderCheckSolution';
 import type { SolutionCopy } from '@/lib/blunderCheckSolution';
@@ -220,6 +221,38 @@ interface SolutionShellProps {
   boardRef: RefObject<HTMLDivElement | null>;
 }
 
+interface SolutionVerdictProps {
+  copy: SolutionCopy;
+  avatar?: ReactNode;
+  /** False in the strip, whose own line already shows the heading. */
+  showHeading?: boolean;
+}
+
+/** The verdict body: heading and the sentence with its "+N" pills (card and strip share it). */
+function SolutionVerdict({ copy, avatar, showHeading = true }: SolutionVerdictProps): ReactElement {
+  return (
+    <div className="flow-root">
+      {avatar}
+      {showHeading && (
+        <h2 className="font-semibold" data-testid="blunder-check-solution-heading">
+          {copy.heading}
+        </h2>
+      )}
+      {/* The same "+N" pills as the personalized-puzzle verdict, so the user can
+          read what each part of the sequence earned after the flash is gone. */}
+      <p data-testid="blunder-check-solution-summary">
+        {copy.parts.map((part) =>
+          typeof part === 'string' ? (
+            part
+          ) : (
+            <TrainScoreChip key={part.name} points={part.points} testid={`blunder-check-pill-${part.name}`} />
+          ),
+        )}
+      </p>
+    </div>
+  );
+}
+
 /**
  * The reveal layout shared by the three solution kinds: stage, action bar (split across the
  * side column on desktop: controls row above the move list, Next as the footer; under the board on tablets, published to the fixed phone bottom bar
@@ -333,32 +366,24 @@ function SolutionShell({
           className={BLUNDER_CHECK_SIDE_CLASS}
           data-testid="blunder-check-solution-panel"
         >
-          <TrainVerdictCard
-            persona={persona}
-            renderDetails={(avatar) => (
-              <div className="flow-root">
-                {avatar}
-                <h2 className="font-semibold" data-testid="blunder-check-solution-heading">
-                  {copy.heading}
-                </h2>
-                {/* The same "+N" pills as the personalized-puzzle verdict, so the user can
-                    read what each part of the sequence earned after the flash is gone. */}
-                <p data-testid="blunder-check-solution-summary">
-                  {copy.parts.map((part) =>
-                    typeof part === 'string' ? (
-                      part
-                    ) : (
-                      <TrainScoreChip
-                        key={part.name}
-                        points={part.points}
-                        testid={`blunder-check-pill-${part.name}`}
-                      />
-                    ),
-                  )}
-                </p>
-              </div>
-            )}
-          />
+          {/* Phones and tablets get the personalized-puzzle strip (avatar, total, heading),
+              collapsed per window, that unfolds the full verdict (Phase 251 UAT); desktop keeps
+              the always-open card. */}
+          {isDesktop ? (
+            <TrainVerdictCard
+              persona={persona}
+              renderDetails={(avatar) => <SolutionVerdict copy={copy} avatar={avatar} />}
+            />
+          ) : (
+            <TrainVerdictStrip
+              persona={persona}
+              points={solutionCopyPoints(copy)}
+              line={copy.heading}
+              panelTarget="blunder-check-verdict-strip"
+            >
+              <SolutionVerdict copy={copy} showHeading={false} />
+            </TrainVerdictStrip>
+          )}
           {renderLines(flipped, controlsRow)}
           {/* Desktop shows the game info under the board instead (underBoard). */}
           {!isDesktop && footer}

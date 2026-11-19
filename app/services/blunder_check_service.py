@@ -24,7 +24,7 @@ from app.models.blunder_check import (
     WindowOutcome,
 )
 from app.models.drill_solve import DrillMoveQuality
-from app.repositories import blunder_check_repository
+from app.repositories import blunder_check_repository, train_repository
 from app.repositories.blunder_check_repository import GameInfoRow, SessionProgress
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services import blunder_check_selection
@@ -56,6 +56,12 @@ from app.services.blunder_check_grading import (
     window_ucis,
 )
 from app.services.train_pool import ServerGradedMove
+from app.services.train_scheduler import (
+    CROSS_MODE_COOLDOWN_DAYS,
+    DEFAULT_TIMEZONE,
+    local_today,
+    session_window,
+)
 from app.services.blunder_check_rules import BLUNDER_POINTS
 from app.services.train_score import MOVE_QUALITY_TIER, MOVE_TIER_POINTS
 
@@ -198,27 +204,149 @@ class AnswerOutcome:
     better_move: BetterMoveData | None
 
 
+async def _compose_for_user(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings: train_repository.TrainSettingsRow,
+    today: datetime.date,
+    count: int,
+    start_position: int = 0,
+) -> list[blunder_check_repository.NewWindow]:
+    """Compose `count` windows with the user's level fallback and cross-mode cooldown.
+
+    Shared by a fresh session (`compose_or_resume`) and the extension of an open one
+    (`resize_for_settings`), so both apply the same fallback level (D-17) and cooldown (D-16).
+    """
+    # Cross-mode cooldown (D-16): flaws served as puzzles in the last CROSS_MODE_COOLDOWN_DAYS local
+    # days are not composed as own blunders.
+    cooled_pairs = await blunder_check_repository.puzzle_cooled_pairs(
+        session, user_id=user_id, since=today - datetime.timedelta(days=CROSS_MODE_COOLDOWN_DAYS)
+    )
+    return await blunder_check_selection.compose_windows(
+        session,
+        user_id=user_id,
+        rng=blunder_check_selection.new_session_rng(),
+        count=count,
+        fallback_level_elo=blunder_check_selection.level_fallback_elo(settings.blunder_check_level),
+        cooled_pairs=cooled_pairs,
+        start_position=start_position,
+    )
+
+
+async def resize_for_settings(
+    session: AsyncSession, *, user_id: int, new_size: int, now_utc: datetime.datetime
+) -> bool:
+    """Apply a new blunder-check size to today's open session (D-04, D-06); True when it completed.
+
+    Runs after the new size is persisted and before the day completion check. The repository
+    applies the shrink, complete and expire rules; for a larger size this composes
+    `new_size - window_count` extra windows (same fallback level and cooldown as a fresh session)
+    and appends them after the existing ones. Extension never re-serves a blunder already shown:
+    `compose_windows` reads every window of the user, this session's included (D-01).
+    """
+    settings = await train_repository.get_or_create_settings(session, user_id=user_id)
+    today = local_today(settings.timezone, now_utc)
+    outcome = await blunder_check_repository.resize_open_session(
+        session, user_id=user_id, today=today, new_size=new_size, now_utc=now_utc
+    )
+    if outcome == "needs_extension":
+        await _extend_open_session(
+            session, user_id=user_id, settings=settings, today=today, new_size=new_size
+        )
+    return outcome == "completed"
+
+
+async def _extend_open_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    settings: train_repository.TrainSettingsRow,
+    today: datetime.date,
+    new_size: int,
+) -> None:
+    """Compose and append the windows an open session lacks to reach `new_size`."""
+    progress = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+    if progress is None:
+        return
+    windows = await _compose_for_user(
+        session,
+        user_id=user_id,
+        settings=settings,
+        today=today,
+        count=new_size - progress.window_count,
+        start_position=progress.window_count,
+    )
+    await blunder_check_repository.append_windows(
+        session, user_id=user_id, session_id=progress.session_id, windows=windows
+    )
+
+
 async def compose_or_resume(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> SessionProgress | None:
     """The user's open session, composing and persisting a new one when there is none.
 
-    Returns None when nothing could be composed (no usable supply). A lost race against a
-    concurrent start (the one-open-session index fired) resumes the winner's session.
+    Returns None when nothing could be composed (no usable supply), and before any write when
+    the user has switched blunder check off (`blunder_check_per_session` is 0, D-04). A lost
+    race against a concurrent start (the one-open-session index fired) resumes the winner's
+    session.
     """
-    existing = await blunder_check_repository.open_session_progress(session, user_id=user_id)
+    settings = await train_repository.get_or_create_settings(session, user_id=user_id)
+    if settings.blunder_check_per_session == 0:
+        return None
+    today = local_today(settings.timezone, now_utc)
+    await blunder_check_repository.expire_stale_sessions(session, user_id=user_id, today=today)
+    existing = await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
     if existing is not None:
         return existing
-    windows = await blunder_check_selection.compose_windows(
-        session, user_id=user_id, rng=blunder_check_selection.new_session_rng()
+    # Bug fix: a finished session inside its window is returned, not recomposed, so a second
+    # Start on a done day shows the recap instead of building a new session.
+    done = await blunder_check_repository.completed_session_in_window(
+        session, user_id=user_id, today=today
+    )
+    if done is not None:
+        return done
+    windows = await _compose_for_user(
+        session,
+        user_id=user_id,
+        settings=settings,
+        today=today,
+        count=settings.blunder_check_per_session,
     )
     if not windows:
         return None
     # Result ignored: None means the race loser, and either way the open session is readable.
     await blunder_check_repository.insert_session(
-        session, user_id=user_id, windows=windows, now_utc=now_utc
+        session,
+        user_id=user_id,
+        windows=windows,
+        now_utc=now_utc,
+        session_date=today,
+        expires_on=session_window(today, settings.weekday_mask),
     )
-    return await blunder_check_repository.open_session_progress(session, user_id=user_id)
+    return await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=today
+    )
+
+
+async def get_open_session(
+    session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
+) -> SessionProgress | None:
+    """The user's current open session, or None. Read-only: never creates a settings row.
+
+    The day comes from the stored settings (the defaults when the user has none yet), so a
+    session past its window reads as absent without any write.
+    """
+    settings = await train_repository.get_settings(session, user_id=user_id)
+    timezone = DEFAULT_TIMEZONE if settings is None else settings.timezone
+    return await blunder_check_repository.open_session_progress(
+        session, user_id=user_id, today=local_today(timezone, now_utc)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -606,7 +734,21 @@ async def finish_session(
         raise BlunderCheckNotFoundError
     if any(window.outcome is None for window in windows):
         raise BlunderCheckConflictError("windows_open")
-    await blunder_check_repository.complete_session(session, session_id=session_id, now_utc=now_utc)
+    moved = await blunder_check_repository.complete_session(
+        session, session_id=session_id, now_utc=now_utc
+    )
+    if moved:
+        # Only the call that moved the session from open to completed credits the day, so a
+        # repeated finish never re-triggers it. The day is read scoped by (session id, user id)
+        # (T-251-32): a foreign id resolves to nothing and credits nothing. No extra refusal for
+        # a session past its expires_on, mirroring record_solve.
+        session_date = await blunder_check_repository.get_session_date(
+            session, user_id=user_id, session_id=session_id
+        )
+        if session_date is not None:
+            await train_repository.apply_day_completion(
+                session, user_id=user_id, day=session_date, now_utc=now_utc
+            )
     points = sum(window.points_scored for window in windows)
     possible = sum(window.points_possible for window in windows)
     return SessionResult(

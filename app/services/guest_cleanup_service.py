@@ -30,6 +30,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
+from app.models.blunder_check import BlunderCheckSession
 from app.models.drill_session import DrillSession
 from app.models.import_job import ImportJob
 from app.models.train_settings import TrainSettings
@@ -127,6 +128,13 @@ async def _purge_guest(guest_id: int) -> int:
         # tests/test_guest_cleanup_service.py::
         # test_purge_guest_cascades_drill_rows.
         await session.execute(delete(DrillSession).where(DrillSession.user_id == guest_id))
+        # WR-02: guests reach blunder check since the beta gate was removed (D-18), so their
+        # blunder_check_sessions accumulate too. The purge keeps the users row, so the users
+        # CASCADE never fires; delete the sessions explicitly. blunder_check_windows (and the
+        # window child rows) go through the ON DELETE CASCADE chain from the session.
+        await session.execute(
+            delete(BlunderCheckSession).where(BlunderCheckSession.user_id == guest_id)
+        )
         await session.execute(delete(TrainSettings).where(TrainSettings.user_id == guest_id))
         # Deleting import_jobs alone does NOT
         # reset the backward-walk backlog cursor (chesscom_backfill_oldest_year

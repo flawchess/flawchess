@@ -17,7 +17,7 @@ describe('MedalTally', () => {
     render(<MedalTally medals={{ gold: 5, silver: 1, bronze: 0 }} board="points" testId="tally" />);
     const tally = screen.getByTestId('tally');
     expect(tally.getAttribute('role')).toBe('img');
-    expect(tally.getAttribute('aria-label')).toBe('5 gold, 1 silver Points medals');
+    expect(tally.getAttribute('aria-label')).toBe('5 gold, 1 silver Puzzles Points medals');
     expect(screen.getByTestId('tally-gold').querySelectorAll('svg')).toHaveLength(5);
     expect(screen.getByTestId('tally-silver').querySelectorAll('svg')).toHaveLength(1);
     // No count while stacked; only a zero-width baseline anchor remains.
@@ -37,7 +37,7 @@ describe('MedalTally', () => {
     render(<MedalTally medals={{ gold: 6, silver: 0, bronze: 0 }} board="points" testId="tally" />);
     expect(screen.getByTestId('tally-gold').querySelectorAll('svg')).toHaveLength(1);
     expect(screen.getByTestId('tally-gold-count').textContent).toBe('6');
-    expect(screen.getByTestId('tally').getAttribute('aria-label')).toBe('6 gold Points medals');
+    expect(screen.getByTestId('tally').getAttribute('aria-label')).toBe('6 gold Puzzles Points medals');
   });
 
   it('orders the items gold, silver, bronze', () => {

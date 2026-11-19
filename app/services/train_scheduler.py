@@ -98,6 +98,26 @@ DEFAULT_WEEKDAY_MASK: int = ALL_WEEKDAYS_MASK
 # (5 SR + 1 herring per compose_slots' 75/25 split at n=6).
 DEFAULT_PUZZLES_PER_SESSION: int = 6
 
+# Phase 251: blunder check as a second Train mode. Default windows per blunder-check
+# session (D-03). Equal to the existing fixed session size, so every existing user keeps 6.
+DEFAULT_BLUNDER_CHECK_PER_SESSION: int = 6
+
+# Upper bound of the per-user blunder-check session size (A2). The puzzle bound is 50.
+BLUNDER_CHECK_PER_SESSION_MAX: int = 30
+
+# Upper bound of the per-user puzzle session size (the pre-251 CHECK bound).
+PUZZLES_PER_SESSION_MAX: int = 50
+
+# Days a window the user was already shown is kept out of the other mode's reach (D-16).
+CROSS_MODE_COOLDOWN_DAYS: int = 7
+
+# Days the "blunder check is now a Train mode" notice stays visible after launch (D-21).
+BLUNDER_CHECK_NOTICE_DAYS: int = 14
+
+# The blunder-check difficulty levels (D-17); None on the row means "not chosen yet".
+BlunderCheckLevel = Literal["beginner", "intermediate", "advanced"]
+BLUNDER_CHECK_LEVELS: tuple[BlunderCheckLevel, ...] = ("beginner", "intermediate", "advanced")
+
 # Number of days in a week — the search bound for next_scheduled_day's
 # forward scan (a full week always contains a scheduled day when the mask is
 # non-zero).
@@ -562,6 +582,23 @@ def _judge_one_day(
     )
 
 
+def day_is_complete(*, puzzles_done: bool, bc_done: bool, puzzles_size: int, bc_size: int) -> bool:
+    """The both-modes rule (D-02): is a local day complete for the streak?
+
+    A mode is satisfied when its per-session size is 0 (the user switched it
+    off, so it is not part of their day) or when it has a completed session
+    dated that day. At least one mode must actually be done, so a day with
+    nothing completed is never complete even when both modes are off.
+
+    Pure: callers resolve the four inputs (`train_repository.complete_days_for`
+    feeds `tick_days`, `apply_day_completion` feeds the eager path), so the
+    lazy walk and the eager credit apply the same rule.
+    """
+    puzzles_ok = puzzles_size == 0 or puzzles_done
+    bc_ok = bc_size == 0 or bc_done
+    return puzzles_ok and bc_ok and (puzzles_done or bc_done)
+
+
 def tick_days(
     snapshot: TickSnapshot,
     completed_session_dates: Sequence[datetime.date],
@@ -651,7 +688,12 @@ def tick_days(
 
 __all__ = [
     "ALL_WEEKDAYS_MASK",
+    "BLUNDER_CHECK_LEVELS",
+    "BLUNDER_CHECK_NOTICE_DAYS",
+    "BLUNDER_CHECK_PER_SESSION_MAX",
     "CORRECT_RETRY_DAYS",
+    "CROSS_MODE_COOLDOWN_DAYS",
+    "DEFAULT_BLUNDER_CHECK_PER_SESSION",
     "DEFAULT_PUZZLES_PER_SESSION",
     "DEFAULT_REMINDER_ENABLED",
     "DEFAULT_REMINDER_HOUR",
@@ -661,14 +703,17 @@ __all__ = [
     "LEECH_FAIL_THRESHOLD",
     "MASTERY_STREAK_THRESHOLD",
     "PARK_FAIL_THRESHOLD",
+    "PUZZLES_PER_SESSION_MAX",
     "REMINDER_HOUR_MAX",
     "REMINDER_HOUR_MIN",
     "SHIELD_CAP",
+    "BlunderCheckLevel",
     "DayOutcome",
     "ItemState",
     "TickSnapshot",
     "TickView",
     "apply_result",
+    "day_is_complete",
     "is_scheduled_day",
     "is_session_expired",
     "local_hour",

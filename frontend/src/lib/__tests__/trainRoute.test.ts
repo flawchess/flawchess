@@ -17,8 +17,9 @@ describe('parseTrainRoute', () => {
     ['/train/archive/', { tab: 'archive', list: 'mastered' }],
     ['/train/archive/parked', { tab: 'archive', list: 'parked' }],
     ['/train/archive/parked/', { tab: 'archive', list: 'parked' }],
-    ['/train/blunder-check', { tab: 'blunder-check' }],
-    ['/train/blunder-check/', { tab: 'blunder-check' }],
+    // Retired in Phase 251 (D-11): the old tab path is unknown, so the page redirects to Today.
+    ['/train/blunder-check', null],
+    ['/train/blunder-check/', null],
     ['/train/blunder-check/extra', null],
     ['/train/blunder-checkx', null],
     ['/train/archive/mastered', null],
@@ -35,8 +36,7 @@ describe('parseTrainRoute', () => {
     expect(parseTrainRoute(TRAIN_TAB_PATHS.today)).toEqual({ tab: 'today' });
     expect(parseTrainRoute(TRAIN_TAB_PATHS.leaderboard)).toEqual({ tab: 'leaderboard' });
     expect(parseTrainRoute(TRAIN_TAB_PATHS.archive)).toEqual({ tab: 'archive', list: 'mastered' });
-    expect(TRAIN_TAB_PATHS['blunder-check']).toBe('/train/blunder-check');
-    expect(parseTrainRoute(TRAIN_TAB_PATHS['blunder-check'])).toEqual({ tab: 'blunder-check' });
+    expect(Object.keys(TRAIN_TAB_PATHS)).toEqual(['today', 'leaderboard', 'archive']);
   });
 });
 

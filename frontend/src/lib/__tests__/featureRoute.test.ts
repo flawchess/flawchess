@@ -68,7 +68,7 @@ function placement(state: FeatureRouteState | null, c: RouteCtx): string | null 
 }
 
 describe('FEATURE_ROUTE registry', () => {
-  it('holds the nine step IDs in D-06 order without duplicates', () => {
+  it('holds the ten step IDs in route order without duplicates', () => {
     const ids = FEATURE_ROUTE.map((s) => s.id);
     expect(ids).toEqual(EXPECTED_STEP_IDS);
     expect(new Set(ids).size).toBe(ids.length);

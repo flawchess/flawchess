@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, useId, type RefObject } from 'react';
+import { useRef, useLayoutEffect, useState, useCallback, useMemo, useId, type RefObject } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey, NEUTRAL_ARROW_COLOR } from '../../lib/arrowColor';
 import {
@@ -391,7 +391,11 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
   const [prevPosition, setPrevPosition] = useState<string>(position);
   const lastTouchTapRef = useRef<TouchTap | null>(null);
 
-  useEffect(() => {
+  // Bug fix (Phase 251 UAT): a layout effect, so the first measurement lands before the
+  // first paint. As a passive effect, every freshly mounted board painted one frame at
+  // width 0; the blunder-check drill mounts a new board per screen (drill, solution
+  // loading, solution), so the board collapsed and regrew twice as the feedback opened.
+  useLayoutEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
         const containerWidth = containerRef.current.clientWidth;

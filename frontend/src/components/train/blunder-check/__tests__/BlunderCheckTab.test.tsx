@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * BlunderCheckTab: the start screen states (start, resume, empty supply, failures), the
- * error phase's way back, the double-click guard (T-249-29) and the no-analytics guard (D-19).
+ * BlunderCheckTab: the host composing on mount (resume, empty supply, failures, the
+ * single-compose guard T-249-29 / T-251-22), the way out (`onExit`) and the no-analytics
+ * guard (D-19), plus the drill loop.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import type { AxiosResponse } from 'axios';
 import { act } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -36,6 +38,15 @@ import type {
   WindowSolution,
   WindowStartResponse,
 } from '@/types/blunderCheck';
+import type {
+  TrainProgressResponse,
+  TrainSettingsResponse,
+  TrainSettingsUpdate,
+} from '@/types/train';
+import {
+  BLUNDER_CHECK_MODE,
+  PHASE_251_PROGRESS_FIELDS,
+} from '@/components/train/__tests__/trainProgressFixtures';
 
 const SESSION: BlunderCheckSessionResponse = {
   session_id: 7,
@@ -44,6 +55,36 @@ const SESSION: BlunderCheckSessionResponse = {
   session_points: 5,
   windows: [],
 };
+const SETTINGS: TrainSettingsResponse = {
+  timezone: 'UTC',
+  weekday_mask: 127,
+  puzzles_per_session: 5,
+  reminder_enabled: true,
+  reminder_hour: 9,
+  reminder_intent_at: '2026-01-01T00:00:00Z',
+  intro_seen_at: '2026-01-01T00:00:00Z',
+  reveal_tour_stage: 3,
+  sr_explained_at: '2026-01-01T00:00:00Z',
+  has_mobile_subscription: false,
+  blunder_check_per_session: 6,
+  blunder_check_level: null,
+};
+
+/** A progress payload whose blunder-check row does (or does not) still need the level step. */
+function progressWith(needsLevel: boolean, firstSessionDone = false): TrainProgressResponse {
+  return {
+    ...PHASE_251_PROGRESS_FIELDS,
+    modes: {
+      ...PHASE_251_PROGRESS_FIELDS.modes,
+      blunder_check: {
+        ...BLUNDER_CHECK_MODE,
+        needs_level: needsLevel,
+        first_session_done: firstSessionDone,
+      },
+    },
+  } as TrainProgressResponse;
+}
+
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 const LOAD_ERROR_COPY =
@@ -61,11 +102,20 @@ const submitBetterMove = vi.fn<
   (sessionId: number, position: number, body: BetterMoveRequest) => Promise<BetterMoveResponse>
 >();
 const getSolution = vi.fn<(sessionId: number, position: number) => Promise<WindowSolution>>();
+const getProgress = vi.fn<() => Promise<TrainProgressResponse>>();
+const getSettings = vi.fn<() => Promise<TrainSettingsResponse>>();
+const updateSettings = vi.fn<(body: TrainSettingsUpdate) => Promise<TrainSettingsResponse>>();
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
     ...actual,
+    trainApi: {
+      ...actual.trainApi,
+      getProgress: () => getProgress(),
+      getSettings: () => getSettings(),
+      updateSettings: (body: TrainSettingsUpdate) => updateSettings(body),
+    },
     blunderCheckApi: {
       getOpenSession: () => getOpenSession(),
       composeOrResumeSession: () => composeOrResumeSession(),
@@ -79,6 +129,13 @@ vi.mock('@/api/client', async () => {
       finishSession: (sessionId: number) => finishSession(sessionId),
     },
   };
+});
+
+// The level step's option-change event (the host is the one blunder-check file allowed to track).
+const trackFeature = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analytics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
+  return { ...actual, trackFeature };
 });
 
 // One grading engine for the whole tab, scripted by the tests (no Worker in jsdom).
@@ -189,27 +246,25 @@ function httpError(status: number, detail?: string): AxiosError {
   } as AxiosResponse);
 }
 
-function renderTab(onImmersiveChange: (immersive: boolean) => void = vi.fn()) {
+function renderTab(
+  onImmersiveChange: (immersive: boolean) => void = vi.fn(),
+  onExit: () => void = vi.fn(),
+  { strict = false }: { strict?: boolean } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const tree = (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-      <TooltipProvider>
-        <BlunderCheckTab onImmersiveChange={onImmersiveChange} />
-        <LocationProbe />
-      </TooltipProvider>
+        <TooltipProvider>
+          <BlunderCheckTab onImmersiveChange={onImmersiveChange} onExit={onExit} />
+          <LocationProbe />
+        </TooltipProvider>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-}
-
-/** The Start button once the open-session query has settled (it is disabled while loading). */
-async function enabledStartButton(): Promise<HTMLButtonElement> {
-  const button = (await screen.findByTestId('blunder-check-btn-start')) as HTMLButtonElement;
-  await waitFor(() => expect(button.disabled).toBe(false));
-  return button;
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 beforeEach(() => {
@@ -218,6 +273,16 @@ beforeEach(() => {
   getOpenSession.mockImplementation(async () => null);
   composeOrResumeSession.mockReset();
   composeOrResumeSession.mockImplementation(async () => SESSION);
+  getProgress.mockReset();
+  getProgress.mockImplementation(async () => progressWith(false));
+  getSettings.mockReset();
+  getSettings.mockImplementation(async () => SETTINGS);
+  updateSettings.mockReset();
+  updateSettings.mockImplementation(async (body) => ({
+    ...SETTINGS,
+    blunder_check_level: body.blunder_check_level ?? null,
+  }));
+  trackFeature.mockReset();
   startWindow.mockReset();
   // Never resolves by default: a test that needs a window supplies its own response.
   startWindow.mockImplementation(() => new Promise(() => {}));
@@ -253,39 +318,19 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe('start screen', () => {
-  it('shows the intro and a Start button when there is no open session', async () => {
+describe('composing on mount', () => {
+  it('composes the session once on mount and shows a loading line meanwhile', async () => {
+    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
     renderTab();
 
-    const button = await enabledStartButton();
-    expect(button.textContent).toBe('Start');
-    expect(screen.getByText('Blunder Check')).not.toBeNull();
-    expect(
-      screen.getByText('Check each move before it is played: Good move or blunder?'),
-    ).not.toBeNull();
-    expect(screen.queryByTestId('blunder-check-open-session')).toBeNull();
+    expect(screen.getByTestId('blunder-check-composing')).not.toBeNull();
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-btn-back')).toBeNull();
   });
 
-  it('offers Resume and names the open window when a session is in progress', async () => {
+  it('a resumed session shows its open window and points', async () => {
     getOpenSession.mockImplementation(async () => SESSION);
     renderTab();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-btn-start').textContent).toBe('Resume'),
-    );
-    expect(screen.getByTestId('blunder-check-open-session').textContent).toBe(
-      'Session in progress: sequence 3 of 6',
-    );
-  });
-
-  it('Resume goes through the compose call and shows the open window and its points', async () => {
-    getOpenSession.mockImplementation(async () => SESSION);
-    renderTab();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-btn-start').textContent).toBe('Resume'),
-    );
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-window-counter').textContent).toBe('3 of 6'),
@@ -294,13 +339,12 @@ describe('start screen', () => {
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
   });
 
-  it('a 409 from compose says there are no windows yet', async () => {
+  it('a 409 from compose says there are no windows yet, and Back leaves the host', async () => {
     composeOrResumeSession.mockImplementation(async () => {
       throw httpError(HTTP_CONFLICT);
     });
-    renderTab();
-
-    fireEvent.click(await enabledStartButton());
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-none-available').textContent).toBe(
@@ -308,73 +352,180 @@ describe('start screen', () => {
       ),
     );
     expect(screen.queryByTestId('blunder-check-compose-error')).toBeNull();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 
-  it('a non-409 compose failure shows the generic load error', async () => {
+  it('a non-409 compose failure shows the generic load error with a Back button', async () => {
     composeOrResumeSession.mockImplementation(async () => {
       throw httpError(HTTP_SERVER_ERROR);
     });
-    renderTab();
-
-    fireEvent.click(await enabledStartButton());
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     await waitFor(() =>
       expect(screen.getByTestId('blunder-check-compose-error').textContent).toBe(LOAD_ERROR_COPY),
     );
     expect(screen.queryByTestId('blunder-check-none-available')).toBeNull();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('level step (D-20)', () => {
+  beforeEach(() => {
+    getProgress.mockImplementation(async () => progressWith(true));
   });
 
-  it('a failed open-session query shows the load error instead of the Start button', async () => {
-    getOpenSession.mockImplementation(async () => {
+  it('shows the level step instead of composing when the server says a level is needed', async () => {
+    renderTab();
+
+    await screen.findByTestId('blunder-check-level-step');
+    expect(
+      screen.getByTestId('btn-blunder-check-level-intermediate').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('blunder-check-composing')).toBeNull();
+  });
+
+  it('saves the picked level first and composes only after the save succeeded', async () => {
+    renderTab();
+
+    await screen.findByTestId('blunder-check-level-step');
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('btn-blunder-check-level-start') as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-advanced'));
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    // The PUT carries the stored schedule values plus the picked level.
+    expect(updateSettings.mock.calls[0]?.[0]).toMatchObject({
+      weekday_mask: SETTINGS.weekday_mask,
+      puzzles_per_session: SETTINGS.puzzles_per_session,
+      reminder_enabled: SETTINGS.reminder_enabled,
+      reminder_hour: SETTINGS.reminder_hour,
+      reminder_intent_at: SETTINGS.reminder_intent_at,
+      blunder_check_level: 'advanced',
+    });
+    expect(updateSettings.mock.invocationCallOrder[0]).toBeLessThan(
+      composeOrResumeSession.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(trackFeature).toHaveBeenCalledWith('option-change', {
+      target: 'train-blunder-check-level',
+      value: 'advanced',
+    });
+  });
+
+  it('a failed level save shows the inline error with a retry and does not compose', async () => {
+    updateSettings.mockImplementationOnce(async () => {
       throw httpError(HTTP_SERVER_ERROR);
     });
     renderTab();
 
+    await screen.findByTestId('blunder-check-level-step');
     await waitFor(() =>
-      expect(screen.getByTestId('blunder-check-load-error').textContent).toBe(LOAD_ERROR_COPY),
+      expect(
+        (screen.getByTestId('btn-blunder-check-level-start') as HTMLButtonElement).disabled,
+      ).toBe(false),
     );
-    expect(screen.queryByTestId('blunder-check-btn-start')).toBeNull();
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+
+    await screen.findByTestId('blunder-check-level-error');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('btn-blunder-check-level-start'));
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it('Back on the level step leaves the host without saving or composing', async () => {
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+
+    fireEvent.click(await screen.findByTestId('btn-blunder-check-level-back'));
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+  });
+
+  it('waits for the progress response before composing', async () => {
+    let resolveProgress: (progress: TrainProgressResponse) => void = () => {};
+    getProgress.mockImplementation(
+      () => new Promise<TrainProgressResponse>((resolve) => (resolveProgress = resolve)),
+    );
+    renderTab();
+
+    expect(screen.getByTestId('blunder-check-composing')).not.toBeNull();
+    await act(async () => {});
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+
+    await act(async () => resolveProgress(progressWith(false)));
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-level-step')).toBeNull();
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('a progress failure shows the load error with Back instead of composing blind', async () => {
+    getProgress.mockImplementation(async () => {
+      throw httpError(HTTP_SERVER_ERROR);
+    });
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+
+    await screen.findByTestId('blunder-check-compose-error');
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-back'));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('double click (T-249-29)', () => {
-  it('sends one compose request while the first is pending', async () => {
-    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
+describe('no level step when none is needed', () => {
+  it('composes on mount with no level screen and no settings write', async () => {
     renderTab();
 
-    const button = await enabledStartButton();
-    fireEvent.click(button);
-    fireEvent.click(button);
+    await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('blunder-check-level-step')).toBeNull();
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('single compose (T-249-29, T-251-22)', () => {
+  it('sends one compose request even when the mount effect runs twice (StrictMode)', async () => {
+    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
+    renderTab(vi.fn(), vi.fn(), { strict: true });
 
     await waitFor(() => expect(composeOrResumeSession).toHaveBeenCalledTimes(1));
-    expect((screen.getByTestId('blunder-check-btn-start') as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    await act(async () => {});
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('error phase', () => {
-  it('Back to start returns to the start screen', async () => {
+  it('Back leaves the host', async () => {
     drillStart.errored = true;
-    renderTab();
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
 
     expect(screen.getByTestId('blunder-check-error').textContent).toContain(LOAD_ERROR_COPY);
     fireEvent.click(screen.getByTestId('blunder-check-btn-reset'));
 
-    await waitFor(() => expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull());
-    expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('immersive reporting', () => {
-  it('is not immersive on the start screen and clears on unmount', async () => {
+  it('is immersive from the first paint (composing) and clears on unmount', async () => {
+    composeOrResumeSession.mockImplementation(() => new Promise(() => {}));
     const onImmersiveChange = vi.fn();
     const { unmount } = renderTab(onImmersiveChange);
 
-    await screen.findByTestId('blunder-check-btn-start');
-    expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
-    expect(onImmersiveChange).not.toHaveBeenCalledWith(true);
+    await screen.findByTestId('blunder-check-composing');
+    expect(onImmersiveChange).toHaveBeenLastCalledWith(true);
     unmount();
     expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
   });
@@ -500,7 +651,6 @@ async function pressReady(): Promise<void> {
 async function reachFirstPrompt(): Promise<void> {
   renderTab();
   await advance(50);
-  fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
   await advance(50);
   await pressReady();
   // One advance per tick: each tick's timer is scheduled by an effect after a render, which
@@ -524,7 +674,6 @@ describe('window loop', () => {
   it('replays the lead-in, then shows the arrow with the piece still on its source square', async () => {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     expect(startWindow).toHaveBeenCalledWith(7, 0);
@@ -654,17 +803,16 @@ describe('window loop', () => {
     answer.mockImplementation(async () => gradedAnswer());
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await pressReady();
     await advance(LEAD_IN_START_DELAY_MS);
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
     await advance(LEAD_IN_PLY_INTERVAL_MS);
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
     await advance(LEAD_IN_PLY_INTERVAL_MS);
     // The prompt is open and the clock now runs.
     await advance(3_000);
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('7s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('7');
 
     fireEvent.click(screen.getByTestId('blunder-check-btn-safe'));
     await advance(0);
@@ -672,13 +820,12 @@ describe('window loop', () => {
     await advance(MOVE_REPLY_DELAY_MS);
     await advance(MOVE_REPLY_DELAY_MS);
     // The next prompt starts with the server's full countdown, not what was left before.
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
   });
 
   it('never says "your move" during the drill (D-09)', async () => {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     // The Ready gate is up.
     expect(screen.getByTestId('blunder-check-btn-ready')).not.toBeNull();
@@ -689,6 +836,28 @@ describe('window loop', () => {
       await advance(LEAD_IN_PLY_INTERVAL_MS);
     }
     expect(document.body.textContent?.toLowerCase()).not.toContain('your move');
+  });
+
+  it('the first Ready gate of a first session explains what happens, with the timer', async () => {
+    renderTab();
+    await advance(50);
+    await advance(50);
+    const rules = screen.getByTestId('blunder-check-ready-rules').textContent ?? '';
+    expect(rules).toContain('Sequences of moves are replayed on the board.');
+    // The flow, not the scoring: the pot rules stay in the settings row.
+    expect(rules).not.toContain('pot');
+    expect(rules).toMatch(/You have \d+ seconds\./);
+    // The side and turn line stays its own element under the rules.
+    expect(screen.getByTestId('blunder-check-ready-copy')).not.toBeNull();
+  });
+
+  it('the Ready gate shows no rules once a session has been finished', async () => {
+    getProgress.mockImplementation(async () => progressWith(false, true));
+    renderTab();
+    await advance(50);
+    await advance(50);
+    expect(screen.getByTestId('blunder-check-btn-ready')).not.toBeNull();
+    expect(screen.queryByTestId('blunder-check-ready-rules')).toBeNull();
   });
 
   it('a fresh window waits on its start position until Ready, untimed (L-02)', async () => {
@@ -704,7 +873,6 @@ describe('window loop', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
@@ -731,7 +899,7 @@ describe('window loop', () => {
     // The highlight follows the replayed lead-in move.
     expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe('e7e5');
     await advance(LEAD_IN_PLY_INTERVAL_MS);
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
     expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);
   });
 
@@ -739,7 +907,6 @@ describe('window loop', () => {
     beginWindow.mockImplementation(() => new Promise(() => {}));
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
@@ -756,7 +923,6 @@ describe('window loop', () => {
     });
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     fireEvent.click(screen.getByTestId('blunder-check-btn-ready'));
     await advance(50);
@@ -776,12 +942,14 @@ describe('timer, timeouts and points', () => {
     vi.useRealTimers();
   });
 
-  it('plays the low-time sound once when 5 seconds remain', async () => {
+  it('plays the low-time sound once, as the ring turns red in the last third', async () => {
     await reachFirstPrompt();
 
-    await advance(FRESH_TIMER_MS - 6_000);
+    // The fixture's 10 s timer turns red at 3.33 s left: not yet at 3.4 s.
+    await advance(FRESH_TIMER_MS - 3_400);
     expect(playSound).not.toHaveBeenCalledWith('low-time');
-    await advance(1_500);
+    await advance(200);
+    expect(playSound).toHaveBeenCalledWith('low-time');
     await advance(2_000);
     expect(playSound.mock.calls.filter(([event]) => event === 'low-time')).toHaveLength(1);
   });
@@ -1017,13 +1185,12 @@ describe('timer, timeouts and points', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
 
     // Straight to the prompt: the answered moves are on the board and the arrow is shown.
     expect(boardFen()).toBe(applyUcis(START_FEN, [...LEAD_IN, PROMPT_UCI, REPLY_UCI]));
     expect(boardArrows()).toBe('f1c4');
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('6s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('6');
 
     await advance(5_000);
     expect(answer).not.toHaveBeenCalled();
@@ -1046,7 +1213,6 @@ describe('timer, timeouts and points', () => {
     );
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await advance(0);
 
@@ -1078,7 +1244,7 @@ describe('timer, timeouts and points', () => {
     expect(startWindow).toHaveBeenLastCalledWith(7, 0);
     expect(boardFen()).toBe(applyUcis(START_FEN, [...LEAD_IN, PROMPT_UCI, REPLY_UCI]));
     expect(boardArrows()).toBe('f1c4');
-    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('9s');
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('9');
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('6 pts');
     expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);
   });
@@ -1270,15 +1436,17 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     cleanup();
   }
 
-  it('Analyze then Back lands on the same solution, not the start screen', async () => {
+  it('Analyze then Back lands on the same solution, without composing a new session', async () => {
     await analyzeAndLeave();
+    composeOrResumeSession.mockClear();
     getOpenSession.mockImplementation(async () => TWO_WINDOW_SESSION);
     const onImmersiveChange = vi.fn();
 
     renderTab(onImmersiveChange);
 
-    // Restored from the first paint: no start screen, no window or solution refetch.
-    expect(screen.queryByTestId('blunder-check-start-screen')).toBeNull();
+    // Restored from the first paint: no compose, no window or solution refetch.
+    expect(screen.queryByTestId('blunder-check-composing')).toBeNull();
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
     expect(screen.getByTestId('blunder-check-solution-heading').textContent).toBe('Blunder caught');
     expect(onImmersiveChange).toHaveBeenLastCalledWith(true);
     await advance(50);
@@ -1295,18 +1463,21 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
   });
 
-  it('a restored solution of another session falls back to the start screen', async () => {
+  it('a restored solution of another session drops back to Today (T-251-21)', async () => {
     await analyzeAndLeave();
+    composeOrResumeSession.mockClear();
     getOpenSession.mockImplementation(async () => ({ ...TWO_WINDOW_SESSION, session_id: 8 }));
+    const onExit = vi.fn();
 
-    renderTab();
+    renderTab(vi.fn(), onExit);
     await advance(50);
 
-    expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(composeOrResumeSession).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('blunder_check_solution_cache')).toBeNull();
   });
 
-  it('Next drops the cached solution, so a later visit starts on the start screen', async () => {
+  it('Next drops the cached solution', async () => {
     await reachBetterMove();
     await playBoardMove('d2', 'd4');
     await advance(FEEDBACK_DISPLAY_MS);
@@ -1504,7 +1675,6 @@ describe('session end screen (D-14)', () => {
   async function playTwoWindows(): Promise<void> {
     renderTab();
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await finishWindowWithBlunderCall();
     await finishWindowWithBlunderCall();
@@ -1551,23 +1721,22 @@ describe('session end screen (D-14)', () => {
     expect(screen.getByTestId('blunder-check-end-screen')).not.toBeNull();
   });
 
-  it('Done returns to the start screen and the page leaves immersive mode', async () => {
+  it('Done leaves the host, and the end screen is not immersive', async () => {
     finishSession.mockImplementation(async () => RESULT);
     const onImmersiveChange = vi.fn();
-    renderTab(onImmersiveChange);
+    const onExit = vi.fn();
+    renderTab(onImmersiveChange, onExit);
     await advance(50);
-    fireEvent.click(screen.getByTestId('blunder-check-btn-start'));
     await advance(50);
     await finishWindowWithBlunderCall();
     await finishWindowWithBlunderCall();
     expect(screen.getByTestId('blunder-check-end-screen')).not.toBeNull();
     expect(onImmersiveChange).toHaveBeenLastCalledWith(false);
 
+    expect(onExit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('btn-train-done'));
-    await advance(50);
 
-    expect(screen.getByTestId('blunder-check-start-screen')).not.toBeNull();
-    expect(screen.queryByTestId('blunder-check-end-screen')).toBeNull();
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1578,6 +1747,9 @@ describe('D-19: no Umami event for blunder check', () => {
   // Built from parts so this file does not contain the strings it forbids elsewhere.
   const ANALYTICS_IMPORT = ['@/lib', 'analytics'].join('/');
   const UMAMI_ATTRIBUTE = ['data-umami', 'event'].join('-');
+  // The end screen (leaderboard link) and the host (the level step's option-change, a settings
+  // row overwritten in place) are the only blunder-check files that may track an event.
+  const ANALYTICS_EXEMPT_FILES = ['BlunderCheckEndScreen.tsx', 'BlunderCheckTab.tsx'];
 
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -1586,7 +1758,7 @@ describe('D-19: no Umami event for blunder check', () => {
     });
   }
 
-  it('no blunder-check source imports the analytics module or sets an Umami attribute', () => {
+  it('no blunder-check source imports the analytics module (bar the end screen link and the host level option) or sets an Umami attribute', () => {
     const files = [
       ...sourceFiles(join(SRC, 'components/train/blunder-check')),
       join(SRC, 'hooks/useBlunderCheckSession.ts'),
@@ -1596,7 +1768,13 @@ describe('D-19: no Umami event for blunder check', () => {
     expect(files.length).toBeGreaterThan(3);
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
-      expect(source, file).not.toContain(ANALYTICS_IMPORT);
+      // Phase 251 (D-24): the end screen's "See the leaderboard" link is a browser-only navigation,
+      // not a DB-held fact, so it alone may send a nav-click. The data-attribute rule still holds.
+      // Test files may mock the analytics module (the host test asserts the level event).
+      const exempt = file.includes('__tests__') || ANALYTICS_EXEMPT_FILES.some((name) => file.endsWith(name));
+      if (!exempt) {
+        expect(source, file).not.toContain(ANALYTICS_IMPORT);
+      }
       expect(source, file).not.toContain(UMAMI_ATTRIBUTE);
     }
   });

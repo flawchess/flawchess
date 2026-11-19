@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BOARD_LABEL,
   MEDAL_KIND_ORDER,
+  groupMedalsByWeek,
   lastWeekFinishCopy,
   medalDialogTitle,
   medalEntryLabel,
@@ -33,23 +34,28 @@ describe('tallyEntries', () => {
 
 describe('tallyAriaLabel', () => {
   it('lists non-zero counts then the board label and a plural noun', () => {
-    expect(tallyAriaLabel({ gold: 3, silver: 1, bronze: 0 }, 'points')).toBe('3 gold, 1 silver Points medals');
+    expect(tallyAriaLabel({ gold: 3, silver: 1, bronze: 0 }, 'points')).toBe('3 gold, 1 silver Puzzles Points medals');
   });
 
   it('uses the singular noun for exactly one medal in total', () => {
-    expect(tallyAriaLabel({ gold: 1, silver: 0, bronze: 0 }, 'accuracy')).toBe('1 gold Accuracy medal');
+    expect(tallyAriaLabel({ gold: 1, silver: 0, bronze: 0 }, 'accuracy')).toBe('1 gold Puzzles Accuracy medal');
   });
 
   it('lists all three types', () => {
     expect(tallyAriaLabel({ gold: 12, silver: 10, bronze: 11 }, 'points')).toBe(
-      '12 gold, 10 silver, 11 bronze Points medals',
+      '12 gold, 10 silver, 11 bronze Puzzles Points medals',
     );
   });
 });
 
 describe('BOARD_LABEL', () => {
-  it('names both boards', () => {
-    expect(BOARD_LABEL).toEqual({ points: 'Points', accuracy: 'Accuracy' });
+  it('names all four boards with their mode', () => {
+    expect(BOARD_LABEL).toEqual({
+      points: 'Puzzles Points',
+      accuracy: 'Puzzles Accuracy',
+      blunder_check_points: 'Blunder check Points',
+      blunder_check_score: 'Blunder check Score %',
+    });
   });
 });
 
@@ -68,8 +74,8 @@ describe('medalDialogTitle', () => {
 
 describe('medalEntryLabel', () => {
   it('names the medal and board, marking a shared medal', () => {
-    expect(medalEntryLabel('gold', 'points', true)).toBe('Gold, Points (shared)');
-    expect(medalEntryLabel('bronze', 'accuracy', false)).toBe('Bronze, Accuracy');
+    expect(medalEntryLabel('gold', 'points', true)).toBe('Gold, Puzzles Points (shared)');
+    expect(medalEntryLabel('bronze', 'accuracy', false)).toBe('Bronze, Puzzles Accuracy');
   });
 });
 
@@ -101,5 +107,32 @@ describe('medalKeys', () => {
       { week_start: '2026-09-28', board: 'points' },
       { week_start: '2026-09-21', board: 'accuracy' },
     ]);
+  });
+});
+
+describe('groupMedalsByWeek', () => {
+  const medal = (week_start: string, board: UnclaimedMedal['board']): UnclaimedMedal => ({
+    week_start,
+    board,
+    medal: 'gold',
+    value: 1,
+    shared: false,
+  });
+
+  it('groups by week, newest first, keeping the API board order inside a week', () => {
+    const groups = groupMedalsByWeek([
+      medal('2026-09-28', 'points'),
+      medal('2026-10-05', 'blunder_check_points'),
+      medal('2026-09-28', 'blunder_check_score'),
+      medal('2026-10-05', 'points'),
+    ]);
+    expect(groups.map((g) => g.weekStart)).toEqual(['2026-10-05', '2026-09-28']);
+    expect(groups[0]!.medals.map((m) => m.board)).toEqual(['blunder_check_points', 'points']);
+    expect(groups[1]!.medals.map((m) => m.board)).toEqual(['points', 'blunder_check_score']);
+  });
+
+  it('returns no groups for no medals and one group for a single week', () => {
+    expect(groupMedalsByWeek([])).toEqual([]);
+    expect(groupMedalsByWeek([medal('2026-10-05', 'points'), medal('2026-10-05', 'accuracy')])).toHaveLength(1);
   });
 });

@@ -22,7 +22,7 @@ from typing import Any
 import chess.pgn
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.dev_clock import dev_now_utc
@@ -30,6 +30,7 @@ from app.main import app
 from app.models.blunder_check import (
     AnswerResult,
     BlunderCheckAnswer,
+    BlunderCheckSession,
     BlunderCheckWindow,
     WindowCase,
     WindowOutcome,
@@ -38,7 +39,12 @@ from app.models.game_position import GamePosition
 from app.repositories.blunder_check_repository import NewWindow, insert_session
 from app.services import blunder_check_selection
 from app.services.blunder_check_candidates import points_possible
-from app.services.blunder_check_grading import judged_ply
+from app.services.blunder_check_grading import (
+    ANSWER_CEILING_S,
+    MOVE_TIMER_SECONDS,
+    MS_PER_SECOND,
+    judged_ply,
+)
 from app.services.blunder_check_rules import LEAD_IN_PLIES, SlotPlan, WindowShape
 from app.services.blunder_check_selection import build_snapshot
 from tests.blunder_check_seed import (
@@ -85,6 +91,7 @@ _ANSWER_KEYS = {
     "better_move",
 }
 _BASE = "/api/blunder-check/sessions"
+_SECONDS_PER_DAY = 24 * 60 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +209,12 @@ async def _setup(test_engine, specs: list[_Spec], *, user_id_token: tuple[int, s
         async with maker() as session:
             async with session.begin():
                 session_id = await insert_session(
-                    session, user_id=user_id, windows=windows, now_utc=_T0
+                    session,
+                    user_id=user_id,
+                    windows=windows,
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
                 )
         assert session_id is not None
         yield _Setup(user_id, token, session_id, [w.game_id for w in windows])
@@ -260,6 +272,18 @@ async def _window_row(test_engine, session_id: int, position: int) -> BlunderChe
                     BlunderCheckWindow.session_id == session_id,
                     BlunderCheckWindow.position == position,
                 )
+            )
+        ).scalar_one()
+
+
+async def _session_count(test_engine, user_id: int) -> int:
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(func.count())
+                .select_from(BlunderCheckSession)
+                .where(BlunderCheckSession.user_id == user_id)
             )
         ).scalar_one()
 
@@ -350,11 +374,13 @@ _FORBIDDEN_KEYS = {
     "is_own",
     "window_length",
 }
-_BEFORE_CEILING_S = 13  # inside 10 + 3 + 2
-_PAST_CEILING_S = 16
+# Derived from the grading constants so a timer change cannot leave these inside or past the
+# ceiling by accident (Phase 251 UAT moved the timer from 10 s to 12 s).
+_BEFORE_CEILING_S = ANSWER_CEILING_S - 2
+_PAST_CEILING_S = ANSWER_CEILING_S + 1
 _RELOAD_DELAY_S = 6
-_RELOAD_REMAINING_MS = 4000
-_FULL_TIMER_MS = 10000
+_FULL_TIMER_MS = MOVE_TIMER_SECONDS * MS_PER_SECOND
+_RELOAD_REMAINING_MS = _FULL_TIMER_MS - _RELOAD_DELAY_S * MS_PER_SECOND
 
 
 def _all_keys(value: object) -> set[str]:
@@ -719,10 +745,10 @@ async def test_finish_idor_and_unknown_session_answer_404(test_engine, clock) ->
 
 
 @pytest.mark.asyncio
-async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
+async def test_finish_then_start_returns_done_session_until_next_day(
     test_engine, clock, monkeypatch
 ) -> None:
-    # The fresh session needs the leftover herring runs of the own game: force own herrings.
+    # The next-day session needs the leftover herring runs of the own game: force own herrings.
     _force_own_shape(monkeypatch, WindowShape(3, None))
     async with _setup(test_engine, [_HERRING_3, _BLUNDER_AT_THREE]) as s:
         await _play_cleared_and_false_alarm(s)
@@ -732,23 +758,78 @@ async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
         ) as client:
             headers = {"Authorization": f"Bearer {s.token}"}
             open_after = await client.get(f"{_BASE}/open", headers=headers)
-        fresh = await _call(s.token, _BASE)
-        fresh_id = fresh.json()["session_id"] if fresh.status_code == 200 else None
+        # Same session day: Start returns the finished session and composes nothing.
+        same_day = await _call(s.token, _BASE)
+        sessions_after_same_day = await _session_count(test_engine, s.user_id)
+        # Past the session's expires_on: Start composes a fresh session.
+        clock.advance(_SECONDS_PER_DAY)
+        next_day = await _call(s.token, _BASE)
+        fresh_id = next_day.json()["session_id"] if next_day.status_code == 200 else None
         try:
             assert open_after.status_code == 200 and open_after.json() is None
-            assert fresh.status_code == 200, fresh.text
+            assert same_day.status_code == 200, same_day.text
+            assert same_day.json()["session_id"] == s.session_id
+            assert sessions_after_same_day == 1
+            assert next_day.status_code == 200, next_day.text
             assert fresh_id != s.session_id
         finally:
             await delete_blunder_check_sessions(test_engine, [fresh_id] if fresh_id else [])
 
 
+async def _start_first(token: str, session_id: int) -> httpx.Response:
+    return await _start(token, session_id, 0)
+
+
+async def _begin_first(token: str, session_id: int) -> httpx.Response:
+    return await _begin(token, session_id, 0)
+
+
 @pytest.mark.asyncio
-async def test_non_beta_user_is_refused_on_the_drill_routes(test_engine, clock) -> None:
+async def test_non_beta_user_reaches_the_drill_routes(test_engine, clock) -> None:
+    """D-18: no drill route answers 403 for a missing beta flag; an unknown session is a 404."""
     _, token = await register_user("bc-drill-nonbeta", beta=False, test_engine=test_engine)
-    assert (await _start(token, 1, 0)).status_code == 403
-    assert (await _begin(token, 1, 0)).status_code == 403
-    assert (await _answer(token, 1, 0, 1, "safe")).status_code == 403
-    assert (await _finish(token, 1)).status_code == 403
+    responses = [
+        await _start(token, 1, 0),
+        await _begin(token, 1, 0),
+        await _answer(token, 1, 0, 1, "safe"),
+        await _finish(token, 1),
+    ]
+    assert [resp.status_code for resp in responses] == [404, 404, 404, 404]
+
+
+@pytest.mark.asyncio
+async def test_guest_reaches_the_drill_routes(test_engine, clock) -> None:
+    """D-18: a guest is an authenticated user; the drill routes answer the scoped 404."""
+    _, token = await register_user(
+        "bc-drill-guest", beta=False, test_engine=test_engine, guest=True
+    )
+    responses = [
+        await _start(token, 1, 0),
+        await _begin(token, 1, 0),
+        await _answer(token, 1, 0, 1, "safe"),
+        await _finish(token, 1),
+    ]
+    assert [resp.status_code for resp in responses] == [404, 404, 404, 404]
+
+
+@pytest.mark.asyncio
+async def test_non_beta_user_cannot_touch_another_users_session(test_engine, clock) -> None:
+    """T-251-09: with the gate gone, scoping by the caller's id still answers 404 (ASVS V4)."""
+    async with _setup(test_engine, [_HERRING_3]) as s:
+        _, other_token = await register_user(
+            "bc-drill-nonbeta-idor", beta=False, test_engine=test_engine
+        )
+        _, guest_token = await register_user(
+            "bc-drill-guest-idor", beta=False, test_engine=test_engine, guest=True
+        )
+        statuses = [
+            (await call(token, s.session_id)).status_code
+            for token in (other_token, guest_token)
+            for call in (_finish, _start_first, _begin_first)
+        ]
+        window = await _window_row(test_engine, s.session_id, 0)
+    assert statuses == [404] * 6
+    assert window.started_at is None
 
 
 # ---------------------------------------------------------------------------

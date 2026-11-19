@@ -3,7 +3,7 @@
 The drill_items/drill_sessions/drill_solves deletes are plain single-table
 statements; the branch that actually makes a choice is what happens to
 `train_settings`. The default path must clear ONLY the per-day tick snapshot
-(streak_count/shield_level/streak_settled_through/pool_eligible_since) and
+(streak_count/shield_level/streak_settled_through/pool_eligible_since/streak_credited_on) and
 keep the schedule (timezone / weekday_mask / puzzles_per_session) the user
 picked — re-selecting a schedule after every reset would defeat the purpose of
 the tool — while `--reset-settings` drops the row so first-touch defaults come
@@ -46,6 +46,7 @@ async def _seed_settings(db_session, user_id: int) -> None:
             shield_level=5,
             streak_settled_through=datetime.date(2026, 7, 20),
             pool_eligible_since=datetime.date(2026, 6, 1),
+            streak_credited_on=datetime.date(2026, 7, 20),
             intro_seen_at=datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
             reveal_tour_stage=2,
             sr_explained_at=datetime.datetime(2026, 7, 3, tzinfo=datetime.timezone.utc),
@@ -72,6 +73,9 @@ async def test_reset_clears_streak_snapshot_but_keeps_schedule(fresh_test_user, 
     assert row.shield_level == 0
     assert row.streak_settled_through is None
     assert row.pool_eligible_since is None
+    # Phase 251: the per-day credit key is part of the tick snapshot, so a dev account reset
+    # mid-day can be credited for that day again (repeatable UAT).
+    assert row.streak_credited_on is None
     # The bot-onboarding
     # "seen" timestamps and the reveal-tour stage reset alongside the tick
     # snapshot, so onboarding UAT is repeatable on dev without bin/reset_db.sh.
@@ -105,5 +109,7 @@ async def test_reset_is_a_no_op_for_a_user_with_no_train_state(fresh_test_user, 
         "drill_items": 0,
         "drill_sessions": 0,
         "drill_solves": 0,
+        "blunder_check_sessions": 0,
+        "blunder_check_windows": 0,
         "train_settings": 0,
     }

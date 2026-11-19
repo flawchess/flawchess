@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 256
-status: completed
-stopped_at: Phase 256 complete — all phases complete
-last_updated: "2026-11-19T14:29:02.409Z"
-last_activity: 2026-11-18
-last_activity_desc: Phase 256 shipped (squash-merged to main as b2a66e3b7)
-state_head: 635487a1810d1583400cba18ada97e551595624e
+current_phase: 252
+current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
+status: executing
+stopped_at: Phase 251 complete, ready to execute Phase 252
+last_updated: "2026-11-19T06:05:03.038Z"
+last_activity: 2026-11-19
+last_activity_desc: Phase 251 complete, transitioned to Phase 252
+state_head: 92bb6a866eafdd34920c26a9bcf72a18bcd58771
 progress:
   total_phases: 10
   completed_phases: 63
-  total_plans: 80
-  completed_plans: 76
-  percent: 95
+  total_plans: 93
+  completed_plans: 89
+  percent: 96
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,14 +22,16 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 256
-Plan: Not started
+Phase: 252 — Short Engine Line Repair Backfill (SEED-261112-s4v)
+Plan: 6
 
-Status: All phases complete
+Status: Ready to execute
 
 Last activity: 2026-11-19 - Completed quick task 261119-m4t: backend Maia session runs one intra-op thread (MAIA_INTRA_OP_THREADS)
 
 Open threads carried forward (not blockers):
+
+- Phase 251 follow-ups: review WR-04 (Start within 600 ms of a settings edit drops the pending save), IN-02 (level options duplicated in three components), IN-03 (stale medal-cap comment); launch-notice copy says "Change the amount on the card" though the size lives in the settings row; owner should know assumption A8 (~3.6% sparse-weekday users who split modes across days can lose that day) and W-06 (puzzles on with no material still needs a warm-up session for the streak); low-urgency `drill_sessions (user_id, session_date)` index; `complete_session` could take `user_id` as defense in depth.
 
 - Phase 246 WR-01: archive query has no `drill_solves` index, revisit near 300k rows.
 - Phase 241 follow-ups: suspected bugs (INVENTORY §7.2) verified and captured as SEED-202 (start with the tier-4 lichess flag); §7.1 (50 seed candidates) still awaits an owner pass; review IN-01 (`frontend/CLAUDE.md` names two nonexistent components) open.
@@ -49,8 +52,12 @@ Open threads carried forward (not blockers):
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
+See: .planning/PROJECT.md (updated 2026-11-19 after Phase 251)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 251 (Blunder-Check Schedule, Streak and Leaderboards, SEED-261108-dk0) complete 2026-11-19** on branch `gsd/phase-251-...`: verified 25/25, UAT 5/5 (browser launch walk), threats_open 0, Nyquist-compliant; not yet squash-merged to `main` (pre-merge gate + serial suite already green). Next on the roadmap: Phase 252 (Short Engine Line Repair Backfill).
+
+### Superseded: focus after the v2.28/v2.29 close
+
 Current focus: **v2.28 and v2.29 closed 2026-11-08**; phases 242–246 regrouped into v2.28 Openings Stats Rework (242–243, releases #427–#447) and v2.29 Train Spacing & Archive, Analysis Explain (244–246, #452–#463), each tagged with a GitHub release on a production forward-port. No open milestone: next is `/gsd-new-milestone` or standalone Phase 247.
 
 ### Superseded: focus after Phase 242
@@ -1198,9 +1205,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-16T16:06:01.946Z
-**Stopped at:** Phase 256 complete — all phases complete
-**Resume file:** .planning/phases/256-facepalm-refit-material-aggregated-over-depths/256-CONTEXT.md
+**Last session:** 2026-11-19T07:30:00Z
+**Stopped at:** Phase 251 complete, ready to execute Phase 252
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
