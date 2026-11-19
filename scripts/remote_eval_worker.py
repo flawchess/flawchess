@@ -10,8 +10,8 @@ engine results through UNCHANGED (D-2 / pitfall 1: no client-side post-move shif
 The operator token is read from EVAL_OPERATOR_TOKEN in the environment or the .env
 file (loaded via app settings); --token overrides it for one-off runs. --base-url
 defaults to the production API, so with the token in .env the worker needs no flags.
-EVAL_WORKER_ID (environment or .env) names the worker, e.g. EVAL_WORKER_ID=box1 (< 10
-chars); --worker-id overrides it. Without either a random id is generated at each start.
+EVAL_WORKER_ID (environment or .env) names the worker, e.g. EVAL_WORKER_ID=box1 (at most
+16 chars); --worker-id overrides it. Without either a random id is generated at each start.
 
 Usage:
     # Connectivity test (lease + eval only, no submit):
@@ -131,8 +131,10 @@ TRANSIENT_FAILURE_ALERT_S: float = 300.0
 # (too-early / rate-limited). A persistent one still escalates via the streak timer.
 _TRANSIENT_HTTP_STATUSES: frozenset[int] = frozenset({401, 404, 409, 425, 429})
 # D-10 (Phase 123 SEED-051): worker IDs must fit VARCHAR(16) on games.entry_eval_leased_by.
-# Random default is ~8 base36 chars; operator override is validated < 10 chars.
-WORKER_ID_MAX_LEN: int = 9  # exclusive upper bound: len < 10
+# The server truncates a longer X-Worker-Id to 16 chars (eval_remote.py), so two longer
+# names sharing a 16-char prefix would act as ONE worker id; the limit is enforced here.
+# Was < 10 chars until 2026-11-19, tighter than the columns need. Random default: 8 chars.
+WORKER_ID_MAX_LEN: int = 16  # inclusive: len <= 16
 _WORKER_ID_ALPHABET: str = "0123456789abcdefghijklmnopqrstuvwxyz"
 _WORKER_ID_DEFAULT_LEN: int = 8
 
@@ -326,7 +328,7 @@ def _generate_worker_id() -> str:
     """Generate a random ~8-char base36 worker ID for D-10 / SEED-051.
 
     Uses secrets.randbelow for each character to ensure cryptographic randomness.
-    Result is guaranteed < 10 chars, fitting VARCHAR(16) with headroom (D-09).
+    Result is 8 chars, fitting VARCHAR(16) with headroom (D-09).
     """
     return "".join(
         _WORKER_ID_ALPHABET[secrets.randbelow(len(_WORKER_ID_ALPHABET))]
@@ -1917,7 +1919,7 @@ def parse_args() -> argparse.Namespace:
         metavar="ID",
         help=(
             "Distinctive worker identity written to leased_by / entry_eval_leased_by columns "
-            "for prod observability (D-10 / SEED-051). Must be < 10 chars (fits VARCHAR(16)). "
+            "for prod observability (D-10 / SEED-051). At most 16 chars (fits VARCHAR(16)). "
             "Default: EVAL_WORKER_ID from the environment or the .env file, else a random "
             "~8-char base36 id generated at startup."
         ),
@@ -1981,7 +1983,7 @@ def parse_args() -> argparse.Namespace:
         worker_id_source = "EVAL_WORKER_ID"
     if args.worker_id is not None and len(args.worker_id) > WORKER_ID_MAX_LEN:
         parser.error(
-            f"{worker_id_source} must be < 10 chars, got {len(args.worker_id)} ({args.worker_id!r})"
+            f"{worker_id_source} must be at most {WORKER_ID_MAX_LEN} chars, got {len(args.worker_id)} ({args.worker_id!r})"
         )
     if args.fallback_url is not None and not args.fallback_url.strip():
         parser.error("--fallback-url must not be empty")

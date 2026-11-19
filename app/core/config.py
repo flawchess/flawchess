@@ -164,7 +164,7 @@ class Settings(BaseSettings):
     # Name the remote eval worker reports as (X-Worker-Id; shows up in
     # worker_heartbeats and the leased_by columns). Read ONLY by
     # scripts/remote_eval_worker.py as the default for --worker-id, which
-    # overrides it; no backend reads this name. Must be < 10 chars. Empty = a
+    # overrides it; no backend reads this name. At most 16 chars. Empty = a
     # random id is generated at each start, as before.
     EVAL_WORKER_ID: str = ""
 

@@ -1,9 +1,9 @@
 """Unit tests for the remote eval worker CLI.
 
 Covers:
-- worker_id_default_length: generated default IDs are < 10 chars, base36 charset.
-- worker_id_override_too_long: --worker-id >= 10 chars raises SystemExit (parser.error);
-  < 10 chars accepted as-is.
+- worker_id_default_length: generated default IDs are 8 chars, base36 charset.
+- worker_id_override_too_long: --worker-id > 16 chars raises SystemExit (parser.error);
+  up to 16 chars accepted as-is.
 - ladder_explicit_first: with /atomic-lease?scope=explicit returning 200, the cycle
   submits via /atomic-submit and does NOT call /entry-lease (busy path stays 1-2 calls).
 - ladder_entry_then_idle: scope=explicit 204 -> /entry-lease 200 -> /entry-submit; on
@@ -108,10 +108,10 @@ def _http_status_error(code: int) -> httpx.HTTPStatusError:
 
 
 def test_worker_id_default_length() -> None:
-    """Generated default worker-id is < 10 chars, base36 charset, exact expected length."""
+    """Generated default worker-id fits the limit, base36 charset, exact expected length."""
     wid = _generate_worker_id()
     assert len(wid) == _WORKER_ID_DEFAULT_LEN
-    assert len(wid) < 10  # Must fit VARCHAR(16) as < 10 chars
+    assert len(wid) <= WORKER_ID_MAX_LEN  # Must fit VARCHAR(16)
     assert all(c in _WORKER_ID_ALPHABET for c in wid), f"Non-base36 char in {wid!r}"
 
 
@@ -122,24 +122,24 @@ def test_worker_id_uniqueness() -> None:
 
 
 def test_worker_id_override_too_long_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """--worker-id with >= 10 chars raises SystemExit (parser.error path, not Sentry)."""
-    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "a" * 10, "--once"])
+    """--worker-id above 16 chars raises SystemExit (parser.error path, not Sentry)."""
+    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "a" * 20, "--once"])
     with pytest.raises(SystemExit):
         parse_args()
 
 
-def test_worker_id_override_exactly_ten_chars_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Boundary: exactly 10 chars is rejected (must be *strictly* < 10)."""
-    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "1234567890", "--once"])
+def test_worker_id_override_seventeen_chars_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Boundary: 17 chars is rejected (the server would truncate it to 16)."""
+    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "a" * 17, "--once"])
     with pytest.raises(SystemExit):
         parse_args()
 
 
-def test_worker_id_override_nine_chars_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """9-char override is accepted (< 10, satisfies VARCHAR(16) constraint)."""
-    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "a" * 9, "--once"])
+def test_worker_id_override_sixteen_chars_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Boundary: a 16-char override is accepted (fills VARCHAR(16) exactly)."""
+    monkeypatch.setattr(sys, "argv", ["worker", "--worker-id", "yousty-hetzner-2", "--once"])
     args = parse_args()
-    assert args.worker_id == "a" * 9
+    assert args.worker_id == "yousty-hetzner-2"
 
 
 def test_worker_id_override_short_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,8 +164,8 @@ def test_worker_id_flag_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_worker_id_env_too_long_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The < 10 chars rule applies to EVAL_WORKER_ID too."""
-    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", "a" * 10)
+    """The 16-char limit applies to EVAL_WORKER_ID too."""
+    monkeypatch.setattr(worker_module.settings, "EVAL_WORKER_ID", "a" * 17)
     monkeypatch.setattr(sys, "argv", ["worker", "--once"])
     with pytest.raises(SystemExit):
         parse_args()
@@ -179,8 +179,8 @@ def test_worker_id_unset_everywhere_stays_none(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_worker_id_max_len_constant() -> None:
-    """WORKER_ID_MAX_LEN matches the validation rule (len < 10 -> max 9)."""
-    assert WORKER_ID_MAX_LEN == 9
+    """WORKER_ID_MAX_LEN equals the VARCHAR(16) columns the server writes it to."""
+    assert WORKER_ID_MAX_LEN == 16
 
 
 # ─── Ladder tests (mocked httpx.AsyncClient) ────────────────────────────

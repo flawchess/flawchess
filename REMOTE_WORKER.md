@@ -40,7 +40,7 @@ You don't need to be a programmer to set this up, and you don't need a database 
    ```
    `--workers 4` means it uses 4 CPU cores. 4 is a good default. If your computer is powerful and you want it to do more, don't set `--workers` above your machine's physical core count — each worker runs its own copy of Stockfish on one thread, and a position that runs out of time gets thrown away rather than just taking longer, so more workers than cores can make even a fast machine quietly submit gaps in its analysis.
 
-   **Naming your worker (optional).** By default the worker picks a new random name every time it starts. To give it a fixed name, add a line like `EVAL_WORKER_ID=box1` to your `.env` file (letters and digits, fewer than 10 characters). `--worker-id box1` on the command line does the same and wins if both are set.
+   **Naming your worker (optional).** By default the worker picks a new random name every time it starts. To give it a fixed name, add a line like `EVAL_WORKER_ID=box1` to your `.env` file (letters and digits, at most 16 characters). `--worker-id box1` on the command line does the same and wins if both are set.
 
    **Most computers should leave `--lanes` alone.** On a machine with many cores (24 or more), `--lanes` lets one worker keep its cores busy while it waits on the network: it runs several games through the same set of Stockfish workers at once. Use about one lane per 6 to 8 workers, for example:
    ```

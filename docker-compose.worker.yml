@@ -17,7 +17,7 @@ services:
       # Passed into the container; pydantic-settings reads it from the OS env.
       EVAL_OPERATOR_TOKEN: ${EVAL_OPERATOR_TOKEN:?set EVAL_OPERATOR_TOKEN in .env}
       SENTRY_DSN: ${SENTRY_DSN:-}
-      # Optional worker name (< 10 chars). Empty = a random id per container start.
+      # Optional worker name (at most 16 chars). Empty = a random id per container start.
       EVAL_WORKER_ID: ${EVAL_WORKER_ID:-}
       # SEED-063 D6: agreed path so the healthcheck below reads the same file the
       # worker's watchdog (_Heartbeat) writes to.
