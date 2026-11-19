@@ -136,6 +136,12 @@ planner may adjust them with the reasoning written down, and should surface any 
 - Range and slider bounds for the blunder-check session size; the exact new `board` key names.
 - Copy for the pitch line, "How it works", the level step and the launch notice (no "your move" on foreign games).
 
+### Post-execution owner decisions (2026-11-19, from code review 251-REVIEW.md)
+
+- **Board keys / step ID (plan 02 checkpoint):** `blunder_check_points` / `blunder_check_score`; feature-route step `blunder-check`.
+- **D-16 "served" means actually shown (WR-01):** a puzzle counts for the cross-mode cooldown only once it was attempted (not merely composed into a session); a blunder-check window counts only once started (not merely composed).
+- **D-06 slider saves on release (WR-03):** the size slider writes the settings draft only on commit (pointer up / keyboard commit), so an intermediate drag position never resizes or completes an open session.
+
 </decisions>
 
 <canonical_refs>
