@@ -675,11 +675,11 @@ opponent blunder scoring on prod (seed Part A, done: Maia columns 99.2%, line fa
 user blunders). Does not wait for the Phase 252 repair: the gap in line facts is the same on both sides, so it
 does not skew the paired comparison.
 **Requirements**: TBD
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 257-01-PLAN.md — Tracer: facepalm type twin (SQL + Python), FACEPALM_STATS_MIN 0.7, GET /library/flaws carries facepalm_type, Flaws-card chip tinted by type; type parity tests and typed seeds (wave 1)
+- [x] 257-01-PLAN.md — Tracer: facepalm type twin (SQL + Python), FACEPALM_STATS_MIN 0.7, GET /library/flaws carries facepalm_type, Flaws-card chip tinted by type; type parity tests and typed seeds (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 257-02-PLAN.md — Backend: the games-payload flaw markers carry facepalm_type next to the score (FacepalmChipValue, owner-side reader), TS FlawMarker mirror (wave 2)

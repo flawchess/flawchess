@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 257
 current_phase_name: Facepalm Rate in the Library Stats (SEED-261114-iuv)
 status: executing
-stopped_at: Phase 257 context gathered
-last_updated: "2026-11-20T12:24:23.710Z"
+stopped_at: Completed 257-01-PLAN.md
+last_updated: "2026-11-20T12:41:01.033Z"
 last_activity: 2026-11-20
-last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: b9b9195759209acc37baf090b14d6ef8d084aa3f
+last_activity_desc: Phase 257 execution started
+state_head: eb98fa6a4285ad4792815dc4f489da00960d3bf7
 progress:
   total_phases: 11
   completed_phases: 63
   total_plans: 100
-  completed_plans: 90
+  completed_plans: 91
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 257 (Facepalm Rate in the Library Stats (SEED-261114-iuv)) — READY TO EXECUTE
-Plan: 6
+Phase: 257 (Facepalm Rate in the Library Stats (SEED-261114-iuv)) — EXECUTING
+Plan: 2 of 7
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Completed quick task 261120-c1x: Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time
+Last activity: 2026-11-20 — Phase 257 execution started
 
 Open threads carried forward (not blockers):
 
@@ -955,6 +955,7 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 255]: 255-04: recorder forgets sent current/skip keys when the stored stamp changes so a cleared stamp can be re-posted in-session
 - [Phase 255]: 255-05: mobile Stats colour switch gets onAnyClick so a click on the selected colour completes openings-played-as; Openings.tsx no longer reads the profile
 - [Phase 255]: 255-06: Train step completes in Train.tsx handleEnterLoop (Start/Resume), route dots arrive as boolean props on hook-free TrainStartScreen and TrainSubnav
+- [Phase 257]: facepalm type rule (loss > 0 and loss >= missed) lives next to the score twin; readers null the type with the score
 
 ### Pending Todos
 
@@ -1208,9 +1209,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-20T11:14:37.174Z
-**Stopped at:** Phase 257 context gathered
-**Resume file:** .planning/phases/257-facepalm-rate-library-stats/257-CONTEXT.md
+**Last session:** 2026-11-20T12:40:59.773Z
+**Stopped at:** Completed 257-01-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1492,6 +1493,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 255 P05 | 25 min | 2 tasks | 8 files |
 | Phase 255 P06 | 20 min | 2 tasks | 5 files |
 | Phase 255 P07 | n/a | 2 tasks | 1 files |
+| Phase 257 P01 | 20 min | 2 tasks | 15 files |
 
 ## Performance Metrics
 
