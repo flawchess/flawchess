@@ -41,6 +41,29 @@ created: "2026-11-20"
 
 Task IDs are filled in by the planner; the rows below are the decision-to-test contract they must cover.
 
+**Planner task mapping (2026-11-20, revised after the plan check: the former 257-02 and 257-04 were
+each split into a backend and a frontend plan, so the plans are now 01 to 07):**
+
+| Decision row | Plan / task | Notes |
+|---|---|---|
+| D-01 stats cut | 257-01 T2 | `test_facepalm_stats_min_is_the_high_preset_cut`; the cut is exercised by 257-04 T1 and 257-05 T1 boundary tests |
+| D-02 type twin parity | 257-01 T1 (twin), 257-01 T2 (parity) | `-k "type or stats_min"` in `tests/services/test_facepalm_score.py` |
+| D-08 `query_flaws` type | 257-01 T1 (router), 257-01 T2 (`TestQueryFlawsFacepalmType`, null type with null score) | |
+| D-08 `fetch_page_facepalm_scores` (score, type) | 257-02 T1 | value is `FacepalmChipValue` |
+| D-08 `_build_eval_series` | 257-02 T1 | |
+| D-03 share | 257-04 T1 (backend, `TestFacepalmShare`), 257-04 T2 (chart) | floor is 50 (orchestrator decision 1), not 20 |
+| D-12 / D-13 backend rows | 257-05 T1 | `tests/services/test_flaw_comparison.py -k facepalm` |
+| D-13 neutral cell | 257-06 T1 (`noVerdict` in gapBar + GapBar tests), 257-06 T2 (card) | |
+| D-06 regression | 257-02 T1 (owner gate kept), 257-05 T1 (opponent side as counts only), 257-07 T1 (files unchanged + tests) | |
+| D-08 / D-09 chip surfaces | 257-01 T1 (Flaws card), 257-03 T1 (move list), 257-03 T2 (tooltip, theme cleanup) | |
+| D-10 explanation | 257-03 T1 | |
+| D-14..D-16 copy | 257-06 T1 (meta, GapPopover props), 257-06 T2 (`FacepalmCard.test.tsx`) | |
+| D-03 share chart | 257-04 T2 | `src/components/library/__tests__/FacepalmShareChart.test.tsx`; share rounded to nearest on purpose (comment gate in 257-04 T2) |
+| D-11 card gate and TC switch | 257-06 T2 | `LibraryStatsSections.test.tsx` |
+| Manual-only rows | 257-07 T2 `<human-check>` (prod probes, post-deploy read); 257-03 T2, 257-04 T2, 257-06 T2 `<human-check>` (browser UAT on dev; 257-06 T2 includes the significance-wording confirmation) | |
+
+Plans run the frontend files as `npm --prefix frontend test -- <path>` (same vitest run as `cd frontend && npx vitest run <path>`).
+
 | Decision | Behavior | Test Type | Automated Command | File Exists | Status |
 |----------|----------|-----------|-------------------|-------------|--------|
 | D-01 | `FACEPALM_STATS_MIN == 0.7`, separate from `FACEPALM_SCORE_MIN` | unit | `uv run pytest tests/services/test_facepalm_score.py -k stats_min` | ❌ W0 | ⬜ pending |
@@ -81,6 +104,7 @@ Task IDs are filled in by the planner; the rows below are the decision-to-test c
 | Comparison query latency on the largest account | D-11 | Needs prod data volume | `EXPLAIN (ANALYZE, BUFFERS)` on `temp/facepalm-257/prod_comparison_probe.sql` for the largest account; above ~1 s, split the rows into their own endpoint |
 | Opponent side of the card shows real values | D-12 | Dev has only 144 of 5,624 opponent blunders scored for user 28 | Check on prod after deploy (or after an opponent backfill on dev) |
 | Tint and copy read correctly on the three chip surfaces | D-08..D-10 | Visual | Browser UAT: flaws card, analysis move list, eval chart tooltip, both types |
+| Significance wording in the facepalm popovers ("The gap is too large to be chance." and COPY_CHANCE) reads as a statement about the gap, not as probability wording about the score | D-05 / D-13 | Owner copy call; the card-text regex checks /probab\|likel/, not "chance" | Browser UAT in the 257-06 T2 human-check: open a significant and a non-significant facepalm popover; the owner confirms this reading of D-05 or names other wording |
 
 ---
 

@@ -642,6 +642,63 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion)*
 - [x] 256-08-PLAN.md — Refitted constants pinned by --check-constants on the committed table, Window 14 and owner fixtures re-pinned, changelog, pre-merge gate (wave 8)
 
+### Phase 257: Facepalm Rate in the Library Stats (SEED-261114-iuv)
+
+**Goal**: Add facepalm statistics to the library stats, limited to the part that needs no benchmark: the
+facepalm share of the player's blunders over time, a "you vs your opponents" facepalm comparison (total and per
+type), and the facepalm chip tinted by type. Decisions in the seed ("Current scope", 2026-11-20, which wins over
+the older sections).
+
+- **Stats cut:** a new constant at 0.7 (the label meaning), separate from the drill's `FACEPALM_SCORE_MIN`
+  (0.5). Lambda is `FACEPALM_LIBRARY_LAMBDA`.
+- **Type per blunder** on the model's raw material inputs: allowed loss when `loss > 0 and loss >= missed`,
+  missed win otherwise (ties count as allowed loss, rows without material as missed win). Returned by the
+  library API next to the score.
+- **Chip colour by type:** `TAC_MISSED` (teal) for missed win, `TAC_ALLOWED` (crimson) for allowed loss.
+- **Timeline:** facepalm blunders / scored blunders, pooled over the rolling window, not split by type. Its own
+  small chart below the Flaws Timeline (the timeline axis is flaws per 100 moves, a share cannot sit on it), with
+  the same x-axis, rolling window and per-time-control series. Source is `game_flaws`; unscored blunders are left
+  out of both counts. A rolling mean of the score is the fallback if the share is too jumpy on real accounts.
+- **You vs your opponents:** facepalm blunders per game, paired per game; a total row and one row per type. The
+  per-type rows are the chance blindness (missed win) and threat blindness (allowed loss) readings.
+- **No type-share statistic** (design note, accepted 2026-11-20): the model weights lost material about three
+  times as much as a missed gain, so the types are never compared with each other, only with the same type of
+  the opponents. Copy states the comparison and does not diagnose; the score is a ranking, not a probability.
+- **Opponent scores stay out of drill selection and the library tag filters** (user-only, `player_only_gate`).
+- **Open for discuss-phase:** the minimum number of scored blunders per timeline point; where the comparison
+  sits in the stats table.
+- **Out of scope** (SEED-261120-bzq): benchmark zones, the within-player bias against a benchmark, the
+  type-by-clock matrix, the training weighting.
+
+**Depends on**: Phase 256 (shipped model and constants), Phase 253 (score chip and library payload) and the
+opponent blunder scoring on prod (seed Part A, done: Maia columns 99.2%, line facts 93.9%, the same coverage as
+user blunders). Does not wait for the Phase 252 repair: the gap in line facts is the same on both sides, so it
+does not skew the paired comparison.
+**Requirements**: TBD
+**Plans:** 7 plans
+
+Plans:
+**Wave 1**
+- [ ] 257-01-PLAN.md — Tracer: facepalm type twin (SQL + Python), FACEPALM_STATS_MIN 0.7, GET /library/flaws carries facepalm_type, Flaws-card chip tinted by type; type parity tests and typed seeds (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 257-02-PLAN.md — Backend: the games-payload flaw markers carry facepalm_type next to the score (FacepalmChipValue, owner-side reader), TS FlawMarker mirror (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 257-03-PLAN.md — Frontend: D-10 type line in every facepalm popover, tinted move-list mini-chip and eval-chart tooltip line, neutral chip colours deleted (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 257-04-PLAN.md — Facepalm share of blunders: pooled share on every Flaws Timeline point from game_flaws (floor 50 scored), chart below the Flaws Timeline (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 257-05-PLAN.md — Backend: three paired facepalm rows per 100 user moves in the flaw-comparison payload on the shared anchor, no band, TS mirror and fixtures (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 257-06-PLAN.md — Frontend: Facepalm blunders card in You vs. your opponents, neutral cells (noVerdict), D-14 to D-16 copy (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 257-07-PLAN.md — Changelog, D-06 / D-14 end-of-phase guards, full pre-merge gate, prod checks handed to UAT (wave 7)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
