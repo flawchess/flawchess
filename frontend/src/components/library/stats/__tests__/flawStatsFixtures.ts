@@ -167,7 +167,10 @@ export function makeComparison(tcs: FlawComparisonTc[], totalN?: number): FlawCo
   };
 }
 
-export function makeTrendPoint(date: string): FlawTrendPoint {
+export function makeTrendPoint(
+  date: string,
+  overrides: Partial<FlawTrendPoint> = {},
+): FlawTrendPoint {
   return {
     date,
     blunder_rate: 5,
@@ -175,6 +178,10 @@ export function makeTrendPoint(date: string): FlawTrendPoint {
     inaccuracy_rate: 9,
     games_in_window: 20,
     per_week_games: 4,
+    facepalm_share: 0.25,
+    facepalm_in_window: 25,
+    scored_blunders_in_window: 100,
+    ...overrides,
   };
 }
 

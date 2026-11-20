@@ -293,6 +293,11 @@ class FlawTrendPoint(BaseModel):
     FLAW_TREND_WINDOW-game window of (oracle_count / user_moves * 100), from the
     games-table oracle columns (NOT game_flaws). games_in_window is the window size
     (<= FLAW_TREND_WINDOW); per_week_games is the games played that ISO week (volume bars).
+
+    257 D-03: facepalm_share is facepalm blunders / scored blunders pooled over the same
+    window (sum over sum), read from game_flaws (not the oracle columns), the user's own
+    scored blunders only; null below FACEPALM_SHARE_MIN_SCORED scored blunders.
+    facepalm_in_window and scored_blunders_in_window are the two counts behind it.
     """
 
     date: str
@@ -301,6 +306,9 @@ class FlawTrendPoint(BaseModel):
     inaccuracy_rate: float
     games_in_window: int
     per_week_games: int
+    facepalm_share: float | None = None
+    facepalm_in_window: int = 0
+    scored_blunders_in_window: int = 0
 
 
 class FlawTrendTc(BaseModel):

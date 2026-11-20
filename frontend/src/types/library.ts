@@ -225,6 +225,13 @@ export interface FlawTrendPoint {
   inaccuracy_rate: number;
   games_in_window: number;
   per_week_games: number;
+  /**
+   * 257 D-03: facepalm blunders / scored blunders pooled over the same window (sum over sum),
+   * the user's own scored blunders only; null when the window holds too few scored blunders.
+   */
+  facepalm_share: number | null;
+  facepalm_in_window: number;
+  scored_blunders_in_window: number;
 }
 
 /** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */

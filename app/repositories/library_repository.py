@@ -33,7 +33,7 @@ from app.repositories.game_flaws_repository import (
     _TEMPO_INT,
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
-from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
 from app.services.facepalm_score import (
     FacepalmType,
     facepalm_expr,
@@ -1588,7 +1588,9 @@ async def fetch_flaw_trend_rows(
     picked by user_color) directly — NOT game_flaws. _compute_flaw_trend turns these
     into per-100-move MACRO rates over a trailing FLAW_TREND_WINDOW-game window, bucketed
     by ISO week. One row per filtered game that has oracle move-quality data
-    (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC.
+    (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC then
+    game id (257 D-03: the tie-break makes the order deterministic, and game_id keys the
+    facepalm share counts from fetch_facepalm_share_counts onto these rows).
 
     The oracle columns are populated from lichess analysis (NULL for chess.com /
     unanalyzed games), so the oracle-present gate is what defines "analyzed" here —
@@ -1617,6 +1619,7 @@ async def fetch_flaw_trend_rows(
 
     stmt = (
         select(
+            Game.id.label("game_id"),
             Game.played_at,
             Game.user_color,
             Game.ply_count,
@@ -1638,10 +1641,74 @@ async def fetch_flaw_trend_rows(
                 (Game.user_color == "black") & Game.black_blunders.isnot(None),
             ),
         )
-        .order_by(Game.played_at.asc())
+        .order_by(Game.played_at.asc(), Game.id.asc())
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
+
+
+async def fetch_facepalm_share_counts(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> dict[int, tuple[int, int]]:
+    """Per-game (scored blunders, facepalm blunders) of the user's own blunders (257 D-03).
+
+    Returns {game_id: (scored, facepalm)} over the filtered game set. `scored` counts the
+    user's blunders whose `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` is non-NULL (COUNT skips
+    NULL, so unscored blunders sit in neither count); `facepalm` counts those scored at or
+    above FACEPALM_STATS_MIN (D-01). Mistakes and opponent blunders are never counted
+    (`player_only_gate`). The result feeds the Flaws Timeline share only: it is aggregate
+    counts, not a filter or a drill selection (D-06). User-scoped on both tables (IDOR), and
+    the game set comes from `_filtered_games_base`, the one place the filters are composed.
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered_share")
+
+    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    per_blunder = (
+        select(GameFlaw.game_id.label("game_id"), score.label("s"))
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            Game.user_id == user_id,
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            player_only_gate(GameFlaw.ply, Game.user_color),
+            GameFlaw.game_id.in_(select(base_filtered_subq.c.id)),
+        )
+        # Optimization fence: without it PostgreSQL pulls the subquery up and re-evaluates
+        # the ~34 KB score expression in each aggregate below that references it.
+        .offset(0)
+        .subquery("per_blunder")
+    )
+    stmt = select(
+        per_blunder.c.game_id,
+        func.count(per_blunder.c.s).label("scored"),
+        func.count(per_blunder.c.s).filter(per_blunder.c.s >= FACEPALM_STATS_MIN).label("facepalm"),
+    ).group_by(per_blunder.c.game_id)
+    rows = (await session.execute(stmt)).all()
+    return {int(row.game_id): (int(row.scored), int(row.facepalm)) for row in rows}
 
 
 def _filtered_games_base(

@@ -19,7 +19,7 @@ remaining tag type (game-level dedupe), in a deterministic order.
 """
 
 import datetime
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
@@ -1111,6 +1111,12 @@ _PER_100 = 100.0
 # Timeline window (endgame_service.ENDGAME_ELO_TIMELINE_WINDOW = 100) so the two
 # time-series charts read consistently.
 FLAW_TREND_WINDOW = 100
+# 257 D-03: a window needs at least this many scored blunders before its facepalm share is
+# shown (the point itself stays, only the share is null). Raised from the 20 announced in
+# CONTEXT: at 20 the first points of a filling window jumped 8 to 19 points on benchmark users
+# (research A1); a full 100-game window holds about 100 or more scored blunders, so the floor
+# only acts while a time control's window fills. The prod probe is still pending (plan 07).
+FACEPALM_SHARE_MIN_SCORED: int = 50
 
 
 def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
@@ -1126,7 +1132,16 @@ def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
     return ply_count // 2  # floor
 
 
-def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
+def _window_share(facepalm: int, scored: int) -> float | None:
+    """Pooled facepalm share of a window, null below FACEPALM_SHARE_MIN_SCORED scored blunders."""
+    if scored < FACEPALM_SHARE_MIN_SCORED:
+        return None
+    return round(facepalm / scored, 4)
+
+
+def _compute_flaw_trend(
+    rows: list[Any], share_by_game: Mapping[int, tuple[int, int]] | None = None
+) -> list[FlawTrendPoint]:
     """ISO-week per-100-move MACRO flaw trend over a trailing FLAW_TREND_WINDOW window.
 
     Mirrors the Endgame ELO Timeline windowing (endgame_service.compute_score_gap_timeline):
@@ -1137,12 +1152,21 @@ def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
     that ISO week (drives the volume bars). Weeks whose window has fewer than
     MIN_GAMES_FOR_TIMELINE games are dropped (partial-window floor).
 
-    rows come from fetch_flaw_trend_rows: (played_at, user_color, ply_count, blunders,
-    mistakes, inaccuracies), oracle move-quality counts picked by color, played_at ASC.
+    257 D-03: the same walk also pools the facepalm share. share_by_game maps game id to
+    (scored blunders, facepalm blunders) from fetch_facepalm_share_counts (a game absent
+    from it counts (0, 0)); each point sums both over the window (sum over sum, never a
+    mean of per-game shares), so every share point has exactly the trend point's date.
+
+    rows come from fetch_flaw_trend_rows: (game_id, played_at, user_color, ply_count,
+    blunders, mistakes, inaccuracies), oracle move-quality counts picked by color,
+    played_at ASC.
     """
+    shares = share_by_game or {}
     b_rates: list[float] = []
     m_rates: list[float] = []
     i_rates: list[float] = []
+    scored_counts: list[int] = []
+    facepalm_counts: list[int] = []
     per_week_games: dict[tuple[int, int], int] = {}
     point_by_week: dict[tuple[int, int], FlawTrendPoint] = {}
 
@@ -1153,6 +1177,9 @@ def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
         b_rates.append(int(row.blunders or 0) / moves * _PER_100)
         m_rates.append(int(row.mistakes or 0) / moves * _PER_100)
         i_rates.append(int(row.inaccuracies or 0) / moves * _PER_100)
+        scored, facepalm = shares.get(int(row.game_id), (0, 0))
+        scored_counts.append(scored)
+        facepalm_counts.append(facepalm)
 
         iso = row.played_at.isocalendar()
         week_key = (iso.year, iso.week)
@@ -1164,6 +1191,8 @@ def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
             continue
         window_m = m_rates[-FLAW_TREND_WINDOW:]
         window_i = i_rates[-FLAW_TREND_WINDOW:]
+        scored_w = sum(scored_counts[-FLAW_TREND_WINDOW:])
+        facepalm_w = sum(facepalm_counts[-FLAW_TREND_WINDOW:])
         # Last-write-wins per ISO week -> the point reflects the week's final game,
         # so per_week_games (accumulated above) is the full week count at emit time.
         monday = datetime.date.fromisocalendar(iso.year, iso.week, 1)
@@ -1174,21 +1203,27 @@ def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
             inaccuracy_rate=round(sum(window_i) / n, 4),
             games_in_window=n,
             per_week_games=per_week_games[week_key],
+            facepalm_share=_window_share(facepalm_w, scored_w),
+            facepalm_in_window=facepalm_w,
+            scored_blunders_in_window=scored_w,
         )
     return [point_by_week[key] for key in sorted(point_by_week)]
 
 
-def _compute_flaw_trend_by_tc(rows: Sequence[Any]) -> list[FlawTrendTc]:
+def _compute_flaw_trend_by_tc(
+    rows: Sequence[Any], share_by_game: Mapping[int, tuple[int, int]] | None = None
+) -> list[FlawTrendTc]:
     """One Flaws Timeline series per time control.
 
     Buckets the trend rows by their tc column and runs the unchanged
-    _compute_flaw_trend per TC in LIBRARY_TC_ORDER. A TC is emitted only when it has
-    at least one trend point (the partial-window floor can leave a TC with none).
+    _compute_flaw_trend per TC in LIBRARY_TC_ORDER (share_by_game passes through, 257 D-03).
+    A TC is emitted only when it has at least one trend point (the partial-window floor
+    can leave a TC with none).
     """
     rows_by_tc = _bucket_rows_by_tc(rows)
     series: list[FlawTrendTc] = []
     for tc in LIBRARY_TC_ORDER:
-        points = _compute_flaw_trend(rows_by_tc.get(tc, []))
+        points = _compute_flaw_trend(rows_by_tc.get(tc, []), share_by_game)
         if points:
             series.append(FlawTrendTc(tc=tc, points=points))
     return series
@@ -1226,6 +1261,8 @@ async def get_flaw_stats(
        analyzed set returns zeros + empty trend_by_tc, never raises.
     2. fetch_flaw_trend_rows — oracle per-game rows (with their tc), bucketed per time
        control by _compute_flaw_trend_by_tc.
+    3. fetch_facepalm_share_counts — per-game (scored, facepalm) counts of the user's own
+       blunders (257 D-03), pooled over the same window walk as the trend.
 
     analyzed_n derives from the eval-coverage subquery — NOT from game_flaws
     row counts. An analyzed game with zero M+B flaws counts toward
@@ -1274,13 +1311,28 @@ async def get_flaw_stats(
             opponent_gap_max=opponent_gap_max,
             color=color,
         )
+        # Sequential on the same session (never gather): the share counts key by game id.
+        share_by_game = await library_repository.fetch_facepalm_share_counts(
+            session,
+            user_id,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            flaw_severity=flaw_severity,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
+            color=color,
+        )
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_stats", {"user_id": user_id})
         sentry_sdk.capture_exception(exc)
         raise
 
     return FlawStatsResponse(
-        trend_by_tc=_compute_flaw_trend_by_tc(trend_rows),
+        trend_by_tc=_compute_flaw_trend_by_tc(trend_rows, share_by_game),
         trend_window=FLAW_TREND_WINDOW,
         analyzed_n=analyzed_n,
     )
