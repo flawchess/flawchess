@@ -22,8 +22,9 @@ from app.services import activity_queries as queries
 # standing in for the unrecoverable true promotion date), not the true rate.
 PROMOTED_AT_SINCE: Final[str] = "2026-08-23"
 
-# The /activity page is manual-refresh only, but build_payload runs ~16
-# sequential full-history aggregate queries directly against production. This
+# The /activity page is manual-refresh only, but build_payload runs 19 awaited
+# queries.fetch_* calls (21 SQL statements, since fetch_window and
+# fetch_train_funnel each run two) sequentially against production. This
 # TTL bounds that load no matter how many superuser tabs are open, while still
 # refreshing within a normal monitoring session.
 CACHE_TTL_SECONDS: Final[int] = 300
@@ -70,6 +71,10 @@ async def build_payload(
     async with engine.connect() as conn:
         window = await queries.fetch_window(conn, request, now_utc)
         end = window.window_end
+        # Reference date for the Open vs Abandoned session derivation. The same
+        # `now_utc.date()` the router's `_build_window_request` and
+        # `resolve_window` use, so the dev-clock override carries through.
+        today = now_utc.date()
         return queries.Payload(
             generated_at=now_utc.isoformat(),
             promoted_since=PROMOTED_AT_SINCE,
@@ -83,23 +88,30 @@ async def build_payload(
             ),
             signups=await queries.fetch_signups(conn, window.window_start, end),
             bot=await queries.fetch_bot_games(conn, window.window_start, end),
-            train=await queries.fetch_train(conn, window.window_start, end),
+            train=await queries.fetch_train(conn, window.window_start, end, today=today),
             train_funnel=await queries.fetch_train_funnel(
                 conn, window.window_start, window.data_start, end
             ),
             solves=await queries.fetch_solves(conn, window.lead_in_start, end),
+            blunder_check_sessions=await queries.fetch_blunder_check_sessions(
+                conn, window.window_start, end, today=today
+            ),
+            blunder_check_windows=await queries.fetch_blunder_check_windows(
+                conn, window.lead_in_start, end
+            ),
+            blunder_check_difficulty=await queries.fetch_blunder_check_difficulty(
+                conn, window.window_start, end
+            ),
             imports=await queries.fetch_imports(conn, window.window_start, end),
             persona=await queries.fetch_persona(conn, window.window_start, end),
             bot_players=await queries.fetch_bot_players(conn, window.window_start, end),
             elo=await queries.fetch_elo(conn, window.window_start, end),
             funnel=await queries.fetch_funnel(conn, window.window_start, end),
-            tti=await queries.fetch_time_to_import(conn, window.window_start, end),
             stick=await queries.fetch_stickiness(conn, window.window_start, end),
             conversion=await queries.fetch_conversion(conn, window.window_start, end),
             conversion_compare=await queries.fetch_conversion_compare(
                 conn, window.window_start, end
             ),
-            guest_train=await queries.fetch_guest_train(conn, window.window_start, end),
             purged_excluded=await queries.fetch_purged_excluded(conn, window.window_start, end),
         )
 

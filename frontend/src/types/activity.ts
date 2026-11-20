@@ -34,6 +34,10 @@ export interface ActivityStatsPayload {
   activity: number[][];
   signups: (string | number | null)[][];
   bot: (string | number | null)[][];
+  /**
+   * Personalized Puzzles sessions per day, `fetch_train`: [day, sessions, users, completed,
+   * abandoned, open, puzzles_served]. Never-started sessions are excluded.
+   */
   train: (string | number | null)[][];
   train_funnel: {
     starters: number;
@@ -48,19 +52,29 @@ export interface ActivityStatsPayload {
     entered_since: string | null;
   };
   solves: (string | number | null)[][];
+  /**
+   * Blunder Check sessions per day, `fetch_blunder_check_sessions`: [day, sessions, users,
+   * completed, abandoned, open, windows_composed].
+   */
+  blunder_check_sessions: (string | number | null)[][];
+  /**
+   * Blunder Check judged windows per day, `fetch_blunder_check_windows`: [day, windows, users,
+   * points_scored, points_possible, cleared, caught, missed, false_alarm].
+   */
+  blunder_check_windows: (string | number | null)[][];
+  /**
+   * Blunder Check judged windows by type and ownership, `fetch_blunder_check_difficulty`:
+   * [herring 0/1, own 0/1, windows, cleared, caught, missed, false_alarm]. Pairs with no
+   * windows are absent.
+   */
+  blunder_check_difficulty: number[][];
   imports: (string | number | null)[][];
   persona: (string | number | null)[][];
   bot_players: number;
   elo: number[][];
   funnel: (string | number | null)[][];
-  tti: (string | number | null)[][];
   stick: (string | number | null)[][];
   conversion: Record<string, number | string>;
   conversion_compare: (string | number | null)[][];
-  /** Train sessions completed while the user was still a guest (`fetch_guest_train`). */
-  guest_train: {
-    sessions_completed: number;
-    users: number;
-  };
   purged_excluded: Record<string, number>;
 }

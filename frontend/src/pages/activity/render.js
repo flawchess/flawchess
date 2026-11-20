@@ -4,9 +4,9 @@
 // #tip lookup: under the React host this script can evaluate before charts.js
 // has published window.__fc, and an eager destructure would freeze every chart
 // helper as undefined for the lifetime of the module.
-let lineChart,barChart,hbar,funnel,gbar,sparkline,legend,table,C,num,short,long;
+let lineChart,barChart,hbar,stackRows,funnel,gbar,sparkline,legend,table,C,num,short,long;
 const bindCharts=()=>{
-  ({lineChart,barChart,hbar,funnel,gbar,sparkline,legend,table,C,num,short,long}=window.__fc);
+  ({lineChart,barChart,hbar,stackRows,funnel,gbar,sparkline,legend,table,C,num,short,long}=window.__fc);
 };
 const $=s=>document.querySelector(s);
 let AUD="all";
@@ -27,8 +27,8 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
-    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], CONV=null, PURGED=null,
-    GUESTTRAIN=null;
+    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], CONV=null, PURGED=null,
+    BCSESS=[], BCWIN=[], BCDIFF=[];
 
 function apply(payload){
   D=payload;
@@ -39,9 +39,10 @@ function apply(payload){
   SIGNUPS=payload.signups; BOT=payload.bot; TRAIN=payload.train; SOLVES=payload.solves;
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
   TRAINFUN=payload.train_funnel;
-  FUNNEL=payload.funnel; TTI=payload.tti;
+  FUNNEL=payload.funnel;
   CONV=payload.conversion; PURGED=payload.purged_excluded;
-  GUESTTRAIN=payload.guest_train;
+  BCSESS=payload.blunder_check_sessions; BCWIN=payload.blunder_check_windows;
+  BCDIFF=payload.blunder_check_difficulty;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
 
@@ -125,7 +126,7 @@ const totals=()=>({
   botDraws:BOT.reduce((s,r)=>s+r[5],0),
   sessions:TRAIN.reduce((s,r)=>s+r[1],0),
   done:TRAIN.reduce((s,r)=>s+r[3],0),
-  expired:TRAIN.reduce((s,r)=>s+r[4],0),
+  abandoned:TRAIN.reduce((s,r)=>s+r[4],0),
   solves:SOLVES.reduce((s,r)=>s+r[1],0),
   solveOk:SOLVES.reduce((s,r)=>s+r[3],0),
   imported:IMPORTS.reduce((s,r)=>s+r[3],0),
@@ -141,7 +142,7 @@ function tiles(dau,wau,mau,days,last){
     {k:"MAU · 30-day",v:mau[last],m:span(30),spark:mau.slice(-30),color:c.s1},
     {k:"Stickiness",v:pctText(dau[last],mau[last]),m:"DAU ÷ MAU"},
     {k:"Bot games",v:T.botGames,m:`${pctText(T.botWins+T.botDraws/2,T.botGames)} human score · ${D.bot_players} players`},
-    {k:"Train sessions",v:T.sessions,m:`${pctText(T.done,T.done+T.expired)} completed, rest expired`},
+    {k:"Puzzle sessions",v:T.sessions,m:`${pctText(T.done,T.done+T.abandoned)} completed, rest abandoned`},
   ];
   $("#tiles").innerHTML=t.map((x,i)=>
     `<div class="tile"><span class="k">${x.k}</span><span class="v">${typeof x.v==="number"?num(x.v):x.v}</span>
@@ -234,15 +235,6 @@ function renderFunnelCard(){
     FUNNEL.map(f=>[f[0],f[1],pctText(f[1],FUNNEL[0][1]),f[2],pctText(f[2],FUNNEL[0][2])]));
 }
 
-function renderTtiCard(){
-  const c=C();
-  legend("#tti-legend",[{name:"Registered accounts",color:c.s1},{name:"Guest sessions",color:c.s5}]);
-  gbar($("#c-tti"),{labels:TTI.map(t=>t[0]),h:250,max:1,
-    yFmt:v=>Math.round(v*100)+"%", fmt:v=>Math.round(v*100)+"%",
-    series:[{name:"Registered accounts",color:c.s1,values:TTI.map(t=>ratio(t[1],FUNNEL[0][1]))},
-            {name:"Guest sessions",color:c.s5,values:TTI.map(t=>ratio(t[2],FUNNEL[0][2]))}]});
-}
-
 function renderConversionCard(){
   $("#conv-big").textContent=CONV.sessions?(100*CONV.converted/CONV.sessions).toFixed(1)+"%":DASH;
   if(!CONV.sessions){
@@ -293,32 +285,35 @@ function renderBotCard(){
   }
 }
 
-function renderTrainCard(){
+/* Shared by both Train modes. `rows` are positional:
+   [day, sessions, users, completed, abandoned, open, served]. */
+function renderSessionOutcomeCard(rows,{chart,table:tbl,legend:lg,servedLabel,empty}){
   const c=C();
-  // The guest-cohort reading is independent of whether the
-  // registered-only chart/table above has any rows, so it is written on both
-  // branches below rather than only on the populated path.
-  const g=GUESTTRAIN;
-  const guestNote=g
-    ? `${num(g.sessions_completed)} Train sessions completed by ${num(g.users)} guests while `+
-      `still guests. Purged guests excluded: ${PURGED?num(PURGED.guest):DASH}.`
-    : DASH;
-  if(!TRAIN.length){
-    emptyNote("#c-train","No Train sessions in the selected range.");
-    emptyNote("#t-train","No Train sessions in the selected range.");
-    $("#tr-legend").innerHTML="";
-    $("#tr-guest-note").textContent=guestNote;
+  if(!rows.length){
+    emptyNote(chart,empty);
+    emptyNote(tbl,empty);
+    $(lg).innerHTML="";
     return;
   }
-  const tr=expand(TRAIN,6), [,,tc,te,to,tp]=tr.cols;
-  legend("#tr-legend",[{name:"Completed",color:c.win},{name:"Still open",color:c.draw},{name:"Expired unfinished",color:c.loss}]);
-  barChart($("#c-train"),{labels:tr.labels,h:240,every:5,series:[
-    {name:"Completed",values:tc,color:c.win},{name:"Still open",values:to,color:c.draw},
-    {name:"Expired unfinished",values:te,color:c.loss}],
-    extra:i=>[{k:"Puzzles served",v:tp[i]}]});
-  table("#t-train",["Date","Sessions","Users","Completed","Expired","Open","Puzzles served"],
-    TRAIN.map(r=>[long(r[0]),r[1],r[2],r[3],r[4],r[5],r[6]]).reverse());
-  $("#tr-guest-note").textContent=guestNote;
+  const r=expand(rows,6), [,,rc,ra,ro,rs]=r.cols;
+  legend(lg,[{name:"Completed",color:c.win},{name:"Open",color:c.draw},{name:"Abandoned",color:c.loss}]);
+  barChart($(chart),{labels:r.labels,h:240,every:5,series:[
+    {name:"Completed",values:rc,color:c.win},{name:"Open",values:ro,color:c.draw},
+    {name:"Abandoned",values:ra,color:c.loss}],
+    extra:i=>[{k:servedLabel,v:rs[i]}]});
+  table(tbl,["Date","Sessions","Users","Completed","Abandoned","Open",servedLabel],
+    rows.map(x=>[long(x[0]),x[1],x[2],x[3],x[4],x[5],x[6]]).reverse());
+}
+
+function renderTrainCard(){
+  renderSessionOutcomeCard(TRAIN,{chart:"#c-train",table:"#t-train",legend:"#tr-legend",
+    servedLabel:"Puzzles served",empty:"No started puzzle sessions in the selected range."});
+}
+
+function renderBlunderCheckSessionsCard(){
+  renderSessionOutcomeCard(BCSESS,{chart:"#c-bc-sessions",table:"#t-bc-sessions",
+    legend:"#bc-sessions-legend",servedLabel:"Sequences composed",
+    empty:"No Blunder Check sessions in the selected range."});
 }
 
 // First-session 0-solve share and second-session return
@@ -383,6 +378,79 @@ function renderSolvesCard(){
       {name:"Right verdict",values:tGuess,color:c.s4}]});
 }
 
+function renderBlunderCheckWindowCards(){
+  const c=C();
+  const hosts=["#c-bc-windows","#c-bc-score","#c-bc-outcomes"];
+  const noData="No Blunder Check sequences judged in the selected range.";
+  const empty=()=>{
+    hosts.forEach(h=>emptyNote(h,noData));
+    $("#bc-outcome-legend").innerHTML="";
+  };
+  if(!BCWIN.length){ empty(); return; }
+  // Roll over the FULL expanded (lead-in-inclusive) arrays first, so the
+  // 7-day rolling score is already correct on the window's first visible
+  // day, then trim the lead-in off everything before plotting.
+  const bw=expand(BCWIN,8), [nWin,nUsers,scored,possible,cleared,caught,missed,falseAlarm]=bw.cols;
+  const rowsB=bw.labels.map((_,i)=>[0,scored[i],possible[i]]);
+  const rolledScore=roll7(rowsB,1,2);
+  const [labels,tWin,tUsers,tScore,tCleared,tCaught,tMissed,tFalse]=
+    trimLeadIn(bw.labels,nWin,nUsers,rolledScore,cleared,caught,missed,falseAlarm);
+  if(!labels.length){ empty(); return; }
+
+  barChart($("#c-bc-windows"),{labels,h:220,every:5,
+    series:[{name:"Sequences judged",values:tWin,color:c.s2}],
+    extra:i=>[{k:"Users",v:tUsers[i]}]});
+  lineChart($("#c-bc-score"),{labels,h:220,every:5,pctAxis:true,yMax:1,
+    fmt:v=>Math.round(v*100)+"%",
+    series:[{name:"Score % (7-day)",values:tScore,color:c.s3}]});
+  legend("#bc-outcome-legend",[{name:"Caught",color:c.win},{name:"Cleared",color:c.s2},
+    {name:"False alarm",color:c.s4},{name:"Missed",color:c.loss}]);
+  barChart($("#c-bc-outcomes"),{labels,h:240,every:5,series:[
+    {name:"Caught",values:tCaught,color:c.win},{name:"Cleared",values:tCleared,color:c.s2},
+    {name:"False alarm",values:tFalse,color:c.s4},{name:"Missed",values:tMissed,color:c.loss}]});
+}
+
+// Below this many judged windows a row's shares are too noisy to compare, so
+// the row is drawn faded and says so.
+const BC_DIFF_MIN_WINDOWS=20;
+// The 2x2 of window type and game ownership, in display order. Success is
+// Cleared for a red herring and Caught for a blunder window; it is always
+// the first segment so the four success shares start at one left edge.
+const BC_DIFF_ROWS=[
+  {herring:1,own:1,label:"Herring · own"},{herring:1,own:0,label:"Herring · foreign"},
+  {herring:0,own:1,label:"Blunder · own"},{herring:0,own:0,label:"Blunder · foreign"}];
+
+function bcDifficultyRow(def,c){
+  const r=BCDIFF.find(x=>x[0]===def.herring&&x[1]===def.own);
+  const [n,cleared,caught,missed,falseAlarm]=r?r.slice(2):[0,0,0,0,0];
+  const ok=def.herring?cleared:caught, okName=def.herring?"cleared":"caught";
+  const small=n>0&&n<BC_DIFF_MIN_WINDOWS;
+  return {label:def.label,dim:small,
+    value:n?`${pctText(ok,n)} ${okName}`:DASH,
+    // Per-outcome counts live in the table below: a sub-line listing them
+    // overran the chart at phone widths (caught by the layout harness).
+    sub:n?`${num(n)} sequences${small?" · small sample":""}`:"No sequences judged yet.",
+    segments:[{value:ok,color:def.herring?c.s2:c.win},{value:missed,color:c.loss},
+      {value:falseAlarm,color:c.s4}],
+    cells:[def.label,n,cleared,caught,missed,falseAlarm,n?pctText(ok,n):DASH]};
+}
+
+function renderBlunderCheckDifficultyCard(){
+  const c=C();
+  if(!BCDIFF.length){
+    const noData="No Blunder Check sequences judged in the selected range.";
+    emptyNote("#c-bc-difficulty",noData); emptyNote("#t-bc-difficulty",noData);
+    $("#bc-difficulty-legend").innerHTML="";
+    return;
+  }
+  const rows=BC_DIFF_ROWS.map(d=>bcDifficultyRow(d,c));
+  legend("#bc-difficulty-legend",[{name:"Cleared",color:c.s2},{name:"Caught",color:c.win},
+    {name:"Missed",color:c.loss},{name:"False alarm",color:c.s4}]);
+  stackRows($("#c-bc-difficulty"),{rows});
+  table("#t-bc-difficulty",["Sequences","Judged","Cleared","Caught","Missed","False alarm","Success"],
+    rows.map(r=>r.cells));
+}
+
 function renderImportsCard(){
   if(!IMPORTS.length){
     emptyNote("#c-imports","No imports in the selected range.");
@@ -405,12 +473,14 @@ function render(){
   renderSignupsCard();
   renderRetentionCard();
   renderFunnelCard();
-  renderTtiCard();
   renderConversionCard();
   renderBotCard();
   renderTrainCard();
   renderTrainFunnelCard();
   renderSolvesCard();
+  renderBlunderCheckSessionsCard();
+  renderBlunderCheckWindowCards();
+  renderBlunderCheckDifficultyCard();
   renderImportsCard();
 }
 

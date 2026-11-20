@@ -425,15 +425,6 @@ export default function ActivityPage() {
             </details>
           </div>
           <div className="card">
-            <h3>How long until the first import?</h3>
-            <p className="note">
-              Time from account creation to the first import job, as a share of each cohort. The
-              decision is made in the first minutes or not at all.
-            </p>
-            <div className="legend" id="tti-legend"></div>
-            <div className="chart" id="c-tti"></div>
-          </div>
-          <div className="card">
             <h3>Guest → registered</h3>
             <p className="note">
               A guest who signs up is promoted in place: the same row keeps its games, its imports
@@ -499,57 +490,124 @@ export default function ActivityPage() {
           <div className="sec-head">
             <h2>Train sessions</h2>
             <p>
-              Drill sessions are composed per calendar day and expire when the next scheduled
-              session day starts, so completion rate is the metric that matters.
+              Train has two modes, Personalized Puzzles and Blunder Check, each with its own
+              sessions. A session is Completed, Open (still inside its window) or Abandoned
+              (started, not finished, window passed). Puzzle sessions nobody started are not
+              counted, because opening the Train page composes one.
             </p>
           </div>
-          <div className="card">
-            <h3>Sessions per day by outcome</h3>
-            <div className="legend" id="tr-legend"></div>
-            <div className="chart" id="c-train"></div>
-            <details className="data">
-              <summary data-testid="activity-details-train">Show the numbers</summary>
-              <div className="tblwrap" id="t-train"></div>
-            </details>
-            <p className="note" id="tr-guest-note"></p>
-          </div>
-          <div className="card">
-            <h3>First-session drop-off and return rate</h3>
-            <p className="note">
-              Cohort: users whose FIRST Train session started inside the selected window. Opening
-              the Train page creates a session, so the zero-solved share only counts users who
-              pressed Start or Resume. A user whose first session lands near the end of the window
-              has had no opportunity to return yet, so the return share is a floor for recent
-              windows.
-            </p>
-            <div className="grid2">
-              <div className="hero">
-                <span className="cap">First session, zero solved</span>
-                <span className="big" id="trf-zero-big"></span>
-                <span className="exp" id="trf-zero-exp"></span>
-              </div>
-              <div className="hero">
-                <span className="cap">Returned for a 2nd completed session</span>
-                <span className="big" id="trf-return-big"></span>
-                <span className="exp" id="trf-return-exp"></span>
-              </div>
-            </div>
-            <p className="note" id="trf-alltime" style={{ marginTop: '12px' }}></p>
-          </div>
-          <div className="grid2">
+
+          <div className="mode-block" data-testid="activity-train-puzzles">
+            <h3 className="mode-head">Personalized Puzzles</h3>
             <div className="card">
-              <h3>Puzzles solved per day</h3>
-              <p className="note">Individual drill positions attempted.</p>
-              <div className="chart" id="c-solves"></div>
-            </div>
-            <div className="card">
-              <h3>Accuracy on solved puzzles</h3>
+              <h3>Personalized Puzzles: sessions per day by outcome</h3>
               <p className="note">
-                Share correct, 7-day rolling. Move = played the right move; guess = called the
-                position&apos;s verdict correctly.
+                Completed means every puzzle was finished. Open means the session is still inside
+                its window. Abandoned means it was started but its window passed unfinished.
               </p>
-              <div className="legend" id="acc-legend"></div>
-              <div className="chart" id="c-acc"></div>
+              <div className="legend" id="tr-legend"></div>
+              <div className="chart" id="c-train"></div>
+              <details className="data">
+                <summary data-testid="activity-details-train">Show the numbers</summary>
+                <div className="tblwrap" id="t-train"></div>
+              </details>
+            </div>
+            <div className="card">
+              <h3>Personalized Puzzles: first-session drop-off and return rate</h3>
+              <p className="note">
+                Counts puzzle sessions only; Blunder Check sessions are not included. Cohort: users
+                whose FIRST Train session started inside the selected window. Opening the Train
+                page creates a session, so the zero-solved share only counts users who pressed
+                Start or Resume. A user whose first session lands near the end of the window has
+                had no opportunity to return yet, so the return share is a floor for recent
+                windows.
+              </p>
+              <div className="grid2">
+                <div className="hero">
+                  <span className="cap">First session, zero solved</span>
+                  <span className="big" id="trf-zero-big"></span>
+                  <span className="exp" id="trf-zero-exp"></span>
+                </div>
+                <div className="hero">
+                  <span className="cap">Returned for a 2nd completed session</span>
+                  <span className="big" id="trf-return-big"></span>
+                  <span className="exp" id="trf-return-exp"></span>
+                </div>
+              </div>
+              <p className="note" id="trf-alltime" style={{ marginTop: '12px' }}></p>
+            </div>
+            <div className="grid2">
+              <div className="card">
+                <h3>Personalized Puzzles: puzzles solved per day</h3>
+                <p className="note">Individual drill positions attempted.</p>
+                <div className="chart" id="c-solves"></div>
+              </div>
+              <div className="card">
+                <h3>Personalized Puzzles: accuracy on solved puzzles</h3>
+                <p className="note">
+                  Share correct, 7-day rolling. Move = played the right move; guess = called the
+                  position&apos;s verdict correctly.
+                </p>
+                <div className="legend" id="acc-legend"></div>
+                <div className="chart" id="c-acc"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mode-block" data-testid="activity-train-blunder-check">
+            <h3 className="mode-head">Blunder Check</h3>
+            <div className="card">
+              <h3>Blunder Check: sessions per day by outcome</h3>
+              <p className="note">
+                Every session counts, because a Blunder Check session is created by pressing
+                Start, not by opening the page.
+              </p>
+              <div className="legend" id="bc-sessions-legend"></div>
+              <div className="chart" id="c-bc-sessions"></div>
+              <details className="data">
+                <summary data-testid="activity-details-bc-sessions">Show the numbers</summary>
+                <div className="tblwrap" id="t-bc-sessions"></div>
+              </details>
+            </div>
+            <div className="grid2">
+              <div className="card">
+                <h3>Blunder Check: sequences judged per day</h3>
+                <p className="note">
+                  Sequences that ended that day, the same count the weekly leaderboard uses.
+                </p>
+                <div className="chart" id="c-bc-windows"></div>
+              </div>
+              <div className="card">
+                <h3>Blunder Check: score % over time</h3>
+                <p className="note">Points scored over points possible, 7-day rolling.</p>
+                <div className="chart" id="c-bc-score"></div>
+              </div>
+            </div>
+            <div className="card">
+              <h3>Blunder Check: outcome mix per day</h3>
+              <p className="note">
+                Cleared = a sequence with no blunder, passed as safe. Caught = the blunder was
+                flagged. Missed = the blunder was let through. False alarm = a safe move was
+                flagged.
+              </p>
+              <div className="legend" id="bc-outcome-legend"></div>
+              <div className="chart" id="c-bc-outcomes"></div>
+            </div>
+            <div className="card">
+              <h3>Blunder Check: difficulty by sequence type and game ownership</h3>
+              <p className="note">
+                All sequences judged in the selected range, as shares of each row. A red herring is a
+                sequence with no blunder, so its success is Cleared; a blunder sequence&apos;s success
+                is Caught. Own = from the solver&apos;s own game, foreign = from someone else&apos;s.
+                Success is always the first segment, so the four rows compare from the left edge.
+                Rows under 20 sequences are faded.
+              </p>
+              <div className="legend" id="bc-difficulty-legend"></div>
+              <div className="chart" id="c-bc-difficulty"></div>
+              <details className="data">
+                <summary data-testid="activity-details-bc-difficulty">Show the numbers</summary>
+                <div className="tblwrap" id="t-bc-difficulty"></div>
+              </details>
             </div>
           </div>
         </section>
@@ -598,7 +656,7 @@ export default function ActivityPage() {
               two rows.
             </li>
             <li>
-              <b>A promoted guest stays in the guest funnel and guest time-to-import cohort</b>,
+              <b>A promoted guest stays in the guest funnel</b>,
               dated to when the guest session started — promotion happens in place on the same
               row, so there is no second account and no second creation date.
             </li>
@@ -607,7 +665,8 @@ export default function ActivityPage() {
                 The funnel counts accounts created on or after <span id="cav-funnel">—</span>
               </b>{' '}
               — earlier accounts are excluded, so it measures recent accounts rather than the whole
-              user base. Train is registered-only, which is why no guest ever reaches it.
+              user base. Train is open to guests, and the Train charts above count guest and
+              registered sessions together.
             </li>
             <li>
               <b>Bot games and Train sessions arrived later</b> — <span id="cav-features"></span>,
@@ -619,7 +678,7 @@ export default function ActivityPage() {
                 <span id="cav-purged-guest">—</span> guest sessions.
               </b>{' '}
               Accounts whose game history was purged (guest 30-day cleanup, or a user deleting
-              their games) are excluded from the funnel and time-to-import cards, because their <span className="mono">import_jobs</span>{' '}
+              their games) are excluded from the funnel, because their <span className="mono">import_jobs</span>{' '}
               rows are gone and they would otherwise read as "never imported".
             </li>
           </ul>

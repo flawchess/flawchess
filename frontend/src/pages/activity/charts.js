@@ -42,6 +42,7 @@ const AXIS_RIGHT=14, AXIS_RIGHT_NARROW=10;
 const HBAR_LEFT=94, HBAR_RIGHT=58; // wide layout only
 const HBAR_ROW_H=46, HBAR_ROW_H_NARROW=64;
 const FUNNEL_PAD=2;
+const STACK_ROW_H=58, STACK_DIM_OPACITY=.45;
 const FUNNEL_INDEX_W=26, FUNNEL_INDEX_W_NARROW=20;
 const FUNNEL_LABEL_PX=14.5, FUNNEL_LABEL_PX_NARROW=13.5;
 const MONO_CHAR_RATIO=0.6, SANS_CHAR_RATIO=0.55; // advance / font-size for IBM Plex Mono, Source Sans 3
@@ -254,6 +255,32 @@ function hbar(host,{rows,h=null,fmt=num}){
     else drawHbarRowWide(svg,r,y,w,max,fmt,c);
   });
 }
+// 100% stacked rows: each row's segments share one full-width track, so the
+// first segment of every row starts at the same left edge and compares by
+// length. Funnel-style three-line row (label / bar / sub) so it needs no
+// separate narrow layout. A `dim` row (small sample) is drawn faded; a row
+// with no segment total keeps its empty track.
+function stackRows(host,{rows}){
+  const c=C(), H=rows.length*STACK_ROW_H+8, {svg,w}=frame(host,H);
+  const x0=FUNNEL_PAD, x1=w-FUNNEL_PAD;
+  rows.forEach((r,i)=>{
+    const y=i*STACK_ROW_H+6, total=r.segments.reduce((a,s)=>a+s.value,0);
+    const g=el("g",r.dim?{opacity:STACK_DIM_OPACITY}:{}); svg.appendChild(g);
+    const lb=el("text",{x:x0,y:y+13,fill:c.ink,"font-size":FUNNEL_LABEL_PX_NARROW,"font-weight":600});
+    lb.textContent=r.label; g.appendChild(lb);
+    const vt=el("text",{x:x1,y:y+13,"text-anchor":"end",fill:c.ink,"font-size":FUNNEL_LABEL_PX_NARROW,
+      "font-weight":600,"font-family":"IBM Plex Mono, monospace"}); vt.textContent=r.value; g.appendChild(vt);
+    g.appendChild(el("rect",{x:x0,y:y+22,width:x1-x0,height:14,rx:4,fill:c.ink3,opacity:.13}));
+    let x=x0;
+    r.segments.forEach(s=>{
+      if(!total||!s.value) return;
+      const sw=(x1-x0)*s.value/total;
+      g.appendChild(el("rect",{x,y:y+22,width:sw,height:14,fill:s.color}));
+      x+=sw;
+    });
+    const meta=el("text",{x:x0,y:y+51,fill:c.ink3,"font-size":13}); meta.textContent=r.sub; g.appendChild(meta);
+  });
+}
 function funnel(host,{rows,color,unit}){
   const c=C(), H=rows.length*58+8, {svg,w,narrow}=frame(host,H);
   const top=rows[0].value, x0=FUNNEL_PAD, x1=w-FUNNEL_PAD;
@@ -341,5 +368,5 @@ function table(host,head,rows){
   $(host).innerHTML='<table><thead><tr>'+head.map(h=>`<th>${h}</th>`).join("")+
     '</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map((v,i)=>`<td${i?' class="mono"':''}>${v}</td>`).join("")+'</tr>').join("")+'</tbody></table>';
 }
-window.__fc={lineChart,barChart,hbar,funnel,gbar,sparkline,legend,table,C,num,pct,short,long,niceMax,textPx};
+window.__fc={lineChart,barChart,hbar,stackRows,funnel,gbar,sparkline,legend,table,C,num,pct,short,long,niceMax,textPx};
 })();
