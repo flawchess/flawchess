@@ -279,6 +279,80 @@ function buildCases(fc) {
         }),
     },
     {
+      chart: "barChart",
+      name: "barChart every=5 stacked (Personalized Puzzles sessions)",
+      invoke: (host) =>
+        fc.barChart(host, {
+          labels: DATE_LABELS,
+          h: 240,
+          every: 5,
+          series: [
+            { name: "Completed", values: wave(n, 10, 4), color: "#1F7A3D" },
+            { name: "Open", values: wave(n, 3, 2), color: "#8A7A6B" },
+            { name: "Abandoned", values: wave(n, 8, 3), color: "#A8321F" },
+          ],
+          extra: () => [{ k: "Puzzles served", v: 120 }],
+        }),
+    },
+    {
+      chart: "barChart",
+      name: "barChart every=5 stacked (Blunder Check sessions)",
+      invoke: (host) =>
+        fc.barChart(host, {
+          labels: DATE_LABELS,
+          h: 240,
+          every: 5,
+          series: [
+            { name: "Completed", values: wave(n, 10, 4), color: "#1F7A3D" },
+            { name: "Open", values: wave(n, 3, 2), color: "#8A7A6B" },
+            { name: "Abandoned", values: wave(n, 8, 3), color: "#A8321F" },
+          ],
+          extra: () => [{ k: "Windows composed", v: 120 }],
+        }),
+    },
+    {
+      chart: "barChart",
+      name: "barChart every=5 (Blunder Check windows judged)",
+      invoke: (host) =>
+        fc.barChart(host, {
+          labels: DATE_LABELS,
+          h: 220,
+          every: 5,
+          series: [{ name: "Windows judged", values: wave(n, 60, 30), color: "#0F8A7A" }],
+          extra: () => [{ k: "Users", v: 4 }],
+        }),
+    },
+    {
+      chart: "lineChart",
+      name: "lineChart every=5 pctAxis (Blunder Check score)",
+      invoke: (host) =>
+        fc.lineChart(host, {
+          labels: DATE_LABELS,
+          h: 220,
+          every: 5,
+          pctAxis: true,
+          yMax: 1,
+          fmt: (v) => Math.round(v * 100) + "%",
+          series: [{ name: "Score % (7-day)", values: waveFrac(n, 0.6, 0.15), color: "#3C63D8" }],
+        }),
+    },
+    {
+      chart: "barChart",
+      name: "barChart every=5 stacked (Blunder Check outcome mix)",
+      invoke: (host) =>
+        fc.barChart(host, {
+          labels: DATE_LABELS,
+          h: 240,
+          every: 5,
+          series: [
+            { name: "Caught", values: wave(n, 10, 4), color: "#1F7A3D" },
+            { name: "Cleared", values: wave(n, 20, 6), color: "#0F8A7A" },
+            { name: "False alarm", values: wave(n, 5, 2), color: "#A8790E" },
+            { name: "Missed", values: wave(n, 8, 3), color: "#A8321F" },
+          ],
+        }),
+    },
+    {
       chart: "gbar",
       name: "gbar 5-bucket (time-to-import)",
       invoke: (host) =>

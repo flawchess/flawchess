@@ -2,7 +2,8 @@
 
 The superuser-only activity dashboard at **https://flawchess.com/activity**:
 rolling DAU/WAU/MAU, retention, the signup → import funnel, guest conversion,
-bot games, Train sessions and imports. An internal analytics page, not a product
+bot games, Train sessions (two modes, Personalized Puzzles and Blunder Check) and
+imports. An internal analytics page, not a product
 feature.
 
 It is an ordinary page of the app — no separate server, no separate deployable.
@@ -92,7 +93,57 @@ assertion group at a time; the default is `all`.
   rate, and any promotion-timing metric is only meaningful for rows promoted on
   or after that date.
 
+### Train session outcomes
+
+Both Train modes (`drill_sessions` for Personalized Puzzles,
+`blunder_check_sessions` for Blunder Check) show the same three outcomes,
+derived at query time in `app/services/activity_queries.py`:
+
+- **Completed:** stored `status = 'completed'`.
+- **Open:** stored `status = 'open'` and `expires_on` after the reference date.
+- **Abandoned:** stored `status = 'expired'`, or stored `status = 'open'` with
+  `expires_on` on or before the reference date.
+
+**Why not the stored status.** Expiry is lazy. Both `expire_stale_sessions`
+functions (`app/repositories/train_repository.py` and
+`app/repositories/blunder_check_repository.py`) flip open to expired only when
+the same user next composes a session, so a user who never returns keeps a
+permanently `open` row. In prod at planning time, 331 puzzle rows were stored
+`open` with `expires_on` already past, against 5 genuinely open; 230 of the 331
+had never been started. The dashboard engine is read-only, so the fix is at
+query time only: no write, no sweep job.
+
+**Reference date.** The UTC date of `build_payload`'s `now_utc` (the same
+derivation the router and `resolve_window` use, so the dev-clock override
+holds), bound as a parameter. `expires_on` is a user-local date, so a row can be
+off by one day at the timezone edge. That is accepted.
+
+**Puzzle "started" rule.** `/train` composes and persists a `drill_sessions` row
+on page mount, so an untouched row is a page view, not a session. A puzzle
+session counts only if it is `completed`, OR has `entered_at` set, OR has a
+`drill_solves` row with `solved_at` set. The completed and solve fallbacks are
+needed because `entered_at` exists only since 2026-09-27 and 384 completed rows
+have it NULL. A pre-2026-09-27 expired row that was entered but has no solve
+cannot be told apart from a page view and is excluded. Blunder Check sessions
+all count as started: they are created only by an explicit `POST /sessions`.
+
+### Blunder Check metrics
+
+- **Sessions by outcome** (`fetch_blunder_check_sessions`): per `session_date`;
+  "windows composed" is `sum(window_count)`.
+- **Windows judged** (`fetch_blunder_check_windows`): windows with
+  `outcome IS NOT NULL`, bucketed by the day they ended (`ended_at`). This is
+  the same definition as the weekly leaderboard's `fetch_week_bc_aggregates`,
+  so the dashboard and the boards agree.
+- **Score %:** `sum(points_scored) / sum(points_possible)` over judged windows,
+  7-day rolling. The query fetches from the lead-in start (like the puzzle
+  accuracy line), so the left edge is already a full 7-day value.
+- **Outcome mix:** Cleared, Caught, Missed and False alarm map to
+  `WindowOutcome` values 0 to 3.
+
 ### Train first-session funnel (SEED-166, D-19)
+
+Puzzle-only: it reads `drill_sessions`, Blunder Check sessions are not included.
 
 The "First-session drop-off and return rate" card in the Train sessions section
 (`fetch_train_funnel` in `app/services/activity_queries.py`, `train_funnel` on
@@ -126,8 +177,9 @@ deliberately not hardcoded anywhere on the card itself.
 
 ## Query cost
 
-`build_payload()` runs ~16 sequential aggregate queries over the full tracked
-history. Measured against the **dev** database (25 users, 70 `user_activity`
+`build_payload()` awaits 19 `queries.fetch_*` calls, 21 SQL statements in all
+(`fetch_window` and `fetch_train_funnel` each run two), sequentially over the
+full tracked history. Measured against the **dev** database (25 users, 70 `user_activity`
 rows, 59 tracked days, 163,781 games), three consecutive cold calls:
 
     0.40s (first, cold caches) / 0.03s / 0.03s
