@@ -123,11 +123,12 @@ describe('TrendTooltipBody', () => {
 describe('FlawTrendChart', () => {
   const TREND = [makeTrendPoint('2026-03-02'), makeTrendPoint('2026-03-09')];
 
-  it('puts a Facepalm legend entry right after Blunders, shown by default, and tracks its toggle', () => {
+  it('leads the legend with Facepalm (severity order), shown by default, and tracks its toggle', () => {
     render(<FlawTrendChart trend={TREND} windowSize={100} />);
     const legend = screen.getByTestId('flaw-trend-legend-facepalm');
     const blunders = screen.getByTestId('flaw-trend-legend-blunder_rate');
-    expect(blunders.nextElementSibling).toBe(legend);
+    expect(legend.previousElementSibling).toBeNull();
+    expect(legend.nextElementSibling).toBe(blunders);
     expect(legend.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(legend);
     expect(legend.getAttribute('aria-pressed')).toBe('false');
@@ -135,6 +136,15 @@ describe('FlawTrendChart', () => {
       target: 'flaw-trend-legend',
       value: 'off',
     });
+  });
+
+  it('hides Mistakes and Inaccuracies by default and keeps Blunders shown', () => {
+    render(<FlawTrendChart trend={TREND} windowSize={100} />);
+    const pressed = (key: string) =>
+      screen.getByTestId(`flaw-trend-legend-${key}`).getAttribute('aria-pressed');
+    expect(pressed('blunder_rate')).toBe('true');
+    expect(pressed('mistake_rate')).toBe('false');
+    expect(pressed('inaccuracy_rate')).toBe('false');
   });
 
   it('explains facepalm blunders and the training in the header popover', () => {

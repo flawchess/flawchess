@@ -339,13 +339,14 @@ describe('time controls below the gate', () => {
         RAPID_ENTRY,
       ]),
     );
+    mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['bullet', 'rapid']));
     await renderLoaded();
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('4.10'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 4.60');
     expect(text('flaw-tile-blunder-gate')).toBe('Not enough analyzed games yet (12 of 20)');
-    expect(text('flaw-tile-mistake-gate')).toBe('Not enough analyzed games yet (12 of 20)');
+    expect(text('flaw-tile-facepalm-gate')).toBe('Not enough analyzed games yet (12 of 20)');
   });
 });
 
@@ -467,7 +468,8 @@ describe('You vs. your opponents section', () => {
   it('keeps the context-tag cards when only the facepalm request fails', async () => {
     mocks.getFacepalmComparison.mockRejectedValue(new Error('boom'));
     await renderLoaded();
-    expect(await screen.findByText(/Failed to load facepalm blunders/)).not.toBeNull();
+    // Both the Flaw Stats tile and the You vs. your opponents card show the error.
+    expect(await screen.findAllByText(/Failed to load facepalm blunders/)).toHaveLength(2);
     expect(screen.getByTestId('context-card-clock')).not.toBeNull();
   });
 

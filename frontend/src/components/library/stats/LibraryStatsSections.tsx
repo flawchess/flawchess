@@ -192,10 +192,25 @@ export function LibraryStatsTcSwitch({ filters, idPrefix }: LibraryStatsTcSwitch
   );
 }
 
-/** Flaw Stats: heading, coverage basis line, tiles, timeline. */
+const NO_FACEPALM_ROWS: readonly FacepalmBullet[] = [];
+
+/** The selected TC's facepalm rows: undefined while the request loads, empty for a TC without rows. */
+function facepalmRowsFor(
+  data: FacepalmComparisonResponse | undefined,
+  tc: TimeControlBucket,
+): readonly FacepalmBullet[] | undefined {
+  if (!data) return undefined;
+  return data.tcs.find((t) => t.tc === tc)?.bullets ?? NO_FACEPALM_ROWS;
+}
+
+/**
+ * Flaw Stats: heading, coverage basis line, tiles, timeline. The Facepalm tile reads the same
+ * facepalm query as the You vs. your opponents card (one cache entry, one request).
+ */
 function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
   const stats = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
+  const facepalm = useLibraryFacepalmComparison(filters, DEFAULT_FLAW_FILTER);
   // The selected TC picks an entry out of the payload; it is never part of a query key.
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
@@ -222,7 +237,12 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
           tc={tcStats.tc}
           isGuest={isGuest}
         />
-        <FlawTiles tcStats={tcStats} analyzedGate={comparison.data.analyzed_gate} />
+        <FlawTiles
+          tcStats={tcStats}
+          analyzedGate={comparison.data.analyzed_gate}
+          facepalmBullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
+          facepalmError={facepalm.isError}
+        />
         <FlawTimeline
           stats={stats.data}
           isLoading={stats.isLoading}
@@ -254,17 +274,6 @@ function VsOpponentsSkeleton() {
       </div>
     </div>
   );
-}
-
-const NO_FACEPALM_ROWS: readonly FacepalmBullet[] = [];
-
-/** The selected TC's facepalm rows: undefined while the request loads, empty for a TC without rows. */
-function facepalmRowsFor(
-  data: FacepalmComparisonResponse | undefined,
-  tc: TimeControlBucket,
-): readonly FacepalmBullet[] | undefined {
-  if (!data) return undefined;
-  return data.tcs.find((t) => t.tc === tc)?.bullets ?? NO_FACEPALM_ROWS;
 }
 
 /**

@@ -1,6 +1,5 @@
 import { TreePalm } from 'lucide-react';
 
-import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
@@ -12,31 +11,14 @@ import {
   libraryBasisText,
   metricTestIdSegment,
 } from '@/lib/flawComparisonMeta';
-import { GAP_SAME_WORD, gapWords, type GapCell } from '@/lib/gapBar';
 import type { FacepalmBullet, FacepalmMetric, FlawComparisonTc } from '@/types/library';
+import { facepalmRangeNote } from './facepalmRangeNote';
 import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 
 /** The card intro (257 D-16): the comparison only, nothing on what a higher rate means. */
 const FACEPALM_INTRO =
   "Your facepalm blunders per 100 of your moves, next to your opponents' in the same games.";
-
-/** 257 D-16 / orchestrator decision 3: no benchmark band exists yet, so no range is shown. */
-const COPY_NO_RANGE = 'There is no typical range for facepalm blunders yet.';
-
-/**
- * 257 D-13: significance may be stated, it drives no colour. These two sentences (this one and
- * COPY_CHANCE) describe the gap, not the score, so they sit outside D-05's probability ban;
- * the owner confirms this reading at UAT.
- */
-const COPY_GAP_SIGNIFICANT = 'The gap is too large to be chance.';
-
-/** The popover's first list item: the no-range sentence plus what the significance says. */
-function facepalmRangeNote(cell: GapCell): string {
-  if (cell.significant) return `${COPY_NO_RANGE} ${COPY_GAP_SIGNIFICANT}`;
-  const isSame = cell.delta === null || gapWords(cell.delta) === GAP_SAME_WORD;
-  return isSame ? COPY_NO_RANGE : `${COPY_NO_RANGE} ${COPY_CHANCE}`;
-}
 
 interface FacepalmRowProps {
   metric: FacepalmMetric;

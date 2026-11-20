@@ -40,12 +40,18 @@ const OTHER_SERIES: SeriesConfig[] = [
 ];
 const SERIES: SeriesConfig[] = [BLUNDER_SERIES, ...OTHER_SERIES];
 
-/** The facepalm legend entry sits right after Blunders: it splits that series' area. */
+/** Legend in severity order: Facepalm (the split of the Blunders area) leads, then the lines. */
 const LEGEND: { key: LegendKey; label: string; color: string }[] = [
-  BLUNDER_SERIES,
   { key: 'facepalm', label: 'Facepalm', color: FACEPALM_BAND_SWATCH },
+  BLUNDER_SERIES,
   ...OTHER_SERIES,
 ];
+
+/**
+ * Mistakes and inaccuracies are hidden by default: they sit above the blunder rate and push the
+ * blunder / facepalm signal down the y-axis. The legend toggles them back on.
+ */
+const DEFAULT_HIDDEN_KEYS: readonly LegendKey[] = ['mistake_rate', 'inaccuracy_rate'];
 
 const PCT_SCALE = 100;
 const BLUNDER_STACK_ID = 'blunders';
@@ -131,10 +137,8 @@ export function TrendTooltipBody({
  * Renders a text fallback when fewer than 2 datapoints are available.
  */
 export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
-  // Inaccuracies are hidden by default — they dominate the y-axis and bury the
-  // blunder/mistake signal. The user can toggle them back on via the legend.
   const [hiddenKeys, setHiddenKeys] = useState<Set<LegendKey>>(
-    () => new Set<LegendKey>(['inaccuracy_rate']),
+    () => new Set<LegendKey>(DEFAULT_HIDDEN_KEYS),
   );
 
   const handleLegendClick = useCallback((key: LegendKey) => {
