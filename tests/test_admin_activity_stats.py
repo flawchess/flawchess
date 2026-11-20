@@ -25,6 +25,12 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
+from app.models.blunder_check import (
+    BlunderCheckSession,
+    BlunderCheckWindow,
+    WindowCase,
+    WindowOutcome,
+)
 from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.user import User
@@ -32,6 +38,7 @@ from app.routers import admin_activity
 from app.services import activity_queries as queries
 from app.services.activity_stats import StatsCache, build_readonly_engine
 from app.services.guest_service import create_guest_user
+from tests.blunder_check_seed import delete_blunder_check_sessions
 
 _DEFAULT_PASSWORD = "pw12345678"
 
@@ -117,6 +124,8 @@ def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
         train=[],
         train_funnel={},
         solves=[],
+        blunder_check_sessions=[],
+        blunder_check_windows=[],
         imports=[],
         persona=[],
         bot_players=0,
@@ -126,7 +135,6 @@ def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
         stick=[],
         conversion={},
         conversion_compare=[],
-        guest_train={},
         purged_excluded={},
     )
 
@@ -203,6 +211,8 @@ async def test_stats_superuser_gets_full_payload(test_engine):
     body = resp.json()
     expected_keys = set(queries.Payload.__annotations__)
     assert expected_keys <= set(body.keys()), f"missing keys: {expected_keys - set(body.keys())}"
+    # The guest-Train card and its payload field were removed.
+    assert "guest_train" not in body
 
 
 @pytest.mark.asyncio
@@ -901,6 +911,7 @@ async def _seed_funnel_session(
     solved: bool,
     entered: bool = False,
     started_at: datetime.datetime | None = None,
+    expires_on: datetime.date | None = None,
 ) -> None:
     """Seed one drill_sessions row plus one drill_solves row.
 
@@ -918,7 +929,7 @@ async def _seed_funnel_session(
                 session_date=session_date,
                 status=status,
                 puzzle_count=1,
-                expires_on=session_date + datetime.timedelta(days=7),
+                expires_on=expires_on or session_date + datetime.timedelta(days=7),
             )
             started = started_at or datetime.datetime.now(datetime.timezone.utc)
             drill_session.started_at = started
@@ -1340,88 +1351,301 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
     assert purged["guest"] - baseline_purged["guest"] == 1
 
 
+# ---------------------------------------------------------------------------
+# Train session outcomes (Completed / Open / Abandoned) and Blunder Check
+# metrics. Direct-query tests against test_engine, baseline-delta pattern, on a
+# far-future fixed day so no other test's rows land on it. `today` is passed
+# explicitly, never wall-clock.
+# ---------------------------------------------------------------------------
+
+_OUTCOME_DAY = datetime.date(2031, 3, 10)
+_OUTCOME_TODAY = datetime.date(2031, 3, 12)
+_OUTCOME_WINDOW_END = datetime.date(2031, 3, 20)
+_PAST_EXPIRY = datetime.date(2031, 3, 11)
+_FUTURE_EXPIRY = datetime.date(2031, 3, 14)
+
+_SESSION_COLS = ("sessions", "users", "completed", "abandoned", "open", "served")
+
+
+def _session_row_for_day(rows: list[list[typing.Any]], day: datetime.date) -> dict[str, int]:
+    """Map the row for `day` (ISO string key) to named counts, zero when absent."""
+    for row in rows:
+        if row[0] == day.isoformat():
+            return dict(zip(_SESSION_COLS, (int(v) for v in row[1:]), strict=True))
+    return dict.fromkeys(_SESSION_COLS, 0)
+
+
+def _session_delta(after: dict[str, int], before: dict[str, int]) -> dict[str, int]:
+    return {k: after[k] - before[k] for k in after}
+
+
+async def _fresh_users(test_engine, count: int, prefix: str) -> list[int]:
+    """One user per seeded session row: both Train modes allow one OPEN row per user."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return [
+            (await register_and_login(client, unique_email(f"{prefix}{i}")))[0]
+            for i in range(count)
+        ]
+
+
 @pytest.mark.asyncio
-async def test_fetch_guest_train_promotion_cutoff_and_purged_exclusion(test_engine):
-    """Pins the promotion cutoff (promotion cuts off guest-Train counting) and
-    purged-guest exclusion on seeded rows, baseline-delta pattern (see
-    test_fetch_train_funnel_seeded_cohort's module comment).
+async def test_fetch_train_derives_outcomes_and_skips_unstarted(test_engine):
+    """Outcome derivation and the never-started exclusion for puzzle sessions.
 
-      - guest_counts: never promoted, one completed session -> counts.
-      - guest_promoted: promoted mid-window; a completed session BEFORE
-        promoted_at counts, a completed session ON/AFTER promoted_at does not
-        (it is registered activity by then).
-      - purged_guest: games_purged_at set, one completed session -> excluded
-        entirely regardless of promotion state.
-      - guest_bad_status: one 'open' and one 'expired' session, neither
-        completed -> neither counts.
+    Reference date 2031-03-12; every row is dated 2031-03-10. Started rows:
+      A open, expires 03-11, entered      -> Abandoned (window passed)
+      A2 open, expires == today, entered  -> Abandoned (the `<=` boundary)
+      B open, expires 03-14, entered      -> Open
+      E completed, never entered/solved   -> Completed (pre-entered_at row)
+      F expired, not entered, solved row  -> Abandoned (solve fallback)
+    Never started, excluded entirely:
+      C open past expiry, D expired, G open in window.
     """
-    window_start = datetime.date(2019, 1, 1)
-    # Far enough in the future to keep every guest seeded "now" (real wall
-    # clock) inside the window -- this test is about the promotion cutoff and
-    # purged exclusion, not the new end-date truncation.
-    window_end = datetime.date(2099, 1, 1)
+    async with test_engine.connect() as conn:
+        baseline = _session_row_for_day(
+            await queries.fetch_train(
+                conn, _OUTCOME_DAY, _OUTCOME_WINDOW_END, today=_OUTCOME_TODAY
+            ),
+            _OUTCOME_DAY,
+        )
+
+    users = await _fresh_users(test_engine, 8, "trainout")
+    a, a2, b, e, f, c, d, g = users
+    day = _OUTCOME_DAY
+    seeds: list[tuple[int, dict[str, typing.Any]]] = [
+        (a, dict(status="open", solved=False, entered=True, expires_on=_PAST_EXPIRY)),
+        (a2, dict(status="open", solved=False, entered=True, expires_on=_OUTCOME_TODAY)),
+        (b, dict(status="open", solved=False, entered=True, expires_on=_FUTURE_EXPIRY)),
+        (e, dict(status="completed", solved=False, expires_on=_FUTURE_EXPIRY)),
+        (f, dict(status="expired", solved=True, expires_on=_PAST_EXPIRY)),
+        (c, dict(status="open", solved=False, expires_on=_PAST_EXPIRY)),
+        (d, dict(status="expired", solved=False, expires_on=_PAST_EXPIRY)),
+        (g, dict(status="open", solved=False, expires_on=_FUTURE_EXPIRY)),
+    ]
+    for user_id, kwargs in seeds:
+        await _seed_funnel_session(test_engine, user_id, day, **kwargs)
 
     async with test_engine.connect() as conn:
-        baseline = await queries.fetch_guest_train(conn, window_start, window_end)
+        after = _session_row_for_day(
+            await queries.fetch_train(
+                conn, _OUTCOME_DAY, _OUTCOME_WINDOW_END, today=_OUTCOME_TODAY
+            ),
+            _OUTCOME_DAY,
+        )
 
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    async with session_maker() as session:
-        guest_counts, _ = await create_guest_user(session)
-        guest_promoted, _ = await create_guest_user(session)
-        purged_guest, _ = await create_guest_user(session)
-        guest_bad_status, _ = await create_guest_user(session)
+    assert _session_delta(after, baseline) == {
+        "sessions": 5,
+        "users": 5,
+        "completed": 1,
+        "abandoned": 3,
+        "open": 1,
+        "served": 5,
+    }
 
-    promoted_at = datetime.datetime(2026, 1, 10, tzinfo=datetime.timezone.utc)
-    await _stamp_user(test_engine, guest_promoted.id, promoted_at=promoted_at)
-    await _stamp_user(
-        test_engine,
-        purged_guest.id,
-        games_purged_at=datetime.datetime.now(datetime.timezone.utc),
-    )
 
-    # guest_counts: one completed session -> counts.
-    await _seed_funnel_session(
-        test_engine, guest_counts.id, datetime.date(2026, 1, 1), status="completed", solved=True
-    )
+async def _seed_bc_session(
+    test_engine,
+    user_id: int,
+    *,
+    status: str,
+    session_date: datetime.date,
+    expires_on: datetime.date,
+    window_count: int = 2,
+    windows: typing.Sequence[tuple[int | None, int, int, datetime.datetime | None, bool]] = (),
+) -> int:
+    """Seed one blunder_check_sessions row plus optional windows; returns the session id.
 
-    # guest_promoted: one completed session BEFORE promoted_at (counts), one
-    # completed session ON promoted_at's date (does not -- the cutoff is
-    # session_date < promoted_at::date).
-    await _seed_funnel_session(
-        test_engine,
-        guest_promoted.id,
-        datetime.date(2026, 1, 5),
-        status="completed",
-        solved=True,
-    )
-    await _seed_funnel_session(
-        test_engine,
-        guest_promoted.id,
-        datetime.date(2026, 1, 10),
-        status="completed",
-        solved=True,
-    )
+    Each window spec is (outcome or None, points_scored, points_possible,
+    ended_at or None, herring). Rows satisfy the table CHECKs: a herring window
+    has no blunder position/ply and window_case HERRING; any other window has
+    blunder_position 2, blunder_ply first_ply + 1 and window_case ALLOWED.
+    """
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session:
+        async with session.begin():
+            header = BlunderCheckSession(
+                user_id=user_id,
+                status=status,
+                window_count=window_count,
+                session_date=session_date,
+                expires_on=expires_on,
+            )
+            session.add(header)
+            await session.flush()
+            first_ply = 10
+            for position, (outcome, scored, possible, ended_at, herring) in enumerate(windows):
+                session.add(
+                    BlunderCheckWindow(
+                        session_id=header.id,
+                        position=position,
+                        user_id=user_id,
+                        game_id=None,
+                        is_own=True,
+                        window_length=3,
+                        blunder_position=None if herring else 2,
+                        first_ply=first_ply,
+                        blunder_ply=None if herring else first_ply + 1,
+                        window_case=int(WindowCase.HERRING if herring else WindowCase.ALLOWED),
+                        start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                        move_ucis="e2e4 e7e5 g1f3",
+                        lead_in_plies=0,
+                        points_possible=possible,
+                        points_scored=scored,
+                        outcome=outcome,
+                        started_at=ended_at,
+                        ended_at=ended_at,
+                    )
+                )
+            return header.id
 
-    # purged_guest: completed session, but games_purged_at excludes it.
-    await _seed_funnel_session(
-        test_engine, purged_guest.id, datetime.date(2026, 1, 1), status="completed", solved=True
-    )
 
-    # guest_bad_status: neither 'open' nor 'expired' is 'completed'.
-    await _seed_funnel_session(
-        test_engine, guest_bad_status.id, datetime.date(2026, 1, 1), status="open", solved=False
-    )
-    await _seed_funnel_session(
-        test_engine, guest_bad_status.id, datetime.date(2026, 1, 2), status="expired", solved=False
-    )
+@pytest.mark.asyncio
+async def test_fetch_blunder_check_sessions_derives_outcomes(test_engine):
+    """Same derivation as puzzles, but every Blunder Check session counts as started.
+
+    Reference date 2031-03-12, all rows dated 2031-03-10, window_count 2 each:
+    completed -> Completed; expired -> Abandoned; open past expiry -> Abandoned;
+    open expiring today -> Abandoned (boundary); open in window -> Open.
+    """
+    async with test_engine.connect() as conn:
+        baseline = _session_row_for_day(
+            await queries.fetch_blunder_check_sessions(
+                conn, _OUTCOME_DAY, _OUTCOME_WINDOW_END, today=_OUTCOME_TODAY
+            ),
+            _OUTCOME_DAY,
+        )
+
+    users = await _fresh_users(test_engine, 5, "bcout")
+    specs = [
+        ("completed", _FUTURE_EXPIRY),
+        ("expired", _PAST_EXPIRY),
+        ("open", _PAST_EXPIRY),
+        ("open", _OUTCOME_TODAY),
+        ("open", _FUTURE_EXPIRY),
+    ]
+    session_ids: list[int] = []
+    try:
+        for user_id, (status, expires_on) in zip(users, specs, strict=True):
+            session_ids.append(
+                await _seed_bc_session(
+                    test_engine,
+                    user_id,
+                    status=status,
+                    session_date=_OUTCOME_DAY,
+                    expires_on=expires_on,
+                )
+            )
+        async with test_engine.connect() as conn:
+            after = _session_row_for_day(
+                await queries.fetch_blunder_check_sessions(
+                    conn, _OUTCOME_DAY, _OUTCOME_WINDOW_END, today=_OUTCOME_TODAY
+                ),
+                _OUTCOME_DAY,
+            )
+    finally:
+        await delete_blunder_check_sessions(test_engine, session_ids)
+
+    assert _session_delta(after, baseline) == {
+        "sessions": 5,
+        "users": 5,
+        "completed": 1,
+        "abandoned": 3,
+        "open": 1,
+        "served": 10,
+    }
+
+
+_BC_WINDOW_COLS = (
+    "windows",
+    "users",
+    "scored",
+    "possible",
+    "cleared",
+    "caught",
+    "missed",
+    "false_alarm",
+)
+
+
+def _bc_window_row(rows: list[list[typing.Any]], day: datetime.date) -> dict[str, int]:
+    for row in rows:
+        if row[0] == day.isoformat():
+            return dict(zip(_BC_WINDOW_COLS, (int(v) for v in row[1:]), strict=True))
+    return dict.fromkeys(_BC_WINDOW_COLS, 0)
+
+
+@pytest.mark.asyncio
+async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
+    """Judged windows (outcome NOT NULL) bucket by ended_at day with points and mix.
+
+    lead_in_start 2031-03-01, window_end 2031-03-20. On 03-10 four judged
+    windows (one per outcome). Excluded: a started-but-unended window (outcome
+    NULL) and one ended before lead_in_start. A window ended on window_end's day
+    lands in that day's row.
+    """
+    lead_in = datetime.date(2031, 3, 1)
+    noon = datetime.time(12, 0)
+    utc = datetime.timezone.utc
+    ended_day = datetime.datetime.combine(_OUTCOME_DAY, noon, tzinfo=utc)
+    ended_last = datetime.datetime.combine(_OUTCOME_WINDOW_END, noon, tzinfo=utc)
+    ended_before = datetime.datetime.combine(datetime.date(2031, 2, 28), noon, tzinfo=utc)
+    last_day = _OUTCOME_WINDOW_END
+    before_day = datetime.date(2031, 2, 28)
 
     async with test_engine.connect() as conn:
-        result = await queries.fetch_guest_train(conn, window_start, window_end)
+        baseline_rows = await queries.fetch_blunder_check_windows(conn, lead_in, last_day)
+    baseline = {d: _bc_window_row(baseline_rows, d) for d in (_OUTCOME_DAY, last_day, before_day)}
 
-    delta = {key: result[key] - baseline[key] for key in result}
+    (user_id,) = await _fresh_users(test_engine, 1, "bcwin")
+    cleared, caught, missed, false_alarm = (
+        int(WindowOutcome.CLEARED),
+        int(WindowOutcome.CAUGHT),
+        int(WindowOutcome.MISSED),
+        int(WindowOutcome.FALSE_ALARM),
+    )
+    session_ids: list[int] = []
+    try:
+        session_ids.append(
+            await _seed_bc_session(
+                test_engine,
+                user_id,
+                status="completed",
+                session_date=_OUTCOME_DAY,
+                expires_on=_FUTURE_EXPIRY,
+                window_count=8,
+                windows=[
+                    (cleared, 3, 3, ended_day, True),
+                    (caught, 4, 6, ended_day, False),
+                    (missed, 0, 6, ended_day, False),
+                    (false_alarm, 0, 3, ended_day, True),
+                    (None, 0, 3, None, True),
+                    (caught, 4, 6, ended_before, False),
+                    (cleared, 3, 3, ended_last, True),
+                ],
+            )
+        )
+        async with test_engine.connect() as conn:
+            rows = await queries.fetch_blunder_check_windows(conn, lead_in, last_day)
+    finally:
+        await delete_blunder_check_sessions(test_engine, session_ids)
 
-    # Counts: guest_counts's session + guest_promoted's pre-promotion session.
-    # guest_promoted's post-promotion session, purged_guest's session, and
-    # guest_bad_status's two non-completed sessions all excluded.
-    assert delta["sessions_completed"] == 2
-    assert delta["users"] == 2  # guest_counts + guest_promoted (distinct)
+    def delta(day: datetime.date) -> dict[str, int]:
+        after = _bc_window_row(rows, day)
+        return {k: after[k] - baseline[day][k] for k in after}
+
+    assert delta(_OUTCOME_DAY) == {
+        "windows": 4,
+        "users": 1,
+        "scored": 7,
+        "possible": 18,
+        "cleared": 1,
+        "caught": 1,
+        "missed": 1,
+        "false_alarm": 1,
+    }
+    assert delta(last_day)["windows"] == 1
+    # Ended before lead_in_start: never fetched, so no row and no delta.
+    assert all(row[0] != before_day.isoformat() for row in rows)
+    assert delta(before_day)["windows"] == 0

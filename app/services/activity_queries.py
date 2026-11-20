@@ -3,7 +3,8 @@
 Every function here takes an open ``AsyncConnection`` and returns plain JSON-able
 data. No ORM models, no writes: the connection is opened with
 ``default_transaction_read_only`` so a stray statement fails loudly rather than
-touching production.
+touching production. The only app import is the ``WindowOutcome`` IntEnum, used
+as a constant, never to query through the ORM.
 """
 
 import datetime
@@ -12,6 +13,8 @@ from typing import Any, Final, Literal, NamedTuple, TypedDict
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+from app.models.blunder_check import WindowOutcome
 
 # Bot ratings with fewer games than this are dropped from the score-by-rating
 # chart -- below it a single session swings the number by tens of points.
@@ -108,6 +111,8 @@ class Payload(TypedDict):
     train: list[list[Any]]
     train_funnel: dict[str, Any]
     solves: list[list[Any]]
+    blunder_check_sessions: list[list[Any]]
+    blunder_check_windows: list[list[Any]]
     imports: list[list[Any]]
     persona: list[list[Any]]
     bot_players: int
@@ -117,7 +122,6 @@ class Payload(TypedDict):
     stick: list[list[Any]]
     conversion: dict[str, Any]
     conversion_compare: list[list[Any]]
-    guest_train: dict[str, Any]
     purged_excluded: dict[str, int]
 
 
@@ -365,25 +369,152 @@ async def fetch_bot_players(
     return int(rows[0][0])
 
 
+# Session outcome derivation for both Train modes (drill_sessions and
+# blunder_check_sessions), written once so the two queries cannot drift.
+#
+# A session is Completed (status 'completed'), Open (still inside its window),
+# or Abandoned (its window has passed without completion). The stored status
+# alone is misleading: expiry is lazy. `expire_stale_sessions` in
+# app/repositories/train_repository.py and app/repositories/blunder_check_repository.py
+# flips open -> expired only when the SAME user next composes a session, so a
+# user who never returns keeps a permanently 'open' row (prod at planning
+# time: 331 puzzle rows stored 'open' with expires_on already past, against 5
+# genuinely open). This engine is read-only, so the fix is at query time: an
+# 'open' row whose expires_on is on or before the reference date is Abandoned.
+# No row is written and there is no sweep job.
+#
+# expires_on is a user-local date while :today is the UTC date of
+# build_payload's now_utc, so a row can be off by one day at the timezone edge.
+# That is accepted.
+_SESSION_OPEN_NOW = "(status = 'open' AND expires_on > CAST(:today AS date))"
+_SESSION_ABANDONED = (
+    "(status = 'expired' OR (status = 'open' AND expires_on <= CAST(:today AS date)))"
+)
+
+# A puzzle session counts only if somebody actually started it. /train
+# composes and persists a drill_sessions row on page mount (a status read), so
+# an untouched row is a page view, not a session (230 of the 331 stale-open
+# prod rows). Started = completed, OR entered (Start/Resume pressed), OR has a
+# solved puzzle. The completed and solve fallbacks are required because
+# entered_at exists only since 2026-09-27 and 384 completed rows have it NULL.
+# A pre-2026-09-27 expired row that was entered but has no solve cannot be told
+# apart from a page view and is excluded; that is accepted. Expects the table
+# aliased as `d`.
+_PUZZLE_SESSION_STARTED = """(
+    d.status = 'completed'
+    OR d.entered_at IS NOT NULL
+    OR EXISTS (
+        SELECT 1 FROM drill_solves s WHERE s.session_id = d.id AND s.solved_at IS NOT NULL
+    )
+)"""
+
+
 async def fetch_train(
-    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+    conn: AsyncConnection,
+    window_start: datetime.date,
+    window_end: datetime.date,
+    *,
+    today: datetime.date,
 ) -> list[list[Any]]:
+    """Personalized Puzzles sessions per day by derived outcome.
+
+    Rows: [day, sessions, users, completed, abandoned, open, puzzles]. Counts
+    started sessions only; outcomes follow the derivation documented above
+    `_SESSION_OPEN_NOW`. `today` is the reference date for Open vs Abandoned.
+    """
     return _table(
         await _rows(
             conn,
-            """
+            f"""
             SELECT session_date AS day, count(*) AS sessions,
                    count(DISTINCT user_id) AS users,
                    count(*) FILTER (WHERE status = 'completed') AS completed,
-                   count(*) FILTER (WHERE status = 'expired') AS expired,
-                   count(*) FILTER (WHERE status = 'open') AS still_open,
+                   count(*) FILTER (WHERE {_SESSION_ABANDONED}) AS abandoned,
+                   count(*) FILTER (WHERE {_SESSION_OPEN_NOW}) AS open,
                    sum(puzzle_count) AS puzzles
-            FROM drill_sessions
+            FROM drill_sessions d
+            WHERE session_date >= CAST(:cutoff AS date) AND session_date < CAST(:last AS date)
+              AND {_PUZZLE_SESSION_STARTED}
+            GROUP BY 1 ORDER BY 1
+            """,
+            cutoff=window_start,
+            last=_end_exclusive(window_end),
+            today=today,
+        )
+    )
+
+
+async def fetch_blunder_check_sessions(
+    conn: AsyncConnection,
+    window_start: datetime.date,
+    window_end: datetime.date,
+    *,
+    today: datetime.date,
+) -> list[list[Any]]:
+    """Blunder Check sessions per day by derived outcome.
+
+    Rows: [day, sessions, users, completed, abandoned, open, windows_composed],
+    windows_composed = sum(window_count). Every row counts as started: Blunder
+    Check sessions are created only by an explicit POST /sessions, not on page
+    mount. Outcomes follow the derivation documented above `_SESSION_OPEN_NOW`.
+    """
+    return _table(
+        await _rows(
+            conn,
+            f"""
+            SELECT session_date AS day, count(*) AS sessions,
+                   count(DISTINCT user_id) AS users,
+                   count(*) FILTER (WHERE status = 'completed') AS completed,
+                   count(*) FILTER (WHERE {_SESSION_ABANDONED}) AS abandoned,
+                   count(*) FILTER (WHERE {_SESSION_OPEN_NOW}) AS open,
+                   sum(window_count) AS windows_composed
+            FROM blunder_check_sessions
             WHERE session_date >= CAST(:cutoff AS date) AND session_date < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             cutoff=window_start,
             last=_end_exclusive(window_end),
+            today=today,
+        )
+    )
+
+
+async def fetch_blunder_check_windows(
+    conn: AsyncConnection, lead_in_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
+    """Blunder Check windows judged per day, with points and outcome mix.
+
+    Rows: [day, windows, users, points_scored, points_possible, cleared,
+    caught, missed, false_alarm]. A window is judged when `outcome IS NOT
+    NULL`, bucketed by the day it ended: the same definition as
+    `fetch_week_bc_aggregates` (app/repositories/train_leaderboard_repository.py),
+    so the dashboard and the weekly boards agree. Fetched from the lead-in
+    start (like `fetch_solves`) so the client's 7-day rolling score is already
+    full on the window's first visible day.
+    """
+    return _table(
+        await _rows(
+            conn,
+            """
+            SELECT CAST(w.ended_at AS date) AS day, count(*) AS windows,
+                   count(DISTINCT w.user_id) AS users,
+                   sum(w.points_scored) AS points_scored,
+                   sum(w.points_possible) AS points_possible,
+                   count(*) FILTER (WHERE w.outcome = :cleared) AS cleared,
+                   count(*) FILTER (WHERE w.outcome = :caught) AS caught,
+                   count(*) FILTER (WHERE w.outcome = :missed) AS missed,
+                   count(*) FILTER (WHERE w.outcome = :false_alarm) AS false_alarm
+            FROM blunder_check_windows w
+            WHERE w.outcome IS NOT NULL
+              AND w.ended_at >= CAST(:lead_in AS date) AND w.ended_at < CAST(:last AS date)
+            GROUP BY 1 ORDER BY 1
+            """,
+            lead_in=lead_in_start,
+            last=_end_exclusive(window_end),
+            cleared=int(WindowOutcome.CLEARED),
+            caught=int(WindowOutcome.CAUGHT),
+            missed=int(WindowOutcome.MISSED),
+            false_alarm=int(WindowOutcome.FALSE_ALARM),
         )
     )
 
@@ -803,48 +934,6 @@ async def fetch_conversion(
         "avg_days_converted": float(row[2] or 0),
         "avg_days_guest": float(row[3] or 0),
     }
-
-
-async def fetch_guest_train(
-    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
-) -> dict[str, Any]:
-    """Train sessions completed while a user was still a guest.
-
-    This is a separate query rather than a filter on ``fetch_train`` -- that
-    function's `drill_sessions` scan carries no `users` join at all, so it has
-    no way to know whether a session's owner was a guest at the time.
-
-    A "guest Train session completed" is `drill_sessions.status =
-    'completed'` for a user in `_GUEST_COHORT` (guest, or a guest who has
-    since been promoted) created in the window, dated STRICTLY BEFORE that
-    user's `promoted_at` (or forever, via the `'infinity'` coalesce, for a
-    user never promoted). A promoted user's later sessions -- dated on or
-    after `promoted_at` -- count as registered activity, not guest activity,
-    and are excluded here.
-
-    A user with `games_purged_at` set is excluded entirely, the same
-    predicate the funnel cards use. This card's exclusion count is already
-    footnoted by ``fetch_purged_excluded``'s ``guest`` key -- no separate
-    counter is kept.
-    """
-    row = (
-        await _rows(
-            conn,
-            f"""
-            SELECT count(*) AS sessions_completed, count(DISTINCT d.user_id) AS users
-            FROM drill_sessions d
-            JOIN users u ON u.id = d.user_id
-            WHERE u.created_at >= CAST(:first AS date) AND u.created_at < CAST(:last AS date)
-              AND {_GUEST_COHORT}
-              AND u.games_purged_at IS NULL
-              AND d.status = 'completed'
-              AND d.session_date < COALESCE(u.promoted_at::date, 'infinity'::date)
-            """,
-            first=window_start,
-            last=_end_exclusive(window_end),
-        )
-    )[0]
-    return {"sessions_completed": int(row[0]), "users": int(row[1])}
 
 
 async def fetch_conversion_compare(
