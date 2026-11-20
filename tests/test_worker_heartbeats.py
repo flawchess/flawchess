@@ -18,6 +18,7 @@ patching rationale.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
@@ -608,5 +609,119 @@ async def test_worker_heartbeat_decayed_rates_first_insert(
         assert hb["evals_per_hour_24h"] == pytest.approx(
             _RATE_FIRST_N_EVALS / RATE_TAU_24H_HOURS, rel=_RATE_REL_TOL
         )
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+_RATE_N1 = 120
+_RATE_N2 = 60
+_RATE_N1_HOLES = 1
+_RATE_GAP_HOURS = 2.0
+_RATE_LONG_GAP_HOURS = 60 * 24.0  # 60 days
+_RATE_NEAR_ZERO = 1e-15
+
+# keep in sync with the WorkerHeartbeat docstring (app/models/worker_heartbeat.py)
+_READ_TIME_1H_EXPR = (
+    "evals_per_hour_1h * exp(-least(extract(epoch from now() - last_seen) / 3600.0, 50))"
+)
+_READ_TIME_24H_EXPR = (
+    "evals_per_hour_24h * exp(-least(extract(epoch from now() - last_seen) / 86400.0, 50))"
+)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_decayed_rates_decay_then_add(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Second submit decays the stored rate by exp(-dt/tau) then adds n/tau; the 1h
+    column decays faster than the 24h one; the pre-existing counters are unchanged."""
+    worker_id = "w-rate-decay"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(
+            eval_worker_session_maker,
+            worker_id,
+            _RATE_N1,
+            n_holes=_RATE_N1_HOLES,
+            n_plies_leased=_RATE_N1,
+        )
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_GAP_HOURS)
+        await _upsert_direct(
+            eval_worker_session_maker, worker_id, _RATE_N2, n_plies_leased=_RATE_N2
+        )
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        r1h = hb["evals_per_hour_1h"]
+        r24h = hb["evals_per_hour_24h"]
+        assert isinstance(r1h, float) and isinstance(r24h, float)
+
+        exp_1h = _RATE_N1 / RATE_TAU_1H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS)
+        exp_1h += _RATE_N2 / RATE_TAU_1H_HOURS
+        exp_24h = _RATE_N1 / RATE_TAU_24H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS)
+        exp_24h += _RATE_N2 / RATE_TAU_24H_HOURS
+        assert r1h == pytest.approx(exp_1h, rel=_RATE_REL_TOL)
+        assert r24h == pytest.approx(exp_24h, rel=_RATE_REL_TOL)
+
+        # Decay factors recovered from the stored row: 1h decays more than 24h.
+        factor_1h = (r1h - _RATE_N2 / RATE_TAU_1H_HOURS) / (_RATE_N1 / RATE_TAU_1H_HOURS)
+        factor_24h = (r24h - _RATE_N2 / RATE_TAU_24H_HOURS) / (_RATE_N1 / RATE_TAU_24H_HOURS)
+        assert factor_1h == pytest.approx(math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS), rel=1e-2)
+        assert factor_24h == pytest.approx(
+            math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS), rel=_RATE_REL_TOL
+        )
+        assert factor_1h < factor_24h
+
+        # Pre-existing counters behave exactly as before.
+        assert hb["submit_count"] == 2
+        assert hb["evals_submitted"] == _RATE_N1 + _RATE_N2
+        assert hb["holes_submitted"] == _RATE_N1_HOLES
+        assert hb["plies_leased"] == _RATE_N1 + _RATE_N2
+        assert hb["worker_schema_version"] is None
+        assert hb["sf_version"] == "Stockfish 18"
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_read_time_decay_expression(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """The read-time expressions documented in the WorkerHeartbeat docstring run
+    without error and return the stored rate decayed to now(), even after 60 days."""
+    worker_id = "w-rate-read"
+
+    async def _read_expressions() -> tuple[float, float]:
+        async with eval_worker_session_maker() as session:
+            row = (
+                await session.execute(
+                    sa.text(
+                        f"SELECT {_READ_TIME_1H_EXPR}, {_READ_TIME_24H_EXPR} "
+                        "FROM worker_heartbeats WHERE worker_id = :wid"
+                    ),
+                    {"wid": worker_id},
+                )
+            ).one()
+            return float(row[0]), float(row[1])
+
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N1)
+
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_GAP_HOURS)
+        read_1h, read_24h = await _read_expressions()
+        assert read_1h == pytest.approx(
+            _RATE_N1 / RATE_TAU_1H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS),
+            rel=_RATE_REL_TOL,
+        )
+        assert read_24h == pytest.approx(
+            _RATE_N1 / RATE_TAU_24H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS),
+            rel=_RATE_REL_TOL,
+        )
+
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_LONG_GAP_HOURS)
+        read_1h, read_24h = await _read_expressions()
+        assert read_1h < _RATE_NEAR_ZERO
+        assert read_24h < _RATE_NEAR_ZERO
     finally:
         await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
