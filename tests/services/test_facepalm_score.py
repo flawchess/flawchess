@@ -23,21 +23,22 @@ from __future__ import annotations
 import csv
 import itertools
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import chess
 import pytest
-from sqlalchemy import Float, SmallInteger, column, select, text, values
+from sqlalchemy import ColumnElement, Float, SmallInteger, column, select, text, values
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.game_flaw import GameFlaw
-
+from app.repositories.library_repository import _FACEPALM_PCT_SCALE
+from app.services import blunder_check_rules
 from app.services.blunder_check_rules import (
     FACEPALM_BEST_PROB_COEF,
     FACEPALM_DRILL_LAMBDA,
@@ -74,6 +75,10 @@ from app.services.facepalm_score import (
     facepalm_expr,
     facepalm_score,
     facepalm_score_sql,
+    facepalm_type,
+    facepalm_type_expr,
+    facepalm_type_of,
+    facepalm_type_sql,
     loss_feature,
     missed_feature,
 )
@@ -297,11 +302,13 @@ def _grid() -> list[GridRow]:
 _TYPING_ROW: GridRow = (0.5, 1.0, [0] * 9, 1, [0] * 9, 1, 0.5, 1.0)
 
 
-async def _sql_scores(
-    engine: AsyncEngine, grid: Sequence[GridRow], model: FacepalmModel, lam: float
-) -> list[float | None]:
-    """The SQL twin's score of every grid row, in grid order (chunked for the bind limit)."""
-    scores: list[float | None] = []
+async def _sql_values(
+    engine: AsyncEngine,
+    grid: Sequence[GridRow],
+    expression_of: Callable[[FacepalmColumns], ColumnElement[Any]],
+) -> list[Any]:
+    """`expression_of(columns)` evaluated on every grid row, in grid order (chunked for the bind limit)."""
+    results: list[Any] = []
     async with engine.connect() as conn:
         for start in range(0, len(grid), GRID_CHUNK_ROWS):
             # The typing row (dropped below) keeps every VALUES column non-NULL: PostgreSQL would
@@ -319,7 +326,7 @@ async def _sql_scores(
                 column("pre_spread", Float),
                 name="grid",
             ).data([(i, *row) for i, row in enumerate(chunk)])
-            expression = facepalm_score_sql(
+            expression = expression_of(
                 FacepalmColumns(
                     played_prob=rows.c.played,
                     reply_spread=rows.c.spread,
@@ -329,13 +336,27 @@ async def _sql_scores(
                     best_mate_ply=rows.c.best_mate,
                     best_prob=rows.c.best_prob,
                     pre_spread=rows.c.pre_spread,
-                ),
-                lam=lam,
-                model=model,
+                )
             )
             result = await conn.execute(select(rows.c.idx, expression).order_by(rows.c.idx))
-            scores.extend(score for _, score in result.all()[1:])
-    return scores
+            results.extend(value for _, value in result.all()[1:])
+    return results
+
+
+async def _sql_scores(
+    engine: AsyncEngine, grid: Sequence[GridRow], model: FacepalmModel, lam: float
+) -> list[float | None]:
+    """The SQL twin's score of every grid row, in grid order (chunked for the bind limit)."""
+    return await _sql_values(
+        engine, grid, lambda columns: facepalm_score_sql(columns, lam=lam, model=model)
+    )
+
+
+async def _sql_types(
+    engine: AsyncEngine, grid: Sequence[GridRow], model: FacepalmModel
+) -> list[str | None]:
+    """The SQL type twin's type of every grid row, in grid order (257 D-02)."""
+    return await _sql_values(engine, grid, lambda columns: facepalm_type_sql(columns, model=model))
 
 
 def _assert_parity(
@@ -1166,3 +1187,135 @@ async def test_shape_check_accepts_null_and_nine_slot_arrays(
 ) -> None:
     game_id = await _seed_stored_facts(db_session, _STORED_FACT_ROWS[:1])
     await _set_array(db_session, game_id, column_name, _GOOD_ARRAY_LITERALS[shape])
+
+
+# ---------------------------------------------------------------------------
+# 257 D-01: the stats cut. 257 D-02: the facepalm type twins
+# ---------------------------------------------------------------------------
+
+# The Facepalm filter's High preset lower bound in whole percents (frontend/src/lib/facepalm.ts
+# FACEPALM_HIGH_CUTOFF), so a stats row counts exactly the blunders the High preset lists.
+HIGH_PRESET_PCT = 70
+STATS_MIN_VALUE = 0.7
+_TIE_LOSS = -2
+_TIE_GAIN = 2
+# Played line all -2 and best line all +2 at every odd depth: loss 2 and missed 2 in every
+# material input, so the tie rule decides. The second row has no material in either line.
+_TYPE_EDGE_ROWS: list[GridRow] = [
+    (
+        0.5,
+        1.0,
+        _odd_array(*([_TIE_LOSS] * 5)),
+        None,
+        _odd_array(*([_TIE_GAIN] * 5)),
+        None,
+        0.5,
+        1.0,
+    ),
+    (0.5, 1.0, [0] * 9, None, None, None, 0.5, 1.0),
+]
+_TIE_ROW, _NO_MATERIAL_ROW = _TYPE_EDGE_ROWS
+
+
+def test_facepalm_stats_min_is_the_high_preset_cut() -> None:
+    # Read through the module so a missing constant fails this assertion, not the file's import.
+    stats_min = getattr(blunder_check_rules, "FACEPALM_STATS_MIN", None)
+    assert stats_min == STATS_MIN_VALUE
+    assert stats_min == HIGH_PRESET_PCT / _FACEPALM_PCT_SCALE
+    assert stats_min != FACEPALM_SCORE_MIN
+
+
+@pytest.mark.parametrize(
+    ("loss", "missed", "expected"),
+    [
+        (None, 0.0, None),
+        (0.0, 0.0, "missed_win"),
+        (0.0, 3.0, "missed_win"),
+        (1.0, 2.0, "missed_win"),
+        (2.0, 0.0, "allowed_loss"),
+        (2.0, 2.0, "allowed_loss"),
+    ],
+)
+def test_facepalm_type_of_rule(loss: float | None, missed: float, expected: str | None) -> None:
+    assert facepalm_type_of(loss, missed) == expected
+
+
+def _assert_type_parity(
+    grid: Sequence[GridRow], sql_types: Sequence[str | None], model: FacepalmModel
+) -> None:
+    assert len(sql_types) == len(grid)
+    seen: set[str | None] = set()
+    for row, sql_type in zip(grid, sql_types, strict=True):
+        assert sql_type == facepalm_type(_facts_of(row), model=model), row
+        seen.add(sql_type)
+    assert seen == {None, "missed_win", "allowed_loss"}
+
+
+@pytest.mark.parametrize("model", _SHAPE_MODELS)
+async def test_sql_type_twin_parity_every_shape(
+    test_engine: AsyncEngine, model: FacepalmModel
+) -> None:
+    grid = [*_grid(), *_EXTREME_ROWS, *_TYPE_EDGE_ROWS]
+    _assert_type_parity(grid, await _sql_types(test_engine, grid, model), model)
+
+
+@pytest.mark.parametrize("material_input", _AGGREGATE_INPUTS)
+async def test_sql_type_twin_parity_aggregate_inputs(
+    test_engine: AsyncEngine, material_input: MaterialInput
+) -> None:
+    model = _aggregate_model(material_input, "always", None)
+    grid = [*_AGGREGATE_GRID, *_EXTREME_ROWS, *_TYPE_EDGE_ROWS]
+    _assert_type_parity(grid, await _sql_types(test_engine, grid, model), model)
+
+
+@pytest.mark.parametrize("model", _SHAPE_MODELS)
+async def test_type_tie_and_no_material_rows(
+    test_engine: AsyncEngine, model: FacepalmModel
+) -> None:
+    # A tie is an allowed loss; a row with no material in either line is a missed win (D-02).
+    assert facepalm_type(_facts_of(_TIE_ROW), model=model) == "allowed_loss"
+    assert facepalm_type(_facts_of(_NO_MATERIAL_ROW), model=model) == "missed_win"
+    sql_types = await _sql_types(test_engine, [_TIE_ROW, _NO_MATERIAL_ROW], model)
+    assert sql_types == ["allowed_loss", "missed_win"]
+
+
+def test_facepalm_type_ignores_coefficients() -> None:
+    refitted = replace(
+        FACEPALM_MODEL,
+        intercept=9.0,
+        played_coef=-3.0,
+        spread_coef=-3.0,
+        loss_coef=7.0,
+        missed_coef=0.01,
+        best_prob_coef=-4.0,
+        pre_spread_coef=2.0,
+    )
+    for row in [*_grid(), *_EXTREME_ROWS, *_TYPE_EDGE_ROWS]:
+        facts = _facts_of(row)
+        assert facepalm_type(facts, model=refitted) == facepalm_type(facts), row
+
+
+@pytest.mark.parametrize(
+    "model",
+    [PHASE_250_MODEL, FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL, _DECAYING_MEAN_MODEL],
+    ids=["pre_refit", "shipped", "split_missed", "combined", "decaying_mean"],
+)
+async def test_type_expr_matches_python_twin_over_stored_facts(
+    db_session: AsyncSession, model: FacepalmModel
+) -> None:
+    game_id = await _seed_stored_facts(db_session, _STORED_FACT_ROWS)
+    flaws = (
+        (await db_session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+        .scalars()
+        .all()
+    )
+    type_rows = await db_session.execute(
+        select(GameFlaw.ply, facepalm_type_expr(model)).where(GameFlaw.game_id == game_id)
+    )
+    types: dict[int, str | None] = {ply: ftype for ply, ftype in type_rows.all()}
+    assert len(flaws) == len(_STORED_FACT_ROWS)
+    seen: set[str | None] = set()
+    for flaw in flaws:
+        assert types[flaw.ply] == facepalm_type(_facts_of_flaw(flaw), model=model), flaw.ply
+        seen.add(types[flaw.ply])
+    assert seen == {None, "missed_win", "allowed_loss"}
