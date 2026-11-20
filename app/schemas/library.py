@@ -455,12 +455,16 @@ class FacepalmBullet(BaseModel):
 class FacepalmComparisonTc(BaseModel):
     """One time control's facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
 
-    bullets: always the three FACEPALM_METRICS rows (total, missed wins, allowed losses),
-             neutral (no band), on the same anchor game set as FlawComparisonTc.
+    bullets: the three FACEPALM_METRICS rows (total, missed wins, allowed losses), neutral
+             (no band), on the same anchor game set as FlawComparisonTc. Empty when
+             low_coverage is True.
+    low_coverage: True when too few of either side's blunders in this TC carry a facepalm
+                  score for the two rates to be comparable; the rows are then withheld.
     """
 
     tc: TimeControlBucket
     bullets: list[FacepalmBullet]
+    low_coverage: bool = False
 
 
 class FacepalmComparisonResponse(BaseModel):

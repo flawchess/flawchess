@@ -2449,6 +2449,9 @@ async def fetch_facepalm_comparison(
     (..._missed_win, ..._allowed_loss). Per game and side the total equals missed wins plus
     allowed losses. Opponent scores enter only as these aggregate counts (D-06): nothing here
     feeds a filter or a drill selection. User-scoped through the anchor and the inner scan.
+    Four more columns, player_/opp_ blunders and blunders_scored, give the service the scored
+    coverage of each side: an unscored blunder (NULL score) is in no facepalm count, so a side
+    with few scored blunders would read as a low facepalm rate.
 
     The score and the type are evaluated once per blunder in the `facepalm_scored` subquery,
     fenced with .offset(0): without it PostgreSQL inlines the ~34 KB score expression into each
@@ -2500,6 +2503,12 @@ async def fetch_facepalm_comparison(
             conditions.append(scored.c.ftype == facepalm_type)
         return func.count(scored.c.ply).filter(*conditions).label(label)
 
+    def coverage_count(label: str, *, opponent: bool, scored_only: bool) -> Any:
+        side_pred = is_opponent_expr(scored.c.ply, anchor_subq.c.user_color)
+        # COUNT skips NULL: the score column counts the scored blunders, the ply column all.
+        counted = scored.c.s if scored_only else scored.c.ply
+        return func.count(counted).filter(side_pred if opponent else ~side_pred).label(label)
+
     stmt = (
         select(
             anchor_subq.c.game_id,
@@ -2513,6 +2522,10 @@ async def fetch_facepalm_comparison(
                 "player_facepalm_allowed_loss", opponent=False, facepalm_type="allowed_loss"
             ),
             side_count("opp_facepalm_allowed_loss", opponent=True, facepalm_type="allowed_loss"),
+            coverage_count("player_blunders", opponent=False, scored_only=False),
+            coverage_count("player_blunders_scored", opponent=False, scored_only=True),
+            coverage_count("opp_blunders", opponent=True, scored_only=False),
+            coverage_count("opp_blunders_scored", opponent=True, scored_only=True),
         )
         .select_from(anchor_subq)
         .outerjoin(scored, scored.c.game_id == anchor_subq.c.game_id)

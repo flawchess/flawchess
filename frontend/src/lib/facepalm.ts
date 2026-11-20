@@ -48,6 +48,9 @@ export const FACEPALM_HIGH_CUTOFF = 70;
 const FACEPALM_DEFINITION = `blunders that should have been easy to see for a player at your level`;
 const FACEPALM_TRAINING = 'Blunder Check trains you to spot them before you move.';
 export const FACEPALM_CARD_INFO = `Facepalm blunders are ${FACEPALM_DEFINITION}: our model gives them a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more. ${FACEPALM_TRAINING}`;
+/** Shown in place of the comparison when too few of either side's blunders are scored. */
+export const FACEPALM_LOW_COVERAGE_NOTE =
+  'Not enough blunders in these games have a facepalm score yet to compare you with your opponents.';
 export const FACEPALM_TIMELINE_INFO = `The darker band shows facepalm blunders: ${FACEPALM_DEFINITION} (facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more). ${FACEPALM_TRAINING}`;
 
 /**

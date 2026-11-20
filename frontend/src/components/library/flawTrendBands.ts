@@ -12,7 +12,9 @@ interface ChartPoint extends FlawTrendPoint {
 }
 
 export function toChartPoint(point: FlawTrendPoint): ChartPoint {
-  if (point.facepalm_rate === null) return point;
+  // `== null`: a backend without the facepalm fields (mid-deploy) sends undefined, which a
+  // strict null check let through and turned other_band into NaN (PR #495 review).
+  if (point.facepalm_rate == null) return point;
   return {
     ...point,
     facepalm_band: point.facepalm_rate,

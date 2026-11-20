@@ -53,6 +53,14 @@ afterEach(() => {
 
 const NO_HIDDEN = new Set<never>();
 
+/** A trend point as a backend without the facepalm fields sends it (mid-deploy). */
+function makeLegacyTrendPoint() {
+  const point = makeTrendPoint('2026-03-02');
+  delete point.facepalm_rate;
+  delete point.facepalm_share;
+  return point;
+}
+
 describe('toChartPoint', () => {
   it('splits the Blunders rate into a facepalm band and the rest, summing to the line', () => {
     const point = toChartPoint(makeTrendPoint('2026-03-02', { blunder_rate: 5, facepalm_rate: 1.25 }));
@@ -68,6 +76,13 @@ describe('toChartPoint', () => {
 
   it('leaves both bands out where the rate is null (too few scored blunders)', () => {
     const point = toChartPoint(makeTrendPoint('2026-03-02', { facepalm_rate: null, facepalm_share: null }));
+    expect(point.facepalm_band).toBeUndefined();
+    expect(point.other_band).toBeUndefined();
+  });
+
+  it('leaves both bands out where the facepalm fields are absent (older backend)', () => {
+    const legacy = makeLegacyTrendPoint();
+    const point = toChartPoint(legacy);
     expect(point.facepalm_band).toBeUndefined();
     expect(point.other_band).toBeUndefined();
   });
@@ -102,6 +117,13 @@ describe('TrendTooltipBody', () => {
         hiddenKeys={NO_HIDDEN}
       />,
     );
+    expect(screen.queryByText(/^Facepalm/)).toBeNull();
+  });
+
+  it('renders without the facepalm line when the fields are absent (older backend)', () => {
+    const legacy = makeLegacyTrendPoint();
+    render(<TrendTooltipBody point={legacy} label="2026-03-02" hiddenKeys={NO_HIDDEN} />);
+    expect(screen.getByText('Blunders: 5.00 / 100')).not.toBeNull();
     expect(screen.queryByText(/^Facepalm/)).toBeNull();
   });
 

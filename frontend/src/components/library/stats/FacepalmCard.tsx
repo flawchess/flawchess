@@ -3,7 +3,7 @@ import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
-import { FACEPALM_CARD_INFO } from '@/lib/facepalm';
+import { FACEPALM_CARD_INFO, FACEPALM_LOW_COVERAGE_NOTE } from '@/lib/facepalm';
 import {
   FACEPALM_GAP_META,
   FACEPALM_METRICS,
@@ -63,6 +63,8 @@ interface FacepalmCardProps {
   /** The selected TC's rows from /facepalm-comparison; undefined while that request loads. */
   bullets: readonly FacepalmBullet[] | undefined;
   isError: boolean;
+  /** The rows are withheld: too few of either side's blunders carry a facepalm score. */
+  lowCoverage: boolean;
 }
 
 /**
@@ -72,7 +74,7 @@ interface FacepalmCardProps {
  * row compares the user with the opponents' same type only (D-04). Its rows come from their
  * own request (257 D-21), so the card loads and fails on its own without holding the section.
  */
-export function FacepalmCard({ tcStats, bullets, isError }: FacepalmCardProps) {
+export function FacepalmCard({ tcStats, bullets, isError, lowCoverage }: FacepalmCardProps) {
   const renderRows = () => {
     if (isError) return <LoadError resource="facepalm blunders" />;
     if (!bullets) {
@@ -81,6 +83,13 @@ export function FacepalmCard({ tcStats, bullets, isError }: FacepalmCardProps) {
           className="h-32 animate-pulse rounded bg-charcoal"
           data-testid="context-card-facepalm-loading"
         />
+      );
+    }
+    if (lowCoverage) {
+      return (
+        <p className="text-sm text-muted-foreground" data-testid="context-card-facepalm-low-coverage">
+          {FACEPALM_LOW_COVERAGE_NOTE}
+        </p>
       );
     }
     return FACEPALM_METRICS.map((metric) => (

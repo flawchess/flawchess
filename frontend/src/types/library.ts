@@ -230,9 +230,9 @@ export interface FlawTrendPoint {
    * same window as blunder_rate (the bottom band under the Blunders line). Null when too few of
    * the window's blunders are scored yet (D-18).
    */
-  facepalm_rate: number | null;
+  facepalm_rate?: number | null;
   /** 257 D-19: facepalm / scored blunders pooled over the window, for the tooltip; null with the rate or without blunders. */
-  facepalm_share: number | null;
+  facepalm_share?: number | null;
 }
 
 /** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */
@@ -423,8 +423,16 @@ export interface FlawComparisonTc {
 /** One time control's facepalm rows (mirrors backend FacepalmComparisonTc). */
 export interface FacepalmComparisonTc {
   tc: TimeControlBucket;
-  /** Always 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate. */
+  /**
+   * The 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate.
+   * Empty when low_coverage is true.
+   */
   bullets: FacepalmBullet[];
+  /**
+   * True when too few of either side's blunders carry a facepalm score for the two rates to
+   * be comparable; the rows are withheld. Absent from an older backend.
+   */
+  low_coverage?: boolean;
 }
 
 /** Response for GET /api/library/facepalm-comparison (257 D-21, split from /flaw-comparison). */

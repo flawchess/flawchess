@@ -918,6 +918,7 @@ async def test_facepalm_rows_are_paired_per_100_user_moves(db_session: AsyncSess
         (4, _BLUNDER, _facts(0.8, "missed_win")),  # user facepalm, missed win
         (6, _BLUNDER, _facts(0.5)),  # user blunder below the 0.7 cut
         (8, _BLUNDER, _facts(None)),  # unscored: in no count
+        (12, _BLUNDER, _facts(0.5)),  # keeps the user's scored coverage at 4 of 5
         (10, _MISTAKE, _facts(0.9, "allowed_loss")),  # a mistake never counts
         (3, _BLUNDER, _facts(0.9, "allowed_loss")),  # opponent facepalm, allowed loss
     ]
@@ -1064,6 +1065,54 @@ async def test_facepalm_rows_have_no_zone_and_exist_below_the_gate(
         for bullet in tc_entry.bullets:
             assert bullet.has_zone is False
             assert (bullet.zone_lo, bullet.zone_hi) == (0.0, 0.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unscored_side_ply", [2, 3], ids=["user_unscored", "opponent_unscored"])
+async def test_facepalm_rows_are_withheld_below_the_scored_coverage(
+    db_session: AsyncSession, unscored_side_ply: int
+) -> None:
+    """One side mostly unscored: no rows and low_coverage, never a rate against a fake zero."""
+    game = await _seed_facepalm_game(db_session, user_color="white", ply_count=80)
+    scored_side_ply = 5 - unscored_side_ply  # the other parity
+    for step in range(5):
+        await _seed_flaw(
+            db_session,
+            game=game,
+            ply=scored_side_ply + 2 * step,
+            severity=_BLUNDER,
+            facts=_facts(0.8, "allowed_loss"),
+        )
+        # 3 of 5 scored on this side, below the 0.8 coverage floor.
+        facts = _facts(0.8, "allowed_loss") if step < 3 else _facts(None)
+        await _seed_flaw(
+            db_session, game=game, ply=unscored_side_ply + 2 * step, severity=_BLUNDER, facts=facts
+        )
+
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    (tc_entry,) = result.tcs
+    assert tc_entry.low_coverage is True
+    assert tc_entry.bullets == []
+
+
+@pytest.mark.asyncio
+async def test_facepalm_coverage_gate_is_inclusive_and_per_side(db_session: AsyncSession) -> None:
+    """4 of 5 scored on both sides sits exactly on the floor: the rows are served."""
+    game = await _seed_facepalm_game(db_session, user_color="white", ply_count=80)
+    for step in range(5):
+        facts = _facts(0.8, "allowed_loss") if step < 4 else _facts(None)
+        for first_ply in (2, 3):
+            await _seed_flaw(
+                db_session, game=game, ply=first_ply + 2 * step, severity=_BLUNDER, facts=facts
+            )
+
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    (tc_entry,) = result.tcs
+    assert tc_entry.low_coverage is False
+    total = _facepalm_bullet(tc_entry, "facepalm")
+    assert (total.player_events, total.opp_events) == (4, 4)
 
 
 @pytest.mark.asyncio

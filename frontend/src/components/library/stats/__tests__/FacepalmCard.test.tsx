@@ -36,9 +36,20 @@ const RAPID = makeTcEntry('rapid', { analyzedN: 1841 });
 /** `rows` null renders the card while its own request is still loading. */
 function renderCard(
   rows: readonly FacepalmBullet[] | null = makeFacepalmRows(),
-  { tcStats = RAPID, isError = false }: { tcStats?: FlawComparisonTc; isError?: boolean } = {},
+  {
+    tcStats = RAPID,
+    isError = false,
+    lowCoverage = false,
+  }: { tcStats?: FlawComparisonTc; isError?: boolean; lowCoverage?: boolean } = {},
 ): string {
-  render(<FacepalmCard tcStats={tcStats} bullets={rows ?? undefined} isError={isError} />);
+  render(
+    <FacepalmCard
+      tcStats={tcStats}
+      bullets={rows ?? undefined}
+      isError={isError}
+      lowCoverage={lowCoverage}
+    />,
+  );
   return screen.getByTestId('context-card-facepalm').textContent ?? '';
 }
 
@@ -134,6 +145,13 @@ describe('FacepalmCard', () => {
     cleanup();
     renderCard(null, { isError: true });
     expect(screen.getByText(/Failed to load facepalm blunders/)).not.toBeNull();
+  });
+
+  it('shows a note and no rows when too few blunders are scored', () => {
+    const text = renderCard([], { lowCoverage: true });
+    expect(screen.getByTestId('context-card-facepalm-low-coverage')).not.toBeNull();
+    expect(text).toContain('Not enough blunders in these games have a facepalm score yet');
+    ROW_IDS.forEach((id) => expect(screen.queryByTestId(id)).toBeNull());
   });
 
   it('explains facepalm blunders and the training in the header popover, without probability words', () => {

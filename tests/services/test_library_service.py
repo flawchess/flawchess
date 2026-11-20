@@ -1127,8 +1127,20 @@ class TestFacepalmBand:
 
         point = _share_point([(10, 8, 2)] * 10)
         assert 8 / 10 == FACEPALM_MIN_SCORED_COVERAGE
-        assert point.facepalm_rate == pytest.approx(2 / 5 * 100)
+        # Per-game rate 2 / 5 moves, scaled by blunders / scored (10 / 8): the two unscored
+        # blunders per game are assumed to be facepalms at the scored blunders' rate, so the
+        # band is the same 25% of the blunders the tooltip share states.
+        assert point.facepalm_rate == pytest.approx(2 / 5 * 100 * 10 / 8)
         assert point.facepalm_share == pytest.approx(0.25)
+
+    def test_facepalm_band_is_null_when_the_counts_are_unavailable(self) -> None:
+        from app.services.library_service import _compute_flaw_trend
+
+        rows = [_share_trend_row(game_id, _SHARE_WEEK) for game_id in range(10)]
+        (point,) = _compute_flaw_trend(rows, None)
+        assert point.facepalm_rate is None
+        assert point.facepalm_share is None
+        assert point.games_in_window == 10
 
     def test_window_without_blunders_has_a_zero_band_and_no_share(self) -> None:
         point = _share_point([(0, 0, 0)] * 10)
@@ -1150,7 +1162,7 @@ class TestFacepalmBand:
             game_id: FacepalmGameCounts(blunders=5, scored=5, facepalm=2) for game_id in range(20)
         }
         with_band = _compute_flaw_trend(rows, facepalm_by_game)
-        without_band = _compute_flaw_trend(rows)
+        without_band = _compute_flaw_trend(rows, {})
         assert len(with_band) == len(without_band) > 1
         for a, b in zip(with_band, without_band, strict=True):
             assert (a.date, a.blunder_rate, a.games_in_window, a.per_week_games) == (
@@ -1218,9 +1230,48 @@ class TestFacepalmBand:
         resp = await get_flaw_stats(session, user_id=99981, **_SHARE_FILTERS)
         (series,) = resp.trend_by_tc
         (point,) = series.points
-        # Per game: 6 own blunders (5 scored, coverage 50 / 60 >= 0.8), 2 facepalm in 10 moves.
-        assert point.facepalm_rate == pytest.approx(20.0)
+        # Per game: 6 own blunders (5 scored, coverage 50 / 60 >= 0.8), 2 facepalm in 10 moves,
+        # scaled by blunders / scored (6 / 5) for the unscored one.
+        assert point.facepalm_rate == pytest.approx(20.0 * 6 / 5)
         assert point.facepalm_share == pytest.approx(0.4)
+
+    @pytest.mark.asyncio
+    async def test_trend_survives_a_failing_facepalm_scan(
+        self, db_session: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A facepalm scan failure nulls the band; the timeline itself is still served."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.repositories import library_repository
+        from app.services.library_service import get_flaw_stats
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99984)
+        for _ in range(10):
+            await _seed_db_game(
+                session,
+                user_id=99984,
+                user_color="white",
+                ply_count=20,
+                played_at=_SHARE_WEEK,
+                white_blunders=1,
+            )
+
+        async def failing_scan(*_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("facepalm scan failed")
+
+        monkeypatch.setattr(library_repository, "fetch_facepalm_counts", failing_scan)
+
+        resp = await get_flaw_stats(session, user_id=99984, **_SHARE_FILTERS)
+        (series,) = resp.trend_by_tc
+        (point,) = series.points
+        assert point.blunder_rate == pytest.approx(10.0)
+        assert point.facepalm_rate is None
+        assert point.facepalm_share is None
+        # The savepoint rolled back, so the session still answers queries.
+        again = await get_flaw_stats(session, user_id=99984, **_SHARE_FILTERS)
+        assert again.analyzed_n == resp.analyzed_n
 
     @pytest.mark.asyncio
     async def test_facepalm_share_cut_is_the_stats_min(self, db_session: object) -> None:

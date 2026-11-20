@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
-import { FACEPALM_CARD_INFO } from '@/lib/facepalm';
+import { FACEPALM_CARD_INFO, FACEPALM_LOW_COVERAGE_NOTE } from '@/lib/facepalm';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { FACEPALM_BAND_SWATCH, SEV_BLUNDER } from '@/lib/theme';
@@ -134,6 +134,8 @@ interface FacepalmTileProps extends TileProps {
   /** The selected TC's rows from /facepalm-comparison; undefined while that request loads. */
   bullets: readonly FacepalmBullet[] | undefined;
   isError: boolean;
+  /** The rows are withheld: too few of either side's blunders carry a facepalm score. */
+  lowCoverage: boolean;
 }
 
 /**
@@ -141,7 +143,7 @@ interface FacepalmTileProps extends TileProps {
  * Neutral like that row (no band, no verdict, D-16), and it loads and fails on its own request
  * (D-21) without holding the Blunders tile.
  */
-function FacepalmTile({ tcStats, analyzedGate, bullets, isError }: FacepalmTileProps) {
+function FacepalmTile({ tcStats, analyzedGate, bullets, isError, lowCoverage }: FacepalmTileProps) {
   if (isError) {
     return (
       <Card data-testid="flaw-tile-facepalm">
@@ -152,9 +154,21 @@ function FacepalmTile({ tcStats, analyzedGate, bullets, isError }: FacepalmTileP
     );
   }
   if (!bullets) return <div className={TILE_SKELETON_CLASS} data-testid="flaw-tile-facepalm-loading" />;
+  const meta = FACEPALM_GAP_META.facepalm;
+  if (lowCoverage) {
+    return (
+      <Card data-testid="flaw-tile-facepalm">
+        <CardBody className="space-y-1">
+          <p className="font-medium">{meta.label}</p>
+          <p className="text-sm text-muted-foreground" data-testid="flaw-tile-facepalm-low-coverage">
+            {FACEPALM_LOW_COVERAGE_NOTE}
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
   const cell = facepalmMetricCell(bullets, 'facepalm');
   if (!cell) return null;
-  const meta = FACEPALM_GAP_META.facepalm;
   return (
     <FlawTileFrame
       testId="flaw-tile-facepalm"
@@ -196,13 +210,20 @@ interface FlawTilesProps {
   /** The selected TC's facepalm rows; undefined while /facepalm-comparison loads. */
   facepalmBullets: readonly FacepalmBullet[] | undefined;
   facepalmError: boolean;
+  facepalmLowCoverage: boolean;
 }
 
 /**
  * The Blunders (left) and Facepalm blunders (right) tiles of the Flaw Stats section. The
  * familiar metric leads; the facepalm tile follows as its subset, with an info popover.
  */
-export function FlawTiles({ tcStats, analyzedGate, facepalmBullets, facepalmError }: FlawTilesProps) {
+export function FlawTiles({
+  tcStats,
+  analyzedGate,
+  facepalmBullets,
+  facepalmError,
+  facepalmLowCoverage,
+}: FlawTilesProps) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-testid="flaw-tiles">
       <BlunderTile tcStats={tcStats} analyzedGate={analyzedGate} />
@@ -211,6 +232,7 @@ export function FlawTiles({ tcStats, analyzedGate, facepalmBullets, facepalmErro
         analyzedGate={analyzedGate}
         bullets={facepalmBullets}
         isError={facepalmError}
+        lowCoverage={facepalmLowCoverage}
       />
     </div>
   );

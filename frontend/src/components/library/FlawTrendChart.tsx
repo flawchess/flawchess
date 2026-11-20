@@ -78,9 +78,12 @@ function TooltipRow({ color, swatch, children }: { color: string; swatch?: strin
 
 /** The facepalm line under Blunders: rate per 100 moves plus the share of scored blunders. */
 function facepalmTooltipText(point: FlawTrendPoint): string | null {
-  if (point.facepalm_rate === null) return null;
+  // Bug fix (PR #495 review): `== null`, not `=== null`. During a deploy the new bundle can
+  // talk to a backend whose trend points have no facepalm fields, and `undefined` used to
+  // pass the strict check and throw on .toFixed().
+  if (point.facepalm_rate == null) return null;
   const share =
-    point.facepalm_share === null
+    point.facepalm_share == null
       ? ''
       : ` (${Math.round(point.facepalm_share * PCT_SCALE)}% of blunders)`;
   return `Facepalm: ${point.facepalm_rate.toFixed(2)} / 100${share}`;

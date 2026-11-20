@@ -203,6 +203,14 @@ function facepalmRowsFor(
   return data.tcs.find((t) => t.tc === tc)?.bullets ?? NO_FACEPALM_ROWS;
 }
 
+/** True when the selected TC's facepalm rows are withheld for low scored coverage. */
+function facepalmLowCoverageFor(
+  data: FacepalmComparisonResponse | undefined,
+  tc: TimeControlBucket,
+): boolean {
+  return data?.tcs.find((t) => t.tc === tc)?.low_coverage ?? false;
+}
+
 /**
  * Flaw Stats: heading, coverage basis line, tiles, timeline. The Facepalm tile reads the same
  * facepalm query as the You vs. your opponents card (one cache entry, one request).
@@ -242,6 +250,7 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
           analyzedGate={comparison.data.analyzed_gate}
           facepalmBullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
           facepalmError={facepalm.isError}
+          facepalmLowCoverage={facepalmLowCoverageFor(facepalm.data, tcStats.tc)}
         />
         <FlawTimeline
           stats={stats.data}
@@ -313,6 +322,7 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
             tcStats={tcStats}
             bullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
             isError={facepalm.isError}
+            lowCoverage={facepalmLowCoverageFor(facepalm.data, tcStats.tc)}
           />
         }
       />

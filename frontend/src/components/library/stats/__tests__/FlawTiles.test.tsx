@@ -25,6 +25,7 @@ function renderTiles(
   tcStats = RAPID_ENTRY,
   facepalm: readonly FacepalmBullet[] | typeof LOADING = makeFacepalmRows(),
   facepalmError = false,
+  facepalmLowCoverage = false,
 ) {
   const facepalmBullets = facepalm === LOADING ? undefined : facepalm;
   render(
@@ -33,6 +34,7 @@ function renderTiles(
       analyzedGate={ANALYZED_GATE}
       facepalmBullets={facepalmBullets}
       facepalmError={facepalmError}
+      facepalmLowCoverage={facepalmLowCoverage}
     />,
   );
 }
@@ -159,5 +161,13 @@ describe('FlawTiles', () => {
       normalized(ZONE_SUCCESS),
     );
     expect(screen.getByTestId('flaw-tile-blunder-bar-words').style.color).toBe('');
+  });
+
+  it('shows a note in place of the facepalm rates when too few blunders are scored', () => {
+    renderTiles(RAPID_ENTRY, [], false, true);
+    const tile = screen.getByTestId('flaw-tile-facepalm');
+    expect(tile.textContent).toContain('Not enough blunders in these games have a facepalm score yet');
+    expect(screen.getByTestId('flaw-tile-facepalm-low-coverage')).not.toBeNull();
+    expect(screen.getByTestId('flaw-tile-blunder')).not.toBeNull();
   });
 });
