@@ -1,6 +1,6 @@
 ---
 id: SEED-261108-dk0
-status: dormant
+status: closed. Resolved by Phases 248 (release #469), 249 and 250 (release #475) and 251 (squash e79efcf69 on main, 2026-11-19, release #491).
 planted: 2026-11-08
 planted_during: v2.27, phase 246 (training-features research session)
 trigger_when: after the Maia-stats-on-game_flaws phase (see Breadcrumbs) lands; that phase opens the next milestone, and blunder check follows it
@@ -273,8 +273,8 @@ Findings:
 
 - `SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
 - `SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
-- `../../../app/services/maia_engine.py`, `app/services/maia_encoding.py`, `app/services/best_move_candidates.py`
-- `../../../app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/herring_pool.py`
-- `../../../app/services/train_pool.py`, `app/repositories/train_repository.py`
+- `../../../app/services/maia_engine.py`, `../../../app/services/maia_encoding.py`, `../../../app/services/best_move_candidates.py`
+- `../../../app/models/game_flaw.py`, `../../../app/models/game_best_move.py`, `../../../app/models/herring_pool.py`
+- `../../../app/services/train_pool.py`, `../../../app/repositories/train_repository.py`
 - `../../../frontend/src/components/train`
 - `../../research/FEATURES.md` (2026-07-25 Train market research)

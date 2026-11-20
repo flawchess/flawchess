@@ -1,6 +1,6 @@
 ---
 id: SEED-261106-q92
-status: dormant
+status: closed (2026-11-20, owner decision). Not implemented: Archive cards have no Retry button; replant from this file if retry is wanted.
 planted: 2026-11-06
 planted_during: v2.27, phase 244 (/gsd-explore session)
 trigger_when: once the Train subnav split / Archive tab (SEED-261106-gw8) has shipped

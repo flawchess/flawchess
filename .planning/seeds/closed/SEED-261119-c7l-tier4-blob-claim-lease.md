@@ -1,6 +1,6 @@
 ---
 id: SEED-261119-c7l
-status: dormant
+status: closed. Resolved by commit 8d315d777 on main (2026-11-19, release #489).
 planted: 2026-11-19
 planted_during: Phase 252 plan 07 (prod flaw-line re-walk running, about 2,300 games per hour, 2.6 weeks projected)
 trigger_when: now. The prod re-walk runs until about 2026-12-07 and every day without the lease wastes worker time. Also before the benchmark re-walk (Phase 252 plan 08).
@@ -12,12 +12,12 @@ scope: small. One backend change in the tier-4 claim, tests, one prod deploy. No
 ## Problem
 
 `_claim_tier4_blob` (`../../../app/services/eval_queue_service.py`) is a plain-SELECT lottery with no lock and no
-lease. `/flaw-blob-lease` (`app/routers/eval_remote.py`) hands the picked game to the worker and records
+lease. `/flaw-blob-lease` (`../../../app/routers/eval_remote.py`) hands the picked game to the worker and records
 nothing. Until that worker submits, every other worker can draw the same game. The second submit finds
 nothing pending (`apply_flaw_blob_results` returns `nothing_pending`) and its engine work is discarded.
 
 This was harmless while tier 4 was a large, slowly drained backlog. The Phase 252 feeder
-(`scripts/repair_short_lines.py feed`) keeps only 150 to 500 games pending at a time, and the lottery
+(`../../../scripts/repair_short_lines.py feed`) keeps only 150 to 500 games pending at a time, and the lottery
 weights concentrate the draw on recently active users.
 
 ## Evidence (prod, 2026-11-19, read-only)
