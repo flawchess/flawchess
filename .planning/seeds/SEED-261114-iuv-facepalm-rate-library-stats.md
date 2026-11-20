@@ -1,6 +1,7 @@
 ---
 id: SEED-261114-iuv
 status: dormant
+promoted_to: Phase 257 (2026-11-20)
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
 trigger_when: now (owner, 2026-11-20). Scope narrowed to the benchmark-free part; the deferred part is SEED-261120-bzq
