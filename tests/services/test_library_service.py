@@ -14,7 +14,9 @@ No DB required — GamePosition / Game objects are built in memory à la
 tests/services/test_flaws_service.py.
 """
 
-from typing import cast
+import datetime
+import types
+from typing import Any, cast
 
 import pytest
 
@@ -720,8 +722,13 @@ async def _seed_db_flaw(
     is_lucky: bool = False,
     is_reversed: bool = False,
     is_squandered: bool = False,
+    facts: dict[str, Any] | None = None,
 ) -> None:
-    """Insert a GameFlaw row for the given game."""
+    """Insert a GameFlaw row for the given game.
+
+    `facts` are extra GameFlaw keyword values, e.g. `facepalm_fact_columns(...)` (257 D-03: the
+    share reads facts at query time, never a stored score).
+    """
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.models.game import Game as GameModel
@@ -742,6 +749,7 @@ async def _seed_db_flaw(
         is_squandered=is_squandered,
         # es_before, es_after, move_san removed from game_flaws
         fen="",
+        **(facts or {}),
     )
     sess.add(flaw)
     await sess.flush()
@@ -1041,6 +1049,223 @@ class TestFlawStats:
         )
         assert resp.analyzed_n == 0
         assert resp.trend_by_tc == []
+
+
+# ---------------------------------------------------------------------------
+# TestFacepalmShare (-k facepalm_share) — 257 D-03 pooled facepalm share on the trend
+# ---------------------------------------------------------------------------
+
+# One ISO week (Wed 2026-06-10), so every seeded game lands on the same trend point.
+_SHARE_WEEK = datetime.datetime(2026, 6, 10, 12, 0, tzinfo=datetime.timezone.utc)
+_SHARE_USER_PLY_STEP = 2  # white user: own moves sit on even plies, the opponent's on odd ones
+_SHARE_FILTERS: dict[str, Any] = {
+    "time_control": None,
+    "platform": None,
+    "rated": None,
+    "opponent_type": "all",
+    "from_date": None,
+    "to_date": None,
+    "flaw_severity": None,
+    "opponent_gap_min": None,
+    "opponent_gap_max": None,
+    "color": None,
+}
+
+
+def _share_trend_row(
+    game_id: int, played_at: datetime.datetime, *, blunders: int = 0
+) -> types.SimpleNamespace:
+    """A fetch_flaw_trend_rows row: 10 plies, so a white user has 5 moves."""
+    return types.SimpleNamespace(
+        game_id=game_id,
+        played_at=played_at,
+        user_color="white",
+        ply_count=10,
+        blunders=blunders,
+        mistakes=0,
+        inaccuracies=0,
+    )
+
+
+def _share_point(pairs: list[tuple[int, int]]) -> Any:
+    """The single trend point of one ISO week of games, one (scored, facepalm) pair each."""
+    from app.services.library_service import _compute_flaw_trend
+
+    rows = [_share_trend_row(game_id, _SHARE_WEEK) for game_id in range(len(pairs))]
+    share_by_game = {game_id: pair for game_id, pair in enumerate(pairs)}
+    points = _compute_flaw_trend(rows, share_by_game)
+    assert len(points) == 1
+    return points[0]
+
+
+class TestFacepalmShare:
+    """The facepalm share is pooled over the window, from the user's own scored blunders."""
+
+    def test_facepalm_share_is_pooled_not_a_mean_of_game_shares(self) -> None:
+        # Nine games with 0 of 5 and one with 10 of 10: pooled 10 / 55, a mean of game
+        # shares would be 0.1.
+        point = _share_point([(5, 0)] * 9 + [(10, 10)])
+        assert point.facepalm_share == pytest.approx(round(10 / 55, 4))
+        assert point.scored_blunders_in_window == 55
+        assert point.facepalm_in_window == 10
+
+    def test_facepalm_share_is_null_below_the_scored_floor(self) -> None:
+        from app.services.library_service import FACEPALM_SHARE_MIN_SCORED
+
+        point = _share_point([(4, 2)] * 10)
+        assert point.scored_blunders_in_window == 40 < FACEPALM_SHARE_MIN_SCORED
+        assert point.facepalm_in_window == 20
+        assert point.facepalm_share is None
+        # The point itself still exists, with its oracle rates.
+        assert point.blunder_rate == pytest.approx(0.0)
+        assert point.games_in_window == 10
+
+    def test_facepalm_share_floor_is_inclusive_at_fifty_scored(self) -> None:
+        point = _share_point([(5, 1)] * 10)
+        assert point.scored_blunders_in_window == 50
+        assert point.facepalm_share == pytest.approx(0.2)
+
+    def test_facepalm_share_leaves_dates_rates_and_windows_unchanged(self) -> None:
+        from app.services.library_service import _compute_flaw_trend
+
+        week_start = datetime.datetime(2026, 6, 1, 12, 0, tzinfo=datetime.timezone.utc)
+        rows = [
+            _share_trend_row(
+                game_id, week_start + datetime.timedelta(weeks=game_id // 4, hours=game_id % 4)
+            )
+            for game_id in range(20)  # five ISO weeks, four games each
+        ]
+        share_by_game = {game_id: (5, 2) for game_id in range(20)}
+        with_share = _compute_flaw_trend(rows, share_by_game)
+        without_share = _compute_flaw_trend(rows)
+        assert len(with_share) == len(without_share) > 1
+        for a, b in zip(with_share, without_share, strict=True):
+            assert (a.date, a.blunder_rate, a.games_in_window, a.per_week_games) == (
+                b.date,
+                b.blunder_rate,
+                b.games_in_window,
+                b.per_week_games,
+            )
+        assert without_share[0].facepalm_share is None
+        assert without_share[0].scored_blunders_in_window == 0
+
+    @pytest.mark.asyncio
+    async def test_facepalm_share_counts_the_users_scored_blunders_only(
+        self, db_session: object
+    ) -> None:
+        """Through get_flaw_stats: unscored, mistake and opponent rows are in neither count."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+        from app.services.library_service import get_flaw_stats
+        from tests.conftest import ensure_test_user
+        from tests.facepalm_seed import facepalm_fact_columns
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99981)
+
+        def facts(score: float | None, facepalm_type: Any = None) -> dict[str, Any]:
+            return facepalm_fact_columns(
+                score, lam=FACEPALM_LIBRARY_LAMBDA, facepalm_type=facepalm_type
+            )
+
+        user_blunders = [
+            facts(0.8, "missed_win"),
+            facts(0.8, "allowed_loss"),
+            facts(0.5),
+            facts(0.5),
+            facts(0.5),
+        ]
+        for _ in range(10):
+            game = await _seed_db_game(
+                session,
+                user_id=99981,
+                user_color="white",
+                ply_count=20,
+                played_at=_SHARE_WEEK,
+                white_blunders=len(user_blunders),
+            )
+            for index, fact_columns in enumerate(user_blunders):
+                await _seed_db_flaw(
+                    session,
+                    game=game,
+                    ply=index * _SHARE_USER_PLY_STEP,
+                    severity=2,
+                    facts=fact_columns,
+                )
+            unscored_ply = len(user_blunders) * _SHARE_USER_PLY_STEP
+            await _seed_db_flaw(session, game=game, ply=unscored_ply, severity=2, facts=facts(None))
+            # One user mistake with a 0.9 fact set and one opponent blunder at 0.95.
+            await _seed_db_flaw(
+                session, game=game, ply=unscored_ply + 2, severity=1, facts=facts(0.9)
+            )
+            await _seed_db_flaw(session, game=game, ply=1, severity=2, facts=facts(0.95))
+
+        resp = await get_flaw_stats(session, user_id=99981, **_SHARE_FILTERS)
+        (series,) = resp.trend_by_tc
+        (point,) = series.points
+        assert point.scored_blunders_in_window == 50
+        assert point.facepalm_in_window == 20
+        assert point.facepalm_share == pytest.approx(0.4)
+
+    @pytest.mark.asyncio
+    async def test_facepalm_share_cut_is_the_stats_min(self, db_session: object) -> None:
+        """A blunder just above FACEPALM_STATS_MIN is a facepalm, just below is scored only."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.repositories.library_repository import fetch_facepalm_share_counts
+        from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
+        from tests.conftest import ensure_test_user
+        from tests.facepalm_seed import SEED_FACEPALM_MARGIN, facepalm_fact_columns
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99982)
+        game = await _seed_db_game(
+            session, user_id=99982, user_color="white", ply_count=20, played_at=_SHARE_WEEK
+        )
+        for index, score in enumerate(
+            (FACEPALM_STATS_MIN + SEED_FACEPALM_MARGIN, FACEPALM_STATS_MIN - SEED_FACEPALM_MARGIN)
+        ):
+            await _seed_db_flaw(
+                session,
+                game=game,
+                ply=index * _SHARE_USER_PLY_STEP,
+                severity=2,
+                facts=facepalm_fact_columns(score, lam=FACEPALM_LIBRARY_LAMBDA),
+            )
+
+        counts = await fetch_facepalm_share_counts(session, 99982, **_SHARE_FILTERS)
+        assert counts == {cast(Game, game).id: (2, 1)}
+
+    @pytest.mark.asyncio
+    async def test_facepalm_share_counts_never_include_another_users_games(
+        self, db_session: object
+    ) -> None:
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.repositories.library_repository import fetch_facepalm_share_counts
+        from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+        from tests.conftest import ensure_test_user
+        from tests.facepalm_seed import facepalm_fact_columns
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99983)
+        await ensure_test_user(session, 99984)
+        games: dict[int, Any] = {}
+        for user_id in (99983, 99984):
+            games[user_id] = await _seed_db_game(
+                session, user_id=user_id, user_color="white", ply_count=20, played_at=_SHARE_WEEK
+            )
+            await _seed_db_flaw(
+                session,
+                game=games[user_id],
+                ply=0,
+                severity=2,
+                facts=facepalm_fact_columns(0.9, lam=FACEPALM_LIBRARY_LAMBDA),
+            )
+
+        counts = await fetch_facepalm_share_counts(session, 99983, **_SHARE_FILTERS)
+        assert counts == {cast(Game, games[99983]).id: (1, 1)}
 
 
 # ---------------------------------------------------------------------------
