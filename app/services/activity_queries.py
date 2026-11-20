@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.models.blunder_check import WindowCase, WindowOutcome
+from app.models.drill_solve import DrillMoveQuality
 
 # Bot ratings with fewer games than this are dropped from the score-by-rating
 # chart -- below it a single session swings the number by tens of points.
@@ -111,6 +112,7 @@ class Payload(TypedDict):
     train: list[list[Any]]
     train_funnel: dict[str, Any]
     solves: list[list[Any]]
+    puzzle_difficulty: list[list[Any]]
     blunder_check_sessions: list[list[Any]]
     blunder_check_windows: list[list[Any]]
     blunder_check_difficulty: list[list[Any]]
@@ -667,6 +669,45 @@ async def fetch_solves(
             """,
             lead_in=lead_in_start,
             last=_end_exclusive(window_end),
+        )
+    )
+
+
+async def fetch_puzzle_difficulty(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
+    """Personalized Puzzles solved puzzles by source, with the move-quality mix.
+
+    Rows: [source, solves, good, inaccuracy, correct_guess], one per
+    `DrillSource` value that has solves; wrong moves are
+    `solves - good - inaccuracy`. Source is the only split because it already
+    fixes game ownership: an SR item is always the solver's own game, a red
+    herring comes from the cross-user pool (another player's game), and a
+    sharp filler is a lichess puzzle with no game. A row recorded before the
+    tiered grade existed has `move_quality` NULL and falls back to
+    `correct_move` (right = good, there was no inaccuracy tier). Same solved
+    definition as `fetch_solves`, but bounded by the window start, not the
+    lead-in: this is a point-in-time split, nothing is rolled.
+    """
+    return _table(
+        await _rows(
+            conn,
+            """
+            SELECT source, count(*) AS solves,
+                   count(*) FILTER (
+                       WHERE coalesce(move_quality = :good, correct_move)
+                   ) AS good,
+                   count(*) FILTER (WHERE move_quality = :inaccuracy) AS inaccuracy,
+                   count(*) FILTER (WHERE correct_guess) AS correct_guess
+            FROM drill_solves
+            WHERE solved_at IS NOT NULL AND solved_at >= CAST(:cutoff AS date)
+              AND solved_at < CAST(:last AS date)
+            GROUP BY 1 ORDER BY 1
+            """,
+            cutoff=window_start,
+            last=_end_exclusive(window_end),
+            good=int(DrillMoveQuality.GOOD),
+            inaccuracy=int(DrillMoveQuality.INACCURACY),
         )
     )
 

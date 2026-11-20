@@ -78,7 +78,7 @@ non-statisticians:
 **Benchmark: tactic-motif IQRs (blocks the tactic bands).** `TacticBullet.has_zone` is false because the old
 benchmark DB had only Lichess-provided evals for some games, no full analyses. Representative benchmark
 samples are now being fully analyzed (classical and rapid done, blitz about half on 2026-10-12). Extend the
-`/benchmarks` skill §5 (`../../../scripts/benchmarks/chapter5.py`, `.claude/skills/benchmarks/SKILL.md` §5) with
+`/benchmarks` skill §5 (`../../../scripts/benchmarks/chapter5.py`, `../../../.claude/skills/benchmarks/SKILL.md` §5) with
 per-family Missed and Allowed paired-delta zones (you − opponent, per 100 games), same methodology as the
 15 flaw-delta zones (equal-footing filter, per-(user, elo, tc) values, Cohen's-d collapse verdict per axis),
 plus a viability table (share of users with non-zero counts; rare families like en passant or x-ray may be
@@ -86,7 +86,7 @@ unviable and should get `has_zone = false`). Basis must be the fully analyzed sa
 
 **Backend.**
 - A tactic zone registry next to `../../../app/services/flaw_delta_zones.py`, wired into `get_tactic_comparison`
-  (`app/services/library_service.py`, sets `zone_lo` / `zone_hi` / `has_zone`).
+  (`../../../app/services/library_service.py`, sets `zone_lo` / `zone_hi` / `has_zone`).
 - `get_tactic_comparison` still ranks top-6 families (D-14) for the old grid; the new tables want every
   family in `TACTIC_GROUPS` order, so the ranking can go.
 - Drop the combo tags (and `flaw_rate`) from the flaw-comparison payload, or just stop rendering them;
@@ -116,15 +116,15 @@ their last Library usage (check Openings before deleting). Update `FLAW_COMPARIS
 
 ## Breadcrumbs
 
-- `../../../frontend/src/pages/GlobalStats.tsx` (Stats tab), `frontend/src/components/library/FlawStatsPanel.tsx`,
+- `../../../frontend/src/pages/GlobalStats.tsx` (Stats tab), `../../../frontend/src/components/library/FlawStatsPanel.tsx`,
   `FlawStatsBand.tsx`, `FlawComparisonGrid.tsx`, `TacticComparisonGrid.tsx`,
-  `frontend/src/components/popovers/FlawBulletPopover.tsx`, `frontend/src/components/charts/MiniBulletChart.tsx`
-- `../../../frontend/src/lib/flawComparisonMeta.ts`, `frontend/src/lib/tacticComparisonMeta.ts` (`TACTIC_GROUPS`),
-  `frontend/src/lib/tagDefinitions.ts`
+  `../../../frontend/src/components/popovers/FlawBulletPopover.tsx`, `../../../frontend/src/components/charts/MiniBulletChart.tsx`
+- `../../../frontend/src/lib/flawComparisonMeta.ts`, `../../../frontend/src/lib/tacticComparisonMeta.ts` (`TACTIC_GROUPS`),
+  `../../../frontend/src/lib/tagDefinitions.ts`
 - Endgame patterns to reuse: `../../../frontend/src/components/endgames/stats/PercentileBar.tsx`,
-  `RankedMetricPopover.tsx`, `RankedMetricRow.tsx`, `TcSwitch.tsx`, `frontend/src/hooks/useEndgameStatsTc.ts`,
-  `frontend/src/components/insights/ShellyQuote.tsx` (`EXPAND_HINT`)
-- Backend: `../../../app/routers/library.py` (`/flaw-comparison`, `/tactic-comparison`), `app/services/library_service.py`,
-  `app/services/flaw_delta_zones.py`, `app/schemas/library.py`, `app/repositories/library_repository.py`
-- Benchmarks: `../../../.claude/skills/benchmarks/SKILL.md` §5, `scripts/benchmarks/chapter5.py`
+  `RankedMetricPopover.tsx`, `RankedMetricRow.tsx`, `TcSwitch.tsx`, `../../../frontend/src/hooks/useEndgameStatsTc.ts`,
+  `../../../frontend/src/components/insights/ShellyQuote.tsx` (`EXPAND_HINT`)
+- Backend: `../../../app/routers/library.py` (`/flaw-comparison`, `/tactic-comparison`), `../../../app/services/library_service.py`,
+  `../../../app/services/flaw_delta_zones.py`, `../../../app/schemas/library.py`, `../../../app/repositories/library_repository.py`
+- Benchmarks: `../../../.claude/skills/benchmarks/SKILL.md` §5, `../../../scripts/benchmarks/chapter5.py`
 - Sibling seed: `SEED-196-endgame-stats-percentile-first-redesign.md`

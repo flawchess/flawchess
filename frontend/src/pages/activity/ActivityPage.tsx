@@ -552,6 +552,23 @@ export default function ActivityPage() {
                 <div className="chart" id="c-acc"></div>
               </div>
             </div>
+            <div className="card">
+              <h3>Personalized Puzzles: difficulty by puzzle source</h3>
+              <p className="note">
+                All puzzles solved in the selected range, as shares of each row. An own flaw is a
+                position from the solver&apos;s own game where they went wrong; a red herring is a
+                position with several fine moves, taken from another player&apos;s game; a sharp
+                filler is a lichess puzzle. The source decides whose game it is, so ownership is
+                not a separate split here. Good move is always the first segment, so the rows
+                compare from the left edge. Rows under 20 puzzles are faded.
+              </p>
+              <div className="legend" id="pz-difficulty-legend"></div>
+              <div className="chart" id="c-pz-difficulty"></div>
+              <details className="data">
+                <summary data-testid="activity-details-pz-difficulty">Show the numbers</summary>
+                <div className="tblwrap" id="t-pz-difficulty"></div>
+              </details>
+            </div>
           </div>
 
           <div className="mode-block" data-testid="activity-train-blunder-check">

@@ -150,7 +150,7 @@ planner may adjust them with the reasoning written down, and should surface any 
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Feature design and owner decisions
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: "Phase 251 decisions" (streak, Today page,
+- `../../seeds/closed/SEED-261108-dk0-blunder-check-training.md`: "Phase 251 decisions" (streak, Today page,
   leaderboards, cooldown, launch scope), "Spaced repetition revisited" (why serve-once stands), "Interaction and
   scoring" (Score % definition and its false-alarm rule)
 - `.planning/ROADMAP.md` §"Phase 251": goal and the three headline decisions

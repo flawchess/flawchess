@@ -109,7 +109,7 @@ called; how to measure impact (fixed-window funnel before/after).
 - `../../../frontend/src/App.tsx` (`useNavIndicators`, `NavDot`, `NavIndicator`, ~lines 193-318)
 - `../../../frontend/src/hooks/useUserFlag.ts` (localStorage flags behind the dots)
 - `../../../frontend/src/pages/library/LibraryPage.tsx` (desktop + mobile subnav)
-- `../../../frontend/src/pages/Openings.tsx` (~line 589 desktop tabs), `frontend/src/pages/Endgames.tsx` (~lines 403, 448)
+- `../../../frontend/src/pages/Openings.tsx` (~line 589 desktop tabs), `../../../frontend/src/pages/Endgames.tsx` (~lines 403, 448)
 - `../../../frontend/src/components/ui/tabs.tsx` (`brand` variant styling)
 - `../../../frontend/src/components/import/importBotBubbleCopy.ts` (post-import links)
 - `../../../frontend/src/lib/analytics.ts` (`identifyUser`; Umami `distinct_id` = `users.id`, Phase 229)

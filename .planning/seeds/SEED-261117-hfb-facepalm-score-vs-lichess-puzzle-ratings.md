@@ -67,7 +67,7 @@ how tempting the blunder was.
   the caps at 5, `MATERIAL_DECAY_RATIO`, the loss gate. Then fit only the coefficients on the owner's
   labels.
 - Test reply spread against Maia's probability of the punishing move at the mover's rating. This was
-  already proposed as the "Findable" criterion in `SEED-261108-dk0-blunder-check-training.md` (line 90).
+  already proposed as the "Findable" criterion in `closed/SEED-261108-dk0-blunder-check-training.md` (line 90).
 - Make leave-one-label-set-out the headline CV figure and report AUC per material type.
 - Fit on soft labels (the owner's comments give ranges such as "should be 30-70%") instead of 0/1 with
   the 0.5 rows dropped.
@@ -196,6 +196,6 @@ No published model for the normative target ("should have seen this") was found.
 - `scripts/select_tagger_fixtures.py`: reads the Lichess puzzle dump
 - `reports/blunder-check/facepalm-fit-2026-11-16.md`: current fit report
 - `.planning/spikes/007-facepalm-vs-puzzle-ratings/`: step 1 scripts, feature tables and results
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the "Findable" refutation-probability idea
+- `closed/SEED-261108-dk0-blunder-check-training.md`: the "Findable" refutation-probability idea
 - `.planning/seeds/closed/SEED-261115-agg-facepalm-material-across-depths.md`: the depth-aggregation seed
 - `.planning/seeds/SEED-129-rated-puzzle-benchmark.md`: rated puzzles as an engine calibration instrument

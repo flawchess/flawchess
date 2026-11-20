@@ -25,6 +25,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Activity dashboard: the Train sessions section is split into Personalized Puzzles and Blunder Check, and Blunder Check gets its own cards for sessions per day by outcome, sequences judged per day, score % over time and the daily mix of cleared, caught, missed and false-alarm sequences. The guest Train note is gone. (quick 261120-c1x)
 - Activity dashboard: a new Blunder Check card compares red herrings with blunder sequences, and own games with foreign games, as outcome shares over the selected range, so it is visible which kind is easier to get right.
+- Activity dashboard: a new Personalized Puzzles card compares own flaws, red herrings and sharp fillers as move-quality shares over the selected range, so it is visible which puzzle source is easier to get right.
 - Activity dashboard: the "How long until the first import?" card is removed.
 - Train: the red dot now clears when you start a training session, not when you open Train.
 - Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
@@ -55,6 +56,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis board and puzzle and blunder-check solutions: the Stockfish lines no longer shrink to one or two moves, or show the same move twice, when a search ends. They keep the last complete line, and the analysis board's move grades and gem badges no longer take their evaluation from a cut-off search.
 - Engine analysis: Stockfish lines that were saved cut to one or two moves in older games are being re-searched in the background, so puzzle solutions and tactic tags fill in for those games too (Phase 252).
 - Blunder check: coming back to a sequence you left in the middle of a move no longer drops you onto a clock that has already run out. Once the move's time is up it counts as a timeout, as it would have if you had stayed, and the sequence waits on the Ready gate with the position so far, so the next move's clock starts only when you press Ready. If the timed-out move was the blunder or the sequence's last move, the sequence's solution opens instead.
+- Train: "Continue with Blunder Check" and the Blunder Check Start button no longer bounce back to the Today page when the tab still remembered a solution from an earlier, already finished blunder check session.
 
 ## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
 

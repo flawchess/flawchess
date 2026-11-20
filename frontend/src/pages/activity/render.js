@@ -28,7 +28,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
     IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], CONV=null, PURGED=null,
-    BCSESS=[], BCWIN=[], BCDIFF=[];
+    BCSESS=[], BCWIN=[], BCDIFF=[], PZDIFF=[];
 
 function apply(payload){
   D=payload;
@@ -43,6 +43,7 @@ function apply(payload){
   CONV=payload.conversion; PURGED=payload.purged_excluded;
   BCSESS=payload.blunder_check_sessions; BCWIN=payload.blunder_check_windows;
   BCDIFF=payload.blunder_check_difficulty;
+  PZDIFF=payload.puzzle_difficulty;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
 
@@ -378,6 +379,45 @@ function renderSolvesCard(){
       {name:"Right verdict",values:tGuess,color:c.s4}]});
 }
 
+// Below this many solved puzzles a row's shares are too noisy to compare, so
+// the row is drawn faded and says so.
+const PZ_DIFF_MIN_SOLVES=20;
+// One row per DrillSource value (0 SR item, 1 red herring, 2 sharp filler), in
+// display order. Source is the only split: it already fixes game ownership
+// (own game, another player's game, lichess puzzle), so there is no 2x2.
+const PZ_DIFF_ROWS=[
+  {source:0,label:"Own flaw · own"},{source:1,label:"Herring · foreign"},
+  {source:2,label:"Sharp filler · lichess"}];
+
+function puzzleDifficultyRow(def,c){
+  const r=PZDIFF.find(x=>x[0]===def.source);
+  const [n,good,inaccuracy,verdict]=r?r.slice(1):[0,0,0,0];
+  const wrong=n-good-inaccuracy, small=n>0&&n<PZ_DIFF_MIN_SOLVES;
+  return {label:def.label,dim:small,
+    value:n?`${pctText(good,n)} good`:DASH,
+    // The verdict share and per-grade counts live in the table below: a longer
+    // sub-line overruns the chart at phone widths.
+    sub:n?`${num(n)} puzzles${small?" · small sample":""}`:"No puzzles solved yet.",
+    segments:[{value:good,color:c.win},{value:inaccuracy,color:c.draw},{value:wrong,color:c.loss}],
+    cells:[def.label,n,good,inaccuracy,wrong,n?pctText(good,n):DASH,n?pctText(verdict,n):DASH]};
+}
+
+function renderPuzzleDifficultyCard(){
+  const c=C();
+  if(!PZDIFF.length){
+    const noData="No puzzles solved in the selected range.";
+    emptyNote("#c-pz-difficulty",noData); emptyNote("#t-pz-difficulty",noData);
+    $("#pz-difficulty-legend").innerHTML="";
+    return;
+  }
+  const rows=PZ_DIFF_ROWS.map(d=>puzzleDifficultyRow(d,c));
+  legend("#pz-difficulty-legend",[{name:"Good move",color:c.win},{name:"Inaccuracy",color:c.draw},
+    {name:"Wrong move",color:c.loss}]);
+  stackRows($("#c-pz-difficulty"),{rows});
+  table("#t-pz-difficulty",["Puzzles","Solved","Good","Inaccuracy","Wrong","Good move","Right verdict"],
+    rows.map(r=>r.cells));
+}
+
 function renderBlunderCheckWindowCards(){
   const c=C();
   const hosts=["#c-bc-windows","#c-bc-score","#c-bc-outcomes"];
@@ -478,6 +518,7 @@ function render(){
   renderTrainCard();
   renderTrainFunnelCard();
   renderSolvesCard();
+  renderPuzzleDifficultyCard();
   renderBlunderCheckSessionsCard();
   renderBlunderCheckWindowCards();
   renderBlunderCheckDifficultyCard();

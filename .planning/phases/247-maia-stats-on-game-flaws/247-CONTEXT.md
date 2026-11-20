@@ -112,7 +112,7 @@ Flaws tab, and a future data story. None of those consumers are built here.
 ### Phase source and consumer
 - `.planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`: locked decisions, measurements (65-78 ms per
   position single-threaded; scale by processes, not threads or batching), storage rationale, gotchas, breadcrumbs
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the consumer; how the stored values get used (the face-palm
+- `../../seeds/closed/SEED-261108-dk0-blunder-check-training.md`: the consumer; how the stored values get used (the face-palm
   test, top-move safety, X/X′/Y calibration in SQL)
 
 ### Eval-completion semantics

@@ -395,7 +395,7 @@ whether both legs are needed (one leg halves the Stockfish cost).
 
 ## Breadcrumbs
 
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md` (feature design, face-palm test v1 / v2 history)
+- `SEED-261108-dk0-blunder-check-training.md` (feature design, face-palm test v1 / v2 history)
 - `.planning/phases/249-blunder-check-playable-mvp/249-CONTEXT.md` D-06, D-07, D-08
 - `reports/blunder-check/blunder-check-calibration-2026-11-10.md`, `spot-check-2026-11-10.md`,
   `peer-legs-2026-11-10.md`

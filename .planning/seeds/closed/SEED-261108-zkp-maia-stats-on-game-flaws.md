@@ -89,4 +89,4 @@ Score flaws in the eval-apply path alongside the best-move pass. About 7.5 flaws
 - `app/services/best_move_candidates.py` (`pinned_elo_for_mover`)
 - `app/services/eval_apply.py` (`_build_best_move_candidates`, `_classify_and_fill_oracle`)
 - `app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/game.py` (`best_moves_completed_at`)
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md` (consumer)
+- `SEED-261108-dk0-blunder-check-training.md` (consumer)

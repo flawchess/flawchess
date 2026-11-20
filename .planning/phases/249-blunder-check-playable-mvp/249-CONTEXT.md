@@ -133,7 +133,7 @@ before Phase 251 builds the schedule, reviews and leaderboards. Deliverables:
 
 **Downstream agents MUST read these before planning or implementing.**
 
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the full feature design and every owner decision
+- `../../seeds/closed/SEED-261108-dk0-blunder-check-training.md`: the full feature design and every owner decision
   (some superseded here: D-07 no miss cap, D-08 no low-rating rule, D-02 session size)
 - `reports/blunder-check/blunder-check-calibration-2026-11-10.md`: recommended constants, pass shares by Elo bucket and
   case, window fit and supply per user (median about 927 blunder windows; 43 of 579 users under 50)

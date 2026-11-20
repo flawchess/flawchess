@@ -76,7 +76,7 @@ investigating:
 - **The analyzed subset is loss-tilted in every TC.** Paired within-(user, TC) score delta
   (win + ½ draw, ≥20 analyzed and ≥20 unanalyzed games per user): bullet −3.5pp, blitz −3.4pp,
   rapid −5.3pp, classical −13.5pp, with 62–78% of individual users affected. See
-  `reports/benchmark/benchmarks-latest.md` §1. **Use the paired estimator** — the pooled version
+  `../../../reports/benchmark/benchmarks-latest.md` §1. **Use the paired estimator** — the pooled version
   is confounded by between-user composition and flips sign for blitz.
 - **A general loss tilt does not by itself inflate "leader loses"**: it over-samples both games
   the user lost while leading (leader loses) *and* games the user lost while behind (leader
@@ -161,7 +161,7 @@ as a limit; do not claim the cohort is unbiased.
      that the cohort is unbiased.
 3. **A v1-vs-v2 comparison** — per-rating and per-TC deltas for the Section 2 four-way split and
    the Section 5 board/clock split — then a decision on whether
-   `stories/two-pawns-up/index.html` needs updating. It currently quotes **18.4% / 21.3% /
+   `../../../stories/two-pawns-up/index.html` needs updating. It currently quotes **18.4% / 21.3% /
    24.7% / 27.3%**, plus its charts and "View the data" tables.
 
 ## Open question for the comparison
@@ -220,10 +220,10 @@ rather than a percentage.
 
 - `../../../stories/two-pawns-up/two-pawns-up-report-v1.md` — Caveats bullet on the omitted filter (the
   claim to retire), Method, and the Reproducibility SQL that v2 forks from
-- `scripts/benchmarks/sql.py` — `EQUAL_FOOTING_FILTER`, `EQUAL_FOOTING_PREDICATE`,
+- `../../../scripts/benchmarks/sql.py` — `EQUAL_FOOTING_FILTER`, `EQUAL_FOOTING_PREDICATE`,
   `COHORT_GAME_FILTER`, `BASE_GAME_FILTER` (refactored 2026-08-18, byte-identical)
-- `reports/benchmark/benchmarks-latest.md` §1 "Full-game analysis share" — the loss-tilt result
+- `../../../reports/benchmark/benchmarks-latest.md` §1 "Full-game analysis share" — the loss-tilt result
   and the paired-estimator rule
-- `.claude/skills/benchmarks/SKILL.md` §1 — "Full-game analysis share" narration rules
+- `../../../.claude/skills/benchmarks/SKILL.md` §1 — "Full-game analysis share" narration rules
   (paired-not-pooled, no requester attribution) and "Equal-footing opponent filter"
-- `stories/two-pawns-up/index.html` — the published figures that a v2 change would touch
+- `../../../stories/two-pawns-up/index.html` — the published figures that a v2 change would touch

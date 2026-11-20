@@ -1,6 +1,6 @@
 ---
 id: SEED-261108-dk0
-status: dormant
+status: closed. Resolved by Phases 248 (release #469), 249 and 250 (release #475) and 251 (squash e79efcf69 on main, 2026-11-19, release #491).
 planted: 2026-11-08
 planted_during: v2.27, phase 246 (training-features research session)
 trigger_when: after the Maia-stats-on-game_flaws phase (see Breadcrumbs) lands; that phase opens the next milestone, and blunder check follows it
@@ -163,7 +163,7 @@ These refine or replace the 2026-11-09 "Interaction and scoring" bullets on sche
   still pending.
 - **Nav badge** = sum of both cards' pending counts. Blunder check has no due queue, so its pending count is
   today's configured count minus what is done, and nothing on an unscheduled day.
-- **Layout: sketch 014, variant B** (owner, 2026-11-18; `.planning/sketches/014-train-today-two-modes/`). The
+- **Layout: sketch 014, variant B** (owner, 2026-11-18; `../../sketches/014-train-today-two-modes`). The
   three-card layout above put the second Start button below the phone fold, so the cards merge: one Today card
   holds the flame, the freeze meter and a launcher row per mode (name, badge, Start / Resume, checkmark when
   done, "Turn on" when off). The rows are the streak checklist. Pitch, "How it works", the level picker and the
@@ -227,7 +227,7 @@ These refine or replace the 2026-11-09 "Interaction and scoring" bullets on sche
   - Calibration: share passing findability by Elo bucket and case (allowed / pure miss / mixed); arrow oddness (see below); plus a hand spot-check of about 20 windows per bucket (owner, possibly Noel), since automated metrics have missed load-bearing selection defects before.
   - **Arrow oddness: match real games, don't aim for zero (owner, 2026-11-10).** A blunder that feels "off" is the intuition the drill should train; it is the fast check, as opposed to the deeper calculation of personalized puzzles. Users' own blunders often looked natural to them, which is part of why they played them. So some oddness gap between blunders and Good moves is a real signal. The risk is selection *widening* it beyond what real games show: then "odd → Blunder" pays in the drill without checking anything and fails in games, where many odd moves are fine and many blunders look normal.
     - **Metric:** Maia played-move probability and rank (user's rating) for drill blunders vs drill Good moves, compared with the same comparison over **unselected** user moves: all user-side blunders vs all Good user moves in the same games. Target: the drill's gap (e.g. AUC) is close to the unselected baseline. A clearly larger drill gap means selection teaches a shortcut. Check per Elo bucket and separately for cross-user (cold start) windows, where the blunder never felt natural to the user.
-    - Phase 248's arrow-oddness section (D-17, `scripts/blunder_check/oddness.py`) already scores the Good-move sample and compares it with usable blunders. The baseline row (all user-side blunders, whose `maia_played_prob/rank` are stored) is a small addition to that report.
+    - Phase 248's arrow-oddness section (D-17, `../../../scripts/blunder_check/oddness.py`) already scores the Good-move sample and compares it with usable blunders. The baseline row (all user-side blunders, whose `maia_played_prob/rank` are stored) is a small addition to that report.
     - **Levers if the drill gap is too large:** keep typical (Maia-likely) blunders in (Face-palm test v2 already drops the played-probability cap); among Good moves before the blunder and in herrings, favour odd-looking ones (low Maia probability, captures, moves onto attacked but defended squares), so odd means "check it", not "it's a blunder".
 
 - **Calibrate X (and X′, Y) from the precomputed Maia stats** as the first phase (a first probe is below, see "Calibration probe"): in SQL, the share of blunders qualifying at several thresholds by Elo bucket, how often top-move safety can't be resolved, and supply per user under the hazard model.
@@ -265,16 +265,16 @@ Findings:
 - **Maia cost (measured on the 16-core dev box, 2026-11-08):** about 65-78 ms per position single-threaded; extra intra-op threads and batching barely help (4 threads + batch 32: 55 ms), so throughput scales with processes. Prod is about 150 ms per position per the `eval_apply.py` comment.
 - **`score_move` already computes the full policy** (`mask_and_softmax` returns every legal move's probability) and discards all but one move. A full-policy helper is a few lines.
 - **`game_flaws.fen` is `board_fen()` only** (no side to move, castling or en passant). Maia's softmax masks to legal moves, so exact positions need PGN replay.
-- **Elo conversion:** `pinned_elo_for_mover` (`app/services/best_move_candidates.py`) mirrors the analysis-board Maia card's `deriveRawDefault` (lichess-blitz normalization, clamped to 600-2600). Reuse it.
+- **Elo conversion:** `pinned_elo_for_mover` (`../../../app/services/best_move_candidates.py`) mirrors the analysis-board Maia card's `deriveRawDefault` (lichess-blitz normalization, clamped to 600-2600). Reuse it.
 - **Flaw data:** `game_flaws.is_miss` marks missed punishments, along with severity, phase, tempo and the tactic motif columns.
 - **Herring precedent:** Train's red-herring pool (SEED-120, `herring_pool`) is the closest existing pattern for clean positions.
 
 ## Breadcrumbs
 
-- `.planning/seeds/closed/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
-- `.planning/seeds/closed/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
-- `app/services/maia_engine.py`, `app/services/maia_encoding.py`, `app/services/best_move_candidates.py`
-- `app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/herring_pool.py`
-- `app/services/train_pool.py`, `app/repositories/train_repository.py`
-- `frontend/src/components/train/`
-- `.planning/research/FEATURES.md` (2026-07-25 Train market research)
+- `SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
+- `SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
+- `../../../app/services/maia_engine.py`, `../../../app/services/maia_encoding.py`, `../../../app/services/best_move_candidates.py`
+- `../../../app/models/game_flaw.py`, `../../../app/models/game_best_move.py`, `../../../app/models/herring_pool.py`
+- `../../../app/services/train_pool.py`, `../../../app/repositories/train_repository.py`
+- `../../../frontend/src/components/train`
+- `../../research/FEATURES.md` (2026-07-25 Train market research)

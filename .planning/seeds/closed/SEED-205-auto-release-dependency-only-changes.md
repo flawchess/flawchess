@@ -31,10 +31,10 @@ A weekly scheduled workflow (e.g. Tuesday 04:00 UTC, after Renovate's Monday win
 
 - checks whether every commit in `origin/production..origin/main` was authored by Renovate
   (`renovate[bot]`) and touches only dependency files (`../../../uv.lock`, `pyproject.toml`,
-  `frontend/package*.json`, `Dockerfile*`, `docker-compose*.yml`, `.github/workflows/*`);
+  `../../../frontend/package*.json`, `Dockerfile*`, `docker-compose*.yml`, `../../../.github/workflows/*`);
 - if yes, opens the `main → production` release PR, waits for CI on it, squash-merges it, dispatches
   `deploy.yml`, then does the forward-port step that `../../../bin/deploy.sh` / the `/deploy` skill does today
-  (see `docs/git-workflow.md`);
+  (see `../../../docs/git-workflow.md`);
 - if any non-Renovate commit is present, does nothing (feature work always waits for the owner).
 
 ## Open questions

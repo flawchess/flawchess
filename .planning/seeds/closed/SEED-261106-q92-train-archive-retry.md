@@ -1,6 +1,6 @@
 ---
 id: SEED-261106-q92
-status: dormant
+status: closed (2026-11-20, owner decision). Not implemented: Archive cards have no Retry button; replant from this file if retry is wanted.
 planted: 2026-11-06
 planted_during: v2.27, phase 244 (/gsd-explore session)
 trigger_when: once the Train subnav split / Archive tab (SEED-261106-gw8) has shipped
@@ -40,8 +40,8 @@ Mastered puzzles stop coming back and parked puzzles are set aside, so the Archi
 
 ## Breadcrumbs
 
-- `app/routers/train.py`: session-keyed solve and reveal endpoints
-- `app/models/drill_solve.py`: primary key and `solved_at`
-- `frontend/src/components/train/TrainSolveScreen.tsx`: `trainSession` coupling
-- `frontend/src/hooks/useTrainSession.ts`: session state and solve mutation
-- `frontend/src/lib/analytics.ts`: `FeatureEventMap`
+- `../../../app/routers/train.py`: session-keyed solve and reveal endpoints
+- `../../../app/models/drill_solve.py`: primary key and `solved_at`
+- `../../../frontend/src/components/train/TrainSolveScreen.tsx`: `trainSession` coupling
+- `../../../frontend/src/hooks/useTrainSession.ts`: session state and solve mutation
+- `../../../frontend/src/lib/analytics.ts`: `FeatureEventMap`

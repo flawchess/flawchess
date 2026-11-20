@@ -32,14 +32,14 @@ would let us see which features that cohort actually used before retaining or ch
 ### 1. Identity
 
 - Call `umami.identify(String(users.id))` for **every authenticated session, guests
-  included**. Guest promotion (`app/services/guest_service.py:69` / `:136`) keeps the same
+  included**. Guest promotion (`../../../app/services/guest_service.py:69` / `:136`) keeps the same
   `users` row, so guest → registered → retention stitches into one `distinct_id`.
   Pre-guest landing pageviews stay anonymous.
 - **Raw `users.id`**, chosen over an opaque `analytics_id` column or HMAC: Umami is
   self-hosted (analytics.flawchess.com), so data stays on our infra, and raw id gives the
   simplest join to the prod DB.
 - Keep the existing `account: guest|registered` session tag (`identifyAccountType` in
-  `../../../frontend/src/lib/analytics.ts`, call site `frontend/src/App.tsx:678`). Update the
+  `../../../frontend/src/lib/analytics.ts`, call site `../../../frontend/src/App.tsx:678`). Update the
   `window.umami.identify` typing to the `(distinctId, data)` signature.
 - Verified 2026-10-03: the self-hosted Umami schema has `session.distinct_id` (v2.18+);
   0 of 1,941 app sessions in the last 30 days use it.
@@ -50,15 +50,15 @@ would let us see which features that cohort actually used before retaining or ch
 - **Few event names with props** (e.g. `tab-switch` + `page`/`tab`) so the flat Umami
   events list doesn't sprawl into hundreds of near-zero rows.
 - Add a `../../../frontend/CLAUDE.md` rule so new features ship with their event.
-- **Keep** the existing rule (`frontend/CLAUDE.md:43`): DB-known actions (signups,
+- **Keep** the existing rule (`../../../frontend/CLAUDE.md:43`): DB-known actions (signups,
   imports, analysis runs) are not duplicated as events. With identify they become
   joinable instead. Its wording needs a touch-up since it frames Umami as anonymous.
 - Internal links use `trackEvent()` in `onClick`, never `data-umami-event` on a `<Link>`
-  (full-reload downgrade, see `frontend/CLAUDE.md:42`).
+  (full-reload downgrade, see `../../../frontend/CLAUDE.md:42`).
 
 ### 3. Privacy copy (required, one sentence)
 
-`frontend/src/pages/Privacy.tsx:58` says "No personal data is collected or shared", which
+`../../../frontend/src/pages/Privacy.tsx:58` says "No personal data is collected or shared", which
 becomes false once sessions carry `users.id` (pseudonymous data is personal data under
 GDPR). Replace with one sentence along the lines of: usage analytics (pages visited,
 features used) are linked to your account ID for logged-in and guest accounts, stay on
@@ -94,11 +94,11 @@ and wiring (bulk of the work), Privacy sentence, CLAUDE.md rule update.
 ## Breadcrumbs
 
 - `../../../frontend/src/lib/analytics.ts`: `trackEvent`, `identifyAccountType`, `umamiBeforeSend` scrub
-- `frontend/src/App.tsx:678`: current identify call site
+- `../../../frontend/src/App.tsx:678`: current identify call site
 - `../../../frontend/index.html`: tracker tag (`data-domains`, `data-exclude-hash`, `data-before-send`)
-- `frontend/CLAUDE.md:30-43`: Umami event conventions
-- `frontend/src/pages/Privacy.tsx:58`: analytics disclosure
-- `app/services/guest_service.py:69,136`: guest promotion keeps the user row
+- `../../../frontend/CLAUDE.md:30-43`: Umami event conventions
+- `../../../frontend/src/pages/Privacy.tsx:58`: analytics disclosure
+- `../../../app/services/guest_service.py:69,136`: guest promotion keeps the user row
 - `../../notes/active-engagement-time-tracking.md`, SEED-069 (closed): prior rejection
-- `reports/growth/growth-recommendations-2026-10-03.md`: attribution/retention context
+- `../../../reports/growth/growth-recommendations-2026-10-03.md`: attribution/retention context
 - MCP `flawchess-umami-db`: read-only Umami DB for verifying `distinct_id` after ship

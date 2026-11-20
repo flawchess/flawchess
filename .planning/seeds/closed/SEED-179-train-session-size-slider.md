@@ -39,7 +39,7 @@ games with an eligible blunder, and the herring cross-backfill covers thin pools
 
 In `../../../frontend/src/components/train/TrainScheduleSettings.tsx`, replace
 `PUZZLES_PER_SESSION_PRESETS` (`[3, 6, 9, 12, 15]`) and the Radix `ToggleGroup`
-with the existing `frontend/src/components/ui/slider.tsx`:
+with the existing `../../../frontend/src/components/ui/slider.tsx`:
 
 - min 3, max 30, step 3; default stays 6 (`DEFAULT_PUZZLES_PER_SESSION` in
   `../../../app/services/train_scheduler.py`)

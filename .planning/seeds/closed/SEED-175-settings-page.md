@@ -86,11 +86,11 @@ second-best badge/arrow.
 
 - `../../../frontend/src/lib/sounds.ts`: `MUTE_KEY`, `useMuted`, `setMuted`,
   `playSound` (honours a persisted `'1'`).
-- `frontend/src/components/analysis/EngineLines.tsx:38`: `MAX_LINES = 2`;
+- `../../../frontend/src/components/analysis/EngineLines.tsx:38`: `MAX_LINES = 2`;
   badge color by rank at ~266 (`BEST_MOVE_ARROW` / `SECOND_BEST_ARROW`).
-- `frontend/src/components/analysis/FlawChessEngineLines.tsx:48`:
+- `../../../frontend/src/components/analysis/FlawChessEngineLines.tsx:48`:
   `MAX_LINES = 2`; `FLAWCHESS_ENGINE_BADGE_SHADES` from `lib/theme`.
-- `frontend/src/hooks/analysis/useAnalysisBoardArrows.ts:60`: `ARROW_COUNT = 1`.
+- `../../../frontend/src/hooks/analysis/useAnalysisBoardArrows.ts:60`: `ARROW_COUNT = 1`.
 - `../../../frontend/src/hooks/analysis/useAnalysisEngineLines.ts`: imports both
   `MAX_LINES`; SF card sourced from the grading run via
   `ranked.slice(0, SF_MAX_LINES)`.

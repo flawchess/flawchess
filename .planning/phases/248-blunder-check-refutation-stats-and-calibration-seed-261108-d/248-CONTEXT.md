@@ -127,7 +127,7 @@ No selection service, API, UI, leaderboard or session logic is built here.
 
 **Downstream agents MUST read these before planning or implementing.**
 
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`: the feature design, all owner decisions, the
+- `../../seeds/closed/SEED-261108-dk0-blunder-check-training.md`: the feature design, all owner decisions, the
   2026-11-09 calibration probe and prod measurements (tactic tags on only 22% of non-miss blunders, PV on ~93%)
 - `.planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`: Phase 247 design, Maia cost measurements, gotchas
 - `.planning/phases/247-maia-stats-on-game-flaws/247-CONTEXT.md` and its `247-0*-SUMMARY.md` files: the shared

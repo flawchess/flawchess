@@ -87,9 +87,9 @@ Considered and rejected:
 - Tests: `../../../tests/services/test_train_scheduler.py` (ladder offsets, mastery at 2,
   door B at 4, fail delay snaps to a scheduled weekday).
 - Copy (no client logic reads the thresholds, prose only):
-  - `frontend/src/pages/Home.tsx:69` ("next session, then after three days, then ten, until you've solved it three times")
-  - `frontend/src/lib/trainBotCopy.ts:521` `MASTERED_TAIL` ("Three in a row, so this one is retired.")
-  - `frontend/src/components/train/TrainStatsCard.tsx:39-41` `MASTERED_EXPLAINER` / `PARKED_EXPLAINER` (+ the comment at :34)
+  - `../../../frontend/src/pages/Home.tsx:69` ("next session, then after three days, then ten, until you've solved it three times")
+  - `../../../frontend/src/lib/trainBotCopy.ts:521` `MASTERED_TAIL` ("Three in a row, so this one is retired.")
+  - `../../../frontend/src/components/train/TrainStatsCard.tsx:39-41` `MASTERED_EXPLAINER` / `PARKED_EXPLAINER` (+ the comment at :34)
   - grep for any other "three"/"3 times"/"10 days" Train copy, incl. bot lines and the reveal tour
 - Changelog entry under `[Unreleased]`.
 
@@ -267,9 +267,9 @@ that matters most, which singles out the old next-session fail retry.
   PARK_FAIL_THRESHOLD, LEECH_FAIL_THRESHOLD, apply_result, next_scheduled_day)
 - `../../../app/models/drill_item.py` (status/streak/due_date/fail_count/ever_correct, docstring)
 - `../../../app/models/drill_solve.py` (correct_move, solved_at, telemetry JSONB with guess_ms/move_ms)
-- `../../../app/services/train_pool.py`, `app/repositories/train_repository.py` (item creation, composition, mastered/parked counts)
+- `../../../app/services/train_pool.py`, `../../../app/repositories/train_repository.py` (item creation, composition, mastered/parked counts)
 - `../../../tests/services/test_train_scheduler.py`
-- `frontend/src/pages/Home.tsx:69`, `frontend/src/lib/trainBotCopy.ts:521`, `frontend/src/components/train/TrainStatsCard.tsx:34-41`
+- `../../../frontend/src/pages/Home.tsx:69`, `../../../frontend/src/lib/trainBotCopy.ts:521`, `../../../frontend/src/components/train/TrainStatsCard.tsx:34-41`
 - `SEED-037-train-spaced-repetition-blunder-drills.md` (original SR design)
 
 ### Evidence queries (prod, read-only)

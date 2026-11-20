@@ -59,7 +59,7 @@ Defaults the user saw and accepted at the end of the discussion, or left unasked
 
 ### Scope and locked decisions
 - `.planning/seeds/SEED-261106-gw8-train-subnav-split.md` — source decisions, traps and breadcrumbs for this phase
-- `.planning/seeds/SEED-261106-q92-train-archive-retry.md` — the follow-up this phase must leave room for; explains why cards carry no spoilers
+- `../../../seeds/closed/SEED-261106-q92-train-archive-retry.md` — the follow-up this phase must leave room for; explains why cards carry no spoilers
 - `.planning/ROADMAP.md` §Phase 246 — phase goal and trap list
 
 ### Data model
