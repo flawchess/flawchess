@@ -1572,7 +1572,9 @@ class TestEvalSeriesPayload:
         by_ply = {m["ply"]: m for m in card["flaw_markers"]}
         assert by_ply[2]["severity"] == "blunder"
         assert by_ply[2]["facepalm_score"] == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert by_ply[2]["facepalm_type"] == "allowed_loss"
         assert all(m["facepalm_score"] is None for p, m in by_ply.items() if p != 2)
+        assert all(m["facepalm_type"] is None for p, m in by_ply.items() if p != 2)
 
     @pytest.mark.asyncio
     async def test_unanalyzed_game_has_null_eval_fields(

@@ -2957,9 +2957,9 @@ class TestFetchPageFacepalmScores:
 
         assert set(scores) == {game.id}
         assert set(scores[game.id]) == {_FP_MARKER_USER_PLY}
-        assert scores[game.id][_FP_MARKER_USER_PLY] == pytest.approx(
-            0.87, abs=SEED_FACEPALM_TOLERANCE
-        )
+        value = scores[game.id][_FP_MARKER_USER_PLY]
+        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "allowed_loss"
 
     @pytest.mark.asyncio
     async def test_owner_side_scored_rows_only_black_owner(self, db_session: AsyncSession) -> None:
@@ -2978,9 +2978,30 @@ class TestFetchPageFacepalmScores:
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
 
         assert set(scores[game.id]) == {_FP_MARKER_OPPONENT_PLY}
-        assert scores[game.id][_FP_MARKER_OPPONENT_PLY] == pytest.approx(
-            0.87, abs=SEED_FACEPALM_TOLERANCE
+        value = scores[game.id][_FP_MARKER_OPPONENT_PLY]
+        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "allowed_loss"
+
+    @pytest.mark.asyncio
+    async def test_marker_value_carries_missed_win_type(self, db_session: AsyncSession) -> None:
+        """257 D-08: a missed-win seed comes back typed missed_win next to its score."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_MARKER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game,
+            ply=_FP_MARKER_USER_PLY,
+            facepalm_target=0.8,
+            facepalm_type="missed_win",
         )
+
+        scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
+
+        value = scores[game.id][_FP_MARKER_USER_PLY]
+        assert value.score == pytest.approx(0.8, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "missed_win"
 
     @pytest.mark.asyncio
     async def test_other_users_rows_are_never_returned(self, db_session: AsyncSession) -> None:
