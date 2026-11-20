@@ -99,6 +99,9 @@ async def build_payload(
             blunder_check_windows=await queries.fetch_blunder_check_windows(
                 conn, window.lead_in_start, end
             ),
+            blunder_check_difficulty=await queries.fetch_blunder_check_difficulty(
+                conn, window.window_start, end
+            ),
             imports=await queries.fetch_imports(conn, window.window_start, end),
             persona=await queries.fetch_persona(conn, window.window_start, end),
             bot_players=await queries.fetch_bot_players(conn, window.window_start, end),

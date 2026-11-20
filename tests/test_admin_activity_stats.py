@@ -126,6 +126,7 @@ def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
         solves=[],
         blunder_check_sessions=[],
         blunder_check_windows=[],
+        blunder_check_difficulty=[],
         imports=[],
         persona=[],
         bot_players=0,
@@ -1649,3 +1650,86 @@ async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
     # Ended before lead_in_start: never fetched, so no row and no delta.
     assert all(row[0] != before_day.isoformat() for row in rows)
     assert delta(before_day)["windows"] == 0
+
+
+def _bc_difficulty(rows: list[list[typing.Any]]) -> dict[tuple[int, int], list[int]]:
+    """fetch_blunder_check_difficulty rows keyed by (herring, own), zero-filled."""
+    found = {(int(r[0]), int(r[1])): [int(v) for v in r[2:]] for r in rows}
+    return {(h, o): found.get((h, o), [0, 0, 0, 0, 0]) for h in (1, 0) for o in (1, 0)}
+
+
+@pytest.mark.asyncio
+async def test_fetch_blunder_check_difficulty_splits_by_type_and_ownership(test_engine):
+    """Judged windows group by (red herring vs blunder window) x (own vs foreign game).
+
+    Values are [windows, cleared, caught, missed, false_alarm]. Seeded on
+    2031-03-10: herring/own cleared; herring/foreign cleared + false alarm;
+    blunder/own caught + missed; blunder/foreign false alarm. Excluded: an
+    unjudged window (outcome NULL) and one ended before the window start (this
+    query takes the window start, not the lead-in).
+    """
+    start = datetime.date(2031, 3, 5)
+    noon = datetime.time(12, 0)
+    utc = datetime.timezone.utc
+    ended_day = datetime.datetime.combine(_OUTCOME_DAY, noon, tzinfo=utc)
+    ended_before = datetime.datetime.combine(datetime.date(2031, 3, 4), noon, tzinfo=utc)
+
+    async with test_engine.connect() as conn:
+        baseline = _bc_difficulty(
+            await queries.fetch_blunder_check_difficulty(conn, start, _OUTCOME_WINDOW_END)
+        )
+
+    (user_id,) = await _fresh_users(test_engine, 1, "bcdiff")
+    cleared, caught, missed, false_alarm = (
+        int(WindowOutcome.CLEARED),
+        int(WindowOutcome.CAUGHT),
+        int(WindowOutcome.MISSED),
+        int(WindowOutcome.FALSE_ALARM),
+    )
+    # Positions 1, 2 and 5 are flipped to foreign games below (the seed helper
+    # writes is_own=True for every window).
+    foreign_positions = [1, 2, 5]
+    session_ids: list[int] = []
+    try:
+        session_id = await _seed_bc_session(
+            test_engine,
+            user_id,
+            status="completed",
+            session_date=_OUTCOME_DAY,
+            expires_on=_FUTURE_EXPIRY,
+            window_count=8,
+            windows=[
+                (cleared, 3, 3, ended_day, True),  # 0 herring / own
+                (cleared, 3, 3, ended_day, True),  # 1 herring / foreign
+                (false_alarm, 0, 3, ended_day, True),  # 2 herring / foreign
+                (caught, 4, 6, ended_day, False),  # 3 blunder / own
+                (missed, 0, 6, ended_day, False),  # 4 blunder / own
+                (false_alarm, 0, 6, ended_day, False),  # 5 blunder / foreign
+                (None, 0, 3, None, True),  # 6 unjudged: excluded
+                (caught, 4, 6, ended_before, False),  # 7 before the window: excluded
+            ],
+        )
+        session_ids.append(session_id)
+        async with test_engine.begin() as conn:
+            await conn.execute(
+                sa_update(BlunderCheckWindow)
+                .where(
+                    BlunderCheckWindow.session_id == session_id,
+                    BlunderCheckWindow.position.in_(foreign_positions),
+                )
+                .values(is_own=False)
+            )
+        async with test_engine.connect() as conn:
+            after = _bc_difficulty(
+                await queries.fetch_blunder_check_difficulty(conn, start, _OUTCOME_WINDOW_END)
+            )
+    finally:
+        await delete_blunder_check_sessions(test_engine, session_ids)
+
+    delta = {k: [a - b for a, b in zip(after[k], baseline[k], strict=True)] for k in after}
+    assert delta == {
+        (1, 1): [1, 1, 0, 0, 0],
+        (1, 0): [2, 1, 0, 0, 1],
+        (0, 1): [2, 0, 1, 1, 0],
+        (0, 0): [1, 0, 0, 0, 1],
+    }

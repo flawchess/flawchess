@@ -4,9 +4,9 @@
 // #tip lookup: under the React host this script can evaluate before charts.js
 // has published window.__fc, and an eager destructure would freeze every chart
 // helper as undefined for the lifetime of the module.
-let lineChart,barChart,hbar,funnel,gbar,sparkline,legend,table,C,num,short,long;
+let lineChart,barChart,hbar,stackRows,funnel,gbar,sparkline,legend,table,C,num,short,long;
 const bindCharts=()=>{
-  ({lineChart,barChart,hbar,funnel,gbar,sparkline,legend,table,C,num,short,long}=window.__fc);
+  ({lineChart,barChart,hbar,stackRows,funnel,gbar,sparkline,legend,table,C,num,short,long}=window.__fc);
 };
 const $=s=>document.querySelector(s);
 let AUD="all";
@@ -28,7 +28,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
     IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], CONV=null, PURGED=null,
-    BCSESS=[], BCWIN=[];
+    BCSESS=[], BCWIN=[], BCDIFF=[];
 
 function apply(payload){
   D=payload;
@@ -42,6 +42,7 @@ function apply(payload){
   FUNNEL=payload.funnel; TTI=payload.tti;
   CONV=payload.conversion; PURGED=payload.purged_excluded;
   BCSESS=payload.blunder_check_sessions; BCWIN=payload.blunder_check_windows;
+  BCDIFF=payload.blunder_check_difficulty;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
 
@@ -418,6 +419,47 @@ function renderBlunderCheckWindowCards(){
     {name:"False alarm",values:tFalse,color:c.s4},{name:"Missed",values:tMissed,color:c.loss}]});
 }
 
+// Below this many judged windows a row's shares are too noisy to compare, so
+// the row is drawn faded and says so.
+const BC_DIFF_MIN_WINDOWS=20;
+// The 2x2 of window type and game ownership, in display order. Success is
+// Cleared for a red herring and Caught for a blunder window; it is always
+// the first segment so the four success shares start at one left edge.
+const BC_DIFF_ROWS=[
+  {herring:1,own:1,label:"Herring · own"},{herring:1,own:0,label:"Herring · foreign"},
+  {herring:0,own:1,label:"Blunder · own"},{herring:0,own:0,label:"Blunder · foreign"}];
+
+function bcDifficultyRow(def,c){
+  const r=BCDIFF.find(x=>x[0]===def.herring&&x[1]===def.own);
+  const [n,cleared,caught,missed,falseAlarm]=r?r.slice(2):[0,0,0,0,0];
+  const ok=def.herring?cleared:caught, okName=def.herring?"cleared":"caught";
+  const small=n>0&&n<BC_DIFF_MIN_WINDOWS;
+  return {label:def.label,dim:small,
+    value:n?`${pctText(ok,n)} ${okName}`:DASH,
+    // Per-outcome counts live in the table below: a sub-line listing them
+    // overran the chart at phone widths (caught by the layout harness).
+    sub:n?`${num(n)} windows judged${small?" · small sample":""}`:"No windows judged yet.",
+    segments:[{value:ok,color:def.herring?c.s2:c.win},{value:missed,color:c.loss},
+      {value:falseAlarm,color:c.s4}],
+    cells:[def.label,n,cleared,caught,missed,falseAlarm,n?pctText(ok,n):DASH]};
+}
+
+function renderBlunderCheckDifficultyCard(){
+  const c=C();
+  if(!BCDIFF.length){
+    const noData="No Blunder Check windows judged in the selected range.";
+    emptyNote("#c-bc-difficulty",noData); emptyNote("#t-bc-difficulty",noData);
+    $("#bc-difficulty-legend").innerHTML="";
+    return;
+  }
+  const rows=BC_DIFF_ROWS.map(d=>bcDifficultyRow(d,c));
+  legend("#bc-difficulty-legend",[{name:"Cleared",color:c.s2},{name:"Caught",color:c.win},
+    {name:"Missed",color:c.loss},{name:"False alarm",color:c.s4}]);
+  stackRows($("#c-bc-difficulty"),{rows});
+  table("#t-bc-difficulty",["Windows","Judged","Cleared","Caught","Missed","False alarm","Success"],
+    rows.map(r=>r.cells));
+}
+
 function renderImportsCard(){
   if(!IMPORTS.length){
     emptyNote("#c-imports","No imports in the selected range.");
@@ -448,6 +490,7 @@ function render(){
   renderSolvesCard();
   renderBlunderCheckSessionsCard();
   renderBlunderCheckWindowCards();
+  renderBlunderCheckDifficultyCard();
   renderImportsCard();
 }
 

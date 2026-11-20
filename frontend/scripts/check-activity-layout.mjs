@@ -454,6 +454,42 @@ function buildCases(fc) {
         }),
     },
     {
+      chart: "stackRows",
+      name: "stackRows bc difficulty",
+      invoke: (host) =>
+        fc.stackRows(host, {
+          rows: [
+            {
+              label: "Herring · foreign",
+              value: "100% cleared",
+              sub: "123,456 windows judged · small sample",
+              dim: true,
+              segments: [
+                { value: 1234, color: "#0F8A7A" },
+                { value: 0, color: "#B44A8E" },
+                { value: 1234, color: "#3C63D8" },
+              ],
+            },
+            {
+              label: "Blunder · foreign",
+              value: "100% caught",
+              sub: "123,456 windows judged",
+              segments: [
+                { value: 1234, color: "#0F8A7A" },
+                { value: 1234, color: "#B44A8E" },
+                { value: 1234, color: "#3C63D8" },
+              ],
+            },
+            {
+              label: "Blunder · own",
+              value: "—",
+              sub: "No windows judged yet.",
+              segments: [],
+            },
+          ],
+        }),
+    },
+    {
       chart: "sparkline",
       name: "sparkline",
       invoke: (host) => fc.sparkline(host, wave(30, 40, 15), "#B25A28"),

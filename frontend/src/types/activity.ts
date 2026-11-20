@@ -62,6 +62,12 @@ export interface ActivityStatsPayload {
    * points_scored, points_possible, cleared, caught, missed, false_alarm].
    */
   blunder_check_windows: (string | number | null)[][];
+  /**
+   * Blunder Check judged windows by type and ownership, `fetch_blunder_check_difficulty`:
+   * [herring 0/1, own 0/1, windows, cleared, caught, missed, false_alarm]. Pairs with no
+   * windows are absent.
+   */
+  blunder_check_difficulty: number[][];
   imports: (string | number | null)[][];
   persona: (string | number | null)[][];
   bot_players: number;

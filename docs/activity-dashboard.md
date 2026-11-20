@@ -17,7 +17,7 @@ It ships with the SPA and reads the production database in-process.
 | `app/services/activity_stats.py` | `build_readonly_engine()`, `build_payload()`, `StatsCache`, and the two tuning constants (`CACHE_TTL_SECONDS`, `PROMOTED_AT_SINCE`) |
 | `app/routers/admin_activity.py` | `GET /api/admin/activity/stats`, gated on `current_superuser` |
 | `frontend/src/pages/activity/ActivityPage.tsx` | React host: page shell, data fetch, Refresh button |
-| `frontend/src/pages/activity/charts.js` | Chart toolkit: line, bar, grouped bar, funnel, sparkline. Classic script, not an ES module — the layout harness loads it via `vm.runInContext` |
+| `frontend/src/pages/activity/charts.js` | Chart toolkit: line, bar, grouped bar, horizontal bar, 100% stacked rows, funnel, sparkline. Classic script, not an ES module — the layout harness loads it via `vm.runInContext` |
 | `frontend/src/pages/activity/render.js` | Render layer. Exposes `window.__fcApp.mount() → {update, destroy}` |
 | `frontend/src/pages/activity/styles.css` | Stylesheet, every rule scoped under `.activity-dash` so it cannot leak into the SPA |
 | `frontend/src/types/activity.ts` | TypeScript mirror of the `Payload` TypedDict |
@@ -140,6 +140,17 @@ all count as started: they are created only by an explicit `POST /sessions`.
   accuracy line), so the left edge is already a full 7-day value.
 - **Outcome mix:** Cleared, Caught, Missed and False alarm map to
   `WindowOutcome` values 0 to 3.
+- **Difficulty by window type and ownership** (`fetch_blunder_check_difficulty`):
+  judged windows in the selected range (window start, no lead-in) grouped into
+  four rows: red herring or blunder window, own or foreign game. A red herring
+  is `window_case = HERRING` (no blunder in the window), so it can only end
+  Cleared or False alarm; the three blunder cases (allowed, pure miss, mixed)
+  are pooled so each row keeps a usable sample. Own is `is_own`. Each row is a
+  100% stacked bar with the success outcome first (Cleared for herrings, Caught
+  for blunder windows), so success shares compare from one left edge. Rows
+  under `BC_DIFF_MIN_WINDOWS` (20, `render.js`) are drawn faded. It is
+  aggregated over the range, not per day: split four ways, daily cells are too
+  small to compare.
 
 ### Train first-session funnel (SEED-166, D-19)
 
@@ -177,7 +188,7 @@ deliberately not hardcoded anywhere on the card itself.
 
 ## Query cost
 
-`build_payload()` awaits 19 `queries.fetch_*` calls, 21 SQL statements in all
+`build_payload()` awaits 20 `queries.fetch_*` calls, 22 SQL statements in all
 (`fetch_window` and `fetch_train_funnel` each run two), sequentially over the
 full tracked history. Measured against the **dev** database (25 users, 70 `user_activity`
 rows, 59 tracked days, 163,781 games), three consecutive cold calls:

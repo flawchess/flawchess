@@ -3,8 +3,8 @@
 Every function here takes an open ``AsyncConnection`` and returns plain JSON-able
 data. No ORM models, no writes: the connection is opened with
 ``default_transaction_read_only`` so a stray statement fails loudly rather than
-touching production. The only app import is the ``WindowOutcome`` IntEnum, used
-as a constant, never to query through the ORM.
+touching production. The only app imports are the ``WindowCase`` and ``WindowOutcome`` IntEnums, used
+as constants, never to query through the ORM.
 """
 
 import datetime
@@ -14,7 +14,7 @@ from typing import Any, Final, Literal, NamedTuple, TypedDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.models.blunder_check import WindowOutcome
+from app.models.blunder_check import WindowCase, WindowOutcome
 
 # Bot ratings with fewer games than this are dropped from the score-by-rating
 # chart -- below it a single session swings the number by tens of points.
@@ -113,6 +113,7 @@ class Payload(TypedDict):
     solves: list[list[Any]]
     blunder_check_sessions: list[list[Any]]
     blunder_check_windows: list[list[Any]]
+    blunder_check_difficulty: list[list[Any]]
     imports: list[list[Any]]
     persona: list[list[Any]]
     bot_players: int
@@ -511,6 +512,47 @@ async def fetch_blunder_check_windows(
             """,
             lead_in=lead_in_start,
             last=_end_exclusive(window_end),
+            cleared=int(WindowOutcome.CLEARED),
+            caught=int(WindowOutcome.CAUGHT),
+            missed=int(WindowOutcome.MISSED),
+            false_alarm=int(WindowOutcome.FALSE_ALARM),
+        )
+    )
+
+
+async def fetch_blunder_check_difficulty(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
+    """Blunder Check judged windows by window type and game ownership.
+
+    Rows: [herring, own, windows, cleared, caught, missed, false_alarm], one per
+    (herring, own) pair that has windows; herring and own are 0/1. A red herring
+    is a window with no blunder (`window_case = HERRING`); the three blunder
+    cases (allowed, pure miss, mixed) are pooled into one group on purpose, so
+    the card stays at four rows with a usable sample each. `own` is
+    `is_own`: the window comes from the solver's own game. Same judged-window
+    definition as `fetch_blunder_check_windows`, but bounded by the window
+    start, not the lead-in: this is a point-in-time split, nothing is rolled.
+    """
+    return _table(
+        await _rows(
+            conn,
+            """
+            SELECT CAST(w.window_case = :herring AS int) AS herring,
+                   CAST(w.is_own AS int) AS own,
+                   count(*) AS windows,
+                   count(*) FILTER (WHERE w.outcome = :cleared) AS cleared,
+                   count(*) FILTER (WHERE w.outcome = :caught) AS caught,
+                   count(*) FILTER (WHERE w.outcome = :missed) AS missed,
+                   count(*) FILTER (WHERE w.outcome = :false_alarm) AS false_alarm
+            FROM blunder_check_windows w
+            WHERE w.outcome IS NOT NULL
+              AND w.ended_at >= CAST(:cutoff AS date) AND w.ended_at < CAST(:last AS date)
+            GROUP BY 1, 2 ORDER BY 1 DESC, 2 DESC
+            """,
+            cutoff=window_start,
+            last=_end_exclusive(window_end),
+            herring=int(WindowCase.HERRING),
             cleared=int(WindowOutcome.CLEARED),
             caught=int(WindowOutcome.CAUGHT),
             missed=int(WindowOutcome.MISSED),

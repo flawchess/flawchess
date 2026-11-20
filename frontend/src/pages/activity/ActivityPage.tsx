@@ -602,6 +602,22 @@ export default function ActivityPage() {
               <div className="legend" id="bc-outcome-legend"></div>
               <div className="chart" id="c-bc-outcomes"></div>
             </div>
+            <div className="card">
+              <h3>Blunder Check: difficulty by window type and game ownership</h3>
+              <p className="note">
+                All windows judged in the selected range, as shares of each row. A red herring is a
+                sequence with no blunder, so its success is Cleared; a blunder window&apos;s success
+                is Caught. Own = from the solver&apos;s own game, foreign = from someone else&apos;s.
+                Success is always the first segment, so the four rows compare from the left edge.
+                Rows under 20 windows are faded.
+              </p>
+              <div className="legend" id="bc-difficulty-legend"></div>
+              <div className="chart" id="c-bc-difficulty"></div>
+              <details className="data">
+                <summary data-testid="activity-details-bc-difficulty">Show the numbers</summary>
+                <div className="tblwrap" id="t-bc-difficulty"></div>
+              </details>
+            </div>
           </div>
         </section>
 
