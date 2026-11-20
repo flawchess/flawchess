@@ -348,9 +348,14 @@ export function useAnalysisGemMarkers(
           missedDepth: fm.missed_tactic_depth,
           allowedDepth: fm.allowed_tactic_depth,
           severity: sev,
-          // Facepalm mini-chip: either color, whenever the marker carries a score.
-          ...(fm.facepalm_score != null
-            ? { facepalmScore: fm.facepalm_score, facepalmByOpponent: !fm.is_user }
+          // Facepalm mini-chip: either color, whenever the marker carries a score. 257 D-08 / D-09:
+          // the chip is tinted by the type, so it needs the score and the type together.
+          ...(fm.facepalm_score != null && fm.facepalm_type != null
+            ? {
+                facepalmScore: fm.facepalm_score,
+                facepalmType: fm.facepalm_type,
+                facepalmByOpponent: !fm.is_user,
+              }
             : {}),
           ply: fm.ply,
         });
