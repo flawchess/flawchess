@@ -600,6 +600,7 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     better_move: null,
     // What start returns for a fresh window: paused on the Ready gate.
     awaiting_ready: true,
+    outcome: null,
     ...overrides,
   };
 }
@@ -901,6 +902,83 @@ describe('window loop', () => {
     await advance(LEAD_IN_PLY_INTERVAL_MS);
     expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
     expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);
+  });
+
+  it('a mid-sequence gate shows the position reached so far, untimed, and Ready opens the prompt at once (quick 261119-x7t)', async () => {
+    // The server settled a stale move 1 as a timeout: the gate stands before move 2.
+    const startFen = applyUcis(START_FEN, ['e2e4']);
+    startWindow.mockImplementation(async () =>
+      windowStart({
+        start_fen: startFen,
+        lead_in_ucis: ['e7e5'],
+        prior_uci: 'e2e4',
+        orientation: 'white',
+        answered: [
+          {
+            move_index: 1,
+            move_uci: PROMPT_UCI,
+            reply_uci: REPLY_UCI,
+            result: 'timeout_safe',
+            points_awarded: 0,
+            points_forfeited: 0,
+          },
+        ],
+        prompt: { move_index: 2, move_uci: NEXT_PROMPT_UCI },
+      }),
+    );
+    renderTab();
+    await advance(50);
+    await advance(50);
+
+    const played = applyUcis(startFen, ['e7e5', PROMPT_UCI, REPLY_UCI]);
+    expect(boardFen()).toBe(played);
+    expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe(REPLY_UCI);
+    expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
+      "Check out the position, you play white. It's your turn.",
+    );
+    expect(boardArrows()).toBe('');
+    expect(screen.queryByTestId('blunder-check-timer')).toBeNull();
+    // However long the user studies, nothing starts and nothing is sent.
+    await advance(60_000);
+    expect(beginWindow).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+
+    await pressReady();
+    expect(beginWindow).toHaveBeenCalledTimes(1);
+    expect(beginWindow).toHaveBeenCalledWith(7, 0);
+    // The prompt opens at once on the same board: no lead-in replay, the full countdown.
+    expect(boardFen()).toBe(played);
+    expect(screen.getByTestId('blunder-check-timer').textContent).toBe('10');
+    expect(buttonDisabled('blunder-check-btn-safe')).toBe(false);
+    expect(boardArrows()).toBe(NEXT_PROMPT_UCI);
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('an ended resume (a stale timeout ended the window) opens the solution, not a gate (quick 261119-x7t)', async () => {
+    startWindow.mockImplementation(async () =>
+      windowStart({
+        awaiting_ready: false,
+        outcome: 'missed',
+        answered: [
+          {
+            move_index: 1,
+            move_uci: PROMPT_UCI,
+            reply_uci: REPLY_UCI,
+            result: 'timeout_blunder',
+            points_awarded: 0,
+            points_forfeited: 0,
+          },
+        ],
+        timer_remaining_ms: 0,
+      }),
+    );
+    renderTab();
+    await advance(50);
+    await advance(50);
+
+    expect(getSolution).toHaveBeenCalledWith(7, 0);
+    expect(screen.queryByTestId('blunder-check-btn-ready')).toBeNull();
+    expect(answer).not.toHaveBeenCalled();
   });
 
   it('a double click on Ready sends one begin request', async () => {

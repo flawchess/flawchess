@@ -57,6 +57,7 @@ function windowStart(overrides: Partial<WindowStartResponse> = {}): WindowStartR
     better_move: null,
     // The begin / post-Ready shape; a fresh start response overrides it with true.
     awaiting_ready: false,
+    outcome: null,
     ...overrides,
   };
 }
@@ -873,6 +874,99 @@ describe('WINDOW_LOADED after a stale prompt (server state wins)', () => {
     });
     const prompt = asPhase(state, 'prompt');
     expect(prompt.window.shownUcis).toEqual(LEAD_IN);
+  });
+});
+
+describe('mid-sequence Ready gate and ended resume (quick 261119-x7t)', () => {
+  const MOVE_ONE = {
+    move_index: 1,
+    move_uci: 'b8c6',
+    reply_uci: 'f1b5',
+    result: 'correct_safe',
+    points_awarded: 1,
+    points_forfeited: 0,
+  } as const;
+  const MOVE_TWO_TIMED_OUT = {
+    move_index: 2,
+    move_uci: 'a7a6',
+    reply_uci: 'b5a4',
+    result: 'timeout_blunder',
+    points_awarded: 0,
+    points_forfeited: 1,
+  } as const;
+  /** The server settled a stale move 1 as a timeout, so the gate stands before move 2. */
+  const MID_GATE = windowStart({
+    awaiting_ready: true,
+    answered: [{ ...MOVE_ONE, result: 'timeout_safe', points_awarded: 0 }],
+    prompt: { move_index: 2, move_uci: 'a7a6' },
+  });
+  const ENDED = windowStart({
+    outcome: 'missed',
+    answered: [MOVE_ONE, MOVE_TWO_TIMED_OUT],
+    prompt: { move_index: 2, move_uci: 'a7a6' },
+    timer_remaining_ms: 0,
+    window_points: 0,
+  });
+
+  it('shows the position reached so far on the gate, untimed', () => {
+    const gate = asPhase(loaded(MID_GATE), 'ready_gate');
+    expect(gate.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+    expect(gate.prompt.move_index).toBe(2);
+    expect(gate.timerMs).toBe(FIRST_TIMER_MS);
+  });
+
+  it('Ready on it begins, and the begin response opens the prompt at once without a lead-in replay', () => {
+    const beginning = asPhase(drillReducer(loaded(MID_GATE), { type: 'READY_CONFIRMED' }), 'beginning');
+    expect(beginning.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+    const prompt = asPhase(
+      drillReducer(beginning, {
+        type: 'WINDOW_BEGUN',
+        response: { ...MID_GATE, awaiting_ready: false, timer_remaining_ms: FIRST_TIMER_MS },
+      }),
+      'prompt',
+    );
+    expect(prompt.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+    expect(prompt.timerMs).toBe(FIRST_TIMER_MS);
+    expect(prompt.prompt.move_index).toBe(2);
+  });
+
+  it('a stale_prompt re-fetch from grading that lands on a gate shows the played moves', () => {
+    const grading = drillReducer(atPrompt(), { type: 'ANSWER_SUBMITTED', answer: 'safe' });
+    const gate = asPhase(
+      drillReducer(grading, { type: 'WINDOW_LOADED', response: MID_GATE }),
+      'ready_gate',
+    );
+    expect(gate.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+  });
+
+  it('a fresh gate (nothing answered) still shows nothing', () => {
+    const gate = asPhase(loaded(windowStart({ awaiting_ready: true })), 'ready_gate');
+    expect(gate.window.shownUcis).toEqual([]);
+  });
+
+  it('an ended resume goes to the solution without playing the timed-out move', () => {
+    const loading = asPhase(loaded(ENDED), 'solution_loading');
+    expect(loading.outcome).toBe('missed');
+    expect(loading.graded.result).toBe('timeout_blunder');
+    expect(loading.graded.window_ended).toBe(true);
+    expect(loading.graded.better_move).toBeNull();
+    expect(loading.window.shownUcis).toEqual([...LEAD_IN, 'b8c6', 'f1b5']);
+    const solution = asPhase(
+      drillReducer(loading, { type: 'SOLUTION_LOADED', solution: FALSE_ALARM_SOLUTION }),
+      'solution',
+    );
+    const next = asPhase(drillReducer(solution, { type: 'NEXT_WINDOW' }), 'loading_window');
+    expect(next.position).toBe(1);
+  });
+
+  it('a better-move resume still lands on the better-move step', () => {
+    const task = { fen: START_FEN, key_uci: 'e2e4', server_graded_moves: [] };
+    const state = asPhase(
+      loaded(windowStart({ outcome: 'caught', better_move: task, answered: [MOVE_ONE] })),
+      'better_move',
+    );
+    expect(state.outcome).toBe('caught');
+    expect(state.window.shownUcis).toEqual(LEAD_IN);
   });
 });
 
