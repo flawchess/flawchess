@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 257
 current_phase_name: Facepalm Rate in the Library Stats (SEED-261114-iuv)
 status: executing
-stopped_at: Completed 257-05-PLAN.md
-last_updated: "2026-11-20T13:16:15.570Z"
+stopped_at: Completed 257-06-PLAN.md
+last_updated: "2026-11-20T13:22:54.124Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 257 execution started
-state_head: db70e335ac5a23898cf1beb2508547c33ab89108
+state_head: 78be5512ca2990fa1fdd7826bd2ea0a6b0441b11
 progress:
   total_phases: 11
   completed_phases: 63
   total_plans: 100
-  completed_plans: 95
+  completed_plans: 96
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,7 +22,7 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 ## Current Position
 
 Phase: 257 (Facepalm Rate in the Library Stats (SEED-261114-iuv)) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 
 Status: Ready to execute
 
@@ -960,6 +960,8 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 257]: Facepalm type line is mover-neutral; eval-chart tooltip names the type in text ('Facepalm NN% · allowed loss')
 - [Phase 257]: Facepalm share floor is 50 scored blunders per window (not 20); share null below it, rounded to nearest whole percent in the chart
 - [Phase 257]: 257-05: facepalm rows ride FlawComparisonTc on a shared _flaw_comparison_anchor, score and type scored once per blunder (fenced); dev reader about 260-350 ms, prod EXPLAIN is a plan 07 item
+- [Phase 257]: 257-06: facepalm card is the trailing child of ContextTagCards; significance sentences describe the gap and drive no colour (owner confirms D-05 reading at UAT)
+- [Phase 257]: 257-06: GapCell.noVerdict is an opt-in flag so zoneless tactic cells keep their significance-based colouring
 
 ### Pending Todos
 
@@ -1213,8 +1215,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-20T13:16:13.558Z
-**Stopped at:** Completed 257-05-PLAN.md
+**Last session:** 2026-11-20T13:22:52.423Z
+**Stopped at:** Completed 257-06-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1502,6 +1504,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 257 P03 | 15min | 2 tasks | 14 files |
 | Phase 257 P04 | 35 min | 2 tasks | 12 files |
 | Phase 257 P05 | 40 min | 1 tasks | 6 files |
+| Phase 257 P06 | 20 min | 2 tasks | 11 files |
 
 ## Performance Metrics
 
