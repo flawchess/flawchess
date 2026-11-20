@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -723,5 +723,76 @@ async def test_worker_heartbeat_read_time_decay_expression(
         read_1h, read_24h = await _read_expressions()
         assert read_1h < _RATE_NEAR_ZERO
         assert read_24h < _RATE_NEAR_ZERO
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+_RATE_ZERO_RUN_STEP_HOURS = 49.0
+_RATE_ZERO_RUN_STEPS = 20
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_rates_survive_long_offline_gap(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A worker returning after 60 days must still get its heartbeat applied: the
+    1h exponent (1440) is past the float8 exp underflow (~745), so without
+    MAX_DECAY_EXPONENT the statement raises and the SAVEPOINT swallows it."""
+    capture = Mock()
+    monkeypatch.setattr(
+        "app.repositories.worker_heartbeat_repository.sentry_sdk.capture_exception", capture
+    )
+    worker_id = "w-rate-gap"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N1)
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_LONG_GAP_HOURS)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N2)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["submit_count"] == 2
+        assert hb["evals_submitted"] == _RATE_N1 + _RATE_N2
+        assert hb["evals_per_hour_1h"] == pytest.approx(
+            _RATE_N2 / RATE_TAU_1H_HOURS, rel=_RATE_REL_TOL
+        )
+        assert hb["evals_per_hour_24h"] == pytest.approx(
+            _RATE_N2 / RATE_TAU_24H_HOURS, rel=_RATE_REL_TOL
+        )
+        capture.assert_not_called()
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_zero_eval_submits_never_underflow(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A run of zero-eval submits decays the stored rate toward 0 without ever
+    hitting float8 multiply underflow (which the SAVEPOINT would swallow, freezing
+    the row): the _RATE_ZERO_FLOOR snaps tiny decayed terms to exactly 0."""
+    capture = Mock()
+    monkeypatch.setattr(
+        "app.repositories.worker_heartbeat_repository.sentry_sdk.capture_exception", capture
+    )
+    worker_id = "w-rate-zero"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, 1)
+        for _ in range(_RATE_ZERO_RUN_STEPS):
+            await _backdate_last_seen(
+                eval_worker_session_maker, worker_id, _RATE_ZERO_RUN_STEP_HOURS
+            )
+            await _upsert_direct(eval_worker_session_maker, worker_id, 0)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["submit_count"] == _RATE_ZERO_RUN_STEPS + 1
+        assert hb["evals_submitted"] == 1
+        assert hb["evals_per_hour_1h"] == 0.0
+        assert hb["evals_per_hour_24h"] == 0.0
+        capture.assert_not_called()
     finally:
         await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
