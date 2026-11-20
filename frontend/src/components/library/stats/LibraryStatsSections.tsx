@@ -26,6 +26,7 @@ import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
 import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
+import { FacepalmCard } from './FacepalmCard';
 import { TempoPhaseHeatmap } from './TempoPhaseHeatmap';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
@@ -257,7 +258,7 @@ function VsOpponentsSkeleton() {
 
 /**
  * You vs. your opponents: the four context-tag cards with the full-width Clock by
- * game phase heatmap after the first row, for the selected TC. It reads the same
+ * game phase heatmap after the first row, then the Facepalm blunders card, for the selected TC. It reads the same
  * comparison query as Flaw Stats (one cache entry, no extra request) and the same
  * remembered TC store as the page's one switch.
  * Below the gate one slot replaces everything.
@@ -285,6 +286,7 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
       <ContextTagCards
         tcStats={tcStats}
         afterFirstRow={<TempoPhaseHeatmap tcStats={tcStats} />}
+        trailing={<FacepalmCard tcStats={tcStats} />}
       />
     );
   };

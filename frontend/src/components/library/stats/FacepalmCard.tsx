@@ -1,0 +1,97 @@
+import { TreePalm } from 'lucide-react';
+
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
+import { Card, CardBody, CardHeader } from '@/components/ui/card';
+import {
+  FACEPALM_GAP_META,
+  FACEPALM_METRICS,
+  facepalmMetricCell,
+  libraryBasisText,
+  metricTestIdSegment,
+} from '@/lib/flawComparisonMeta';
+import { GAP_SAME_WORD, gapWords, type GapCell } from '@/lib/gapBar';
+import type { FacepalmMetric, FlawComparisonTc } from '@/types/library';
+import { GapPopover } from './GapPopover';
+import { GapRow } from './GapRow';
+
+/** The card intro (257 D-16): the comparison only, nothing on what a higher rate means. */
+const FACEPALM_INTRO =
+  "Your facepalm blunders per 100 of your moves, next to your opponents' in the same games.";
+
+/** 257 D-16 / orchestrator decision 3: no benchmark band exists yet, so no range is shown. */
+const COPY_NO_RANGE = 'There is no typical range for facepalm blunders yet.';
+
+/**
+ * 257 D-13: significance may be stated, it drives no colour. These two sentences (this one and
+ * COPY_CHANCE) describe the gap, not the score, so they sit outside D-05's probability ban;
+ * the owner confirms this reading at UAT.
+ */
+const COPY_GAP_SIGNIFICANT = 'The gap is too large to be chance.';
+
+/** The popover's first list item: the no-range sentence plus what the significance says. */
+function facepalmRangeNote(cell: GapCell): string {
+  if (cell.significant) return `${COPY_NO_RANGE} ${COPY_GAP_SIGNIFICANT}`;
+  const isSame = cell.delta === null || gapWords(cell.delta) === GAP_SAME_WORD;
+  return isSame ? COPY_NO_RANGE : `${COPY_NO_RANGE} ${COPY_CHANCE}`;
+}
+
+interface FacepalmRowProps {
+  metric: FacepalmMetric;
+  tcStats: FlawComparisonTc;
+}
+
+/** One facepalm row: label, hint, neutral gap bar and the popover, like a context-tag row. */
+function FacepalmRow({ metric, tcStats }: FacepalmRowProps) {
+  const cell = facepalmMetricCell(tcStats, metric);
+  if (!cell) return null;
+  const meta = FACEPALM_GAP_META[metric];
+  const segment = metricTestIdSegment(metric);
+  return (
+    <GapRow
+      label={meta.label}
+      hint={meta.hint}
+      cell={cell}
+      testId={`context-row-${segment}`}
+      popover={
+        cell.delta === null ? undefined : (
+          <GapPopover
+            testId={`gap-popover-${segment}-tc-${tcStats.tc}`}
+            label={meta.label}
+            definition={meta.definition}
+            unit="per 100 moves"
+            noun={meta.noun}
+            basis={libraryBasisText(tcStats.analyzed_n, tcStats.tc)}
+            cell={cell}
+            omitDirection
+            rangeNote={facepalmRangeNote(cell)}
+          />
+        )
+      }
+    />
+  );
+}
+
+/**
+ * The Facepalm blunders card of You vs. your opponents (257 D-11): the user's facepalm
+ * blunders per 100 of their moves next to their opponents' in the same games, in total and
+ * per type. The bars are neutral (no band, no verdict, no better / worse caption), and a type
+ * row compares the user with the opponents' same type only (D-04).
+ */
+export function FacepalmCard({ tcStats }: { tcStats: FlawComparisonTc }) {
+  return (
+    <Card data-testid="context-card-facepalm">
+      <CardHeader className="flex items-center gap-2">
+        <TreePalm className="h-4 w-4" aria-hidden="true" />
+        Facepalm blunders
+      </CardHeader>
+      <CardBody className="space-y-4">
+        <p className="text-sm text-muted-foreground" data-testid="context-card-facepalm-intro">
+          {FACEPALM_INTRO}
+        </p>
+        {FACEPALM_METRICS.map((metric) => (
+          <FacepalmRow key={metric} metric={metric} tcStats={tcStats} />
+        ))}
+      </CardBody>
+    </Card>
+  );
+}
