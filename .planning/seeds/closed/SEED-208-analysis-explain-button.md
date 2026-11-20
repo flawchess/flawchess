@@ -54,7 +54,7 @@ button exposes those lines for every flaw, both sides, with no new data.
 ## Reuse (why no backend work is expected)
 
 - `GET /library/flaws/{game_id}/{ply}/tactic-lines`
-  (`app/repositories/library_repository.py:2266`) returns `missed_moves` and
+  (`../../../app/repositories/library_repository.py:2266`) returns `missed_moves` and
   `allowed_moves` for ANY `game_flaws` row; motif fields are just null when there
   is no pattern. Lichess-imported games get the same full FlawChess analysis, so
   PVs exist for both platforms.

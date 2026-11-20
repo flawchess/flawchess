@@ -26,7 +26,7 @@ The data repairs for items 1 and 2 ran on prod on 2026-10-17. Nothing is open.
   preserve-evals path.
 - **Item 1 data repair: DONE (2026-10-17).** We chose a provenance fix over restoring the lichess evals: the
   stored evals are real engine evals, consistent with the stored best moves, PVs and flaws, so
-  `scripts/fix_lichess_eval_provenance.py` NULLs `lichess_evals_at` on the overwritten games, which then count
+  `../../../scripts/fix_lichess_eval_provenance.py` NULLs `lichess_evals_at` on the overwritten games, which then count
   as analyzed by us. The lichess evals remain in the PGN. The prod scan (11:54 UTC, after the tier-4 fix was
   deployed) flagged 3,586 games across 229 users (the shifted-one-ply control is excluded). The owner ran
   `apply --db prod --execute`. Spot check: 40 of 40 sampled ids now have `lichess_evals_at IS NULL`. The scan
@@ -52,10 +52,10 @@ Item numbers here are this seed's order; the INVENTORY number is in brackets.
 
 ## 1. Tier-4 blob claim hard-codes `is_lichess_eval_game=False` (INVENTORY #2) — HIGH, check first
 
-- `app/services/eval_queue_service.py:1091`: the bundled `scope=None` path of `claim_eval_job` returns
+- `../../../app/services/eval_queue_service.py:1091`: the bundled `scope=None` path of `claim_eval_job` returns
   `ClaimedJob(tier=TIER_BLOB_BACKFILL, is_lichess_eval_game=False)` with the comment "resolved in the
   /flaw-blob-lease handler". But the in-process drain also calls `claim_eval_job(worker_id=WORKER_ID_SERVER_POOL)`
-  with `scope=None` (`app/services/eval_drain.py:1338`) and trusts `claimed.is_lichess_eval_game`
+  with `scope=None` (`../../../app/services/eval_drain.py:1338`) and trusts `claimed.is_lichess_eval_game`
   (`eval_drain.py:1345`); only tier-4b re-derives it (`eval_drain.py:1171`, and the tier-4b claim at
   `eval_queue_service.py:1058` resolves it from the row).
 - Tier-4's predicate (`full_evals_completed_at IS NOT NULL AND blobs_completed_at IS NULL`) does not exclude
@@ -76,9 +76,9 @@ Item numbers here are this seed's order; the INVENTORY number is in brackets.
 
 ## 2. Platform accuracy/ACPL lands in the canonical computed columns (INVENTORY #1) — MEDIUM
 
-- `app/services/normalization.py:308` (chess.com `accuracies`) and `:481` (lichess `analysis` accuracy/acpl) fill
+- `../../../app/services/normalization.py:308` (chess.com `accuracies`) and `:481` (lichess `analysis` accuracy/acpl) fill
   `NormalizedGame.white_accuracy/black_accuracy/white_acpl/black_acpl`; import inserts `model_dump()` unchanged, so
-  they reach `games.white_accuracy` etc. `app/models/game.py:180-198` documents those as our lichess-formula values,
+  they reach `games.white_accuracy` etc. `../../../app/models/game.py:180-198` documents those as our lichess-formula values,
   NULL until computed, and `*_imported` as the platform values. No code writes `*_imported`
   (only the Phase 178 migration copied old values).
 - Prod 2026-10-17: **15,289 games** carry platform values in the canonical columns without our evals
@@ -98,7 +98,7 @@ Item numbers here are this seed's order; the INVENTORY number is in brackets.
 4. **`ResumeGate.tsx:109` (INVENTORY #4):** identity line shows `${plyCount} moves` but `plyCount` is `liveGamePly`
    (half-moves). Show full moves (`Math.ceil(plyCount / 2)`) or say plies.
 5. **`types/activity.ts` (INVENTORY #9/#11):** `ActivityStatsPayload` lacks `guest_train`, which
-   `app/services/activity_queries.py:120` sends and `pages/activity/render.js` reads. Type drift only.
+   `../../../app/services/activity_queries.py:120` sends and `pages/activity/render.js` reads. Type drift only.
 6. **`lib/engine/ortRuntimeSource.ts:74-77` (INVENTORY #13):** the size fallbacks say 1.29.0 (13,961,845 /
    25,749,873); the vendored 1.27.0 files are 13,479,978 / 24,254,953 bytes. Update values and doc comments
    (progress placeholder only).

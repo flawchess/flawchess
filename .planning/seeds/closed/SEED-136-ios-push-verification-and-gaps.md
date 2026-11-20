@@ -38,9 +38,9 @@ Step 0) from **READ** (still inference from the source alone):
 
 | Requirement | Where | Status |
 |---|---|---|
-| Manifest `display: 'standalone'` (precondition for an iOS installed web app) | `frontend/vite.config.ts:65` | READ |
+| Manifest `display: 'standalone'` (precondition for an iOS installed web app) | `../../../frontend/vite.config.ts:65` | READ |
 | SW always calls `showNotification` on `push` (iOS enforces `userVisibleOnly` and revokes on silent pushes) | `../../../frontend/public/push-sw.js` | **RUN** |
-| VAPID JWT `aud = scheme://hostname` → `https://web.push.apple.com` | `app/services/push_crypto.py:149` | **RUN** |
+| VAPID JWT `aud = scheme://hostname` → `https://web.push.apple.com` | `../../../app/services/push_crypto.py:149` | **RUN** |
 | `sub` is a `mailto:` (Apple rejects a missing/invalid `sub` with 400 BadJwtToken) | `push_crypto.py:151`, `VAPID_SUBJECT` default `push@flawchess.com` | **RUN** |
 | ES256, `exp` 12h (Apple rejects `exp` > 24h) | `push_crypto.py:154`, `_VAPID_EXPIRATION_SECONDS` | **RUN** |
 | `Ttl` > 0 (Apple discards a TTL-0 message and still returns 201) | `push_send.py:77`, fixed by Phase 204 D5 | **RUN** |

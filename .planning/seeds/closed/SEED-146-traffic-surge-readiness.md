@@ -122,7 +122,7 @@ Item 4 is what delivers the agreed UX.
 
 ### 1. `useReadiness` — the unbounded poll (highest impact)
 
-`frontend/src/hooks/useReadiness.ts:36` polls every 3 s (`READINESS_POLL_INTERVAL_MS`, `:5`) and
+`../../../frontend/src/hooks/useReadiness.ts:36` polls every 3 s (`READINESS_POLL_INTERVAL_MS`, `:5`) and
 stops **only when `tier2` is true**. Tier 2 requires `pending_count == 0` — evals fully drained.
 
 Since a days-long analysis window is explicitly acceptable (see Out Of Scope), **tier2 stays
@@ -130,7 +130,7 @@ false for days, so the poll never terminates.** It is mounted at four places in 
 (`:174, :394, :517, :743`), so it runs on essentially every page. TanStack dedupes per tab, so
 it is 1 request / 3 s **per open tab, indefinitely**.
 
-Each request hits `GET /imports/readiness` (`app/routers/imports.py:216`), which runs
+Each request hits `GET /imports/readiness` (`../../../app/routers/imports.py:216`), which runs
 `count_games_for_user` + `count_pending_evals` and, on the "stuck" path, up to four more per-TC
 anchor CTEs. `count_pending_evals` looks like the 135 ms / 72 ms `count(*) FROM game_flaws`
 shapes near the top of `pg_stat_statements`.
@@ -154,7 +154,7 @@ Fix (locked: in place, not Web Push):
 
 > **CORRECTION (2026-08-10, verified in code during Phase 209 scoping):** the funnel claim
 > below is wrong. `POST /auth/guest/create` calls `create_guest_user`
-> (`app/routers/auth.py:319` → `guest_service.py:26`), which writes `hashed_password=""` and
+> (`../../../app/routers/auth.py:319` → `guest_service.py:26`), which writes `hashed_password=""` and
 > **never hashes anything** — the "Use as Guest" button costs zero hashing. The call at
 > `guest_service.py:94` is in `promote_guest_with_password`, reached from
 > **`POST /auth/guest/promote/email`** (`auth.py:511`) — the later guest→account upgrade.
@@ -164,7 +164,7 @@ Fix (locked: in place, not Web Push):
 > `to_thread` at `:94` is still worth its one line, and the register/login (M) half is even
 > more comfortably deferrable than argued below.
 
-`app/services/guest_service.py:94` calls `_password_helper.hash(password)` synchronously
+`../../../app/services/guest_service.py:94` calls `_password_helper.hash(password)` synchronously
 (`PasswordHelper()` at `:23`). `fastapi-users` 15.x uses pwdlib/Argon2id, measured at **65.9 ms**.
 One uvicorn process, one event loop: that is 66 ms during which **nothing else is served**, for
 anyone.
@@ -202,7 +202,7 @@ blanket-caching `/maia/*`.
 
 ### 4. Global import semaphore + queue position (S–M — delivers the agreed UX)
 
-`app/routers/imports.py:157` fires `asyncio.create_task(import_service.run_import(job_id))` with
+`../../../app/routers/imports.py:157` fires `asyncio.create_task(import_service.run_import(job_id))` with
 **no global cap** — only per-user-per-platform duplicate prevention.
 
 What currently prevents catastrophe is accidental: the module-level outbound rate limiters
@@ -226,7 +226,7 @@ the task is alive. An explicit queue must not be reaped as an orphan.
 
 ### 5. Gate `compute_stage_a` / `compute_stage_b` (XS)
 
-`app/services/import_service.py:716` fires `asyncio.create_task(compute_stage_a(job.user_id))`
+`../../../app/services/import_service.py:716` fires `asyncio.create_task(compute_stage_a(job.user_id))`
 per completed import with **no concurrency gate**, and that is the **1,111.7 ms** query at the top
 of `pg_stat_statements` (333 calls ≈ 306 completed imports — confirmed per-import, not per-page).
 

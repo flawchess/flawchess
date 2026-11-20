@@ -132,12 +132,12 @@ The real formula is client-side in `../../../frontend/src/lib/trainScore.ts`.
 
 - `../../../frontend/src/lib/trainScore.ts` — scoring constants (GUESS_POINTS, MOVE_TIER_POINTS,
   TRAIN_POINTS_PER_PUZZLE)
-- `../../../app/models/drill_session.py`, `app/models/drill_solve.py` — session/solve rows
+- `../../../app/models/drill_session.py`, `../../../app/models/drill_solve.py` — session/solve rows
   (`correct_guess`, `move_quality`, `is_warmup`, `entered_at`)
-- `app/models/user.py:20-21` — platform usernames
+- `../../../app/models/user.py:20-21` — platform usernames
 - `../../../frontend/src/components/train/TrainStartScreen.tsx`, `TrainScoreScreen.tsx`
-- `frontend/src/pages/Privacy.tsx:27` — usernames listed as collected data
+- `../../../frontend/src/pages/Privacy.tsx:27` — usernames listed as collected data
 - `SEED-175-settings-page.md` — Phase 228, home for the opt-out toggle
-- `reports/growth/growth-recommendations-2026-10-03.md` — Train retention context
+- `../../../reports/growth/growth-recommendations-2026-10-03.md` — Train retention context
 - Related: SEED-184 (conversion/defender trainer), whose results could later feed the
   boards

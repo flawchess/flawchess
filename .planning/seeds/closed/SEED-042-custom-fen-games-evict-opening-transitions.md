@@ -75,7 +75,7 @@ two independent tiers: **Tier 1 fixes the bug and is a quick task; Tier 2 is the
 
 Cheaper than originally written, for three reasons:
 
-1. **No re-import needed for the backfill.** `games.pgn` is stored (`app/models/game.py:131`,
+1. **No re-import needed for the backfill.** `games.pgn` is stored (`../../../app/models/game.py:131`,
    `Text`, NOT NULL), so detecting custom starts is one SQL pass over existing rows
    (`WHERE pgn LIKE '%[SetUp "1"]%'`). ~176 rows in prod.
 2. **Do NOT exclude custom games from the aggregate.** The original plan filtered them out
@@ -114,7 +114,7 @@ hashes client-side from the board (`computeHashes(chess)` in `useChessGame.ts`).
 *presentation path* (`entry_san_sequence`, replayed from `chess.Board()`) is start-anchored.
 
 - **Analysis board: mostly solved already.** `useAnalysisBoard.loadMainLine(sans, newRootFen)`
-  (`frontend/src/hooks/useAnalysisBoard.ts:390`) already takes a root FEN, and `?fen=` shipped
+  (`../../../frontend/src/hooks/useAnalysisBoard.ts:390`) already takes a root FEN, and `?fen=` shipped
   with SEED-094 (`Analysis.tsx:532-545`). The only gap is that `?fen=` and `?line=` are
   mutually exclusive by explicit precedence (fen wins). Opening "custom root + these moves"
   means relaxing that to combine them. One task plus tests, not a redesign.
@@ -189,24 +189,24 @@ which strengthens the case for warning-level.
 ## Breadcrumbs
 
 Backend:
-- `app/repositories/openings_repository.py:667` — `func.min(ARRAY[ply, game_id])` sample selection (Tier 1 fix site)
-- `app/repositories/openings_repository.py:610-614` — existing comment acknowledging custom-FEN survivors (~176 / 344k ply-0 rows)
-- `app/repositories/openings_repository.py:713` — `query_transition_prefixes` (no change needed under Tier 1)
-- `app/services/opening_insights_service.py:491-511` — `_wrap_transition_row` replay + drop + Sentry capture
-- `app/services/zobrist.py:170` — `board = game.board()` honors SetUp/FEN header
-- `app/services/normalization.py:198` — chess.com variant filter (`rules == "chess"` only)
-- `app/models/game.py:131` — `pgn` column (backfill source); `../../../app/models/game.py` overall — no `initial_fen` today
+- `../../../app/repositories/openings_repository.py:667` — `func.min(ARRAY[ply, game_id])` sample selection (Tier 1 fix site)
+- `../../../app/repositories/openings_repository.py:610-614` — existing comment acknowledging custom-FEN survivors (~176 / 344k ply-0 rows)
+- `../../../app/repositories/openings_repository.py:713` — `query_transition_prefixes` (no change needed under Tier 1)
+- `../../../app/services/opening_insights_service.py:491-511` — `_wrap_transition_row` replay + drop + Sentry capture
+- `../../../app/services/zobrist.py:170` — `board = game.board()` honors SetUp/FEN header
+- `../../../app/services/normalization.py:198` — chess.com variant filter (`rules == "chess"` only)
+- `../../../app/models/game.py:131` — `pgn` column (backfill source); `../../../app/models/game.py` overall — no `initial_fen` today
 
 Frontend:
-- `frontend/src/hooks/useAnalysisBoard.ts:390` — `loadMainLine(sans, newRootFen)`, already root-FEN aware
-- `frontend/src/hooks/useAnalysisBoard.ts:399` — dead `if (!move) break` guard, CONFIRMED crash site (FLAWCHESS-96)
-- `frontend/src/hooks/useAnalysisBoard.ts:474` — same dead guard in `insertPvLine`, inside a `setState` updater
-- `frontend/src/hooks/useChessGame.ts:147` / `frontend/src/hooks/useBotGame.ts:299` — same unguarded replay pattern
-- `frontend/src/lib/engine/treeCommon.ts:218` — the correctly-contained precedent ("chess.js's `.move()` THROWS")
-- `frontend/src/pages/Analysis.tsx:971` — game mode hardcodes `STARTING_FEN` (confirmed bug, was line 919)
-- `frontend/src/pages/Analysis.tsx:532-545` — `?fen=` entry point (SEED-094), fen-beats-line precedence
+- `../../../frontend/src/hooks/useAnalysisBoard.ts:390` — `loadMainLine(sans, newRootFen)`, already root-FEN aware
+- `../../../frontend/src/hooks/useAnalysisBoard.ts:399` — dead `if (!move) break` guard, CONFIRMED crash site (FLAWCHESS-96)
+- `../../../frontend/src/hooks/useAnalysisBoard.ts:474` — same dead guard in `insertPvLine`, inside a `setState` updater
+- `../../../frontend/src/hooks/useChessGame.ts:147` / `../../../frontend/src/hooks/useBotGame.ts:299` — same unguarded replay pattern
+- `../../../frontend/src/lib/engine/treeCommon.ts:218` — the correctly-contained precedent ("chess.js's `.move()` THROWS")
+- `../../../frontend/src/pages/Analysis.tsx:971` — game mode hardcodes `STARTING_FEN` (confirmed bug, was line 919)
+- `../../../frontend/src/pages/Analysis.tsx:532-545` — `?fen=` entry point (SEED-094), fen-beats-line precedence
 - `../../../frontend/src/hooks/useChessGame.ts` — explorer board, start-anchored in 5 places + sessionStorage persistence
-- `frontend/src/pages/openings/useOpeningsHandlers.ts:96,114` — insights deep-link into the explorer via `loadMoves`
+- `../../../frontend/src/pages/openings/useOpeningsHandlers.ts:96,114` — insights deep-link into the explorer via `loadMoves`
 - `../../../frontend/src/types/position_bookmarks.ts` — bookmarks store bare `moves: string[]`, no root
 
 Other:
