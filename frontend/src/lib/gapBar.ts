@@ -62,6 +62,12 @@ export interface GapCell {
   pValue: number | null;
   youEvents: number;
   oppEvents: number;
+  /**
+   * 257 D-13: a zoneless cell that stays neutral even when significant (no better / worse
+   * colour, no tint). The facepalm rows set it until benchmark zones exist; zoneless tactic
+   * cells leave it unset and keep judging on significance alone.
+   */
+  noVerdict?: boolean;
 }
 
 /**
@@ -111,6 +117,7 @@ function rawVerdict(cell: GapCell): GapVerdict | null {
  * when its 99% CI excludes 0, no verdict otherwise.
  */
 export function effectiveVerdict(cell: GapCell): GapVerdict | null {
+  if (cell.noVerdict) return null;
   // Defensive: all four shown tactic families have bands today, but a §5 refresh could drop one.
   if (!cell.hasZone && cell.delta !== null) {
     if (!cell.significant) return null;
