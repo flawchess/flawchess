@@ -5,10 +5,10 @@ current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
 stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T14:37:27.766Z"
+last_updated: "2026-11-20T18:20:07.752Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: da679c89b392bbef69105376743e9cbfbb0c9d25
+state_head: a55fcf911da35ffdd68f6f3731aa674a8ec6a526
 progress:
   total_phases: 11
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: 6
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Phase 257 (Facepalm Rate in the Library Stats) squash-merged to main
+Last activity: 2026-11-20 - Completed quick task 261120-qjc: decayed per-worker evals/hour rates in worker_heartbeats
 
 Open threads carried forward (not blockers):
 
@@ -1166,6 +1166,7 @@ None active.
 | 179 | Activity Pulse: Blunder Check difficulty card (red herring vs blunder window, own vs foreign game) | 2026-11-20 | d03d31147 | — |
 | 261120-j5f | Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ) | 2026-11-20 | 4fe7eccfc | [261120-j5f-blunder-check-cross-device-resync-on-sta](./quick/261120-j5f-blunder-check-cross-device-resync-on-sta/) |
 | 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
+| 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
 
 ## Deferred Items
 
