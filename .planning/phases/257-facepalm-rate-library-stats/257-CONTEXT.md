@@ -126,6 +126,21 @@ bias against a benchmark, the type-by-clock matrix, the training weighting.
   does not wait on them, and the facepalm statements run with JIT off (4 s of the 11 s on the largest prod
   account). A covering partial index on the score inputs is measured on a non-prod DB before any
   migration; a stored score column is not an option (254 removed it on purpose).
+- **D-22: Icons. Facepalm blunders get a "???" badge, the facepalm score gets a gauge** (the palm tree goes:
+  it only works once the label is read, and the Flaws Timeline already uses palm trees as break markers).
+  "???" is not a PGN NAG (the set stops at "??"), but chess players read it as "worse than a blunder".
+  - Facepalm blunder (a blunder whose floored score is >= 70%, `isFacepalmBlunder`): a round badge in the
+    "??" slot, three overlapping "?" at the "??" font size (17), each outlined in the dot colour so the
+    overlaps stay legible, on the dark red `SEV_FACEPALM` (= the timeline band swatch). It replaces "??"
+    wherever a single blunder with a known score is drawn: analysis move list (desktop and mobile), board
+    corner marker, the Explain bar headline, the game-card hover miniboard, the Flaws card severity badge,
+    plus the KPI tile and the "Facepalm blunders" card header.
+  - Facepalm score: lucide `Gauge`, inheriting the type tint (teal missed win, crimson allowed loss) via
+    `currentColor`, on the Flaws card chip, the move-list mini-chip, the eval-chart tooltip and the
+    explanation popover.
+  - Not changed: Train puzzle cards (the train API carries no score), the Blunder Check "good move or
+    blunder?" badge (would give the answer away), the eval-chart flaw dots, the Move Stats counts and the
+    Facepalm Score filter (it filters the score, not facepalm blunders).
 
 </decisions>
 

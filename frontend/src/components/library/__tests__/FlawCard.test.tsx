@@ -474,11 +474,18 @@ describe('Facepalm chip and severity icon', () => {
     it('shows the facepalm score in its own chip, not in the Blunder badge', () => {
       render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       const badge = screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement;
-      expect(badge.textContent).toBe('??Blunder');
+      // 0.946 is a facepalm blunder (>= 70%): the badge leads with the stacked "???" glyph.
+      expect(badge.textContent).toBe('???Blunder');
       const chip = screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement;
       expect(chip.textContent).toBe('Facepalm94%');
-      expect(chip.querySelector('svg.lucide-tree-palm')).not.toBeNull();
+      expect(chip.querySelector('svg.lucide-gauge')).not.toBeNull();
       expect(chip.contains(badge)).toBe(false);
+    });
+
+    it('keeps the "??" glyph on a blunder below the 70% facepalm cut', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.697, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
+      const badge = screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement;
+      expect(badge.textContent).toBe('??Blunder');
     });
 
     it('leads the Mistake badge with the "?" quality glyph', () => {

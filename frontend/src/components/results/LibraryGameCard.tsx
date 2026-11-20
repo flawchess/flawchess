@@ -21,6 +21,7 @@ import {
   TAC_MISSED_LABEL,
 } from '@/lib/theme';
 import type { SquareMarker } from '@/components/board/boardMarkers';
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -298,6 +299,16 @@ export function LibraryGameCard({
     }
     return m;
   }, [game.flaw_markers]);
+  // Blunders at or above the facepalm stats cut get the "???" corner badge instead of "??".
+  const facepalmPlies = useMemo(
+    () =>
+      new Set(
+        (game.flaw_markers ?? [])
+          .filter((fm) => fm.severity === 'blunder' && isFacepalmBlunder(fm.facepalm_score))
+          .map((fm) => fm.ply),
+      ),
+    [game.flaw_markers],
+  );
 
 
   // Per-ply tactic-depth badges (1-based display). missed → blue best-move arrow,
@@ -731,7 +742,8 @@ export function LibraryGameCard({
     // Severity wins (matches the eval-chart tooltip, where a flaw marker suppresses the
     // gem/great row, and the analysis board's "severity > gem/great" precedence).
     if (hoverSeverity) {
-      return [{ square: hoverEntry.to, severity: hoverSeverity }];
+      const facepalm = activePly != null && facepalmPlies.has(activePly);
+      return [{ square: hoverEntry.to, severity: hoverSeverity, ...(facepalm ? { facepalm: true } : {}) }];
     }
     // Bug fix: the miniboard previously read ONLY flaw_markers, so a scrubbed gem/great
     // ply showed no glyph even though the tooltip labelled it "Gem"/"Great". Mirror the
@@ -744,7 +756,7 @@ export function LibraryGameCard({
     if (tier === 'best') return [{ square: hoverEntry.to, best: true }];
     if (tier === 'good') return [{ square: hoverEntry.to, good: true }];
     return undefined;
-  }, [hoverEntry, hoverSeverity, activePly, bestTierByPly]);
+  }, [hoverEntry, hoverSeverity, activePly, bestTierByPly, facepalmPlies]);
 
   // Severity/tier-coded last-move overlay: a scrubbed flaw move gets its
   // red/orange/yellow tint; a gem move reads violet and a great ("best") move reads

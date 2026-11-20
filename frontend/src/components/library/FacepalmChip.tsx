@@ -7,7 +7,7 @@
  * scored blunder has a type, so there is no neutral variant. The popover names the type (D-10).
  */
 
-import { TreePalm } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { FACEPALM_TYPE_STYLE, toFacepalmPct } from '@/lib/facepalm';
 import type { FacepalmType } from '@/types/library';
 import { FacepalmBadgePopover } from './FacepalmBadgePopover';
@@ -30,7 +30,7 @@ export function FacepalmChip({ score, type, gameId, ply }: FacepalmChipProps) {
         className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold whitespace-nowrap transition-all hover:-translate-y-px hover:brightness-125"
         style={{ color: style.color, backgroundColor: style.bg, borderColor: style.border }}
       >
-        <TreePalm className="h-3 w-3" aria-hidden="true" />
+        <Gauge className="h-3 w-3" aria-hidden="true" />
         <span>Facepalm</span>
         <span className="tabular-nums">{toFacepalmPct(score)}%</span>
       </span>

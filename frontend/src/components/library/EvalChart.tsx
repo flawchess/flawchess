@@ -34,7 +34,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Cpu, TreePalm } from 'lucide-react';
+import { Clock, Cpu, Gauge } from 'lucide-react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
@@ -550,7 +550,7 @@ export function FacepalmTooltipLine({
       data-testid="eval-chart-tooltip-facepalm"
     >
       {/* Icon inherits the line colour via currentColor. */}
-      <TreePalm className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <Gauge className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>
         Facepalm {toFacepalmPct(score)}% &middot; {FACEPALM_TYPE_LABEL[type].toLowerCase()}
       </span>

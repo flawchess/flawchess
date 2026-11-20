@@ -23,7 +23,7 @@ import { X } from 'lucide-react';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
-import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { BlunderIcon, FacepalmBlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
@@ -32,6 +32,7 @@ import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
 import { FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
 import type { FacepalmType, FlawSeverity } from '@/types/library';
@@ -43,6 +44,12 @@ const ZEBRA_ROW_BG = 'bg-foreground/[0.03]';
 /** Zebra background for a 0-based row index (odd rows striped). */
 function zebraBg(rowIdx: number): string {
   return rowIdx % 2 === 1 ? ZEBRA_ROW_BG : '';
+}
+
+/** "???" for a facepalm blunder (score >= the 70% stats cut), else "??" / "?". */
+function severityIcon(flaw: FlawMarkerEntry): typeof BlunderIcon {
+  if (flaw.severity !== 'blunder') return MistakeIcon;
+  return isFacepalmBlunder(flaw.facepalmScore) ? FacepalmBlunderIcon : BlunderIcon;
 }
 
 /**
@@ -69,7 +76,7 @@ function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
   if (flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake')) {
     return {
       show: true,
-      Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon,
+      Icon: severityIcon(flaw),
       isGem: false,
       isGreat: false,
     };
@@ -127,7 +134,7 @@ function MoveListMarker({
       />
     );
   }
-  // A scored blunder gets the Facepalm mini-chip right after its "??" glyph. 257 D-09: the chip
+  // A scored blunder gets the Facepalm mini-chip right after its "??" / "???" glyph. 257 D-09: the chip
   // needs the type as well (it picks the tint), so a score without a type renders no chip.
   if (flaw?.severity === 'blunder' && flaw.facepalmScore != null && flaw.facepalmType != null) {
     return (

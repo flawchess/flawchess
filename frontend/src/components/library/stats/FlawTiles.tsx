@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { TreePalm } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { FACEPALM_CARD_INFO } from '@/lib/facepalm';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { FACEPALM_BAND_SWATCH, SEV_BLUNDER } from '@/lib/theme';
 import {
   FACEPALM_GAP_META,
@@ -158,7 +158,7 @@ function FacepalmTile({ tcStats, analyzedGate, bullets, isError }: FacepalmTileP
   return (
     <FlawTileFrame
       testId="flaw-tile-facepalm"
-      icon={<TreePalm className={TILE_ICON_CLASS} style={{ color: FACEPALM_BAND_SWATCH }} aria-hidden="true" />}
+      icon={<FacepalmBlunderIcon className={TILE_ICON_CLASS} aria-hidden="true" />}
       color={FACEPALM_BAND_SWATCH}
       label={meta.label}
       cell={cell}

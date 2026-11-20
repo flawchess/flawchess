@@ -545,7 +545,7 @@ describe('VariationTree', () => {
     const chips = screen.getAllByTestId('facepalm-move-popover');
     expect(chips.length).toBeGreaterThan(0);
     expect((chips[0] as HTMLElement).textContent).toBe('95%');
-    expect((chips[0] as HTMLElement).querySelector('svg.lucide-tree-palm')).not.toBeNull();
+    expect((chips[0] as HTMLElement).querySelector('svg.lucide-gauge')).not.toBeNull();
     // 257 D-08: an allowed loss is tinted crimson (jsdom normalizes colour strings).
     const probe = document.createElement('div');
     probe.style.color = TAC_ALLOWED;
@@ -573,6 +573,41 @@ describe('VariationTree', () => {
       />,
     );
     expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+  });
+
+  it('(10c) a blunder at or above the 70% facepalm cut shows "???" instead of "??"', () => {
+    const { nodes, mainLine } = buildPvFixture();
+    const entry: FlawMarkerEntry = {
+      missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1,
+      facepalmType: 'allowed_loss',
+    };
+    const glyphs = (): string[] =>
+      Array.from(screen.getByTestId('variation-tree-desktop').querySelectorAll('svg'))
+        .filter((svg) => svg.querySelector('text') !== null)
+        .map((svg) => svg.textContent ?? '');
+    const { unmount } = render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.7 }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(glyphs()).toContain('???');
+    expect(glyphs()).not.toContain('??');
+    unmount();
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.699 }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(glyphs()).toContain('??');
+    expect(glyphs()).not.toContain('???');
   });
 
   it('(11) inaccuracy severity renders no chip and no marker', () => {

@@ -1,4 +1,4 @@
-import { TreePalm } from 'lucide-react';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -91,7 +91,7 @@ export function FacepalmCard({ tcStats, bullets, isError }: FacepalmCardProps) {
   return (
     <Card data-testid="context-card-facepalm">
       <CardHeader className="flex items-center gap-2">
-        <TreePalm className="h-4 w-4" aria-hidden="true" />
+        <FacepalmBlunderIcon className="h-4 w-4" aria-hidden="true" />
         Facepalm blunders
         <InfoPopover ariaLabel="About facepalm blunders" testId="context-card-facepalm-info">
           <p>{FACEPALM_CARD_INFO}</p>

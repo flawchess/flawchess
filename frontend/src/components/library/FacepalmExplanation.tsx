@@ -5,7 +5,7 @@
  * 257 D-10: one line names the facepalm type in words, so the chip tint is never the only signal.
  */
 
-import { TreePalm } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { FACEPALM_TYPE_LABEL, FACEPALM_TYPE_SENTENCE, toFacepalmPct } from '@/lib/facepalm';
 import type { FacepalmType } from '@/types/library';
 
@@ -22,7 +22,7 @@ export function FacepalmExplanation({ score, type, byOpponent = false }: Facepal
   return (
     <>
       <p className="flex items-center gap-1 font-bold">
-        <TreePalm className="h-3 w-3 shrink-0" aria-hidden="true" />
+        <Gauge className="h-3 w-3 shrink-0" aria-hidden="true" />
         Facepalm {toFacepalmPct(score)}%
       </p>
       <p data-testid="facepalm-explanation-type">

@@ -22,6 +22,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import { FacepalmChip } from '@/components/library/FacepalmChip';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
@@ -354,6 +355,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         gameId={flaw.game_id}
         showCount={false}
         showIcon
+        facepalm={isFacepalmBlunder(flaw.facepalm_score)}
       />
       {/* Facepalm chip: its own pill after the severity badge. D-17: scored blunders only.
           257 D-09: a chip without a type does not exist, so it needs score and type. */}

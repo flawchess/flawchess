@@ -153,6 +153,14 @@ export function toFacepalmPct(score: number): number {
   return Math.max(FACEPALM_PCT_MIN, Math.min(FACEPALM_PCT_MAX, pct));
 }
 
+/**
+ * True when a blunder's score makes it a facepalm blunder (the "???" badge): the floored chip
+ * percent reaches FACEPALM_HIGH_CUTOFF, the same cut the KPI tile, card and timeline band count.
+ */
+export function isFacepalmBlunder(score: number | null | undefined): boolean {
+  return score != null && toFacepalmPct(score) >= FACEPALM_HIGH_CUTOFF;
+}
+
 // ─── Facepalm type tint (257 D-08) ──────────────────────────────────────────
 
 /** Inline colours of a type-tinted Facepalm chip. */

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type {
   ExplainBarState,
@@ -171,6 +172,8 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
   );
 }
 
+const HEADLINE_BADGE_CLASS = 'ml-1.5 inline-block size-4 align-text-bottom';
+
 /**
  * Same headline in both states, so it stays put when a line opens or closes.
  *
@@ -197,7 +200,11 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
         >
           {headline.san ?? SEVERITY_NOUN[headline.severity]}
         </span>
-        <MoveQualityIcon quality={headline.severity} className="ml-1.5 inline-block size-4 align-text-bottom" />
+        {headline.facepalm ? (
+          <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />
+        ) : (
+          <MoveQualityIcon quality={headline.severity} className={HEADLINE_BADGE_CLASS} />
+        )}
         {headline.tactics.length > 0 && ':'}
       </span>
       {headline.tactics.length > 0 && ' '}

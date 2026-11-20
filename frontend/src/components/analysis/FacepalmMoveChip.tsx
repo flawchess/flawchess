@@ -9,7 +9,7 @@
  * propagation so a tap opens the popover instead of navigating to the move.
  */
 
-import { TreePalm } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FacepalmExplanation } from '@/components/library/FacepalmExplanation';
 import { FACEPALM_TYPE_LABEL, FACEPALM_TYPE_STYLE, toFacepalmPct } from '@/lib/facepalm';
@@ -41,7 +41,7 @@ export function FacepalmMoveChip({ score, type, byOpponent = false }: FacepalmMo
             className="inline-flex items-center gap-0.5 rounded-full border px-1 font-sans text-sm font-bold leading-tight tabular-nums whitespace-nowrap"
             style={{ color: style.color, backgroundColor: style.bg, borderColor: style.border }}
           >
-            <TreePalm className="h-3 w-3" aria-hidden="true" />
+            <Gauge className="h-3 w-3" aria-hidden="true" />
             {pct}%
           </span>
         }
