@@ -23,6 +23,7 @@ import { BLUNDER_DROP, MISTAKE_DROP, TIME_PRESSURE_CLOCK_FRACTION } from '@/gene
 import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
 import type { GapCell } from '@/lib/gapBar';
 import type {
+  FacepalmBullet,
   FacepalmMetric,
   FlawBullet,
   FlawComparisonTc,
@@ -256,8 +257,11 @@ export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetri
  * popover but `noVerdict` keeps the bar free of any verdict colour. Null when the payload
  * carries no such row.
  */
-export function facepalmMetricCell(tcStats: FlawComparisonTc, metric: FacepalmMetric): GapCell | null {
-  const bullet = tcStats.facepalm_bullets.find((b) => b.tag === metric);
+export function facepalmMetricCell(
+  bullets: readonly FacepalmBullet[],
+  metric: FacepalmMetric,
+): GapCell | null {
+  const bullet = bullets.find((b) => b.tag === metric);
   return bullet ? { ...flawBulletToGapCell(bullet), noVerdict: true } : null;
 }
 

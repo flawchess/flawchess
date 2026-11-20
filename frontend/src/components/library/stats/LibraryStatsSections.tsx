@@ -12,11 +12,11 @@ import {
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { TcSwitch } from '@/components/stats/TcSwitch';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { FacepalmShareChart } from '@/components/library/FacepalmShareChart';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import {
+  useLibraryFacepalmComparison,
   useLibraryFlawComparison,
   useLibraryFlawStats,
   useTacticComparison,
@@ -33,7 +33,13 @@ import { GapGateSlot } from './GapBar';
 import { MostCommonTacticsCard } from './MostCommonTacticsCard';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
-import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/types/library';
+import type {
+  FacepalmBullet,
+  FacepalmComparisonResponse,
+  FlawComparisonTc,
+  FlawStatsResponse,
+  TacticComparisonTc,
+} from '@/types/library';
 
 const NO_TCS: readonly FlawComparisonTc[] = [];
 const NO_TACTIC_TCS: readonly TacticComparisonTc[] = [];
@@ -74,9 +80,8 @@ interface FlawTimelineProps {
 }
 
 /**
- * The selected time control's timeline with the facepalm share chart directly below it (257
- * D-03: same points, same window, same load and error states); its own load/error states never
- * hide the tiles.
+ * The selected time control's timeline (with the 257 D-17 facepalm band inside the Blunders
+ * area); its own load/error states never hide the tiles.
  */
 function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelineProps) {
   if (isError) return <LoadError resource="flaws timeline" />;
@@ -84,12 +89,7 @@ function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelinePro
     return <div className="h-48 animate-pulse rounded border border-border bg-charcoal" />;
   }
   const points = stats.trend_by_tc.find((t) => t.tc === selectedTc)?.points ?? [];
-  return (
-    <>
-      <FlawTrendChart trend={points} windowSize={stats.trend_window} />
-      <FacepalmShareChart trend={points} windowSize={stats.trend_window} />
-    </>
-  );
+  return <FlawTrendChart trend={points} windowSize={stats.trend_window} />;
 }
 
 /**
@@ -256,15 +256,28 @@ function VsOpponentsSkeleton() {
   );
 }
 
+const NO_FACEPALM_ROWS: readonly FacepalmBullet[] = [];
+
+/** The selected TC's facepalm rows: undefined while the request loads, empty for a TC without rows. */
+function facepalmRowsFor(
+  data: FacepalmComparisonResponse | undefined,
+  tc: TimeControlBucket,
+): readonly FacepalmBullet[] | undefined {
+  if (!data) return undefined;
+  return data.tcs.find((t) => t.tc === tc)?.bullets ?? NO_FACEPALM_ROWS;
+}
+
 /**
  * You vs. your opponents: the four context-tag cards with the full-width Clock by
- * game phase heatmap after the first row, then the Facepalm blunders card, for the selected TC. It reads the same
- * comparison query as Flaw Stats (one cache entry, no extra request) and the same
- * remembered TC store as the page's one switch.
+ * game phase heatmap after the first row, then the Facepalm blunders card, for the selected TC.
+ * It reads the same comparison query as Flaw Stats (one cache entry, no extra request) and the
+ * same remembered TC store as the page's one switch. The facepalm rows come from their own
+ * request (257 D-21), started here in parallel so the card never waits for the section.
  * Below the gate one slot replaces everything.
  */
 function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
+  const facepalm = useLibraryFacepalmComparison(filters, DEFAULT_FLAW_FILTER);
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
@@ -286,7 +299,13 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
       <ContextTagCards
         tcStats={tcStats}
         afterFirstRow={<TempoPhaseHeatmap tcStats={tcStats} />}
-        trailing={<FacepalmCard tcStats={tcStats} />}
+        trailing={
+          <FacepalmCard
+            tcStats={tcStats}
+            bullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
+            isError={facepalm.isError}
+          />
+        }
       />
     );
   };

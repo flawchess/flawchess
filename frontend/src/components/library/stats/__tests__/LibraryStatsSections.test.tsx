@@ -19,6 +19,7 @@ import {
   RAPID_TACTIC_ENTRY,
   SKETCH_RAPID_ENTRY,
   makeComparison,
+  makeFacepalmComparison,
   makeTacticComparison,
   makeTacticTcEntry,
   makeTcEntry,
@@ -26,6 +27,7 @@ import {
 } from './flawStatsFixtures';
 
 const mocks = vi.hoisted(() => ({
+  getFacepalmComparison: vi.fn(),
   getFlawComparison: vi.fn(),
   getFlawStats: vi.fn(),
   getTacticComparison: vi.fn(),
@@ -35,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/client')>()),
   libraryApi: {
+    getFacepalmComparison: mocks.getFacepalmComparison,
     getFlawComparison: mocks.getFlawComparison,
     getFlawStats: mocks.getFlawStats,
     getTacticComparison: mocks.getTacticComparison,
@@ -50,16 +53,6 @@ vi.mock('@/components/library/FlawTrendChart', () => ({
   FlawTrendChart: ({ trend, windowSize }: { trend: { date: string }[]; windowSize: number }) => (
     <div
       data-testid="trend-stub"
-      data-dates={trend.map((p) => p.date).join(',')}
-      data-window={windowSize}
-    />
-  ),
-}));
-
-vi.mock('@/components/library/FacepalmShareChart', () => ({
-  FacepalmShareChart: ({ trend, windowSize }: { trend: { date: string }[]; windowSize: number }) => (
-    <div
-      data-testid="share-stub"
       data-dates={trend.map((p) => p.date).join(',')}
       data-window={windowSize}
     />
@@ -86,11 +79,13 @@ const STATS: FlawStatsResponse = {
 beforeEach(async () => {
   vi.resetModules();
   localStorage.clear();
+  mocks.getFacepalmComparison.mockReset();
   mocks.getFlawComparison.mockReset();
   mocks.getFlawStats.mockReset();
   mocks.getTacticComparison.mockReset();
   mocks.trackFeature.mockReset();
   mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, RAPID_ENTRY]));
+  mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['blitz', 'rapid']));
   mocks.getFlawStats.mockResolvedValue(STATS);
   mocks.getTacticComparison.mockResolvedValue(
     makeTacticComparison([BLITZ_TACTIC_ENTRY, RAPID_TACTIC_ENTRY]),
@@ -153,15 +148,6 @@ describe('Flaw Stats section (default selection)', () => {
     const trend = await screen.findByTestId('trend-stub');
     expect(trend.getAttribute('data-dates')).toBe('2026-02-02,2026-02-09');
     expect(trend.getAttribute('data-window')).toBe(String(TREND_WINDOW));
-  });
-
-  it('feeds the facepalm share chart the same dates and window as the timeline', async () => {
-    await renderLoaded();
-    const trend = await screen.findByTestId('trend-stub');
-    const share = await screen.findByTestId('share-stub');
-    expect(share.getAttribute('data-dates')).toBe('2026-02-02,2026-02-09');
-    expect(share.getAttribute('data-dates')).toBe(trend.getAttribute('data-dates'));
-    expect(share.getAttribute('data-window')).toBe(trend.getAttribute('data-window'));
   });
 
   it('uses the Fredoka brand font on the three section titles', async () => {
@@ -287,7 +273,6 @@ describe('TC switch', () => {
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 6.12');
     expect(text('flaw-stats-basis')).toBe('All 1,000 blitz games in the current filters are analyzed.');
     expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
-    expect(screen.getByTestId('share-stub').getAttribute('data-dates')).toBe('2026-01-05');
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
       target: 'library-stats-tc',
@@ -402,7 +387,6 @@ describe('empty and failed states', () => {
     await renderLoaded();
     expect(await screen.findByText(/Failed to load flaws timeline/)).not.toBeNull();
     expect(screen.getAllByText(/Failed to load flaws timeline/)).toHaveLength(1);
-    expect(screen.queryByTestId('share-stub')).toBeNull();
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });
 });
@@ -470,6 +454,21 @@ describe('You vs. your opponents section', () => {
     expect(mocks.trackFeature).toHaveBeenCalledWith('popover-open', {
       target: popoverTargetFromTestId('gap-popover-facepalm-tc-rapid'),
     });
+  });
+
+  it('loads the facepalm rows from their own request, once, in parallel with the section', async () => {
+    await renderLoaded();
+    expect(mocks.getFacepalmComparison).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() => expect(screen.getByTestId('gap-popover-facepalm-tc-blitz')).not.toBeNull());
+    expect(mocks.getFacepalmComparison).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the context-tag cards when only the facepalm request fails', async () => {
+    mocks.getFacepalmComparison.mockRejectedValue(new Error('boom'));
+    await renderLoaded();
+    expect(await screen.findByText(/Failed to load facepalm blunders/)).not.toBeNull();
+    expect(screen.getByTestId('context-card-clock')).not.toBeNull();
   });
 
   it('shows only the gate slot below the gate, with no cards', async () => {

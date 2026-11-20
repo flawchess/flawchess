@@ -226,12 +226,13 @@ export interface FlawTrendPoint {
   games_in_window: number;
   per_week_games: number;
   /**
-   * 257 D-03: facepalm blunders / scored blunders pooled over the same window (sum over sum),
-   * the user's own scored blunders only; null when the window holds too few scored blunders.
+   * 257 D-17: the user's facepalm blunders per 100 of their moves, averaged per game over the
+   * same window as blunder_rate (the bottom band under the Blunders line). Null when too few of
+   * the window's blunders are scored yet (D-18).
    */
+  facepalm_rate: number | null;
+  /** 257 D-19: facepalm / scored blunders pooled over the window, for the tooltip; null with the rate or without blunders. */
   facepalm_share: number | null;
-  facepalm_in_window: number;
-  scored_blunders_in_window: number;
 }
 
 /** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */
@@ -417,8 +418,18 @@ export interface FlawComparisonTc {
   bullets: FlawBullet[];
   /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
   tempo_phase_cells: TempoPhaseCell[];
+}
+
+/** One time control's facepalm rows (mirrors backend FacepalmComparisonTc). */
+export interface FacepalmComparisonTc {
+  tc: TimeControlBucket;
   /** Always 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate. */
-  facepalm_bullets: FacepalmBullet[];
+  bullets: FacepalmBullet[];
+}
+
+/** Response for GET /api/library/facepalm-comparison (257 D-21, split from /flaw-comparison). */
+export interface FacepalmComparisonResponse {
+  tcs: FacepalmComparisonTc[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────

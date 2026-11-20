@@ -2,6 +2,9 @@ import { TreePalm } from 'lucide-react';
 
 import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { LoadError } from '@/components/ui/load-error';
+import { FACEPALM_CARD_INFO } from '@/lib/facepalm';
 import {
   FACEPALM_GAP_META,
   FACEPALM_METRICS,
@@ -10,7 +13,7 @@ import {
   metricTestIdSegment,
 } from '@/lib/flawComparisonMeta';
 import { GAP_SAME_WORD, gapWords, type GapCell } from '@/lib/gapBar';
-import type { FacepalmMetric, FlawComparisonTc } from '@/types/library';
+import type { FacepalmBullet, FacepalmMetric, FlawComparisonTc } from '@/types/library';
 import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 
@@ -38,11 +41,12 @@ function facepalmRangeNote(cell: GapCell): string {
 interface FacepalmRowProps {
   metric: FacepalmMetric;
   tcStats: FlawComparisonTc;
+  bullets: readonly FacepalmBullet[];
 }
 
 /** One facepalm row: label, hint, neutral gap bar and the popover, like a context-tag row. */
-function FacepalmRow({ metric, tcStats }: FacepalmRowProps) {
-  const cell = facepalmMetricCell(tcStats, metric);
+function FacepalmRow({ metric, tcStats, bullets }: FacepalmRowProps) {
+  const cell = facepalmMetricCell(bullets, metric);
   if (!cell) return null;
   const meta = FACEPALM_GAP_META[metric];
   const segment = metricTestIdSegment(metric);
@@ -71,26 +75,51 @@ function FacepalmRow({ metric, tcStats }: FacepalmRowProps) {
   );
 }
 
+interface FacepalmCardProps {
+  /** The selected TC of /flaw-comparison: the analyzed count and TC of the popover basis. */
+  tcStats: FlawComparisonTc;
+  /** The selected TC's rows from /facepalm-comparison; undefined while that request loads. */
+  bullets: readonly FacepalmBullet[] | undefined;
+  isError: boolean;
+}
+
 /**
  * The Facepalm blunders card of You vs. your opponents (257 D-11): the user's facepalm
  * blunders per 100 of their moves next to their opponents' in the same games, in total and
  * per type. The bars are neutral (no band, no verdict, no better / worse caption), and a type
- * row compares the user with the opponents' same type only (D-04).
+ * row compares the user with the opponents' same type only (D-04). Its rows come from their
+ * own request (257 D-21), so the card loads and fails on its own without holding the section.
  */
-export function FacepalmCard({ tcStats }: { tcStats: FlawComparisonTc }) {
+export function FacepalmCard({ tcStats, bullets, isError }: FacepalmCardProps) {
+  const renderRows = () => {
+    if (isError) return <LoadError resource="facepalm blunders" />;
+    if (!bullets) {
+      return (
+        <div
+          className="h-32 animate-pulse rounded bg-charcoal"
+          data-testid="context-card-facepalm-loading"
+        />
+      );
+    }
+    return FACEPALM_METRICS.map((metric) => (
+      <FacepalmRow key={metric} metric={metric} tcStats={tcStats} bullets={bullets} />
+    ));
+  };
+
   return (
     <Card data-testid="context-card-facepalm">
       <CardHeader className="flex items-center gap-2">
         <TreePalm className="h-4 w-4" aria-hidden="true" />
         Facepalm blunders
+        <InfoPopover ariaLabel="About facepalm blunders" testId="context-card-facepalm-info">
+          <p>{FACEPALM_CARD_INFO}</p>
+        </InfoPopover>
       </CardHeader>
       <CardBody className="space-y-4">
         <p className="text-sm text-muted-foreground" data-testid="context-card-facepalm-intro">
           {FACEPALM_INTRO}
         </p>
-        {FACEPALM_METRICS.map((metric) => (
-          <FacepalmRow key={metric} metric={metric} tcStats={tcStats} />
-        ))}
+        {renderRows()}
       </CardBody>
     </Card>
   );

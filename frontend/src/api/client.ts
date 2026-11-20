@@ -22,7 +22,7 @@ import type {
 } from '@/types/stats';
 import type { OutOfOpeningStatsResponse } from '@/types/openingOut';
 import type { EndgameGamesResponse, EndgameRankedStatsResponse, EndgameStatsResponse } from '@/types/endgames';
-import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
+import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, FacepalmComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
@@ -490,6 +490,21 @@ export const pushApi = {
 
 // ─── Library API ──────────────────────────────────────────────────────────────
 
+/** Query params of /library/flaw-comparison and /library/facepalm-comparison (same game set). */
+type FlawComparisonParams = {
+  time_control?: string[] | null;
+  platform?: string[] | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  rated?: boolean | null;
+  opponent_type?: string;
+  opponent_strength?: OpponentStrengthRange;
+  color?: string | null;
+  severity?: ('blunder' | 'mistake')[];
+  // Library "Pasted" opt-in, off by default.
+  include_pasted?: boolean;
+};
+
 export const libraryApi = {
   getGames: (params: {
     time_control?: string[] | null;
@@ -566,20 +581,18 @@ export const libraryApi = {
       },
     }).then(r => r.data),
 
-  getFlawComparison: (params: {
-    time_control?: string[] | null;
-    platform?: string[] | null;
-    from_date?: string | null;
-    to_date?: string | null;
-    rated?: boolean | null;
-    opponent_type?: string;
-    opponent_strength?: OpponentStrengthRange;
-    color?: string | null;
-    severity?: ('blunder' | 'mistake')[];
-    // Library "Pasted" opt-in, off by default.
-    include_pasted?: boolean;
-  }) =>
+  getFlawComparison: (params: FlawComparisonParams) =>
     apiClient.get<FlawComparisonResponse>('/library/flaw-comparison', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+      },
+    }).then(r => r.data),
+
+  // 257 D-21: the facepalm rows of "You vs. your opponents", split from /flaw-comparison so
+  // the rest of the section never waits on the facepalm score. Same params.
+  getFacepalmComparison: (params: FlawComparisonParams) =>
+    apiClient.get<FacepalmComparisonResponse>('/library/facepalm-comparison', {
       params: {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),

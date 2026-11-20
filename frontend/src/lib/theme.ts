@@ -515,9 +515,13 @@ export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading.
 export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
-// 257 D-04: the facepalm share line is untyped, so it takes neither type tint (teal / crimson);
-// the neutral light grey of the eval chart line.
-export const FACEPALM_SHARE_LINE = EVAL_CHART_LINE;
+// 257 D-17: the Flaws Timeline splits the Blunders area into two stacked transparent bands
+// under the unchanged Blunders line: facepalm blunders at the bottom in a darker red, the other
+// blunders above in the Blunders red. Untyped (D-04), so neither type tint (teal / crimson).
+export const FACEPALM_BAND_FILL = 'oklch(0.42 0.17 25 / 0.70)';
+export const OTHER_BLUNDER_BAND_FILL = 'oklch(0.58 0.19 25 / 0.25)';
+// The legend / tooltip swatch of the facepalm band: the band hue without the transparency.
+export const FACEPALM_BAND_SWATCH = 'oklch(0.42 0.17 25)';
 
 // Primary line of the per-opening Score over time chart (expanded repertoire row): the
 // rolling expected score from the opening eval.

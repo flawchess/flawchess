@@ -1590,7 +1590,7 @@ async def fetch_flaw_trend_rows(
     by ISO week. One row per filtered game that has oracle move-quality data
     (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC then
     game id (257 D-03: the tie-break makes the order deterministic, and game_id keys the
-    facepalm share counts from fetch_facepalm_share_counts onto these rows).
+    facepalm counts from fetch_facepalm_counts onto these rows).
 
     The oracle columns are populated from lichess analysis (NULL for chess.com /
     unanalyzed games), so the oracle-present gate is what defines "analyzed" here —

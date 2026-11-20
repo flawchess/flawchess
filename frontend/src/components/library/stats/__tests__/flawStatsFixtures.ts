@@ -8,6 +8,7 @@ import { TACTIC_COMPARISON_FAMILIES, type TacticFamily } from '@/lib/tacticCompa
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
   FacepalmBullet,
+  FacepalmComparisonResponse,
   FacepalmMetric,
   FlawBullet,
   FlawComparisonResponse,
@@ -114,6 +115,18 @@ export function makeFacepalmBullet(
   };
 }
 
+/** The three facepalm rows of one TC, with per-row overrides (total, missed win, allowed loss). */
+export function makeFacepalmRows(
+  overrides: Partial<Record<FacepalmMetric, Partial<FacepalmBullet>>> = {},
+): FacepalmBullet[] {
+  return FACEPALM_METRICS.map((tag) => makeFacepalmBullet(tag, overrides[tag]));
+}
+
+/** A /facepalm-comparison payload with the default three rows for each TC. */
+export function makeFacepalmComparison(tcs: readonly TimeControlBucket[]): FacepalmComparisonResponse {
+  return { tcs: tcs.map((tc) => ({ tc, bullets: makeFacepalmRows() })) };
+}
+
 interface TcEntryOptions {
   analyzedN: number;
   /** Coverage denominator; defaults to analyzedN (fully analyzed). */
@@ -124,8 +137,6 @@ interface TcEntryOptions {
   overrides?: Partial<Record<FlawDeltaMetric, Partial<FlawBullet>>>;
   /** Per-cell overrides of the 9 crossed tempo x phase cells, keyed `tempo:phase`. */
   tempoPhase?: Partial<Record<`${FlawTempoMetric}:${FlawPhaseMetric}`, Partial<TempoPhaseCell>>>;
-  /** Per-row overrides of the three facepalm rows (total, missed win, allowed loss). */
-  facepalm?: Partial<Record<FacepalmMetric, Partial<FacepalmBullet>>>;
 }
 
 /** One TC entry with all 12 bullets; blunder and mistake can be overridden per test. */
@@ -143,9 +154,6 @@ export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): Fla
       TEMPO_PHASE_TEMPOS.map((tempo) =>
         makeTempoPhaseCell(tempo, phase, options.tempoPhase?.[`${tempo}:${phase}`]),
       ),
-    ),
-    facepalm_bullets: FACEPALM_METRICS.map((tag) =>
-      makeFacepalmBullet(tag, options.facepalm?.[tag]),
     ),
   };
 }
@@ -215,9 +223,8 @@ export function makeTrendPoint(
     inaccuracy_rate: 9,
     games_in_window: 20,
     per_week_games: 4,
+    facepalm_rate: 1.25,
     facepalm_share: 0.25,
-    facepalm_in_window: 25,
-    scored_blunders_in_window: 100,
     ...overrides,
   };
 }

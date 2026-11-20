@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import { GAUGE_NEUTRAL } from '@/lib/theme';
-import type { FlawComparisonTc } from '@/types/library';
+import type { FacepalmBullet, FlawComparisonTc } from '@/types/library';
 import { FacepalmCard } from '../FacepalmCard';
-import { makeTcEntry } from './flawStatsFixtures';
+import { makeFacepalmRows, makeTcEntry } from './flawStatsFixtures';
 
 afterEach(cleanup);
 
@@ -31,8 +31,14 @@ function normalized(color: string): string {
   return probe.style.color;
 }
 
-function renderCard(tcStats: FlawComparisonTc = makeTcEntry('rapid', { analyzedN: 1841 })): string {
-  render(<FacepalmCard tcStats={tcStats} />);
+const RAPID = makeTcEntry('rapid', { analyzedN: 1841 });
+
+/** `rows` null renders the card while its own request is still loading. */
+function renderCard(
+  rows: readonly FacepalmBullet[] | null = makeFacepalmRows(),
+  { tcStats = RAPID, isError = false }: { tcStats?: FlawComparisonTc; isError?: boolean } = {},
+): string {
+  render(<FacepalmCard tcStats={tcStats} bullets={rows ?? undefined} isError={isError} />);
   return screen.getByTestId('context-card-facepalm').textContent ?? '';
 }
 
@@ -63,12 +69,7 @@ describe('FacepalmCard', () => {
   });
 
   it('renders a significant facepalm cell neutral: neutral dot, plain words', () => {
-    renderCard(
-      makeTcEntry('rapid', {
-        analyzedN: 1841,
-        facepalm: { facepalm: { significant: true, delta: 0.4 } },
-      }),
-    );
+    renderCard(makeFacepalmRows({ facepalm: { significant: true, delta: 0.4 } }));
     expect(screen.getByTestId('context-row-facepalm-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );
@@ -86,12 +87,7 @@ describe('FacepalmCard', () => {
   });
 
   it('puts the no-range note and the too-large sentence in a significant total popover', () => {
-    renderCard(
-      makeTcEntry('rapid', {
-        analyzedN: 1841,
-        facepalm: { facepalm: { significant: true, delta: 0.4 } },
-      }),
-    );
+    renderCard(makeFacepalmRows({ facepalm: { significant: true, delta: 0.4 } }));
     const text = openPopover('gap-popover-facepalm-tc-rapid');
     expect(text).toContain(NO_RANGE);
     expect(text).toContain(TOO_LARGE);
@@ -110,12 +106,7 @@ describe('FacepalmCard', () => {
   });
 
   it('keeps a same gap free of both significance sentences', () => {
-    renderCard(
-      makeTcEntry('rapid', {
-        analyzedN: 1841,
-        facepalm: { facepalm: { delta: 0, player_rate: 0.5, opp_rate: 0.5 } },
-      }),
-    );
+    renderCard(makeFacepalmRows({ facepalm: { delta: 0, player_rate: 0.5, opp_rate: 0.5 } }));
     const text = openPopover('gap-popover-facepalm-tc-rapid');
     expect(text).toContain(NO_RANGE);
     expect(text).not.toContain(COPY_CHANCE);
@@ -131,13 +122,27 @@ describe('FacepalmCard', () => {
   });
 
   it('shows no popover trigger for a row without a gap', () => {
-    renderCard(
-      makeTcEntry('rapid', {
-        analyzedN: 1841,
-        facepalm: { facepalm_allowed_loss: { delta: null, player_rate: 0, opp_rate: 0 } },
-      }),
-    );
+    renderCard(makeFacepalmRows({ facepalm_allowed_loss: { delta: null, player_rate: 0, opp_rate: 0 } }));
     expect(screen.queryByTestId('gap-popover-facepalm-allowed-loss-tc-rapid')).toBeNull();
     expect(screen.getByTestId('gap-popover-facepalm-tc-rapid')).not.toBeNull();
+  });
+
+  it('shows a loading placeholder while its own request is pending, and its own error', () => {
+    renderCard(null);
+    expect(screen.getByTestId('context-card-facepalm-loading')).not.toBeNull();
+    ROW_IDS.forEach((id) => expect(screen.queryByTestId(id)).toBeNull());
+    cleanup();
+    renderCard(null, { isError: true });
+    expect(screen.getByText(/Failed to load facepalm blunders/)).not.toBeNull();
+  });
+
+  it('explains facepalm blunders and the training in the header popover, without probability words', () => {
+    renderCard();
+    fireEvent.click(screen.getByTestId('context-card-facepalm-info'));
+    const body = screen.getByText(/^Facepalm blunders are /);
+    expect(body.textContent).toBe(
+      'Facepalm blunders are blunders that should have been easy to see for a player at your level: our model gives them a facepalm score of 70% or more. Blunder Check trains you to spot them before you move.',
+    );
+    expect(body.textContent).not.toMatch(/probab|likel|chance/i);
   });
 });

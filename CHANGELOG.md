@@ -20,8 +20,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis data: your opponents' blunders now record the same Maia measurements as your own (how many replies were available and how likely the best move was at their rating), the groundwork for comparing your careless blunders with your opponents'.
 - Analysis data: your opponents' blunders now also record how much material the engine's punishing line wins, so they can be scored the same way as your own. The blunder-check drill and the library keep showing only your own blunders.
 - Library: a Facepalm Score filter in the Tags panel on the Games and Flaws tabs narrows your blunders by how obvious they were for a player at your level (Low, Mid, High, or any range on the slider), and each scored blunder shows its Facepalm score as a chip on the Flaws tab, in the analysis move list and in the eval chart tooltip, with a short explanation on hover or tap.
-- Library Stats: a Facepalm share of blunders chart below the Flaws Timeline shows, per time control, how many of the scored blunders in your last 100 games had a facepalm score of 70% or more.
-- Library Stats: a Facepalm blunders card in You vs. your opponents puts your facepalm blunders per 100 of your moves next to your opponents' in the same games, in total and as missed wins and allowed losses. These rows have no typical range yet.
+- Library Stats: the Flaws Timeline splits the Blunders area into a darker band of facepalm blunders (a facepalm score of 70% or more) and the rest, per 100 of your moves, with the share of your blunders they make up in the tooltip. A Facepalm legend entry turns the split off.
+- Library Stats: a Facepalm blunders card in You vs. your opponents puts your facepalm blunders per 100 of your moves next to your opponents' in the same games, in total and as missed wins and allowed losses. These rows have no typical range yet. It loads on its own, so the rest of the section no longer waits for it.
 
 ### Changed
 

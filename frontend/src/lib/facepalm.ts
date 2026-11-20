@@ -34,10 +34,21 @@ const FACEPALM_MID_CUTOFF = 30;
 
 /**
  * Mid / High boundary, included in both (whole percent, UI cutoff, D-09). It is also the stats
- * cut: the facepalm share chart and the Facepalm rows name it. The backend FACEPALM_STATS_MIN is
+ * cut: the Flaws Timeline facepalm band and the Facepalm rows name it. The backend FACEPALM_STATS_MIN is
  * pinned to the same 70% by test.
  */
 export const FACEPALM_HIGH_CUTOFF = 70;
+
+/**
+ * 257 D-20: the info popovers of the Facepalm blunders card and the Flaws Timeline facepalm
+ * band. What a facepalm blunder is, plus the training pointer ("trains you to spot them", not a
+ * promise to reduce them: no training effect is measured). No link, since a hover popover cannot
+ * be pinned to click it.
+ */
+const FACEPALM_DEFINITION = `blunders that should have been easy to see for a player at your level`;
+const FACEPALM_TRAINING = 'Blunder Check trains you to spot them before you move.';
+export const FACEPALM_CARD_INFO = `Facepalm blunders are ${FACEPALM_DEFINITION}: our model gives them a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more. ${FACEPALM_TRAINING}`;
+export const FACEPALM_TIMELINE_INFO = `The darker band shows facepalm blunders: ${FACEPALM_DEFINITION} (facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more). ${FACEPALM_TRAINING}`;
 
 /** Multiplier turning a 0..1 score into a percent. */
 const FACEPALM_PCT_SCALE = 100;

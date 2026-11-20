@@ -32,7 +32,7 @@ import {
   facepalmMetricCell,
   metricTestIdSegment,
 } from '../flawComparisonMeta';
-import { makeFacepalmBullet, makeTcEntry } from '@/components/library/stats/__tests__/flawStatsFixtures';
+import { makeFacepalmBullet, makeFacepalmRows } from '@/components/library/stats/__tests__/flawStatsFixtures';
 
 // Symmetric, like every benchmark band.
 const LO = -0.3;
@@ -210,18 +210,14 @@ describe('facepalm gap metadata', () => {
   });
 
   it('turns a facepalm bullet into a noVerdict cell, and a missing bullet into null', () => {
-    const entry = makeTcEntry('rapid', {
-      analyzedN: 100,
-      facepalm: { facepalm_missed_win: { significant: true, delta: -0.5 } },
-    });
-    const got = facepalmMetricCell(entry, 'facepalm_missed_win');
+    const rows = makeFacepalmRows({ facepalm_missed_win: { significant: true, delta: -0.5 } });
+    const got = facepalmMetricCell(rows, 'facepalm_missed_win');
     expect(got).not.toBeNull();
     expect(got?.noVerdict).toBe(true);
     expect(got?.delta).toBe(-0.5);
     expect(got?.hasZone).toBe(false);
     expect(got ? effectiveVerdict(got) : 'x').toBeNull();
-    const empty = { ...entry, facepalm_bullets: [makeFacepalmBullet('facepalm')] };
-    expect(facepalmMetricCell(empty, 'facepalm_allowed_loss')).toBeNull();
+    expect(facepalmMetricCell([makeFacepalmBullet('facepalm')], 'facepalm_allowed_loss')).toBeNull();
   });
 
   it('maps facepalm metrics to kebab testid segments', () => {
