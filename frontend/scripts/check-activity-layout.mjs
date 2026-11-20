@@ -462,7 +462,7 @@ function buildCases(fc) {
             {
               label: "Herring · foreign",
               value: "100% cleared",
-              sub: "123,456 sequences judged · small sample",
+              sub: "123,456 sequences · small sample",
               dim: true,
               segments: [
                 { value: 1234, color: "#0F8A7A" },
@@ -473,7 +473,7 @@ function buildCases(fc) {
             {
               label: "Blunder · foreign",
               value: "100% caught",
-              sub: "123,456 sequences judged",
+              sub: "123,456 sequences",
               segments: [
                 { value: 1234, color: "#0F8A7A" },
                 { value: 1234, color: "#B44A8E" },

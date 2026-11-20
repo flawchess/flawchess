@@ -438,7 +438,7 @@ function bcDifficultyRow(def,c){
     value:n?`${pctText(ok,n)} ${okName}`:DASH,
     // Per-outcome counts live in the table below: a sub-line listing them
     // overran the chart at phone widths (caught by the layout harness).
-    sub:n?`${num(n)} sequences judged${small?" · small sample":""}`:"No sequences judged yet.",
+    sub:n?`${num(n)} sequences${small?" · small sample":""}`:"No sequences judged yet.",
     segments:[{value:ok,color:def.herring?c.s2:c.win},{value:missed,color:c.loss},
       {value:falseAlarm,color:c.s4}],
     cells:[def.label,n,cleared,caught,missed,falseAlarm,n?pctText(ok,n):DASH]};
