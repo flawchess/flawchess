@@ -40,8 +40,8 @@ Mastered puzzles stop coming back and parked puzzles are set aside, so the Archi
 
 ## Breadcrumbs
 
-- `app/routers/train.py`: session-keyed solve and reveal endpoints
-- `app/models/drill_solve.py`: primary key and `solved_at`
-- `frontend/src/components/train/TrainSolveScreen.tsx`: `trainSession` coupling
-- `frontend/src/hooks/useTrainSession.ts`: session state and solve mutation
-- `frontend/src/lib/analytics.ts`: `FeatureEventMap`
+- `../../../app/routers/train.py`: session-keyed solve and reveal endpoints
+- `../../../app/models/drill_solve.py`: primary key and `solved_at`
+- `../../../frontend/src/components/train/TrainSolveScreen.tsx`: `trainSession` coupling
+- `../../../frontend/src/hooks/useTrainSession.ts`: session state and solve mutation
+- `../../../frontend/src/lib/analytics.ts`: `FeatureEventMap`

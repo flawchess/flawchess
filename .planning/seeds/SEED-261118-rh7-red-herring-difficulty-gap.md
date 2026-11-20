@@ -145,4 +145,4 @@ herring against blunder-sequence difficulty offline by extending the Phase 248 c
   `HERRING_DEGENERATE_MIN_GAP_ES`
 - `app/models/herring_pool.py`, `app/models/drill_solve.py` (`telemetry.guess_ms`, `move_ms`)
 - `scripts/gen_red_herring_pool.py`
-- `.planning/seeds/SEED-261108-dk0-blunder-check-training.md` (arrow oddness, levers for herrings)
+- `closed/SEED-261108-dk0-blunder-check-training.md` (arrow oddness, levers for herrings)

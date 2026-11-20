@@ -13,7 +13,7 @@ Phase 251 puts blunder check on the Today page next to personalized puzzles, and
 sessions. Which layout keeps the Start buttons above the phone fold, makes the both-required rule visible,
 and still has room for the one-line pitch, "How it works" and the per-mode session size?
 
-Decisions behind it: `.planning/seeds/SEED-261108-dk0-blunder-check-training.md`, "Phase 251 decisions".
+Decisions behind it: `../../seeds/closed/SEED-261108-dk0-blunder-check-training.md`, "Phase 251 decisions".
 
 ## How to View
 open .planning/sketches/014-train-today-two-modes/index.html (reuses 005's flame.js/flame.css)

@@ -11,7 +11,7 @@ scope: small. One backend change in the tier-4 claim, tests, one prod deploy. No
 
 ## Problem
 
-`_claim_tier4_blob` (`app/services/eval_queue_service.py`) is a plain-SELECT lottery with no lock and no
+`_claim_tier4_blob` (`../../../app/services/eval_queue_service.py`) is a plain-SELECT lottery with no lock and no
 lease. `/flaw-blob-lease` (`app/routers/eval_remote.py`) hands the picked game to the worker and records
 nothing. Until that worker submits, every other worker can draw the same game. The second submit finds
 nothing pending (`apply_flaw_blob_results` returns `nothing_pending`) and its engine work is discarded.
@@ -46,7 +46,7 @@ lease expires. Two shapes, to be decided in planning:
 Requirements either way:
 
 - The lease expires by itself (a crashed worker must not block a game). TTL from the observed worst cycle:
-  see the timeout notes at the top of `scripts/remote_eval_worker.py` (up to about 500 s at `--workers 1`).
+  see the timeout notes at the top of `../../../scripts/remote_eval_worker.py` (up to about 500 s at `--workers 1`).
 - When every pending game is leased, the claim returns "no work". On prod the worker then tries rung 5
   (best-move backfill) and sleeps; that is acceptable. Do not fall back to handing out a leased game.
 - The bundled server-pool path (`claim_eval_job`, consumed by `eval_drain._full_drain_tick`) and
@@ -89,4 +89,4 @@ so do this after the lease.
 - Do not stop or restart the running prod feeder. A deploy restarts the backend; the feeder and the
   workers tolerate that (they retry), but check the feeder is still alive afterwards with
   `uv run python scripts/repair_short_lines.py status --db prod`.
-- Deploy only through `bin/deploy.sh` or the deploy skill, with the owner's go-ahead.
+- Deploy only through `../../../bin/deploy.sh` or the deploy skill, with the owner's go-ahead.
