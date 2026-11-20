@@ -187,6 +187,11 @@ export interface FlawMarker {
    * backend FlawMarker.facepalm_score.
    */
   facepalm_score?: number | null;
+  /**
+   * 257 D-08: missed win / allowed loss of this blunder, same source and blunder gate as
+   * facepalm_score (null/absent whenever the score is). Mirrors backend FlawMarker.facepalm_type.
+   */
+  facepalm_type?: FacepalmType | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */

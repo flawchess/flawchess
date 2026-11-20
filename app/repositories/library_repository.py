@@ -14,7 +14,7 @@ interpolation of user input.
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import chess
 from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, true
@@ -1386,27 +1386,41 @@ async def fetch_page_game_flaws_both_colors(
     return result
 
 
+class FacepalmChipValue(NamedTuple):
+    """257 D-08: the marker value of one scored owner-side blunder (score plus its type)."""
+
+    score: float
+    facepalm_type: FacepalmType
+
+
 async def fetch_page_facepalm_scores(
     session: AsyncSession,
     user_id: int,
     game_ids: Sequence[int],
-) -> dict[int, dict[int, float]]:
-    """Batch-compute the facepalm score of every scored flaw row for a page of games.
+) -> dict[int, dict[int, FacepalmChipValue]]:
+    """Batch-compute the facepalm score and type of every scored flaw row for a page of games.
 
-    Returns game_id -> {ply: score}; games without a scored row are absent. The score is the
-    query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01, D-04: the eval-chart tooltip and
-    the analysis move-list markers use the library lambda, never a Python computation). Rows
-    whose expression is NULL (unscored) are skipped. Returns owner-side plies only
-    (`player_only_gate` on the game's own user_color): opponent rows carry facts and score in
-    SQL since SEED-261114-iuv Part A step 4, but opponent markers keep a null facepalm score
-    because showing opponent scores is an open product decision (Part B). Callers still gate
-    on severity. User-scoped via GameFlaw.user_id == user_id (IDOR).
+    Returns game_id -> {ply: FacepalmChipValue(score, facepalm_type)}; games without a scored
+    row are absent. The score is the query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01,
+    D-04: the eval-chart tooltip and the analysis move-list markers use the library lambda,
+    never a Python computation); the type is `facepalm_type_expr()` of the same row, selected in
+    the same statement (257 D-08). Rows whose score expression is NULL (unscored) are skipped.
+    Returns owner-side plies only (`player_only_gate` on the game's own user_color): opponent
+    rows carry facts and score in SQL since SEED-261114-iuv Part A step 4, but opponent markers
+    keep a null facepalm score and type because showing opponent scores is an open product
+    decision (Part B; 257 D-06). Callers still gate on severity. User-scoped via
+    GameFlaw.user_id == user_id (IDOR).
     """
     if not game_ids:
         return {}
     score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
     stmt = (
-        select(GameFlaw.game_id, GameFlaw.ply, score)
+        select(
+            GameFlaw.game_id,
+            GameFlaw.ply,
+            score.label("score"),
+            facepalm_type_expr().label("ftype"),
+        )
         .join(Game, Game.id == GameFlaw.game_id)
         .where(
             GameFlaw.user_id == user_id,
@@ -1415,9 +1429,14 @@ async def fetch_page_facepalm_scores(
             score.isnot(None),
         )
     )
-    result: dict[int, dict[int, float]] = {}
-    for game_id, ply, value in (await session.execute(stmt)).all():
-        result.setdefault(game_id, {})[ply] = float(value)
+    result: dict[int, dict[int, FacepalmChipValue]] = {}
+    for game_id, ply, value, ftype in (await session.execute(stmt)).all():
+        narrowed = facepalm_type_from_sql(ftype)
+        if narrowed is None:
+            # Cannot happen while the score is non-NULL: the score needs a known loss and the
+            # type is NULL only for an unknown loss. Skip rather than emit a typeless chip.
+            continue
+        result.setdefault(game_id, {})[ply] = FacepalmChipValue(float(value), narrowed)
     return result
 
 

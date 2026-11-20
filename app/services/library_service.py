@@ -32,6 +32,7 @@ from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
+    FacepalmChipValue,
     TacticOrientation,
     MIN_TACTIC_CHIP_CONFIDENCE,
     _TEMPO_INT_TO_TAG,
@@ -166,7 +167,7 @@ def _build_eval_series(
     tactic_by_ply: dict[int, _TacticByPlyEntry] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
     opening_ply_count: int = 0,
-    facepalm_by_ply: dict[int, float] | None = None,
+    facepalm_by_ply: dict[int, FacepalmChipValue] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -197,9 +198,10 @@ def _build_eval_series(
                        Gates the best/good tiers to out-of-book plies
                        (pos.ply >= opening_ply_count) — book/theory plies never
                        get a best/good label. Defaults to 0 (no book gate).
-        facepalm_by_ply: Optional dict mapping flaw ply -> raw 0..1 facepalm score from
-                       game_flaws (scored rows only). None/missing entry ->
-                       FlawMarker.facepalm_score stays null.
+        facepalm_by_ply: Optional dict mapping flaw ply -> FacepalmChipValue (raw 0..1
+                       facepalm score plus its 257 D-02 type) from game_flaws (scored
+                       owner-side rows only). None/missing entry ->
+                       FlawMarker.facepalm_score and .facepalm_type stay null.
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -380,6 +382,7 @@ def _build_eval_series(
                     tac_missed_conf,
                     tac_missed_depth,
                 ) = tac_entry
+        facepalm = (facepalm_by_ply or {}).get(pos.ply) if severity == "blunder" else None
         flaw_markers.append(
             FlawMarker(
                 ply=pos.ply,
@@ -396,10 +399,10 @@ def _build_eval_series(
                 # Bug fix (253 review WR-01): blunders only. The score is stored on the
                 # flaw row but severity here comes from the live evals, so after a
                 # re-evaluation a stale score could ride on a mistake marker until the
-                # next Maia pass clears it.
-                facepalm_score=(
-                    (facepalm_by_ply or {}).get(pos.ply) if severity == "blunder" else None
-                ),
+                # next Maia pass clears it. The 257 D-08 type shares this gate: it is
+                # null whenever the score is null.
+                facepalm_score=facepalm.score if facepalm is not None else None,
+                facepalm_type=facepalm.facepalm_type if facepalm is not None else None,
             )
         )
 
@@ -586,7 +589,7 @@ def _build_card(
     *,
     tactic_flaw_rows: list[GameFlaw] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
-    facepalm_by_ply: dict[int, float] | None = None,
+    facepalm_by_ply: dict[int, FacepalmChipValue] | None = None,
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows.
 
@@ -628,9 +631,9 @@ def _build_card(
     keeps exact existing behavior. severity_counts, chips, and all stats still
     iterate flaw_rows (player-gated) and are byte-for-byte unchanged.
 
-    facepalm_by_ply maps a flaw ply to its facepalm score, computed by the repository query
-    (fetch_page_facepalm_scores, library lambda); it is never derived in Python here (D-01).
-    A ply without an entry (every non-blunder, every unscored blunder) gets no marker score.
+    facepalm_by_ply maps a flaw ply to its facepalm score and type, computed by the repository
+    query (fetch_page_facepalm_scores, library lambda); never derived in Python here (D-01).
+    A ply without an entry (every non-blunder, every unscored blunder) gets neither.
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]

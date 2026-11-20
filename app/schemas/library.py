@@ -98,6 +98,9 @@ class FlawMarker(BaseModel):
     # blunders are scored). Same value and flooring as FlawListItem.facepalm_score. A ranking,
     # not a probability.
     facepalm_score: float | None = None
+    # 257 D-08: missed win / allowed loss of the same row. Same source and same blunder gate as
+    # facepalm_score, null whenever the score is null.
+    facepalm_type: FacepalmType | None = None
 
 
 class PhaseTransitions(BaseModel):
