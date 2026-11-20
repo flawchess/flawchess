@@ -23,6 +23,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { VariationTree } from '../VariationTree';
 import type { FlawMarkerEntry } from '../VariationTree';
+import { TAC_ALLOWED } from '@/lib/theme';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 
 beforeAll(() => {
@@ -537,7 +538,7 @@ describe('VariationTree', () => {
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmByOpponent: true }]])}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmType: 'allowed_loss', facepalmByOpponent: true }]])}
         onNodeClick={vi.fn()}
       />,
     );
@@ -545,13 +546,29 @@ describe('VariationTree', () => {
     expect(chips.length).toBeGreaterThan(0);
     expect((chips[0] as HTMLElement).textContent).toBe('95%');
     expect((chips[0] as HTMLElement).querySelector('svg.lucide-tree-palm')).not.toBeNull();
+    // 257 D-08: an allowed loss is tinted crimson (jsdom normalizes colour strings).
+    const probe = document.createElement('div');
+    probe.style.color = TAC_ALLOWED;
+    expect(((chips[0] as HTMLElement).querySelector('span') as HTMLElement).style.color).toBe(probe.style.color);
     unmount();
-    render(
+    const { unmount: unmount2 } = render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
         flawMarkerByNodeId={new Map([[2, entry]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+    unmount2();
+    // 257 D-09: a score without a type renders no chip at all.
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957 }]])}
         onNodeClick={vi.fn()}
       />,
     );

@@ -497,6 +497,10 @@ describe('Facepalm chip and severity icon', () => {
       fireEvent.click(screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement);
       const popover = screen.getByTestId('facepalm-badge-7-24-popover');
       expect(popover.textContent).toContain('Facepalm 94%');
+      expect(popover.textContent).toContain('Allowed loss: the move gave away material.');
+      expect(
+        (screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement).getAttribute('aria-label'),
+      ).toBe('Facepalm 94%, allowed loss');
       expect(popover.textContent).toContain(
         "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
       );

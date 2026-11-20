@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   render(
     <>
-      <FacepalmBadgePopover testId={TEST_ID} score={0.946}>
+      <FacepalmBadgePopover testId={TEST_ID} score={0.946} type="allowed_loss">
         <span>Blunder</span>
       </FacepalmBadgePopover>
       <button type="button" data-testid="other-button">
@@ -67,8 +67,15 @@ function focusEl(el: HTMLElement): void {
 }
 
 describe('FacepalmBadgePopover content and name', () => {
-  it('names the trigger with Facepalm and the percent', () => {
-    expect(trigger().getAttribute('aria-label')).toBe('Facepalm 94%');
+  it('names the trigger with Facepalm, the percent and the type', () => {
+    expect(trigger().getAttribute('aria-label')).toBe('Facepalm 94%, allowed loss');
+  });
+
+  it('names the type in the popover body', () => {
+    focusEl(trigger());
+    expect(screen.getByTestId('facepalm-explanation-type').textContent).toBe(
+      'Allowed loss: the move gave away material.',
+    );
   });
 
   it('is closed on render', () => {
