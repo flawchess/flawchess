@@ -4,17 +4,16 @@ milestone: v2.29
 current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
-stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T08:35:34.188Z"
+stopped_at: Phase 257 context gathered
+last_updated: "2026-11-20T11:14:38.976Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: d03d311477b9f49eeb00d5376c28fb7f00b5fc33
+state_head: 0f0aa6a06b7e7ffaf439f0b0144b43cd838d528d
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 63
   total_plans: 93
-  completed_plans: 89
-  percent: 96
+  completed_plans: 90
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -200,6 +199,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 257 added 2026-11-20 (explicit user request via `/gsd-phase @.planning/seeds/SEED-261114-iuv-facepalm-rate-library-stats.md`, seed refined the same day): **Facepalm Rate in the Library Stats** (SEED-261114-iuv). Benchmark-free part only: a stats cut at 0.7 separate from `FACEPALM_SCORE_MIN`, facepalm type per blunder (allowed loss / missed win on the raw material inputs) in the library API, chip colour by type, a facepalm-share chart below the Flaws Timeline (facepalm / scored blunders, pooled over the rolling window, from `game_flaws`), and paired you-vs-opponents rows (total and per type; no type-share statistic). Opponent scoring (seed Part A) is already on prod. Benchmark zones, the clock matrix and the training weighting are deferred to SEED-261120-bzq. Written by hand as 257 (known mature-ROADMAP behavior); `current_phase` stays 252. Next: `/gsd-discuss-phase 257`.
 - Phase 255 added 2026-11-15 (explicit user request; seed recovered the same day from an unsaved `/gsd-explore` session of 2026-11-09): **Feature Discovery Dot Route** (SEED-261115-d0t). One ordered route for the red pulsating dot, one dot at a time, completion stored server-side. Built in its own worktree while Phases 252 and 254 wait on their prod runs; `current_phase` stays 254.
 
 - Phase 247 added 2026-11-08 (explicit user request via `/gsd-phase .planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`, planted the same day from the `/gsd-explore` session on blunder-check selection): **Maia Stats on game_flaws** (SEED-261108-zkp). Eight typed nullable Maia columns on `game_flaws` (played/best/second probability and rank, top-move probability, effective moves) plus a per-game completion stamp; go-forward scoring in eval-apply; local backfill against prod over the tunnel with 8-10 processes in ES-lottery priority order. Prerequisite for blunder check (SEED-261108-dk0); the owner plans to open the next milestone with this phase. Written by hand as 247 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 247`.
@@ -1208,9 +1208,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-19T07:30:00Z
-**Stopped at:** Phase 251 complete, ready to execute Phase 252
-**Resume file:** None
+**Last session:** 2026-11-20T11:14:37.174Z
+**Stopped at:** Phase 257 context gathered
+**Resume file:** .planning/phases/257-facepalm-rate-library-stats/257-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
