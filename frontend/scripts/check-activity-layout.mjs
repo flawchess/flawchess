@@ -474,6 +474,32 @@ function buildCases(fc) {
         }),
     },
     {
+      chart: "stackRows",
+      name: "stackRows puzzle difficulty",
+      invoke: (host) =>
+        fc.stackRows(host, {
+          rows: [
+            {
+              label: "Sharp filler · lichess",
+              value: "100% good",
+              sub: "123,456 puzzles · small sample",
+              dim: true,
+              segments: [
+                { value: 1234, color: "#0F8A7A" },
+                { value: 1234, color: "#B44A8E" },
+                { value: 1234, color: "#3C63D8" },
+              ],
+            },
+            {
+              label: "Herring · foreign",
+              value: "—",
+              sub: "No puzzles solved yet.",
+              segments: [],
+            },
+          ],
+        }),
+    },
+    {
       chart: "sparkline",
       name: "sparkline",
       invoke: (host) => fc.sparkline(host, wave(30, 40, 15), "#B25A28"),

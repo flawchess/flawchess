@@ -32,7 +32,7 @@ from app.models.blunder_check import (
     WindowOutcome,
 )
 from app.models.drill_session import DrillSession
-from app.models.drill_solve import DrillSolve, DrillSource
+from app.models.drill_solve import DrillMoveQuality, DrillSolve, DrillSource
 from app.models.user import User
 from app.routers import admin_activity
 from app.services import activity_queries as queries
@@ -124,6 +124,7 @@ def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
         train=[],
         train_funnel={},
         solves=[],
+        puzzle_difficulty=[],
         blunder_check_sessions=[],
         blunder_check_windows=[],
         blunder_check_difficulty=[],
@@ -1640,6 +1641,93 @@ async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
     # Ended before lead_in_start: never fetched, so no row and no delta.
     assert all(row[0] != before_day.isoformat() for row in rows)
     assert delta(before_day)["windows"] == 0
+
+
+def _puzzle_difficulty(rows: list[list[typing.Any]]) -> dict[int, list[int]]:
+    """fetch_puzzle_difficulty rows keyed by source, zero-filled."""
+    found = {int(r[0]): [int(v) for v in r[1:]] for r in rows}
+    return {int(src): found.get(int(src), [0, 0, 0, 0]) for src in DrillSource}
+
+
+@pytest.mark.asyncio
+async def test_fetch_puzzle_difficulty_splits_by_source(test_engine):
+    """Solved puzzles group by source with the move-quality mix.
+
+    Values are [solves, good, inaccuracy, correct_guess]. Seeded on 2031-03-10:
+    SR good + SR inaccuracy + SR wrong + a legacy SR row (move_quality NULL,
+    correct_move True -> good); herring good; sharp filler wrong. Excluded: an
+    unsolved row and one solved before the window start (this query takes the
+    window start, not the lead-in).
+    """
+    start = datetime.date(2031, 3, 5)
+    noon = datetime.time(12, 0)
+    utc = datetime.timezone.utc
+    solved_day = datetime.datetime.combine(_OUTCOME_DAY, noon, tzinfo=utc)
+    solved_before = datetime.datetime.combine(datetime.date(2031, 3, 4), noon, tzinfo=utc)
+    sr, herring, sharp = (
+        int(DrillSource.SR_ITEM),
+        int(DrillSource.RED_HERRING),
+        int(DrillSource.SHARP_FILLER),
+    )
+    good, inaccuracy, wrong = (
+        int(DrillMoveQuality.GOOD),
+        int(DrillMoveQuality.INACCURACY),
+        int(DrillMoveQuality.WRONG),
+    )
+    # (source, move_quality, correct_move, correct_guess, solved_at)
+    solves = [
+        (sr, good, True, True, solved_day),
+        (sr, inaccuracy, True, False, solved_day),
+        (sr, wrong, False, True, solved_day),
+        (sr, None, True, False, solved_day),  # legacy row: counts as good
+        (herring, good, True, True, solved_day),
+        (sharp, wrong, False, True, solved_day),
+        (sr, None, None, None, None),  # unsolved: excluded
+        (herring, good, True, True, solved_before),  # before the window: excluded
+    ]
+
+    async with test_engine.connect() as conn:
+        baseline = _puzzle_difficulty(
+            await queries.fetch_puzzle_difficulty(conn, start, _OUTCOME_WINDOW_END)
+        )
+
+    (user_id,) = await _fresh_users(test_engine, 1, "pzdiff")
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session, session.begin():
+        drill_session = DrillSession(
+            user_id=user_id,
+            session_date=_OUTCOME_DAY,
+            status="completed",
+            puzzle_count=len(solves),
+            expires_on=_FUTURE_EXPIRY,
+        )
+        session.add(drill_session)
+        await session.flush()
+        session.add_all(
+            DrillSolve(
+                session_id=drill_session.id,
+                position=position,
+                user_id=user_id,
+                game_id=None,
+                ply=position,
+                source=source,
+                move_quality=quality,
+                correct_move=correct_move,
+                correct_guess=correct_guess,
+                solved_at=solved_at,
+            )
+            for position, (source, quality, correct_move, correct_guess, solved_at) in enumerate(
+                solves
+            )
+        )
+
+    async with test_engine.connect() as conn:
+        after = _puzzle_difficulty(
+            await queries.fetch_puzzle_difficulty(conn, start, _OUTCOME_WINDOW_END)
+        )
+
+    delta = {k: [a - b for a, b in zip(after[k], baseline[k], strict=True)] for k in after}
+    assert delta == {sr: [4, 2, 1, 2], herring: [1, 1, 0, 1], sharp: [1, 0, 0, 1]}
 
 
 def _bc_difficulty(rows: list[list[typing.Any]]) -> dict[tuple[int, int], list[int]]:

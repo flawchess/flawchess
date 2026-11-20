@@ -93,6 +93,7 @@ async def build_payload(
                 conn, window.window_start, window.data_start, end
             ),
             solves=await queries.fetch_solves(conn, window.lead_in_start, end),
+            puzzle_difficulty=await queries.fetch_puzzle_difficulty(conn, window.window_start, end),
             blunder_check_sessions=await queries.fetch_blunder_check_sessions(
                 conn, window.window_start, end, today=today
             ),

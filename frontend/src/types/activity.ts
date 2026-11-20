@@ -53,6 +53,12 @@ export interface ActivityStatsPayload {
   };
   solves: (string | number | null)[][];
   /**
+   * Personalized Puzzles solved puzzles by source, `fetch_puzzle_difficulty`: [source (0 SR
+   * item, 1 red herring, 2 sharp filler), solves, good, inaccuracy, correct_guess]. Sources
+   * with no solves are absent.
+   */
+  puzzle_difficulty: number[][];
+  /**
    * Blunder Check sessions per day, `fetch_blunder_check_sessions`: [day, sessions, users,
    * completed, abandoned, open, windows_composed].
    */
