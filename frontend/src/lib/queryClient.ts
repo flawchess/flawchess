@@ -45,6 +45,34 @@ export function axiosErrorExtra(error: unknown): Record<string, unknown> {
   };
 }
 
+declare module '@tanstack/react-query' {
+  interface Register {
+    mutationMeta: {
+      /** 409 `detail` values the caller recovers from by itself (never reported to Sentry). */
+      expectedConflictDetails?: readonly string[];
+    };
+  }
+}
+
+const HTTP_CONFLICT = 409;
+
+/**
+ * Whether a mutation failure is a 409 its caller declared as expected and handles itself.
+ *
+ * WHY (FLAWCHESS-DJ): a blunder-check session played on two devices answers 409 to the
+ * device that fell behind. The drill resyncs from the server, so the 409 is a normal outcome
+ * and reporting it would only add noise.
+ */
+export function isExpectedConflict(
+  error: unknown,
+  expectedDetails: readonly string[] | undefined,
+): boolean {
+  if (expectedDetails === undefined) return false;
+  if (!axios.isAxiosError(error) || error.response?.status !== HTTP_CONFLICT) return false;
+  const detail = extractResponseDetail(error.response.data);
+  return detail !== undefined && expectedDetails.includes(detail);
+}
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
@@ -56,6 +84,7 @@ export const queryClient = new QueryClient({
   }),
   mutationCache: new MutationCache({
     onError: (error, _variables, _context, mutation) => {
+      if (isExpectedConflict(error, mutation.options.meta?.expectedConflictDetails)) return;
       Sentry.captureException(error, {
         tags: { source: 'tanstack-mutation' },
         extra: { mutationKey: mutation.options.mutationKey, ...axiosErrorExtra(error) },

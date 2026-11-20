@@ -171,6 +171,7 @@ export type DrillState =
 
 export type DrillEvent =
   | { type: 'SESSION_READY'; session: BlunderCheckSessionResponse }
+  | { type: 'SESSION_RESYNCED'; session: BlunderCheckSessionResponse }
   | { type: 'WINDOW_LOADED'; response: WindowStartResponse }
   | { type: 'READY_CONFIRMED' }
   | { type: 'WINDOW_BEGUN'; response: WindowStartResponse }
@@ -188,6 +189,19 @@ export type DrillEvent =
   | { type: 'RESET' };
 
 export const initialDrillState: DrillState = { phase: 'idle' };
+
+/** The 409 `detail` when the client's prompt is no longer the open one: re-fetch the window. */
+export const STALE_PROMPT_DETAIL = 'stale_prompt';
+/** The 409 `detail`s that say the session moved on elsewhere: re-fetch the session's progress. */
+export const SESSION_MOVED_DETAILS: readonly string[] = ['window_ended', 'previous_window_open'];
+/** The 409 `detail` of a session that was finished elsewhere: nothing is left to play here. */
+export const SESSION_CLOSED_DETAIL = 'session_closed';
+/** Every 409 `detail` the drill recovers from by itself, so none of them is a bug to report. */
+export const RECOVERABLE_CONFLICT_DETAILS: readonly string[] = [
+  STALE_PROMPT_DETAIL,
+  ...SESSION_MOVED_DETAILS,
+  SESSION_CLOSED_DETAIL,
+];
 
 /** A freshly composed or resumed session: load its current window, or finish it when none is left open. */
 function sessionReady(response: BlunderCheckSessionResponse): DrillState {
@@ -209,6 +223,21 @@ function sessionReady(response: BlunderCheckSessionResponse): DrillState {
     position: response.current_position,
     sessionPoints: response.session_points,
   };
+}
+
+/**
+ * The session moved on without this client (the same session played on another device):
+ * restart from the server's progress, whatever window this client was on.
+ *
+ * Bug fix (FLAWCHESS-DJ): the client used to trust its own window counter. A phone left on a
+ * window's solution asked for the next window after a desktop had already played it, the
+ * server answered 409 `window_ended`, and the drill ended on the generic error screen.
+ */
+function sessionResynced(state: DrillState, response: BlunderCheckSessionResponse): DrillState {
+  if (state.phase === 'idle' || state.phase === 'error' || state.phase === 'session_end') {
+    return state;
+  }
+  return sessionReady(response);
 }
 
 /** The moves and replies already played on the board, in order. */
@@ -654,6 +683,8 @@ export function drillReducer(state: DrillState, event: DrillEvent): DrillState {
       return { phase: 'error', message: event.message };
     case 'SESSION_READY':
       return state.phase === 'idle' ? sessionReady(event.session) : state;
+    case 'SESSION_RESYNCED':
+      return sessionResynced(state, event.session);
     case 'WINDOW_LOADED':
       return windowLoaded(state, event.response);
     case 'READY_CONFIRMED':

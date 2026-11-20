@@ -49,6 +49,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Blunder check: continuing a session on a second device no longer ends in an error on the first one. The device that fell behind now jumps to the sequence that is actually next, or returns to the Today page if the session was finished elsewhere. (quick 261120-j5f)
 - Activity dashboard: Train sessions whose window has passed now show as Abandoned instead of still open, and opening the Train page without starting a session no longer counts as one. (quick 261120-c1x)
 - Analysis: forced mates now rank above any other engine line in the Stockfish card, shortest mate first, so a mate in one gets the best-move star and the solid arrow instead of sitting below a large winning eval.
 - Engine analysis: the Stockfish line saved behind each mistake and blunder (which also drives puzzle solutions and tactic tags) is no longer cut off after one or two moves for newly analyzed games, which happened in about a quarter of positions.

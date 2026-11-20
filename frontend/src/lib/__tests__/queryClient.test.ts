@@ -9,7 +9,7 @@
 import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
 
-import { axiosErrorExtra } from '../queryClient';
+import { axiosErrorExtra, isExpectedConflict } from '../queryClient';
 
 const MAX_CAPTURED_DETAIL_LENGTH = 500;
 
@@ -57,5 +57,20 @@ describe('axiosErrorExtra', () => {
 
   it('returns an empty object for a non-axios error, so it is safe to spread', () => {
     expect(axiosErrorExtra(new Error('boom'))).toEqual({});
+  });
+});
+
+describe('isExpectedConflict', () => {
+  const EXPECTED = ['window_ended', 'stale_prompt'];
+
+  it('is true for a 409 whose detail the caller declared', () => {
+    expect(isExpectedConflict(makeAxiosError(409, { detail: 'window_ended' }), EXPECTED)).toBe(true);
+  });
+
+  it('is false for an undeclared detail, another status, or no declaration', () => {
+    expect(isExpectedConflict(makeAxiosError(409, { detail: 'not_started' }), EXPECTED)).toBe(false);
+    expect(isExpectedConflict(makeAxiosError(500, { detail: 'window_ended' }), EXPECTED)).toBe(false);
+    expect(isExpectedConflict(makeAxiosError(409, { detail: 'window_ended' }), undefined)).toBe(false);
+    expect(isExpectedConflict(new Error('boom'), EXPECTED)).toBe(false);
   });
 });

@@ -47,6 +47,9 @@ import {
   LEAD_IN_START_DELAY_MS,
   MOVE_REPLY_DELAY_MS,
   MS_PER_SECOND,
+  SESSION_CLOSED_DETAIL,
+  SESSION_MOVED_DETAILS,
+  STALE_PROMPT_DETAIL,
   applyUcis,
   bankingProgress,
   drillProgress,
@@ -82,13 +85,21 @@ import type { RevealTreeSnapshot } from '@/lib/trainRevealLines';
 import type { AnswerKind, AnswerResponse } from '@/types/blunderCheck';
 
 const HTTP_CONFLICT = 409;
-/** The `detail` of the 409 the server answers when the client's prompt is no longer the open one. */
-const STALE_PROMPT_DETAIL = 'stale_prompt';
 
 type BlunderCheckSession = ReturnType<typeof useBlunderCheckSession>;
 type StartWindowAsync = BlunderCheckSession['startWindow']['mutateAsync'];
 type BeginWindowAsync = BlunderCheckSession['beginWindow']['mutateAsync'];
 type AnswerAsync = BlunderCheckSession['answer']['mutateAsync'];
+/** What a 409 recovery needs: the server's progress, and the way out when the session is gone. */
+interface ConflictRecovery {
+  fetchOpenSession: BlunderCheckSession['fetchOpenSession'];
+  onSessionGone: () => void;
+}
+interface AnswerApi {
+  answer: AnswerAsync;
+  startWindow: StartWindowAsync;
+  recovery: ConflictRecovery;
+}
 type DrillDispatch = Dispatch<DrillEvent>;
 /** The phases that play the window's board loop (Ready gate, lead-in, prompt, grading, feedback, move + reply). */
 type InWindowState = Extract<
@@ -186,10 +197,58 @@ function flashOf(state: InWindowState): FeedbackFlash | null {
   return flash.amount > 0 || flash.variant === 'neutral' ? flash : null;
 }
 
-function isStalePromptError(error: unknown): boolean {
-  if (!axios.isAxiosError(error) || error.response?.status !== HTTP_CONFLICT) return false;
+/** The `detail` of a 409 answer, else null. */
+function conflictDetail(error: unknown): string | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== HTTP_CONFLICT) return null;
   const data = error.response.data as { detail?: unknown } | undefined;
-  return data?.detail === STALE_PROMPT_DETAIL;
+  return typeof data?.detail === 'string' ? data.detail : null;
+}
+
+function isStalePromptError(error: unknown): boolean {
+  return conflictDetail(error) === STALE_PROMPT_DETAIL;
+}
+
+/**
+ * Server state wins when the session was played on elsewhere. Returns false when the error is
+ * not such a conflict (or the progress could not be fetched), so the caller fails as before.
+ *
+ * Bug fix (FLAWCHESS-DJ): a phone left on a window's solution, while a desktop played the
+ * following windows of the same session, asked for a window that had already ended. The 409
+ * `window_ended` ended the drill on the generic error screen. The drill now jumps to the
+ * window the server says is next, or leaves when the session is no longer the open one.
+ */
+async function recoverFromConflict(
+  error: unknown,
+  sessionId: number,
+  { fetchOpenSession, onSessionGone }: ConflictRecovery,
+  dispatch: DrillDispatch,
+): Promise<boolean> {
+  const detail = conflictDetail(error);
+  if (detail === SESSION_CLOSED_DETAIL) {
+    onSessionGone();
+    return true;
+  }
+  if (detail === null || !SESSION_MOVED_DETAILS.includes(detail)) return false;
+  try {
+    const open = await fetchOpenSession();
+    if (open === null || open.session_id !== sessionId) onSessionGone();
+    else dispatch({ type: 'SESSION_RESYNCED', session: open });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A failed window request: resync when the session moved on elsewhere, else the error phase. */
+async function failOrRecover(
+  error: unknown,
+  sessionId: number,
+  recovery: ConflictRecovery,
+  dispatch: DrillDispatch,
+  message: string,
+): Promise<void> {
+  const recovered = await recoverFromConflict(error, sessionId, recovery, dispatch);
+  if (!recovered) dispatch({ type: 'FAILED', message });
 }
 
 /** Feeds the lead-in replay ticks: a start delay, then one fixed-pace tick per ply. */
@@ -223,11 +282,12 @@ function useAfterAnswerTicks(state: DrillState, dispatch: DrillDispatch): void {
   }, [phase, step, dispatch]);
 }
 
-/** Loads the window the reducer waits on; a failure ends the drill in the error phase. */
+/** Loads the window the reducer waits on; a failure resyncs the session or ends in the error phase. */
 function useWindowLoader(
   state: DrillState,
   dispatch: DrillDispatch,
   startWindow: StartWindowAsync,
+  recovery: ConflictRecovery,
 ): void {
   const loading = state.phase === 'loading_window';
   const sessionId = state.phase === 'loading_window' ? state.session.sessionId : 0;
@@ -239,14 +299,15 @@ function useWindowLoader(
       (response) => {
         if (!cancelled) dispatch({ type: 'WINDOW_LOADED', response });
       },
-      () => {
-        if (!cancelled) dispatch({ type: 'FAILED', message: 'Failed to start the sequence' });
+      (error: unknown) => {
+        if (cancelled) return;
+        void failOrRecover(error, sessionId, recovery, dispatch, 'Failed to start the sequence');
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [loading, sessionId, position, startWindow, dispatch]);
+  }, [loading, sessionId, position, startWindow, recovery, dispatch]);
 }
 
 /**
@@ -257,6 +318,7 @@ function useWindowBeginner(
   state: DrillState,
   dispatch: DrillDispatch,
   beginWindow: BeginWindowAsync,
+  recovery: ConflictRecovery,
 ): void {
   const beginning = state.phase === 'beginning';
   const sessionId = state.phase === 'beginning' ? state.session.sessionId : 0;
@@ -268,14 +330,15 @@ function useWindowBeginner(
       (response) => {
         if (!cancelled) dispatch({ type: 'WINDOW_BEGUN', response });
       },
-      () => {
-        if (!cancelled) dispatch({ type: 'FAILED', message: 'Failed to start the sequence' });
+      (error: unknown) => {
+        if (cancelled) return;
+        void failOrRecover(error, sessionId, recovery, dispatch, 'Failed to start the sequence');
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [beginning, sessionId, position, beginWindow, dispatch]);
+  }, [beginning, sessionId, position, beginWindow, recovery, dispatch]);
 }
 
 /**
@@ -325,14 +388,14 @@ interface AnswerContext {
 /** Server state wins: re-fetch the window after a stale prompt and resume from what it says. */
 async function reloadWindow(
   { sessionId, position }: AnswerContext,
-  startWindow: StartWindowAsync,
+  api: AnswerApi,
   dispatch: DrillDispatch,
 ): Promise<void> {
   try {
-    const response = await startWindow({ sessionId, position });
+    const response = await api.startWindow({ sessionId, position });
     dispatch({ type: 'WINDOW_LOADED', response });
-  } catch {
-    dispatch({ type: 'FAILED', message: 'Failed to reload the sequence' });
+  } catch (error) {
+    await failOrRecover(error, sessionId, api.recovery, dispatch, 'Failed to reload the sequence');
   }
 }
 
@@ -341,7 +404,7 @@ async function postAnswer(
   context: AnswerContext,
   kind: AnswerKind,
   clientElapsedMs: number,
-  api: { answer: AnswerAsync; startWindow: StartWindowAsync },
+  api: AnswerApi,
   dispatch: DrillDispatch,
 ): Promise<void> {
   try {
@@ -354,10 +417,16 @@ async function postAnswer(
     dispatch({ type: 'ANSWER_GRADED', response });
   } catch (error) {
     if (isStalePromptError(error)) {
-      await reloadWindow(context, api.startWindow, dispatch);
+      await reloadWindow(context, api, dispatch);
       return;
     }
-    dispatch({ type: 'FAILED', message: 'Failed to submit the answer' });
+    await failOrRecover(
+      error,
+      context.sessionId,
+      api.recovery,
+      dispatch,
+      'Failed to submit the answer',
+    );
   }
 }
 
@@ -655,7 +724,7 @@ function promptKeyOf(state: DrillState): string {
 function useAnswering(
   state: DrillState,
   dispatch: DrillDispatch,
-  api: { answer: AnswerAsync; startWindow: StartWindowAsync },
+  api: AnswerApi,
 ): { remainingMs: number; lowTime: boolean; handleAnswer: (answer: AnswerKind) => void } {
   // The moment the prompt phase began, for the client_elapsed_ms the server records.
   const promptStartedAt = useRef(0);
@@ -745,6 +814,7 @@ export function BlunderCheckDrill({
   session,
   engine,
   restored,
+  onSessionGone,
 }: {
   state: DrillState;
   dispatch: DrillDispatch;
@@ -753,6 +823,8 @@ export function BlunderCheckDrill({
   engine: TrainGradingEngine;
   /** The solution the tab mounted into after Analyze -> Back, else null. */
   restored: CachedBlunderCheckSolution | null;
+  /** Leave the drill: the session was finished (or replaced) on another device. */
+  onSessionGone: () => void;
 }): ReactElement | null {
   // Suppress the mobile app header while the drill is on screen (same pattern as
   // TrainSolveScreen); the wake lock keeps the phone awake through the countdowns.
@@ -762,13 +834,27 @@ export function BlunderCheckDrill({
   // mutateAsync is stable across renders, so these are safe effect dependencies.
   const startWindowAsync = session.startWindow.mutateAsync;
   const answerAsync = session.answer.mutateAsync;
+  const { fetchOpenSession } = session;
+  // The latest way out, read through a ref: `recovery` is a dependency of the window request
+  // effects, so an unstable callback from the host would re-send those requests on every render.
+  const onSessionGoneRef = useRef(onSessionGone);
+  useEffect(() => {
+    onSessionGoneRef.current = onSessionGone;
+  }, [onSessionGone]);
+  const recovery = useMemo(
+    (): ConflictRecovery => ({
+      fetchOpenSession,
+      onSessionGone: () => onSessionGoneRef.current(),
+    }),
+    [fetchOpenSession],
+  );
   const api = useMemo(
-    () => ({ answer: answerAsync, startWindow: startWindowAsync }),
-    [answerAsync, startWindowAsync],
+    (): AnswerApi => ({ answer: answerAsync, startWindow: startWindowAsync, recovery }),
+    [answerAsync, startWindowAsync, recovery],
   );
 
-  useWindowLoader(state, dispatch, startWindowAsync);
-  useWindowBeginner(state, dispatch, session.beginWindow.mutateAsync);
+  useWindowLoader(state, dispatch, startWindowAsync, recovery);
+  useWindowBeginner(state, dispatch, session.beginWindow.mutateAsync, recovery);
   useLeadInTicks(state, dispatch);
   useAfterAnswerTicks(state, dispatch);
   const { remainingMs, lowTime, handleAnswer } = useAnswering(state, dispatch, api);

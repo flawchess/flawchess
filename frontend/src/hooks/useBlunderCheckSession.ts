@@ -7,9 +7,11 @@
  * handlers in `lib/queryClient.ts` already report failures (frontend/CLAUDE.md).
  */
 
+import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { blunderCheckApi } from '@/api/client';
 import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
+import { RECOVERABLE_CONFLICT_DETAILS } from '@/lib/blunderCheckDrill';
 import type {
   AnswerRequest,
   AnswerResponse,
@@ -22,6 +24,8 @@ import type {
 } from '@/types/blunderCheck';
 
 const OPEN_SESSION_QUERY_KEY = ['blunder-check', 'open-session'] as const;
+/** The drill recovers from these 409s by itself, so they stay out of Sentry (`lib/queryClient.ts`). */
+const DRILL_MUTATION_META = { expectedConflictDetails: RECOVERABLE_CONFLICT_DETAILS };
 
 interface WindowRef {
   sessionId: number;
@@ -47,6 +51,18 @@ export function useBlunderCheckSession() {
     ]);
   };
 
+  // The server's progress right now, bypassing the cache: what the drill resyncs from when
+  // another device moved the session on.
+  const fetchOpenSession = useCallback(
+    (): Promise<BlunderCheckSessionResponse | null> =>
+      queryClient.fetchQuery({
+        queryKey: OPEN_SESSION_QUERY_KEY,
+        queryFn: blunderCheckApi.getOpenSession,
+        staleTime: 0,
+      }),
+    [queryClient],
+  );
+
   const openSession = useQuery<BlunderCheckSessionResponse | null>({
     queryKey: OPEN_SESSION_QUERY_KEY,
     queryFn: blunderCheckApi.getOpenSession,
@@ -59,15 +75,18 @@ export function useBlunderCheckSession() {
 
   const startWindow = useMutation<WindowStartResponse, Error, WindowRef>({
     mutationFn: ({ sessionId, position }) => blunderCheckApi.startWindow(sessionId, position),
+    meta: DRILL_MUTATION_META,
   });
 
   const beginWindow = useMutation<WindowStartResponse, Error, WindowRef>({
     mutationFn: ({ sessionId, position }) => blunderCheckApi.beginWindow(sessionId, position),
+    meta: DRILL_MUTATION_META,
   });
 
   const answer = useMutation<AnswerResponse, Error, AnswerVariables>({
     mutationFn: ({ sessionId, position, body }) =>
       blunderCheckApi.answer(sessionId, position, body),
+    meta: DRILL_MUTATION_META,
   });
 
   const betterMove = useMutation<BetterMoveResponse, Error, BetterMoveVariables>({
@@ -89,6 +108,7 @@ export function useBlunderCheckSession() {
   return {
     openSession,
     refreshOpenSession,
+    fetchOpenSession,
     compose,
     startWindow,
     beginWindow,

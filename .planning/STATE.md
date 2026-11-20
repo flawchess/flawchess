@@ -5,10 +5,10 @@ current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
 stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T08:35:34.188Z"
+last_updated: "2026-11-20T12:53:51.172Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: d03d311477b9f49eeb00d5376c28fb7f00b5fc33
+state_head: be47e7dcbe54584b62de55b0ed2b3f55144e78b0
 progress:
   total_phases: 10
   completed_phases: 63
@@ -27,7 +27,7 @@ Plan: 6
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Completed quick task 261120-c1x: Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time
+Last activity: 2026-11-20 - Completed quick task 261120-j5f: Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ)
 
 Open threads carried forward (not blockers):
 
@@ -1156,6 +1156,7 @@ None active.
 | 261119-x7t | Blunder check: settle a stale open prompt as a timeout on resume and reopen the sequence on a Ready gate | 2026-11-20 | 48316651d | [261119-x7t-blunder-check-settle-a-stale-open-prompt](./quick/261119-x7t-blunder-check-settle-a-stale-open-prompt/) |
 | 261120-c1x | Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time | 2026-11-20 | 3b383db94 | [261120-c1x-activity-pulse-split-train-sessions-into](./quick/261120-c1x-activity-pulse-split-train-sessions-into/) |
 | 179 | Activity Pulse: Blunder Check difficulty card (red herring vs blunder window, own vs foreign game) | 2026-11-20 | d03d31147 | — |
+| 261120-j5f | Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ) | 2026-11-20 | be47e7dcb | [261120-j5f-blunder-check-cross-device-resync-on-sta](./quick/261120-j5f-blunder-check-cross-device-resync-on-sta/) |
 
 ## Deferred Items
 

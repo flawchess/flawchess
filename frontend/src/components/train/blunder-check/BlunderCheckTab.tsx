@@ -319,6 +319,16 @@ export function BlunderCheckTab({
     if (restored === null && levelGateReady && !awaitingLevel) handleStart();
   }, [restored, levelGateReady, awaitingLevel, handleStart]);
 
+  // The way out when the session cannot go on here (the error screen's Back, or a session
+  // finished on another device).
+  const leaveSession = (): void => {
+    dispatch({ type: 'RESET' });
+    // Bug fix (Phase 249 review): the open-session query kept the progress fetched
+    // when the session was composed after a failure mid-session.
+    void session.refreshOpenSession();
+    onExit();
+  };
+
   if (state.phase === 'error') {
     return (
       <div className="mx-auto flex w-full max-w-md flex-col gap-4" data-testid="blunder-check-error">
@@ -326,13 +336,7 @@ export function BlunderCheckTab({
         <Button
           variant="brand-outline"
           className={TRAIN_CTA_BUTTON_CLASS}
-          onClick={() => {
-            dispatch({ type: 'RESET' });
-            // Bug fix (Phase 249 review): the open-session query kept the progress fetched
-            // when the session was composed after a failure mid-session.
-            void session.refreshOpenSession();
-            onExit();
-          }}
+          onClick={leaveSession}
           data-testid="blunder-check-btn-reset"
         >
           Back
@@ -375,6 +379,7 @@ export function BlunderCheckTab({
           session={session}
           engine={gradingEngine}
           restored={restored}
+          onSessionGone={leaveSession}
         />
       </div>
     </div>
