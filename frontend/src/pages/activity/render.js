@@ -321,7 +321,7 @@ function renderTrainCard(){
 
 function renderBlunderCheckSessionsCard(){
   renderSessionOutcomeCard(BCSESS,{chart:"#c-bc-sessions",table:"#t-bc-sessions",
-    legend:"#bc-sessions-legend",servedLabel:"Windows composed",
+    legend:"#bc-sessions-legend",servedLabel:"Sequences composed",
     empty:"No Blunder Check sessions in the selected range."});
 }
 
@@ -390,7 +390,7 @@ function renderSolvesCard(){
 function renderBlunderCheckWindowCards(){
   const c=C();
   const hosts=["#c-bc-windows","#c-bc-score","#c-bc-outcomes"];
-  const noData="No Blunder Check windows judged in the selected range.";
+  const noData="No Blunder Check sequences judged in the selected range.";
   const empty=()=>{
     hosts.forEach(h=>emptyNote(h,noData));
     $("#bc-outcome-legend").innerHTML="";
@@ -407,7 +407,7 @@ function renderBlunderCheckWindowCards(){
   if(!labels.length){ empty(); return; }
 
   barChart($("#c-bc-windows"),{labels,h:220,every:5,
-    series:[{name:"Windows judged",values:tWin,color:c.s2}],
+    series:[{name:"Sequences judged",values:tWin,color:c.s2}],
     extra:i=>[{k:"Users",v:tUsers[i]}]});
   lineChart($("#c-bc-score"),{labels,h:220,every:5,pctAxis:true,yMax:1,
     fmt:v=>Math.round(v*100)+"%",
@@ -438,7 +438,7 @@ function bcDifficultyRow(def,c){
     value:n?`${pctText(ok,n)} ${okName}`:DASH,
     // Per-outcome counts live in the table below: a sub-line listing them
     // overran the chart at phone widths (caught by the layout harness).
-    sub:n?`${num(n)} windows judged${small?" · small sample":""}`:"No windows judged yet.",
+    sub:n?`${num(n)} sequences judged${small?" · small sample":""}`:"No sequences judged yet.",
     segments:[{value:ok,color:def.herring?c.s2:c.win},{value:missed,color:c.loss},
       {value:falseAlarm,color:c.s4}],
     cells:[def.label,n,cleared,caught,missed,falseAlarm,n?pctText(ok,n):DASH]};
@@ -447,7 +447,7 @@ function bcDifficultyRow(def,c){
 function renderBlunderCheckDifficultyCard(){
   const c=C();
   if(!BCDIFF.length){
-    const noData="No Blunder Check windows judged in the selected range.";
+    const noData="No Blunder Check sequences judged in the selected range.";
     emptyNote("#c-bc-difficulty",noData); emptyNote("#t-bc-difficulty",noData);
     $("#bc-difficulty-legend").innerHTML="";
     return;
@@ -456,7 +456,7 @@ function renderBlunderCheckDifficultyCard(){
   legend("#bc-difficulty-legend",[{name:"Cleared",color:c.s2},{name:"Caught",color:c.win},
     {name:"Missed",color:c.loss},{name:"False alarm",color:c.s4}]);
   stackRows($("#c-bc-difficulty"),{rows});
-  table("#t-bc-difficulty",["Windows","Judged","Cleared","Caught","Missed","False alarm","Success"],
+  table("#t-bc-difficulty",["Sequences","Judged","Cleared","Caught","Missed","False alarm","Success"],
     rows.map(r=>r.cells));
 }
 

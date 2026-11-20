@@ -307,18 +307,18 @@ function buildCases(fc) {
             { name: "Open", values: wave(n, 3, 2), color: "#8A7A6B" },
             { name: "Abandoned", values: wave(n, 8, 3), color: "#A8321F" },
           ],
-          extra: () => [{ k: "Windows composed", v: 120 }],
+          extra: () => [{ k: "Sequences composed", v: 120 }],
         }),
     },
     {
       chart: "barChart",
-      name: "barChart every=5 (Blunder Check windows judged)",
+      name: "barChart every=5 (Blunder Check sequences judged)",
       invoke: (host) =>
         fc.barChart(host, {
           labels: DATE_LABELS,
           h: 220,
           every: 5,
-          series: [{ name: "Windows judged", values: wave(n, 60, 30), color: "#0F8A7A" }],
+          series: [{ name: "Sequences judged", values: wave(n, 60, 30), color: "#0F8A7A" }],
           extra: () => [{ k: "Users", v: 4 }],
         }),
     },
@@ -462,7 +462,7 @@ function buildCases(fc) {
             {
               label: "Herring · foreign",
               value: "100% cleared",
-              sub: "123,456 windows judged · small sample",
+              sub: "123,456 sequences judged · small sample",
               dim: true,
               segments: [
                 { value: 1234, color: "#0F8A7A" },
@@ -473,7 +473,7 @@ function buildCases(fc) {
             {
               label: "Blunder · foreign",
               value: "100% caught",
-              sub: "123,456 windows judged",
+              sub: "123,456 sequences judged",
               segments: [
                 { value: 1234, color: "#0F8A7A" },
                 { value: 1234, color: "#B44A8E" },
@@ -483,7 +483,7 @@ function buildCases(fc) {
             {
               label: "Blunder · own",
               value: "—",
-              sub: "No windows judged yet.",
+              sub: "No sequences judged yet.",
               segments: [],
             },
           ],

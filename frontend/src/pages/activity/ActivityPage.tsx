@@ -580,9 +580,9 @@ export default function ActivityPage() {
             </div>
             <div className="grid2">
               <div className="card">
-                <h3>Blunder Check: windows judged per day</h3>
+                <h3>Blunder Check: sequences judged per day</h3>
                 <p className="note">
-                  Windows that ended that day, the same count the weekly leaderboard uses.
+                  Sequences that ended that day, the same count the weekly leaderboard uses.
                 </p>
                 <div className="chart" id="c-bc-windows"></div>
               </div>
@@ -603,13 +603,13 @@ export default function ActivityPage() {
               <div className="chart" id="c-bc-outcomes"></div>
             </div>
             <div className="card">
-              <h3>Blunder Check: difficulty by window type and game ownership</h3>
+              <h3>Blunder Check: difficulty by sequence type and game ownership</h3>
               <p className="note">
-                All windows judged in the selected range, as shares of each row. A red herring is a
-                sequence with no blunder, so its success is Cleared; a blunder window&apos;s success
+                All sequences judged in the selected range, as shares of each row. A red herring is a
+                sequence with no blunder, so its success is Cleared; a blunder sequence&apos;s success
                 is Caught. Own = from the solver&apos;s own game, foreign = from someone else&apos;s.
                 Success is always the first segment, so the four rows compare from the left edge.
-                Rows under 20 windows are faded.
+                Rows under 20 sequences are faded.
               </p>
               <div className="legend" id="bc-difficulty-legend"></div>
               <div className="chart" id="c-bc-difficulty"></div>

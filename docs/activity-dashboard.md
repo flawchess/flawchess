@@ -129,9 +129,13 @@ all count as started: they are created only by an explicit `POST /sessions`.
 
 ### Blunder Check metrics
 
+The page calls them **sequences**; the database and code call the same thing
+a window (`blunder_check_windows`, `window_count`, `WindowOutcome`). The list
+below uses the code names where it points at columns.
+
 - **Sessions by outcome** (`fetch_blunder_check_sessions`): per `session_date`;
-  "windows composed" is `sum(window_count)`.
-- **Windows judged** (`fetch_blunder_check_windows`): windows with
+  "sequences composed" is `sum(window_count)`.
+- **Sequences judged** (`fetch_blunder_check_windows`): windows with
   `outcome IS NOT NULL`, bucketed by the day they ended (`ended_at`). This is
   the same definition as the weekly leaderboard's `fetch_week_bc_aggregates`,
   so the dashboard and the boards agree.
@@ -140,7 +144,7 @@ all count as started: they are created only by an explicit `POST /sessions`.
   accuracy line), so the left edge is already a full 7-day value.
 - **Outcome mix:** Cleared, Caught, Missed and False alarm map to
   `WindowOutcome` values 0 to 3.
-- **Difficulty by window type and ownership** (`fetch_blunder_check_difficulty`):
+- **Difficulty by sequence type and ownership** (`fetch_blunder_check_difficulty`):
   judged windows in the selected range (window start, no lead-in) grouped into
   four rows: red herring or blunder window, own or foreign game. A red herring
   is `window_case = HERRING` (no blunder in the window), so it can only end
