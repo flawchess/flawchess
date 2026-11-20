@@ -31,7 +31,11 @@ from app.core.config import settings
 from app.main import app
 from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
 from app.models.worker_heartbeat import WorkerHeartbeat
-from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
+from app.repositories.worker_heartbeat_repository import (
+    RATE_TAU_1H_HOURS,
+    RATE_TAU_24H_HOURS,
+    upsert_worker_heartbeat,
+)
 from tests.test_eval_worker_endpoints import (
     _BLUNDER_SUBMIT_EVALS_142,
     _FLAW_LEASE_PGN,
@@ -89,6 +93,8 @@ async def _get_worker_heartbeat(
             "evals_submitted": row.evals_submitted,
             "holes_submitted": row.holes_submitted,
             "plies_leased": row.plies_leased,
+            "evals_per_hour_1h": row.evals_per_hour_1h,
+            "evals_per_hour_24h": row.evals_per_hour_24h,
         }
 
 
@@ -99,6 +105,43 @@ async def _delete_worker_heartbeat(
     async with session_maker() as session:
         await session.execute(
             sa.delete(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == worker_id)
+        )
+        await session.commit()
+
+
+async def _upsert_direct(
+    session_maker: async_sessionmaker[AsyncSession],
+    worker_id: str,
+    n_evals: int,
+    n_holes: int = 0,
+    n_plies_leased: int = 0,
+) -> None:
+    """Call upsert_worker_heartbeat directly in its own session and commit."""
+    async with session_maker() as session:
+        await upsert_worker_heartbeat(
+            session,
+            worker_id=worker_id,
+            last_ip="127.0.0.1",
+            sf_version="Stockfish 18",
+            worker_schema_version=None,
+            n_evals=n_evals,
+            n_holes=n_holes,
+            n_plies_leased=n_plies_leased,
+        )
+        await session.commit()
+
+
+async def _backdate_last_seen(
+    session_maker: async_sessionmaker[AsyncSession],
+    worker_id: str,
+    hours: float,
+) -> None:
+    """Set last_seen to `hours` ago so the next upsert sees a deterministic dt."""
+    async with session_maker() as session:
+        await session.execute(
+            update(WorkerHeartbeat)
+            .where(WorkerHeartbeat.worker_id == worker_id)
+            .values(last_seen=sa.func.now() - timedelta(hours=hours))
         )
         await session.commit()
 
@@ -539,3 +582,31 @@ async def _delete_worker_heartbeat_in_session(session: AsyncSession, worker_id: 
     """
     await session.execute(sa.delete(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == worker_id))
     await session.commit()
+
+
+# ── Decayed per-worker eval rates ─────────────────────────────────────────────
+
+_RATE_FIRST_N_EVALS = 120
+_RATE_REL_TOL = 1e-3
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_decayed_rates_first_insert(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A worker's first submit stores rate = n_evals / tau for each column."""
+    worker_id = "w-rate-first"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_FIRST_N_EVALS)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["evals_per_hour_1h"] == pytest.approx(
+            _RATE_FIRST_N_EVALS / RATE_TAU_1H_HOURS, rel=_RATE_REL_TOL
+        )
+        assert hb["evals_per_hour_24h"] == pytest.approx(
+            _RATE_FIRST_N_EVALS / RATE_TAU_24H_HOURS, rel=_RATE_REL_TOL
+        )
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
