@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { popoverTargetFromTestId } from '@/lib/analytics';
 import type { FlawComparisonResponse, FlawStatsResponse } from '@/types/library';
 import {
   BLITZ_ENTRY,
@@ -443,6 +444,34 @@ describe('You vs. your opponents section', () => {
     expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the Facepalm blunders card after the Opponent errors card, with the axis count still 4', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('vs-opponents-section');
+    const cards = within(section).getByTestId('context-tag-cards');
+    const errors = within(cards).getByTestId('context-card-opponent-errors');
+    const facepalm = within(cards).getByTestId('context-card-facepalm');
+    expect(errors.compareDocumentPosition(facepalm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.querySelectorAll('[data-testid$="-axis"]')).toHaveLength(4);
+    expect(facepalm.querySelector('[data-testid$="-bar-band"]')).toBeNull();
+  });
+
+  it('switches the facepalm popovers with the page TC, with no new request', async () => {
+    await renderLoaded();
+    expect(screen.getByTestId('gap-popover-facepalm-tc-rapid')).not.toBeNull();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() => expect(screen.getByTestId('gap-popover-facepalm-tc-blitz')).not.toBeNull());
+    expect(screen.queryByTestId('gap-popover-facepalm-tc-rapid')).toBeNull();
+    expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks the facepalm total popover open under its own target', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('gap-popover-facepalm-tc-rapid'));
+    expect(mocks.trackFeature).toHaveBeenCalledWith('popover-open', {
+      target: popoverTargetFromTestId('gap-popover-facepalm-tc-rapid'),
+    });
+  });
+
   it('shows only the gate slot below the gate, with no cards', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
@@ -455,6 +484,7 @@ describe('You vs. your opponents section', () => {
     );
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
     expect(screen.queryByTestId('tempo-phase-card')).toBeNull();
+    expect(screen.queryByTestId('context-card-facepalm')).toBeNull();
   });
 
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {
@@ -488,6 +518,7 @@ describe('You vs. your opponents section', () => {
       'gap-popover-blunder-tc-rapid',
       'gap-popover-hasty-tc-rapid',
       'gap-popover-unrushed-tc-rapid',
+      'gap-popover-facepalm-tc-rapid',
     ]) {
       // One popover is open at a time: open, read, then the next click closes it.
       fireEvent.click(screen.getByTestId(id));
