@@ -675,7 +675,7 @@ opponent blunder scoring on prod (seed Part A, done: Maia columns 99.2%, line fa
 user blunders). Does not wait for the Phase 252 repair: the gap in line facts is the same on both sides, so it
 does not skew the paired comparison.
 **Requirements**: TBD
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 **Wave 1**
@@ -688,7 +688,7 @@ Plans:
 - [x] 257-03-PLAN.md — Frontend: D-10 type line in every facepalm popover, tinted move-list mini-chip and eval-chart tooltip line, neutral chip colours deleted (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 257-04-PLAN.md — Facepalm share of blunders: pooled share on every Flaws Timeline point from game_flaws (floor 50 scored), chart below the Flaws Timeline (wave 4)
+- [x] 257-04-PLAN.md — Facepalm share of blunders: pooled share on every Flaws Timeline point from game_flaws (floor 50 scored), chart below the Flaws Timeline (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 257-05-PLAN.md — Backend: three paired facepalm rows per 100 user moves in the flaw-comparison payload on the shared anchor, no band, TS mirror and fixtures (wave 5)
