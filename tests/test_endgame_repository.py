@@ -17,10 +17,12 @@ Coverage:
 
 import datetime
 import uuid
+from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import event as sa_event
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
@@ -31,6 +33,7 @@ from app.repositories.endgame_repository import (
     query_endgame_bucket_rows,
     query_endgame_entry_rows,
     query_endgame_games,
+    query_clock_stats_rows,
     query_endgame_performance_rows,
 )
 
@@ -867,3 +870,95 @@ class TestQueryEndgameBucketRows:
         assert {r.game_id for r in bucket_rows} == {game_a.id}
         assert len(endgame_rows) == 1
         assert len(non_endgame_rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# Ranked-sample game_ids restriction (quick 261120-li5)
+# ---------------------------------------------------------------------------
+
+_OUTER_ANY = "games.id = ANY"
+
+
+class TestRankedGameIdsRestriction:
+    """game_ids restricts every endgame row query to the ranked sample, with the
+    restriction applied inside the game_positions aggregation only.
+
+    The outer `games.id = ANY(:ids)` copy used to be applied too. It is redundant for
+    the join/IN queries and made the planner re-run the grouped aggregate once per
+    ranked game (prod: 14.5 s vs 30 ms for one user). The shape test pins its absence.
+    """
+
+    async def _seed_sample(self, db_session: AsyncSession) -> tuple[Game, Game, Game, Game]:
+        # A: endgame, ranked. B: endgame, not ranked. C: no endgame, ranked. D: neither.
+        game_a = await _seed_game(db_session)
+        game_b = await _seed_game(db_session)
+        for game in (game_a, game_b):
+            for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+                await _seed_game_position(db_session, game=game, ply=ply, endgame_class=1)
+        game_c = await _seed_game(db_session)
+        game_d = await _seed_game(db_session)
+        for game in (game_c, game_d):
+            await _seed_game_position(db_session, game=game, ply=10, endgame_class=None)
+        return game_a, game_b, game_c, game_d
+
+    async def _run_all(self, db_session: AsyncSession, game_ids: list[int]) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "user_id": 99999,
+            "time_control": None,
+            "platform": None,
+            "rated": None,
+            "opponent_type": "all",
+            "from_date": None,
+            "to_date": None,
+            "game_ids": game_ids,
+        }
+        endgame_rows, non_endgame_rows = await query_endgame_performance_rows(db_session, **kwargs)
+        return {
+            "entry": await query_endgame_entry_rows(db_session, **kwargs),
+            "bucket": await query_endgame_bucket_rows(db_session, **kwargs),
+            "clock": await query_clock_stats_rows(db_session, **kwargs),
+            "endgame": endgame_rows,
+            "non_endgame": non_endgame_rows,
+        }
+
+    @pytest.mark.asyncio
+    async def test_rows_restricted_to_ranked_ids(self, db_session: AsyncSession) -> None:
+        game_a, _game_b, game_c, _game_d = await self._seed_sample(db_session)
+
+        rows = await self._run_all(db_session, [game_a.id, game_c.id])
+
+        assert {r.game_id for r in rows["entry"]} == {game_a.id}
+        assert {r.game_id for r in rows["bucket"]} == {game_a.id}
+        assert {r.game_id for r in rows["clock"]} == {game_a.id}
+        # Performance rows carry no game_id; the counts prove B and D are excluded.
+        assert len(rows["endgame"]) == 1
+        assert len(rows["non_endgame"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_outer_any_only_on_non_endgame_half(
+        self, db_session: AsyncSession, test_engine: AsyncEngine
+    ) -> None:
+        game_a, _game_b, game_c, _game_d = await self._seed_sample(db_session)
+        statements: list[str] = []
+
+        def _on_exec(
+            conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: Any
+        ) -> None:  # noqa: ANN401
+            if "game_positions" in statement:
+                statements.append(" ".join(statement.split()))
+
+        sa_event.listen(test_engine.sync_engine, "before_cursor_execute", _on_exec)
+        try:
+            await self._run_all(db_session, [game_a.id, game_c.id])
+        finally:
+            sa_event.remove(test_engine.sync_engine, "before_cursor_execute", _on_exec)
+
+        assert len(statements) == 5
+        for stmt in statements:
+            # Every statement keeps the inner (selective) restriction.
+            assert "game_positions.game_id = ANY" in stmt
+            if "games.id NOT IN" in stmt:
+                # NOT IN: the outer predicate is the only ranked-id restriction.
+                assert stmt.count(_OUTER_ANY) == 1
+            else:
+                assert _OUTER_ANY not in stmt, stmt[:200]

@@ -5,10 +5,10 @@ current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
 stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T12:53:51.172Z"
+last_updated: "2026-11-20T14:37:27.766Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: 4fe7eccfc2458c7ff6236d2817ddc2fefa60d2d0
+state_head: da679c89b392bbef69105376743e9cbfbb0c9d25
 progress:
   total_phases: 10
   completed_phases: 63
@@ -27,7 +27,7 @@ Plan: 6
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Completed quick task 261120-j5f: Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ)
+Last activity: 2026-11-20 - Completed quick task 261120-li5: Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries
 
 Open threads carried forward (not blockers):
 
@@ -1157,6 +1157,7 @@ None active.
 | 261120-c1x | Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time | 2026-11-20 | 3b383db94 | [261120-c1x-activity-pulse-split-train-sessions-into](./quick/261120-c1x-activity-pulse-split-train-sessions-into/) |
 | 179 | Activity Pulse: Blunder Check difficulty card (red herring vs blunder window, own vs foreign game) | 2026-11-20 | d03d31147 | — |
 | 261120-j5f | Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ) | 2026-11-20 | 4fe7eccfc | [261120-j5f-blunder-check-cross-device-resync-on-sta](./quick/261120-j5f-blunder-check-cross-device-resync-on-sta/) |
+| 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | da679c89b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
 
 ## Deferred Items
 
