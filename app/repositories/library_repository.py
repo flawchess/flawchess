@@ -34,7 +34,12 @@ from app.repositories.game_flaws_repository import (
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
-from app.services.facepalm_score import facepalm_expr
+from app.services.facepalm_score import (
+    FacepalmType,
+    facepalm_expr,
+    facepalm_type_expr,
+    facepalm_type_from_sql,
+)
 from app.schemas.library import (
     TEMPO_PHASE_PHASES,
     TEMPO_PHASE_TEMPOS,
@@ -985,6 +990,7 @@ def _build_flaw_item(
     pos_two_before: GamePosition | None,
     *,
     facepalm_score: float | None,
+    facepalm_type: FacepalmType | None,
     tactic_families: Sequence[str],
     orientation: TacticOrientation,
     min_tactic_depth: int | None,
@@ -1004,7 +1010,8 @@ def _build_flaw_item(
     are unaffected — the flaw still exists and counts.
 
     `facepalm_score` is the chip value the query computed with the library-lambda expression
-    (D-01): never read from the stored column, never recomputed in Python.
+    (D-01): never read from the stored column, never recomputed in Python. `facepalm_type` is the
+    257 D-02 type of the same row from `facepalm_type_expr`; it is nulled with the score below.
     """
     row_decided_lost = is_decided_lost(
         pos_before.eval_cp if pos_before else None,
@@ -1088,6 +1095,11 @@ def _build_flaw_item(
         missed_tactic_confidence=(flaw.missed_tactic_confidence if missed_visible else None),
         missed_tactic_depth=(flaw.missed_tactic_depth if missed_visible else None),
         facepalm_score=facepalm_score,
+        # 257 D-08: the type is NULL only for an unknown loss, while the score is also NULL for a
+        # missing played probability, spread or best-move probability (244 of 11,020 dev rows),
+        # so the reader nulls the type with the score: a chip needs both, and a typed row
+        # without a score would otherwise leak a type next to no score.
+        facepalm_type=facepalm_type if facepalm_score is not None else None,
     )
 
 
@@ -1278,7 +1290,11 @@ async def query_flaws(
     # Paginate, ordered recent-first.
     # The chip column is added only here, not to base_stmt: the count above does not need it.
     paged_stmt = (
-        base_stmt.add_columns(facepalm_chip.label("facepalm_chip"))
+        base_stmt.add_columns(
+            facepalm_chip.label("facepalm_chip"),
+            # Not labelled `t`: Row.t is a deprecated SQLAlchemy Row attribute.
+            facepalm_type_expr().label("facepalm_type"),
+        )
         .order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
         .offset(offset)
         .limit(limit)
@@ -1293,12 +1309,13 @@ async def query_flaws(
             pos_before,
             pos_two_before,
             facepalm_score=chip,
+            facepalm_type=facepalm_type_from_sql(ftype),
             tactic_families=tactic_families or (),
             orientation=orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
         )
-        for flaw, game, pos_at, pos_before, pos_two_before, chip in rows
+        for flaw, game, pos_at, pos_before, pos_two_before, chip, ftype in rows
     ]
     return items, matched_count
 

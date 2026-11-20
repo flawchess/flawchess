@@ -355,9 +355,15 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         showCount={false}
         showIcon
       />
-      {/* Facepalm chip: its own pill after the severity badge. D-17: scored blunders only. */}
-      {flaw.severity === 'blunder' && flaw.facepalm_score != null && (
-        <FacepalmChip score={flaw.facepalm_score} gameId={flaw.game_id} ply={flaw.ply} />
+      {/* Facepalm chip: its own pill after the severity badge. D-17: scored blunders only.
+          257 D-09: a chip without a type does not exist, so it needs score and type. */}
+      {flaw.severity === 'blunder' && flaw.facepalm_score != null && flaw.facepalm_type != null && (
+        <FacepalmChip
+          score={flaw.facepalm_score}
+          type={flaw.facepalm_type}
+          gameId={flaw.game_id}
+          ply={flaw.ply}
+        />
       )}
 
       {/* Tactic motif chips — dual-chip matrix.

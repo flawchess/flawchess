@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
 from app.services.flaw_delta_zones import FlawDeltaMetric, FlawPhaseMetric, FlawTempoMetric
+from app.services.facepalm_score import FacepalmType
 from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
@@ -244,6 +245,9 @@ class FlawListItem(BaseModel):
     # D-01), set only for the user's own blunders and None when unscored. The frontend floors
     # it to a whole percent. A ranking, not a probability (250 D-01).
     facepalm_score: float | None = None
+    # 257 D-08: missed win / allowed loss of the same row, from facepalm_type_expr (D-02). Null
+    # whenever facepalm_score is null, so a chip always has both.
+    facepalm_type: FacepalmType | None = None
 
 
 class LibraryFlawsResponse(BaseModel):

@@ -36,6 +36,12 @@ export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
 export type TacticOrientation = 'either' | 'missed' | 'allowed';
 
 /** Analysis state of a game (whether engine evals are present). */
+/**
+ * 257 D-02: the type of a scored blunder. A missed win passed up material the best move won; an
+ * allowed loss gave material away. Mirrors backend FacepalmType (facepalm_score.py).
+ */
+export type FacepalmType = 'missed_win' | 'allowed_loss';
+
 export type AnalysisState = 'analyzed' | 'no_engine_analysis';
 
 // ─── Game card (GET /api/library/games) ──────────────────────────────────────
@@ -295,6 +301,12 @@ export interface FlawListItem {
    * the blunder was, not a probability. Mirrors backend FlawListItem.facepalm_score.
    */
   facepalm_score: number | null;
+  /**
+   * 257 D-08: missed win / allowed loss of the same blunder (backend facepalm_type_expr). Null
+   * whenever facepalm_score is null; the chip tints by it and a scored row without a type shows
+   * no chip. Mirrors backend FlawListItem.facepalm_type.
+   */
+  facepalm_type: FacepalmType | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */

@@ -17,6 +17,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  TAC_ALLOWED,
+  TAC_ALLOWED_BG,
+  TAC_ALLOWED_BORDER,
+  TAC_MISSED,
+  TAC_MISSED_BG,
+} from '@/lib/theme';
 
 // Stub Tooltip so tests don't need a TooltipProvider wrapper.
 vi.mock('@/components/ui/tooltip', () => ({
@@ -144,6 +151,7 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     move_seconds: 8.4,
     best_move: null,
     facepalm_score: null,
+    facepalm_type: null,
     // Tactic motif fields — null by default
     allowed_tactic_motif: null,
     allowed_tactic_confidence: null,
@@ -449,9 +457,22 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Facepalm chip and severity icon', () => {
+  /** jsdom normalizes color strings (oklch(0.50 ..) -> oklch(0.5 ..)); compare normalized forms. */
+function normalizedProp(prop: 'color' | 'backgroundColor' | 'borderColor', value: string): string {
+  const probe = document.createElement('div');
+  probe.style[prop] = value;
+  return probe.style[prop];
+}
+
+/** The tinted pill span inside the first (button) trigger of the chip. */
+function chipPill(): HTMLElement {
+  const trigger = screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement;
+  return trigger.querySelector('span') as HTMLElement;
+}
+
+describe('Facepalm chip and severity icon', () => {
     it('shows the facepalm score in its own chip, not in the Blunder badge', () => {
-      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       const badge = screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement;
       expect(badge.textContent).toBe('??Blunder');
       const chip = screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement;
@@ -467,12 +488,12 @@ describe('FlawCard', () => {
     });
 
     it('renders one trigger per body copy (mobile and desktop)', () => {
-      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       expect(screen.getAllByTestId('facepalm-badge-7-24')).toHaveLength(2);
     });
 
     it('opens the Facepalm popover with the explanation on click', () => {
-      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       fireEvent.click(screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement);
       const popover = screen.getByTestId('facepalm-badge-7-24-popover');
       expect(popover.textContent).toContain('Facepalm 94%');
@@ -482,7 +503,7 @@ describe('FlawCard', () => {
     });
 
     it('floors 0.697 to 69%', () => {
-      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.697, game_id: 7, ply: 24 })} />);
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.697, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       expect((screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement).textContent).toContain('69%');
     });
 
@@ -494,9 +515,46 @@ describe('FlawCard', () => {
       expect((screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement).textContent).not.toContain('%');
     });
 
+    it('tints an allowed-loss chip crimson (257 D-08)', () => {
+      render(
+        <FlawCard
+          flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })}
+        />,
+      );
+      const pill = chipPill();
+      expect(pill.style.color).toBe(normalizedProp('color', TAC_ALLOWED));
+      expect(pill.style.backgroundColor).toBe(normalizedProp('backgroundColor', TAC_ALLOWED_BG));
+      expect(pill.style.borderColor).toBe(normalizedProp('borderColor', TAC_ALLOWED_BORDER));
+      expect(pill.style.color).not.toBe('');
+      expect(pill.style.backgroundColor).not.toBe('');
+      expect(pill.style.borderColor).not.toBe('');
+    });
+
+    it('tints a missed-win chip teal (257 D-08)', () => {
+      render(
+        <FlawCard
+          flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: 'missed_win', game_id: 7, ply: 24 })}
+        />,
+      );
+      const pill = chipPill();
+      expect(pill.style.color).toBe(normalizedProp('color', TAC_MISSED));
+      expect(pill.style.backgroundColor).toBe(normalizedProp('backgroundColor', TAC_MISSED_BG));
+      expect(pill.style.borderColor).toBe(normalizedProp('borderColor', TAC_MISSED));
+      expect(pill.style.color).not.toBe('');
+    });
+
+    it('a scored blunder without a type shows no Facepalm chip (257 D-09)', () => {
+      const { container } = render(
+        <FlawCard
+          flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, facepalm_type: null, game_id: 7, ply: 24 })}
+        />,
+      );
+      expect(container.querySelectorAll('[data-testid^="facepalm-badge-"]')).toHaveLength(0);
+    });
+
     it('a mistake with a score shows no percent and no trigger', () => {
       const { container } = render(
-        <FlawCard flaw={makeFlaw({ severity: 'mistake', facepalm_score: 0.8, game_id: 7, ply: 24 })} />,
+        <FlawCard flaw={makeFlaw({ severity: 'mistake', facepalm_score: 0.8, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />,
       );
       expect(container.querySelectorAll('[data-testid^="facepalm-badge-"]')).toHaveLength(0);
       expect((screen.getAllByTestId('severity-mistake-7')[0] as HTMLElement).textContent).not.toContain('%');

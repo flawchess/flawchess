@@ -2574,6 +2574,26 @@ class TestFacepalmFilterEndToEnd:
         assert "facepalm_score" in by_key[(game1, 6)]
         assert by_key[(game1, 6)]["facepalm_score"] is None
 
+    @pytest.mark.asyncio
+    async def test_flaws_payload_carries_facepalm_type(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        """Every row carries facepalm_type: the 0.95 seed loses material (allowed loss), an unscored row is null."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaws",
+                params={"limit": 100},
+                headers=facepalm_test_state["headers"],
+            )
+        assert resp.status_code == 200
+        by_key = {(f["game_id"], f["ply"]): f for f in resp.json()["flaws"]}
+        game1 = facepalm_test_state["game1"]
+        assert by_key[(game1, 2)]["facepalm_type"] == "allowed_loss"
+        assert "facepalm_type" in by_key[(game1, 6)]
+        assert by_key[(game1, 6)]["facepalm_type"] is None
+
 
 # ---------------------------------------------------------------------------
 # Facepalm range filter (Phase 253): GET /library/games through the single flaw EXISTS

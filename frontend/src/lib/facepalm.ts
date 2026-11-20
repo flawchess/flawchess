@@ -15,6 +15,9 @@
  * the react-query key are unchanged. Cloned in spirit from tacticDepth.ts.
  */
 
+import { TAC_ALLOWED, TAC_ALLOWED_BG, TAC_ALLOWED_BORDER, TAC_MISSED, TAC_MISSED_BG } from '@/lib/theme';
+import type { FacepalmType } from '@/types/library';
+
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
 
 /** Slider domain minimum (whole percent). */
@@ -134,3 +137,22 @@ export function toFacepalmPct(score: number): number {
   const pct = Math.floor(score * FACEPALM_PCT_SCALE);
   return Math.max(FACEPALM_PCT_MIN, Math.min(FACEPALM_PCT_MAX, pct));
 }
+
+// ─── Facepalm type tint (257 D-08) ──────────────────────────────────────────
+
+/** Inline colours of a type-tinted Facepalm chip. */
+export interface FacepalmTypeStyle {
+  color: string;
+  bg: string;
+  border: string;
+}
+
+/**
+ * 257 D-08: teal for a missed win, crimson for an allowed loss, the same hues as the tactic chips
+ * of the same orientation. The missed border is the full teal and the allowed border the
+ * lower-alpha crimson (the TacticMotifChip convention, which keeps the crimson fill legible).
+ */
+export const FACEPALM_TYPE_STYLE: Record<FacepalmType, FacepalmTypeStyle> = {
+  missed_win: { color: TAC_MISSED, bg: TAC_MISSED_BG, border: TAC_MISSED },
+  allowed_loss: { color: TAC_ALLOWED, bg: TAC_ALLOWED_BG, border: TAC_ALLOWED_BORDER },
+};
