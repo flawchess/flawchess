@@ -18,8 +18,9 @@ patching rationale.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -31,7 +32,11 @@ from app.core.config import settings
 from app.main import app
 from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
 from app.models.worker_heartbeat import WorkerHeartbeat
-from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
+from app.repositories.worker_heartbeat_repository import (
+    RATE_TAU_1H_HOURS,
+    RATE_TAU_24H_HOURS,
+    upsert_worker_heartbeat,
+)
 from tests.test_eval_worker_endpoints import (
     _BLUNDER_SUBMIT_EVALS_142,
     _FLAW_LEASE_PGN,
@@ -89,6 +94,8 @@ async def _get_worker_heartbeat(
             "evals_submitted": row.evals_submitted,
             "holes_submitted": row.holes_submitted,
             "plies_leased": row.plies_leased,
+            "evals_per_hour_1h": row.evals_per_hour_1h,
+            "evals_per_hour_24h": row.evals_per_hour_24h,
         }
 
 
@@ -99,6 +106,43 @@ async def _delete_worker_heartbeat(
     async with session_maker() as session:
         await session.execute(
             sa.delete(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == worker_id)
+        )
+        await session.commit()
+
+
+async def _upsert_direct(
+    session_maker: async_sessionmaker[AsyncSession],
+    worker_id: str,
+    n_evals: int,
+    n_holes: int = 0,
+    n_plies_leased: int = 0,
+) -> None:
+    """Call upsert_worker_heartbeat directly in its own session and commit."""
+    async with session_maker() as session:
+        await upsert_worker_heartbeat(
+            session,
+            worker_id=worker_id,
+            last_ip="127.0.0.1",
+            sf_version="Stockfish 18",
+            worker_schema_version=None,
+            n_evals=n_evals,
+            n_holes=n_holes,
+            n_plies_leased=n_plies_leased,
+        )
+        await session.commit()
+
+
+async def _backdate_last_seen(
+    session_maker: async_sessionmaker[AsyncSession],
+    worker_id: str,
+    hours: float,
+) -> None:
+    """Set last_seen to `hours` ago so the next upsert sees a deterministic dt."""
+    async with session_maker() as session:
+        await session.execute(
+            update(WorkerHeartbeat)
+            .where(WorkerHeartbeat.worker_id == worker_id)
+            .values(last_seen=sa.func.now() - timedelta(hours=hours))
         )
         await session.commit()
 
@@ -539,3 +583,216 @@ async def _delete_worker_heartbeat_in_session(session: AsyncSession, worker_id: 
     """
     await session.execute(sa.delete(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == worker_id))
     await session.commit()
+
+
+# ── Decayed per-worker eval rates ─────────────────────────────────────────────
+
+_RATE_FIRST_N_EVALS = 120
+_RATE_REL_TOL = 1e-3
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_decayed_rates_first_insert(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A worker's first submit stores rate = n_evals / tau for each column."""
+    worker_id = "w-rate-first"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_FIRST_N_EVALS)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["evals_per_hour_1h"] == pytest.approx(
+            _RATE_FIRST_N_EVALS / RATE_TAU_1H_HOURS, rel=_RATE_REL_TOL
+        )
+        assert hb["evals_per_hour_24h"] == pytest.approx(
+            _RATE_FIRST_N_EVALS / RATE_TAU_24H_HOURS, rel=_RATE_REL_TOL
+        )
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+_RATE_N1 = 120
+_RATE_N2 = 60
+_RATE_N1_HOLES = 1
+_RATE_GAP_HOURS = 2.0
+_RATE_LONG_GAP_HOURS = 60 * 24.0  # 60 days
+_RATE_NEAR_ZERO = 1e-15
+
+# keep in sync with the WorkerHeartbeat docstring (app/models/worker_heartbeat.py)
+_READ_TIME_1H_EXPR = (
+    "evals_per_hour_1h * exp(-least(extract(epoch from now() - last_seen) / 3600.0, 50))"
+)
+_READ_TIME_24H_EXPR = (
+    "evals_per_hour_24h * exp(-least(extract(epoch from now() - last_seen) / 86400.0, 50))"
+)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_decayed_rates_decay_then_add(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Second submit decays the stored rate by exp(-dt/tau) then adds n/tau; the 1h
+    column decays faster than the 24h one; the pre-existing counters are unchanged."""
+    worker_id = "w-rate-decay"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(
+            eval_worker_session_maker,
+            worker_id,
+            _RATE_N1,
+            n_holes=_RATE_N1_HOLES,
+            n_plies_leased=_RATE_N1,
+        )
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_GAP_HOURS)
+        await _upsert_direct(
+            eval_worker_session_maker, worker_id, _RATE_N2, n_plies_leased=_RATE_N2
+        )
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        r1h = hb["evals_per_hour_1h"]
+        r24h = hb["evals_per_hour_24h"]
+        assert isinstance(r1h, float) and isinstance(r24h, float)
+
+        exp_1h = _RATE_N1 / RATE_TAU_1H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS)
+        exp_1h += _RATE_N2 / RATE_TAU_1H_HOURS
+        exp_24h = _RATE_N1 / RATE_TAU_24H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS)
+        exp_24h += _RATE_N2 / RATE_TAU_24H_HOURS
+        assert r1h == pytest.approx(exp_1h, rel=_RATE_REL_TOL)
+        assert r24h == pytest.approx(exp_24h, rel=_RATE_REL_TOL)
+
+        # Decay factors recovered from the stored row: 1h decays more than 24h.
+        factor_1h = (r1h - _RATE_N2 / RATE_TAU_1H_HOURS) / (_RATE_N1 / RATE_TAU_1H_HOURS)
+        factor_24h = (r24h - _RATE_N2 / RATE_TAU_24H_HOURS) / (_RATE_N1 / RATE_TAU_24H_HOURS)
+        assert factor_1h == pytest.approx(math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS), rel=1e-2)
+        assert factor_24h == pytest.approx(
+            math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS), rel=_RATE_REL_TOL
+        )
+        assert factor_1h < factor_24h
+
+        # Pre-existing counters behave exactly as before.
+        assert hb["submit_count"] == 2
+        assert hb["evals_submitted"] == _RATE_N1 + _RATE_N2
+        assert hb["holes_submitted"] == _RATE_N1_HOLES
+        assert hb["plies_leased"] == _RATE_N1 + _RATE_N2
+        assert hb["worker_schema_version"] is None
+        assert hb["sf_version"] == "Stockfish 18"
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_read_time_decay_expression(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """The read-time expressions documented in the WorkerHeartbeat docstring run
+    without error and return the stored rate decayed to now(), even after 60 days."""
+    worker_id = "w-rate-read"
+
+    async def _read_expressions() -> tuple[float, float]:
+        async with eval_worker_session_maker() as session:
+            row = (
+                await session.execute(
+                    sa.text(
+                        f"SELECT {_READ_TIME_1H_EXPR}, {_READ_TIME_24H_EXPR} "
+                        "FROM worker_heartbeats WHERE worker_id = :wid"
+                    ),
+                    {"wid": worker_id},
+                )
+            ).one()
+            return float(row[0]), float(row[1])
+
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N1)
+
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_GAP_HOURS)
+        read_1h, read_24h = await _read_expressions()
+        assert read_1h == pytest.approx(
+            _RATE_N1 / RATE_TAU_1H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_1H_HOURS),
+            rel=_RATE_REL_TOL,
+        )
+        assert read_24h == pytest.approx(
+            _RATE_N1 / RATE_TAU_24H_HOURS * math.exp(-_RATE_GAP_HOURS / RATE_TAU_24H_HOURS),
+            rel=_RATE_REL_TOL,
+        )
+
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_LONG_GAP_HOURS)
+        read_1h, read_24h = await _read_expressions()
+        assert read_1h < _RATE_NEAR_ZERO
+        assert read_24h < _RATE_NEAR_ZERO
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+_RATE_ZERO_RUN_STEP_HOURS = 49.0
+_RATE_ZERO_RUN_STEPS = 20
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_rates_survive_long_offline_gap(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A worker returning after 60 days must still get its heartbeat applied: the
+    1h exponent (1440) is past the float8 exp underflow (~745), so without
+    MAX_DECAY_EXPONENT the statement raises and the SAVEPOINT swallows it."""
+    capture = Mock()
+    monkeypatch.setattr(
+        "app.repositories.worker_heartbeat_repository.sentry_sdk.capture_exception", capture
+    )
+    worker_id = "w-rate-gap"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N1)
+        await _backdate_last_seen(eval_worker_session_maker, worker_id, _RATE_LONG_GAP_HOURS)
+        await _upsert_direct(eval_worker_session_maker, worker_id, _RATE_N2)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["submit_count"] == 2
+        assert hb["evals_submitted"] == _RATE_N1 + _RATE_N2
+        assert hb["evals_per_hour_1h"] == pytest.approx(
+            _RATE_N2 / RATE_TAU_1H_HOURS, rel=_RATE_REL_TOL
+        )
+        assert hb["evals_per_hour_24h"] == pytest.approx(
+            _RATE_N2 / RATE_TAU_24H_HOURS, rel=_RATE_REL_TOL
+        )
+        capture.assert_not_called()
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_zero_eval_submits_never_underflow(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A run of zero-eval submits decays the stored rate toward 0 without ever
+    hitting float8 multiply underflow (which the SAVEPOINT would swallow, freezing
+    the row): the _RATE_ZERO_FLOOR snaps tiny decayed terms to exactly 0."""
+    capture = Mock()
+    monkeypatch.setattr(
+        "app.repositories.worker_heartbeat_repository.sentry_sdk.capture_exception", capture
+    )
+    worker_id = "w-rate-zero"
+    try:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)
+        await _upsert_direct(eval_worker_session_maker, worker_id, 1)
+        for _ in range(_RATE_ZERO_RUN_STEPS):
+            await _backdate_last_seen(
+                eval_worker_session_maker, worker_id, _RATE_ZERO_RUN_STEP_HOURS
+            )
+            await _upsert_direct(eval_worker_session_maker, worker_id, 0)
+
+        hb = await _get_worker_heartbeat(eval_worker_session_maker, worker_id)
+        assert hb is not None
+        assert hb["submit_count"] == _RATE_ZERO_RUN_STEPS + 1
+        assert hb["evals_submitted"] == 1
+        assert hb["evals_per_hour_1h"] == 0.0
+        assert hb["evals_per_hour_24h"] == 0.0
+        capture.assert_not_called()
+    finally:
+        await _delete_worker_heartbeat(eval_worker_session_maker, worker_id)

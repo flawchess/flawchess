@@ -1775,14 +1775,37 @@ describe('createWorkerPool: watchdog', () => {
     const result = await gradePromise;
     expect(settled).toBe(true);
     expect(worker.messages).toContain('stop');
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     expect(result.size).toBe(0);
+    // Fourth pass: the kill still happens (asserted above), but a tab that is
+    // STILL hidden with the budget spent is throttling, so it is not reported.
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('FLAWCHESS-9G: a tab that comes back visible after spending the whole hidden budget still reports the kill, with the spent budget in context', async () => {
+    const pool = createWorkerPool();
+    const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
+    const worker = createdWorkers[0]!;
+    driveInit(worker);
+
+    setVisibility('hidden');
+    for (let i = 0; i < MAX_WATCHDOG_HIDDEN_REARMS; i++) {
+      await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+    }
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    const result = await gradePromise;
+    expect(worker.messages).toContain('stop');
+    expect(result.size).toBe(0);
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     const [, ctx] = vi.mocked(Sentry.captureException).mock.calls[0]!;
     const ctxObj = ctx as { contexts: { stockfishWatchdog: Record<string, unknown> } };
     expect(ctxObj.contexts.stockfishWatchdog).toEqual(
       expect.objectContaining({
         hiddenRearms: MAX_WATCHDOG_HIDDEN_REARMS,
-        visibilityState: 'hidden',
+        visibilityState: 'visible',
       }),
     );
   });

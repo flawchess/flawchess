@@ -56,6 +56,15 @@ Term rules (identical in both twins):
   its term at build time in both twins, so a NULL unused input never unscores a row.
 - There is no forcing-flag input (254 D-10).
 
+Facepalm type (257 D-02): every scored blunder is either a missed win or an allowed loss, decided
+on the same ``loss`` and ``missed`` inputs the score reads (material units, after the model's
+floors, caps and depth aggregation): allowed loss when ``loss > 0 and loss >= missed`` (a tie is
+an allowed loss), missed win otherwise (a row with no material in either line is a missed win).
+The type is NULL / None exactly when the loss input is unknown. It takes no lambda and no fitted
+coefficient: the model weights lost material about three times as much as a missed gain, so the
+types are only ever compared with the same type of the opponents (257 D-04). Twins:
+``facepalm_type`` (Python) and ``facepalm_type_sql`` / ``facepalm_type_expr`` (SQL).
+
 The formula exists twice: ``facepalm_score`` (Python) and ``facepalm_score_sql`` (SQLAlchemy
 expression, so selection stays a plain SQL filter on game_flaws). If either side changes,
 update the other; ``tests/services/test_facepalm_score.py`` pins them together. The default
@@ -69,9 +78,9 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Final, NamedTuple
+from typing import Any, Final, Literal, NamedTuple
 
-from sqlalchemy import ColumnElement, Float, case, func, literal, null, type_coerce
+from sqlalchemy import ColumnElement, Float, String, and_, case, func, literal, null, type_coerce
 
 from app.models.game_flaw import GameFlaw
 from app.services.blunder_check_rules import (
@@ -114,20 +123,32 @@ from app.services.line_material import material_at_depth
 
 __all__ = [
     "FACEPALM_MODEL",
+    "FACEPALM_TYPES",
     "FacepalmColumns",
     "FacepalmFacts",
     "FacepalmModel",
+    "FacepalmType",
     "MaterialForm",
     "MaterialInput",
     "SpreadForm",
     "facepalm_expr",
     "facepalm_score",
     "facepalm_score_sql",
+    "facepalm_type",
+    "facepalm_type_expr",
+    "facepalm_type_from_sql",
+    "facepalm_type_of",
+    "facepalm_type_sql",
     "loss_feature",
     "material_loss",
     "material_missed",
     "missed_feature",
 ]
+
+# 257 D-02: the type of a scored blunder. The strings travel through the library payloads and the
+# frontend mirror (frontend/src/types/library.ts), so renaming them touches every reader.
+FacepalmType = Literal["missed_win", "allowed_loss"]
+FACEPALM_TYPES: Final[tuple[FacepalmType, ...]] = ("missed_win", "allowed_loss")
 
 # The loss-term floor a model must carry when the D-05 missed term is active: D-05 fixes
 # loss = max(0, -played_3), so a combined or missed-coefficient model reads loss >= 0 only.
@@ -586,6 +607,20 @@ def facepalm_score_sql(
     return type_coerce(1.0 / (1.0 + func.exp(-z)), Float(asdecimal=False))
 
 
+def _game_flaw_columns() -> FacepalmColumns:
+    """The ``game_flaws`` column map every query-time expression of a row reads."""
+    return FacepalmColumns(
+        played_prob=GameFlaw.maia_played_prob,
+        reply_spread=GameFlaw.maia_reply_spread,
+        played_material=GameFlaw.played_line_material,
+        mate_ply=GameFlaw.line_mate_ply,
+        best_material=GameFlaw.best_line_material,
+        best_mate_ply=GameFlaw.best_line_mate_ply,
+        best_prob=GameFlaw.maia_best_prob,
+        pre_spread=GameFlaw.maia_pre_spread,
+    )
+
+
 def facepalm_expr(lam: float, model: FacepalmModel = FACEPALM_MODEL) -> ColumnElement[float]:
     """The facepalm score of a ``game_flaws`` row as one SQL expression over its stored facts (D-01).
 
@@ -597,17 +632,85 @@ def facepalm_expr(lam: float, model: FacepalmModel = FACEPALM_MODEL) -> ColumnEl
     expression once per query and uses the same object in the SELECT and the WHERE, so the
     chip a user sees and the filter that selected the row can never disagree.
     """
-    return facepalm_score_sql(
-        FacepalmColumns(
-            played_prob=GameFlaw.maia_played_prob,
-            reply_spread=GameFlaw.maia_reply_spread,
-            played_material=GameFlaw.played_line_material,
-            mate_ply=GameFlaw.line_mate_ply,
-            best_material=GameFlaw.best_line_material,
-            best_mate_ply=GameFlaw.best_line_mate_ply,
-            best_prob=GameFlaw.maia_best_prob,
-            pre_spread=GameFlaw.maia_pre_spread,
-        ),
-        lam=lam,
-        model=model,
+    return facepalm_score_sql(_game_flaw_columns(), lam=lam, model=model)
+
+
+def facepalm_type_of(loss: float | None, missed: float) -> FacepalmType | None:
+    """257 D-02: the type of a blunder from its material inputs, None when the loss is unknown.
+
+    Allowed loss when ``loss > 0 and loss >= missed`` (a tie is an allowed loss), missed win
+    otherwise, so a row with no material in either line is a missed win. The fitted coefficients
+    are never used. Shared rule of both type twins.
+    """
+    if loss is None:
+        return None
+    return "allowed_loss" if loss > 0 and loss >= missed else "missed_win"
+
+
+def facepalm_type(
+    facts: FacepalmFacts, *, model: FacepalmModel = FACEPALM_MODEL
+) -> FacepalmType | None:
+    """Python twin of `facepalm_type_sql`: None exactly when the loss input is unknown.
+
+    Reads the same `material_loss` / `material_missed` calls `facepalm_score` makes. It always
+    computes `missed`, also where the score's missed weight is 0, so it deliberately does not
+    route through `_missed_weight`. If either twin changes, update the other.
+    """
+    loss = material_loss(
+        facts.played_material,
+        facts.mate_ply,
+        material_input=model.material_input,
+        loss_floor=model.loss_floor,
     )
+    missed = material_missed(
+        facts.played_material,
+        facts.best_material,
+        facts.best_mate_ply,
+        material_input=model.material_input,
+        missed_floor=model.missed_floor,
+        missed_cap=model.missed_cap,
+        missed_mate=model.missed_mate,
+    )
+    return facepalm_type_of(loss, missed)
+
+
+def facepalm_type_sql(
+    columns: FacepalmColumns, *, model: FacepalmModel = FACEPALM_MODEL
+) -> ColumnElement[str]:
+    """SQL twin of `facepalm_type` (257 D-02): NULL when the loss input is unknown.
+
+    Allowed loss when loss > 0 and loss >= missed, missed win otherwise; the same rule as
+    `facepalm_type_of`. Its Python twin is `facepalm_type`: if either side changes, update the other.
+    """
+    loss = _loss_sql(columns, model)
+    missed = _missed_sql(columns, model)
+    # type_coerce only retypes the CASE for the checker (its branches are string literals).
+    return type_coerce(
+        case(
+            (loss.is_(None), null()),
+            (and_(loss > 0, loss >= missed), literal("allowed_loss")),
+            else_=literal("missed_win"),
+        ),
+        String(),
+    )
+
+
+def facepalm_type_expr(model: FacepalmModel = FACEPALM_MODEL) -> ColumnElement[str]:
+    """The facepalm type of a ``game_flaws`` row as one SQL expression (257 D-02).
+
+    The single query-time type every reader uses, over the same column map as `facepalm_expr`.
+    Lambda-free and coefficient-free: it does not move with the library or the drill lambda.
+    Readers null the type wherever the score is NULL (the type is NULL only for an unknown loss,
+    the score is also NULL for a missing played probability, spread or best-move probability).
+    """
+    return facepalm_type_sql(_game_flaw_columns(), model=model)
+
+
+def facepalm_type_from_sql(value: str | None) -> FacepalmType | None:
+    """Narrow the string a `facepalm_type_expr` column returns to the `FacepalmType` literal."""
+    if value is None:
+        return None
+    for member in FACEPALM_TYPES:
+        if value == member:
+            return member
+    raise ValueError("unexpected facepalm type")

@@ -39,6 +39,7 @@ from app.repositories.library_repository import (
 )
 from app.repositories.query_utils import apply_game_filters
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.facepalm_score import FacepalmType
 from tests.facepalm_seed import SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
 
 # Distinct user ID for TestDecidedLostSuppression tests so parallel -n auto runs
@@ -146,12 +147,16 @@ async def _seed_game_flaw(
     missed_tactic_confidence: int | None = None,
     missed_tactic_depth: int | None = None,
     facepalm_target: float | None = None,
+    facepalm_type: FacepalmType | None = None,
+    fact_overrides: dict[str, Any] | None = None,
     is_reversed: bool = False,
 ) -> None:
     """Insert a game_flaws row directly (bypasses classifier).
 
     `facepalm_target` seeds facts whose library-lambda expression equals it (D-01); readers
-    compute the score at query time, so the stored score column is never seeded.
+    compute the score at query time, so the stored score column is never seeded. `facepalm_type`
+    makes the seeded facts a missed win or an allowed loss (257 D-02); `fact_overrides` is merged
+    after the seeded facts (e.g. a NULL played probability: a known loss but no score).
 
     The EXISTS filter reads game_flaws rows, not positions.
 
@@ -175,7 +180,10 @@ async def _seed_game_flaw(
                 "is_reversed": is_reversed,
                 "is_squandered": False,
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
-                **facepalm_fact_columns(facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA),
+                **facepalm_fact_columns(
+                    facepalm_target, lam=FACEPALM_LIBRARY_LAMBDA, facepalm_type=facepalm_type
+                ),
+                **(fact_overrides or {}),
                 "allowed_tactic_motif": allowed_tactic_motif,
                 "allowed_tactic_confidence": allowed_tactic_confidence,
                 "allowed_tactic_depth": allowed_tactic_depth,
@@ -2949,9 +2957,9 @@ class TestFetchPageFacepalmScores:
 
         assert set(scores) == {game.id}
         assert set(scores[game.id]) == {_FP_MARKER_USER_PLY}
-        assert scores[game.id][_FP_MARKER_USER_PLY] == pytest.approx(
-            0.87, abs=SEED_FACEPALM_TOLERANCE
-        )
+        value = scores[game.id][_FP_MARKER_USER_PLY]
+        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "allowed_loss"
 
     @pytest.mark.asyncio
     async def test_owner_side_scored_rows_only_black_owner(self, db_session: AsyncSession) -> None:
@@ -2970,9 +2978,30 @@ class TestFetchPageFacepalmScores:
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
 
         assert set(scores[game.id]) == {_FP_MARKER_OPPONENT_PLY}
-        assert scores[game.id][_FP_MARKER_OPPONENT_PLY] == pytest.approx(
-            0.87, abs=SEED_FACEPALM_TOLERANCE
+        value = scores[game.id][_FP_MARKER_OPPONENT_PLY]
+        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "allowed_loss"
+
+    @pytest.mark.asyncio
+    async def test_marker_value_carries_missed_win_type(self, db_session: AsyncSession) -> None:
+        """257 D-08: a missed-win seed comes back typed missed_win next to its score."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_MARKER_USER_ID)
+        game = await _seed_game(db_session, user_id=_FP_MARKER_USER_ID, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game,
+            ply=_FP_MARKER_USER_PLY,
+            facepalm_target=0.8,
+            facepalm_type="missed_win",
         )
+
+        scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
+
+        value = scores[game.id][_FP_MARKER_USER_PLY]
+        assert value.score == pytest.approx(0.8, abs=SEED_FACEPALM_TOLERANCE)
+        assert value.facepalm_type == "missed_win"
 
     @pytest.mark.asyncio
     async def test_other_users_rows_are_never_returned(self, db_session: AsyncSession) -> None:
@@ -2987,3 +3016,69 @@ class TestFetchPageFacepalmScores:
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_OTHER_USER_ID, [game.id])
 
         assert scores == {}
+
+
+class TestQueryFlawsFacepalmType:
+    """query_flaws carries the 257 D-02 facepalm type next to the score, nulled with the score."""
+
+    @pytest.mark.asyncio
+    async def test_typed_seeds_return_both_types(self, db_session: AsyncSession) -> None:
+        game = await _seed_game(db_session, user_id=99999, user_color="white")
+        await _seed_game_flaw(
+            db_session, game=game, ply=2, facepalm_target=0.8, facepalm_type="missed_win"
+        )
+        await _seed_game_flaw(
+            db_session, game=game, ply=4, facepalm_target=0.8, facepalm_type="allowed_loss"
+        )
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+        assert count == 2
+        by_ply = {item.ply: item for item in items}
+        assert by_ply[2].facepalm_type == "missed_win"
+        assert by_ply[4].facepalm_type == "allowed_loss"
+        for item in items:
+            assert item.facepalm_score == pytest.approx(0.8, abs=SEED_FACEPALM_TOLERANCE)
+
+    @pytest.mark.asyncio
+    async def test_type_is_null_where_the_score_is_null(self, db_session: AsyncSession) -> None:
+        """A known loss but a NULL played probability: the SQL type is set, the reader nulls it."""
+        game = await _seed_game(db_session, user_id=99999, user_color="white")
+        await _seed_game_flaw(
+            db_session,
+            game=game,
+            ply=2,
+            facepalm_target=0.8,
+            facepalm_type="allowed_loss",
+            fact_overrides={"maia_played_prob": None},
+        )
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+        assert count == 1
+        assert items[0].facepalm_score is None
+        assert items[0].facepalm_type is None

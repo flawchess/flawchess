@@ -5,16 +5,15 @@ current_phase: 252
 current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
 status: executing
 stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T08:35:34.188Z"
+last_updated: "2026-11-20T18:27:52.746Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: d03d311477b9f49eeb00d5376c28fb7f00b5fc33
+state_head: e5315983487628c91d369d926945bf76a5fba123
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 63
-  total_plans: 93
-  completed_plans: 89
-  percent: 96
+  total_plans: 100
+  completed_plans: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -27,7 +26,7 @@ Plan: 6
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Completed quick task 261120-c1x: Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time
+Last activity: 2026-11-20 - Completed quick task 261120-qzo: Sentry noise fixes (FLAWCHESS-9G hidden-tab watchdog, FLAWCHESS-DH extension rejection)
 
 Open threads carried forward (not blockers):
 
@@ -200,6 +199,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 257 added 2026-11-20 (explicit user request via `/gsd-phase @.planning/seeds/SEED-261114-iuv-facepalm-rate-library-stats.md`, seed refined the same day): **Facepalm Rate in the Library Stats** (SEED-261114-iuv). Benchmark-free part only: a stats cut at 0.7 separate from `FACEPALM_SCORE_MIN`, facepalm type per blunder (allowed loss / missed win on the raw material inputs) in the library API, chip colour by type, a facepalm-share chart below the Flaws Timeline (facepalm / scored blunders, pooled over the rolling window, from `game_flaws`), and paired you-vs-opponents rows (total and per type; no type-share statistic). Opponent scoring (seed Part A) is already on prod. Benchmark zones, the clock matrix and the training weighting are deferred to SEED-261120-bzq. Written by hand as 257 (known mature-ROADMAP behavior); `current_phase` stays 252. Next: `/gsd-discuss-phase 257`.
 - Phase 255 added 2026-11-15 (explicit user request; seed recovered the same day from an unsaved `/gsd-explore` session of 2026-11-09): **Feature Discovery Dot Route** (SEED-261115-d0t). One ordered route for the red pulsating dot, one dot at a time, completion stored server-side. Built in its own worktree while Phases 252 and 254 wait on their prod runs; `current_phase` stays 254.
 
 - Phase 247 added 2026-11-08 (explicit user request via `/gsd-phase .planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`, planted the same day from the `/gsd-explore` session on blunder-check selection): **Maia Stats on game_flaws** (SEED-261108-zkp). Eight typed nullable Maia columns on `game_flaws` (played/best/second probability and rank, top-move probability, effective moves) plus a per-game completion stamp; go-forward scoring in eval-apply; local backfill against prod over the tunnel with 8-10 processes in ES-lottery priority order. Prerequisite for blunder check (SEED-261108-dk0); the owner plans to open the next milestone with this phase. Written by hand as 247 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 247`.
@@ -955,6 +955,14 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 255]: 255-04: recorder forgets sent current/skip keys when the stored stamp changes so a cleared stamp can be re-posted in-session
 - [Phase 255]: 255-05: mobile Stats colour switch gets onAnyClick so a click on the selected colour completes openings-played-as; Openings.tsx no longer reads the profile
 - [Phase 255]: 255-06: Train step completes in Train.tsx handleEnterLoop (Start/Resume), route dots arrive as boolean props on hook-free TrainStartScreen and TrainSubnav
+- [Phase 257]: facepalm type rule (loss > 0 and loss >= missed) lives next to the score twin; readers null the type with the score
+- [Phase 257]: FacepalmChipValue field named facepalm_type (not type) to avoid shadowing the builtin; reader skips a row whose type narrows to None so markers never carry a score without a type
+- [Phase 257]: Facepalm type line is mover-neutral; eval-chart tooltip names the type in text ('Facepalm NN% · allowed loss')
+- [Phase 257]: Facepalm share floor is 50 scored blunders per window (not 20); share null below it, rounded to nearest whole percent in the chart
+- [Phase 257]: 257-05: facepalm rows ride FlawComparisonTc on a shared _flaw_comparison_anchor, score and type scored once per blunder (fenced); dev reader about 260-350 ms, prod EXPLAIN is a plan 07 item
+- [Phase 257]: 257-06: facepalm card is the trailing child of ContextTagCards; significance sentences describe the gap and drive no colour (owner confirms D-05 reading at UAT)
+- [Phase 257]: 257-06: GapCell.noVerdict is an opt-in flag so zoneless tactic cells keep their significance-based colouring
+- [Phase 257]: 257-07: changelog bullets avoid probability wording and banned verdict names; full pre-merge gate green on the phase branch
 
 ### Pending Todos
 
@@ -1156,6 +1164,10 @@ None active.
 | 261119-x7t | Blunder check: settle a stale open prompt as a timeout on resume and reopen the sequence on a Ready gate | 2026-11-20 | 48316651d | [261119-x7t-blunder-check-settle-a-stale-open-prompt](./quick/261119-x7t-blunder-check-settle-a-stale-open-prompt/) |
 | 261120-c1x | Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time | 2026-11-20 | 3b383db94 | [261120-c1x-activity-pulse-split-train-sessions-into](./quick/261120-c1x-activity-pulse-split-train-sessions-into/) |
 | 179 | Activity Pulse: Blunder Check difficulty card (red herring vs blunder window, own vs foreign game) | 2026-11-20 | d03d31147 | — |
+| 261120-j5f | Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ) | 2026-11-20 | 4fe7eccfc | [261120-j5f-blunder-check-cross-device-resync-on-sta](./quick/261120-j5f-blunder-check-cross-device-resync-on-sta/) |
+| 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
+| 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
+| 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
 
 ## Deferred Items
 
@@ -1208,8 +1220,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-19T07:30:00Z
-**Stopped at:** Phase 251 complete, ready to execute Phase 252
+**Last session:** 2026-11-20T13:30:03.372Z
+**Stopped at:** Completed 257-07-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1492,6 +1504,13 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 255 P05 | 25 min | 2 tasks | 8 files |
 | Phase 255 P06 | 20 min | 2 tasks | 5 files |
 | Phase 255 P07 | n/a | 2 tasks | 1 files |
+| Phase 257 P01 | 20 min | 2 tasks | 15 files |
+| Phase 257 P02 | 12 min | 1 tasks | 7 files |
+| Phase 257 P03 | 15min | 2 tasks | 14 files |
+| Phase 257 P04 | 35 min | 2 tasks | 12 files |
+| Phase 257 P05 | 40 min | 1 tasks | 6 files |
+| Phase 257 P06 | 20 min | 2 tasks | 11 files |
+| Phase 257 P07 | 12 min | 2 tasks | 1 files |
 
 ## Performance Metrics
 

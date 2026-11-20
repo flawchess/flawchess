@@ -240,6 +240,23 @@ export function useLibraryFlawComparison(
 }
 
 /**
+ * Fetch the per-time-control facepalm rows (257 D-21: own endpoint, so the context-tag cards
+ * never wait on the facepalm score). Same params as useLibraryFlawComparison, so both read the
+ * same game set; the selected TC is a client-side pick and never part of the key.
+ *
+ * Query key: ['library-facepalm-comparison', params]
+ */
+export function useLibraryFacepalmComparison(filters: FilterState, flawFilter: FlawFilterState) {
+  const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
+  return useQuery({
+    queryKey: ['library-facepalm-comparison', params],
+    queryFn: () => libraryApi.getFacepalmComparison(params),
+    staleTime: LIBRARY_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
  * Fetch the per-time-control tactic comparison (38 bullets per TC, per 100 games) for the
  * current filter + flaw filter.
  *

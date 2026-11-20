@@ -25,6 +25,14 @@ import {
   isChanceGap,
   type GapCell,
 } from '../gapBar';
+import { FACEPALM_HIGH_CUTOFF } from '../facepalm';
+import {
+  FACEPALM_GAP_META,
+  FACEPALM_METRICS,
+  facepalmMetricCell,
+  metricTestIdSegment,
+} from '../flawComparisonMeta';
+import { makeFacepalmBullet, makeFacepalmRows } from '@/components/library/stats/__tests__/flawStatsFixtures';
 
 // Symmetric, like every benchmark band.
 const LO = -0.3;
@@ -163,6 +171,59 @@ describe('effectiveVerdict', () => {
   it('judges a zoneless cell on significance alone', () => {
     expect(effectiveVerdict(cell({ hasZone: false, delta: -0.66 }))).toBe('better');
     expect(effectiveVerdict(cell({ hasZone: false, delta: 0.5 }))).toBe('worse');
+  });
+});
+
+describe('noVerdict cells (257 D-13)', () => {
+  it('stays neutral even when significant, while the same cell without the flag keeps its verdict', () => {
+    const zoneless = cell({ hasZone: false, delta: -0.66 });
+    expect(effectiveVerdict(zoneless)).toBe('better');
+    expect(effectiveVerdict({ ...zoneless, noVerdict: true })).toBeNull();
+    expect(effectiveVerdict({ ...cell({ hasZone: false, delta: 0.5 }), noVerdict: true })).toBeNull();
+  });
+
+  it('is never a chance gap and never tints a heatmap cell', () => {
+    const neutral = { ...cell({ hasZone: false, significant: false }), noVerdict: true };
+    expect(isChanceGap(neutral)).toBe(false);
+    const significant = { ...cell({ hasZone: false, delta: 1, youRate: 1, oppRate: 0 }), noVerdict: true };
+    expect(gapHeatmapFill(significant).tint).toBe('neutral');
+  });
+});
+
+describe('facepalm gap metadata', () => {
+  it('lists the three rows, total first', () => {
+    expect(FACEPALM_METRICS).toEqual(['facepalm', 'facepalm_missed_win', 'facepalm_allowed_loss']);
+  });
+
+  it('carries the locked labels and hints, the 70 coming from the High preset', () => {
+    expect(FACEPALM_HIGH_CUTOFF).toBe(70);
+    expect(FACEPALM_GAP_META.facepalm.label).toBe('Facepalm blunders');
+    expect(FACEPALM_GAP_META.facepalm.hint).toBe('Blunders with a facepalm score of 70% or more');
+    expect(FACEPALM_GAP_META.facepalm_missed_win.label).toBe('Missed wins');
+    expect(FACEPALM_GAP_META.facepalm_missed_win.hint).toBe(
+      'Facepalm blunders that passed up winning material or checkmate',
+    );
+    expect(FACEPALM_GAP_META.facepalm_allowed_loss.label).toBe('Allowed losses');
+    expect(FACEPALM_GAP_META.facepalm_allowed_loss.hint).toBe(
+      'Facepalm blunders that gave away material or allowed checkmate',
+    );
+  });
+
+  it('turns a facepalm bullet into a noVerdict cell, and a missing bullet into null', () => {
+    const rows = makeFacepalmRows({ facepalm_missed_win: { significant: true, delta: -0.5 } });
+    const got = facepalmMetricCell(rows, 'facepalm_missed_win');
+    expect(got).not.toBeNull();
+    expect(got?.noVerdict).toBe(true);
+    expect(got?.delta).toBe(-0.5);
+    expect(got?.hasZone).toBe(false);
+    expect(got ? effectiveVerdict(got) : 'x').toBeNull();
+    expect(facepalmMetricCell([makeFacepalmBullet('facepalm')], 'facepalm_allowed_loss')).toBeNull();
+  });
+
+  it('maps facepalm metrics to kebab testid segments', () => {
+    expect(metricTestIdSegment('facepalm')).toBe('facepalm');
+    expect(metricTestIdSegment('facepalm_missed_win')).toBe('facepalm-missed-win');
+    expect(metricTestIdSegment('facepalm_allowed_loss')).toBe('facepalm-allowed-loss');
   });
 });
 

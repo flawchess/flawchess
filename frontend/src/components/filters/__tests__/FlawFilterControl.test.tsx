@@ -754,7 +754,7 @@ describe('Facepalm section', () => {
     fireEvent.click(screen.getByTestId('filter-facepalm-info'));
     const text = document.body.textContent ?? '';
     expect(text).toContain(
-      "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
+      "A high facepalm score tells you the blunder should have been easy to see for a player at your level, a low one that it was probably hard to see.",
     );
     expect(text).toContain(
       'Low keeps 0 to 30%, Mid 30 to 70%, High 70 to 100%. Drag either handle for a custom range. Any range other than All shows blunders only.',

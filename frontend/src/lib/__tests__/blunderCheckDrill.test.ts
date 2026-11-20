@@ -145,6 +145,34 @@ describe('session-level events', () => {
     expect(state.phase).toBe('finishing');
   });
 
+  // FLAWCHESS-DJ: the session was played on from another device.
+  it('SESSION_RESYNCED restarts from the server progress, whatever window the client was on', () => {
+    const moved = { ...SESSION, current_position: 1, session_points: 9 };
+    for (const from of [loaded(), atPrompt()]) {
+      const state = asPhase(
+        drillReducer(from, { type: 'SESSION_RESYNCED', session: moved }),
+        'loading_window',
+      );
+      expect(state.position).toBe(1);
+      expect(state.sessionPoints).toBe(9);
+    }
+  });
+
+  it('SESSION_RESYNCED finishes a session whose windows all ended elsewhere', () => {
+    const state = drillReducer(loaded(), {
+      type: 'SESSION_RESYNCED',
+      session: { ...SESSION, current_position: null },
+    });
+    expect(state.phase).toBe('finishing');
+  });
+
+  it('SESSION_RESYNCED is ignored outside a running drill', () => {
+    const failed = drillReducer(loaded(), { type: 'FAILED', message: 'boom' });
+    for (const from of [initialDrillState, failed]) {
+      expect(drillReducer(from, { type: 'SESSION_RESYNCED', session: SESSION })).toBe(from);
+    }
+  });
+
   it('FAILED goes to error and RESET returns to idle', () => {
     const failed = drillReducer(loaded(), { type: 'FAILED', message: 'boom' });
     expect(asPhase(failed, 'error').message).toBe('boom');

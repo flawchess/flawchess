@@ -10,6 +10,7 @@ import pytest
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.library_repository import FacepalmChipValue
 from app.services.library_service import _build_eval_series
 
 
@@ -304,10 +305,15 @@ class TestFlawMarkers:
     def test_facepalm_score_populated_from_facepalm_by_ply(self) -> None:
         """FlawMarker carries the stored facepalm score of its ply, null when absent."""
         positions, game = self._minimal_blunder_positions(user_color="white")
-        _, scored, _ = _build_eval_series(game, positions, facepalm_by_ply={2: 0.87})
-        assert next(m for m in scored if m.ply == 2).facepalm_score == 0.87
+        chip = FacepalmChipValue(0.87, "allowed_loss")
+        _, scored, _ = _build_eval_series(game, positions, facepalm_by_ply={2: chip})
+        scored_marker = next(m for m in scored if m.ply == 2)
+        assert scored_marker.facepalm_score == 0.87
+        assert scored_marker.facepalm_type == "allowed_loss"
         _, unscored, _ = _build_eval_series(game, positions)
-        assert next(m for m in unscored if m.ply == 2).facepalm_score is None
+        unscored_marker = next(m for m in unscored if m.ply == 2)
+        assert unscored_marker.facepalm_score is None
+        assert unscored_marker.facepalm_type is None
 
     def test_facepalm_score_dropped_on_a_non_blunder_marker(self) -> None:
         """A stale stored score never rides on a mistake marker (253 review WR-01).
@@ -317,10 +323,12 @@ class TestFlawMarkers:
         """
         positions = [_make_pos(0, eval_cp=0), _make_pos(1, eval_cp=100), _make_pos(2, eval_cp=-32)]
         game = _make_game(user_color="white", result="0-1")
-        _, markers, _ = _build_eval_series(game, positions, facepalm_by_ply={2: 0.87})
+        chip = FacepalmChipValue(0.87, "allowed_loss")
+        _, markers, _ = _build_eval_series(game, positions, facepalm_by_ply={2: chip})
         marker = next(m for m in markers if m.ply == 2)
         assert marker.severity == "mistake"
         assert marker.facepalm_score is None
+        assert marker.facepalm_type is None
 
     def test_is_user_flag_opponent(self) -> None:
         """Flaw by the opponent → is_user=False."""

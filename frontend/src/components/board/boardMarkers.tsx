@@ -6,7 +6,9 @@
 
 import { Gem, BookOpen, Check } from 'lucide-react';
 
-import { SEVERITY_GLYPH } from '../../lib/severityGlyph';
+import { FACEPALM_GLYPH, SEVERITY_GLYPH } from '../../lib/severityGlyph';
+import { GlyphText } from '../icons/GlyphText';
+import type { GlyphSpec } from '../../lib/severityGlyph';
 import { GEM_GLYPH } from '../../lib/gemGlyph';
 import { GREAT_GLYPH } from '../../lib/greatGlyph';
 import { BOOK_GLYPH } from '../../lib/bookGlyph';
@@ -64,6 +66,11 @@ export interface SquareMarker {
    * target square while the question is open. Mutually exclusive with the others.
    */
   goodOrBlunder?: boolean;
+  /**
+   * With `severity: 'blunder'`, draws the dark red "???" facepalm-blunder badge instead of
+   * the "??" one (the blunder's facepalm score reaches the 70% stats cut).
+   */
+  facepalm?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
@@ -135,26 +142,14 @@ function GoodBadge({ cx, cy, r }: BadgeGeometry) {
   );
 }
 
-/** A severity NAG badge (??/?/?!), as a circle of radius `r` at (cx, cy). */
-function SeverityBadge({ cx, cy, r, severity }: BadgeGeometry & { severity: FlawSeverity }) {
-  const glyph = SEVERITY_GLYPH[severity];
-  // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.
-  const fontPx = (glyph.fontSize / GLYPH_VIEWBOX_DIAMETER) * (2 * r);
+/** A severity NAG badge (??/?/?!, or the facepalm ???), as a circle of radius `r` at (cx, cy). */
+function SeverityBadge({ cx, cy, r, glyph }: BadgeGeometry & { glyph: GlyphSpec }) {
+  // Reuse SeverityGlyphIcon's unit-to-diameter ratio so the on-board glyph matches.
+  const scale = (2 * r) / GLYPH_VIEWBOX_DIAMETER;
   return (
     <g>
       <circle cx={cx} cy={cy} r={r} fill={glyph.color} stroke={MARKER_STROKE} strokeWidth={1} />
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontWeight="700"
-        fontSize={fontPx}
-      >
-        {glyph.symbol}
-      </text>
+      <GlyphText glyph={glyph} x={cx} y={cy} scale={scale} />
     </g>
   );
 }
@@ -293,7 +288,7 @@ function SquareMarkerBadge({
     return (
       <g>
         <GoodBadge cx={cx - r * GOOD_OR_BLUNDER_OFFSET} cy={cy} r={r} />
-        <SeverityBadge cx={cx} cy={cy} r={r} severity="blunder" />
+        <SeverityBadge cx={cx} cy={cy} r={r} glyph={SEVERITY_GLYPH.blunder} />
       </g>
     );
   }
@@ -304,7 +299,9 @@ function SquareMarkerBadge({
   // (handled above, and mutually exclusive by construction) — guard
   // defensively rather than indexing SEVERITY_GLYPH with an undefined key.
   if (!marker.severity) return null;
-  return <SeverityBadge cx={cx} cy={cy} r={r} severity={marker.severity} />;
+  const glyph =
+    marker.severity === 'blunder' && marker.facepalm === true ? FACEPALM_GLYPH : SEVERITY_GLYPH[marker.severity];
+  return <SeverityBadge cx={cx} cy={cy} r={r} glyph={glyph} />;
 }
 
 /** Renders the severity glyph (top-right) plus its optional depth label (top-left). */

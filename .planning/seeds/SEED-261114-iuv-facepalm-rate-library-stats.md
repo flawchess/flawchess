@@ -1,16 +1,64 @@
 ---
 id: SEED-261114-iuv
 status: dormant
+promoted_to: Phase 257 (2026-11-20)
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
-trigger_when: after Phases 252 and 254 have fully run in the benchmark DB and the facepalm benchmarks by type (missed win, allowed loss) per Elo x TC exist (owner, 2026-11-15; replaces the earlier trigger). SEED-261114-0ke (facepalm filter and chip) should have shipped
-scope: medium. Part A (operator-run): extend facepalm scoring to opponent blunders, including a Maia backfill about the size of Phase 250's. Part B: facepalm rate in the library stats (timeline line, you vs opponents)
+trigger_when: now (owner, 2026-11-20). Scope narrowed to the benchmark-free part; the deferred part is SEED-261120-bzq
+scope: medium. Facepalm rate in the library stats (timeline line, you vs opponents, per type), chip colour by type. Part A (opponent scoring) is done on prod
 ---
 
 # SEED-261114-iuv: Facepalm rate in the library stats (timeline and you vs opponents)
 
 Add facepalm statistics to the library stats: a facepalm-rate line in the Flaws Timeline and a "you vs your
 opponents" facepalm-rate comparison. Follow-up to SEED-261114-0ke (filter and card chip).
+
+## Current scope (2026-11-20, supersedes conflicting text below)
+
+This seed is the part that is built now. Everything that reads a benchmark zone moved to
+`SEED-261120-bzq-facepalm-benchmark-zones-and-clock-matrix.md`. The sections below are kept as history; where
+they conflict with this section, this section wins.
+
+**In scope**
+
+1. Stats cut: a new constant at 0.7, separate from `FACEPALM_SCORE_MIN` (0.5). Lambda: `FACEPALM_LIBRARY_LAMBDA`.
+2. Facepalm type per blunder: allowed loss when `loss > 0 and loss >= missed` (raw material inputs of the
+   model), missed win otherwise. Returned by the library API next to the score.
+3. Chip colour by type: `TAC_MISSED` (teal) for missed win, `TAC_ALLOWED` (crimson) for allowed loss.
+4. Timeline: the facepalm share of the player's blunders over time, not split by type (owner, 2026-11-20;
+   replaces the per-game line of decisions 1 and 2 below). It answers "how many of my blunders are facepalm
+   blunders, and how does that change". Details:
+   - The Flaws Timeline axis is flaws per 100 moves, so a share (percent) cannot be a line on it. It is its own
+     small chart below the Flaws Timeline, with the same x-axis, rolling window and per-time-control series.
+   - Share = facepalm blunders / scored blunders, pooled over the rolling window (not a mean of per-game
+     shares: games without blunders have none). Unscored blunders are left out of both counts, so the Phase 252
+     gap does not depress the share.
+   - The share was chosen over a rolling mean of the score (owner, 2026-11-20): it reads as a count of the
+     same blunders the rows and chips use, and the score is a ranking, not a probability. The mean is the
+     fallback if the share is too jumpy on real accounts.
+   - Source is `game_flaws` (the existing trend reads the games-table oracle columns). Needs a minimum number of
+     scored blunders per point; pick the floor in discuss-phase.
+5. You vs your opponents: facepalm blunders per game, paired per game. Total, and one row per type.
+6. Versus-opponent bias (chance / threat blindness): see the design note (accepted by the owner, 2026-11-20).
+
+**Design note: no type-share statistic (accepted 2026-11-20)**
+
+The owner's concern: the model weights lost material about three times as much as a missed gain, so allowed
+losses pass the 0.7 cut more easily. Any statistic that compares the two types with each other (the missed
+share of facepalm blunders, or two type lines on one axis) mostly shows that weighting.
+
+Decision: never compare the types with each other. Each type is compared only with the same type of the
+opponents, where the weighting is identical on both sides and cancels:
+
+- chance blindness = the player's missed-win facepalm rate minus the opponents', paired per game;
+- threat blindness = the player's allowed-loss facepalm rate minus the opponents', paired per game.
+
+They are two separate readings, not the ends of one axis (this replaces decision 4 of the 2026-11-15
+extension); a player can show both or neither. The timeline shows the total facepalm share only, so no chart puts
+the two type levels side by side. Copy states the comparison and does not diagnose.
+
+**Out of scope** (deferred seed): benchmark zones, the within-player bias against a benchmark, the type-by-clock
+matrix, the training weighting.
 
 ## Why This Matters
 
@@ -172,3 +220,53 @@ for the end of the Phase 252 repair, but the order of the steps matters.
 4. Line facts for opponents and the reader gates come with the rest of Part A, after the repair.
 
 The benchmark DB needs the same order; its feed pilot started on 2026-11-16.
+
+## Refinement (owner, 2026-11-20): phase split, cut, type rule after the Phase 256 model
+
+**State.** Part A is done on prod: opponent blunders carry the Maia columns (99.2%) and line facts (93.9%),
+the same coverage as user blunders (99.9%, 93.8%). The benchmark DB was not checked. The "Decisions" cut
+reference above is stale: `FACEPALM_SCORE_MIN` is now 0.5 (the drill's choice).
+
+**Decisions**
+
+1. **Stats cut: a separate constant at 0.7** (the label meaning), not `FACEPALM_SCORE_MIN`. Lambda is
+   `FACEPALM_LIBRARY_LAMBDA`.
+2. **Two phases.** Phase 1 is built now and holds everything that needs no benchmark. Phase 2 holds everything
+   that reads a benchmark zone and waits for the Phase 252 repair and the benchmark DB scoring. The Phase 252
+   gap (6% of blunders without line facts) is the same on both sides, so it does not skew the paired comparison.
+3. **Phase 1 starts with the total rate:** a timeline line and a you-vs-opponents row. The clock matrix and
+   the training weighting stay in this seed.
+
+**Proposed, not yet confirmed by the owner**
+
+- Type rule on the raw material inputs (the model's `loss` and `missed`, both in material units): allowed loss
+  when `loss > 0 and loss >= missed`, missed win otherwise. Ties count as allowed loss; a row with no material
+  in either line follows the model's pure-miss branch (`loss = 0`) and counts as missed win. The fitted
+  coefficients (loss 1.16, missed 0.35) are not used for typing: they would move 85% of the rows to allowed loss.
+- Per-type lines and the versus-opponent bias (chance / threat blindness) need no benchmark, so they can be in
+  Phase 1. The within-player bias against a benchmark zone is Phase 2.
+
+**Measurements (prod, 2026-11-20, 10% sample by `game_id % 10 = 0`, hand-written SQL twin of the score, not
+verified row by row against `facepalm_expr`)**
+
+| Side | Blunders | Scored | Score >= 0.5 | Score >= 0.7 | Games with a blunder of that side |
+|---|---|---|---|---|---|
+| User | 235,005 | 219,510 | 96,707 | 70,209 | 83,967 |
+| Opponent | 235,350 | 218,686 | 95,023 | 68,474 | 85,913 |
+
+Facepalm blunders at 0.7 are not rare: 32% of scored blunders, about 0.8 per game that has a blunder of that
+side. This overrides the "facepalm blunders are rare" caution above.
+
+Type split of the user's facepalm blunders at 0.7 (opponents within one point): allowed loss 74.0%, missed win
+24.0%, tie 1.7%, neither 0.4%. By composition: both terms above 0 in 56%, loss only 33%, missed only 10%.
+
+**Follow-up (owner, 2026-11-20)**
+
+- The type rule above is accepted (raw inputs, ties to allowed loss, no-material rows to missed win).
+- **Chip colour by type:** the facepalm score chip is tinted by type with the existing tactic colours
+  (`TAC_MISSED` teal for missed win, `TAC_ALLOWED` crimson for allowed loss, `frontend/src/lib/theme.ts`).
+  Needs the type in the library API next to the score.
+- **Caution on the 74 / 24 split:** it is not a population finding about threat vs chance blindness. The model
+  weights loss about three times as much as a missed gain (1.16 vs 0.35), so loss-heavy blunders pass the 0.7
+  cut more easily. Among all blunders the two were about even on 2026-11-15 (pure allowed 26%, pure missed 24%,
+  thin sample). The bias statistic must therefore be read against opponents or a benchmark, never against 50%.

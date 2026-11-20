@@ -17,6 +17,7 @@ import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
+import { GlyphText } from '@/components/icons/GlyphText';
 import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
 import type { MoveQuality } from '@/lib/moveQuality';
 import type { FlawSeverity } from '@/types/library';
@@ -47,18 +48,7 @@ function SeverityQualityIcon({
   return (
     <svg viewBox="0 0 24 24" className={className} style={style} aria-hidden role="img">
       <circle cx="12" cy="12" r="11" fill={glyph.color} />
-      <text
-        x="12"
-        y="12.5"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontWeight="700"
-        fontSize={glyph.fontSize}
-      >
-        {glyph.symbol}
-      </text>
+      <GlyphText glyph={glyph} x={12} y={12.5} />
     </svg>
   );
 }

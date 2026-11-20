@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { popoverTargetFromTestId } from '@/lib/analytics';
 import type { FlawComparisonResponse, FlawStatsResponse } from '@/types/library';
 import {
   BLITZ_ENTRY,
@@ -18,6 +19,7 @@ import {
   RAPID_TACTIC_ENTRY,
   SKETCH_RAPID_ENTRY,
   makeComparison,
+  makeFacepalmComparison,
   makeTacticComparison,
   makeTacticTcEntry,
   makeTcEntry,
@@ -25,6 +27,7 @@ import {
 } from './flawStatsFixtures';
 
 const mocks = vi.hoisted(() => ({
+  getFacepalmComparison: vi.fn(),
   getFlawComparison: vi.fn(),
   getFlawStats: vi.fn(),
   getTacticComparison: vi.fn(),
@@ -34,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/client')>()),
   libraryApi: {
+    getFacepalmComparison: mocks.getFacepalmComparison,
     getFlawComparison: mocks.getFlawComparison,
     getFlawStats: mocks.getFlawStats,
     getTacticComparison: mocks.getTacticComparison,
@@ -75,11 +79,13 @@ const STATS: FlawStatsResponse = {
 beforeEach(async () => {
   vi.resetModules();
   localStorage.clear();
+  mocks.getFacepalmComparison.mockReset();
   mocks.getFlawComparison.mockReset();
   mocks.getFlawStats.mockReset();
   mocks.getTacticComparison.mockReset();
   mocks.trackFeature.mockReset();
   mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, RAPID_ENTRY]));
+  mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['blitz', 'rapid']));
   mocks.getFlawStats.mockResolvedValue(STATS);
   mocks.getTacticComparison.mockResolvedValue(
     makeTacticComparison([BLITZ_TACTIC_ENTRY, RAPID_TACTIC_ENTRY]),
@@ -333,13 +339,14 @@ describe('time controls below the gate', () => {
         RAPID_ENTRY,
       ]),
     );
+    mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['bullet', 'rapid']));
     await renderLoaded();
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('4.10'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 4.60');
     expect(text('flaw-tile-blunder-gate')).toBe('Not enough analyzed games yet (12 of 20)');
-    expect(text('flaw-tile-mistake-gate')).toBe('Not enough analyzed games yet (12 of 20)');
+    expect(text('flaw-tile-facepalm-gate')).toBe('Not enough analyzed games yet (12 of 20)');
   });
 });
 
@@ -380,6 +387,7 @@ describe('empty and failed states', () => {
     mocks.getFlawStats.mockRejectedValue(new Error('boom'));
     await renderLoaded();
     expect(await screen.findByText(/Failed to load flaws timeline/)).not.toBeNull();
+    expect(screen.getAllByText(/Failed to load flaws timeline/)).toHaveLength(1);
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });
 });
@@ -421,6 +429,57 @@ describe('You vs. your opponents section', () => {
     expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the Facepalm blunders card after the Opponent errors card, with the axis count still 4', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('vs-opponents-section');
+    const cards = within(section).getByTestId('context-tag-cards');
+    const errors = within(cards).getByTestId('context-card-opponent-errors');
+    const facepalm = within(cards).getByTestId('context-card-facepalm');
+    expect(errors.compareDocumentPosition(facepalm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.querySelectorAll('[data-testid$="-axis"]')).toHaveLength(4);
+    expect(facepalm.querySelector('[data-testid$="-bar-band"]')).toBeNull();
+  });
+
+  it('switches the facepalm popovers with the page TC, with no new request', async () => {
+    await renderLoaded();
+    expect(screen.getByTestId('gap-popover-facepalm-tc-rapid')).not.toBeNull();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() => expect(screen.getByTestId('gap-popover-facepalm-tc-blitz')).not.toBeNull());
+    expect(screen.queryByTestId('gap-popover-facepalm-tc-rapid')).toBeNull();
+    expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks the facepalm total popover open under its own target', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('gap-popover-facepalm-tc-rapid'));
+    expect(mocks.trackFeature).toHaveBeenCalledWith('popover-open', {
+      target: popoverTargetFromTestId('gap-popover-facepalm-tc-rapid'),
+    });
+  });
+
+  it('loads the facepalm rows from their own request, once, in parallel with the section', async () => {
+    await renderLoaded();
+    expect(mocks.getFacepalmComparison).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() => expect(screen.getByTestId('gap-popover-facepalm-tc-blitz')).not.toBeNull());
+    expect(mocks.getFacepalmComparison).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the facepalm tile and card as loading for a TC the facepalm response lacks', async () => {
+    mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['blitz']));
+    await renderLoaded();
+    expect(await screen.findByTestId('flaw-tile-facepalm-loading')).not.toBeNull();
+    expect(screen.getByTestId('context-card-facepalm-loading')).not.toBeNull();
+  });
+
+  it('keeps the context-tag cards when only the facepalm request fails', async () => {
+    mocks.getFacepalmComparison.mockRejectedValue(new Error('boom'));
+    await renderLoaded();
+    // Both the Flaw Stats tile and the You vs. your opponents card show the error.
+    expect(await screen.findAllByText(/Failed to load facepalm blunders/)).toHaveLength(2);
+    expect(screen.getByTestId('context-card-clock')).not.toBeNull();
+  });
+
   it('shows only the gate slot below the gate, with no cards', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
@@ -433,6 +492,7 @@ describe('You vs. your opponents section', () => {
     );
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
     expect(screen.queryByTestId('tempo-phase-card')).toBeNull();
+    expect(screen.queryByTestId('context-card-facepalm')).toBeNull();
   });
 
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {
@@ -466,6 +526,7 @@ describe('You vs. your opponents section', () => {
       'gap-popover-blunder-tc-rapid',
       'gap-popover-hasty-tc-rapid',
       'gap-popover-unrushed-tc-rapid',
+      'gap-popover-facepalm-tc-rapid',
     ]) {
       // One popover is open at a time: open, read, then the next click closes it.
       fireEvent.click(screen.getByTestId(id));

@@ -1341,6 +1341,128 @@ describe('timer, timeouts and points', () => {
   });
 });
 
+/**
+ * FLAWCHESS-DJ: the same session played on two devices. The device that fell behind gets a 409
+ * for a window that already ended elsewhere and must resync from the server, not error out.
+ */
+describe('session moved on elsewhere (cross-device resync)', () => {
+  const MOVED_ON: BlunderCheckSessionResponse = { ...TWO_WINDOW_SESSION, current_position: 1 };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    composeOrResumeSession.mockImplementation(async () => TWO_WINDOW_SESSION);
+    startWindow.mockImplementation(async () => windowStart());
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The first start answers the 409; every later start loads its window. */
+  function firstStartConflicts(detail: string): void {
+    startWindow.mockImplementationOnce(async () => {
+      throw httpError(HTTP_CONFLICT, detail);
+    });
+    startWindow.mockImplementation(async (_sessionId, position) => windowStart({ position }));
+  }
+
+  it.each(['window_ended', 'previous_window_open'])(
+    'a 409 %s on start jumps to the window the server says is next',
+    async (detail) => {
+      firstStartConflicts(detail);
+      getOpenSession.mockImplementation(async () => MOVED_ON);
+      const onExit = vi.fn();
+      renderTab(vi.fn(), onExit);
+      await advance(50);
+      await advance(50);
+
+      expect(startWindow).toHaveBeenCalledTimes(2);
+      expect(startWindow).toHaveBeenLastCalledWith(7, 1);
+      expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+      expect(buttonDisabled('blunder-check-btn-ready')).toBe(false);
+      expect(onExit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('finishes the session when every window ended elsewhere', async () => {
+    firstStartConflicts('window_ended');
+    getOpenSession.mockImplementation(async () => ({ ...MOVED_ON, current_position: null }));
+    finishSession.mockImplementation(() => new Promise(() => {}));
+    renderTab();
+    await advance(50);
+    await advance(50);
+
+    expect(finishSession).toHaveBeenCalledWith(7);
+    expect(startWindow).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+  });
+
+  it('a 409 window_ended on an answer jumps to the next window', async () => {
+    answer.mockImplementation(async () => {
+      throw httpError(HTTP_CONFLICT, 'window_ended');
+    });
+    await reachFirstPrompt();
+    getOpenSession.mockImplementation(async () => MOVED_ON);
+    startWindow.mockImplementation(async (_sessionId, position) => windowStart({ position }));
+
+    fireEvent.click(screen.getByTestId('blunder-check-btn-safe'));
+    await advance(50);
+    await advance(50);
+
+    expect(startWindow).toHaveBeenLastCalledWith(7, 1);
+    expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+    expect(buttonDisabled('blunder-check-btn-ready')).toBe(false);
+  });
+
+  it('a 409 session_closed leaves the drill without an error screen', async () => {
+    firstStartConflicts('session_closed');
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+    await advance(50);
+    await advance(50);
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(startWindow).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('blunder-check-error')).toBeNull();
+  });
+
+  it.each([
+    ['no session is open any more', null],
+    ['another session is the open one', { ...MOVED_ON, session_id: 8 }],
+  ])('leaves the drill when %s', async (_label, open) => {
+    firstStartConflicts('window_ended');
+    getOpenSession.mockImplementation(async () => open);
+    const onExit = vi.fn();
+    renderTab(vi.fn(), onExit);
+    await advance(50);
+    await advance(50);
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(startWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the error screen when the progress cannot be fetched', async () => {
+    firstStartConflicts('window_ended');
+    getOpenSession.mockImplementation(async () => {
+      throw httpError(HTTP_SERVER_ERROR);
+    });
+    renderTab();
+    await advance(50);
+    await advance(50);
+
+    expect(screen.getByTestId('blunder-check-error')).not.toBeNull();
+  });
+
+  it('keeps the error screen for a 409 the drill does not know', async () => {
+    firstStartConflicts('not_started');
+    renderTab();
+    await advance(50);
+    await advance(50);
+
+    expect(screen.getByTestId('blunder-check-error')).not.toBeNull();
+    expect(startWindow).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('better move and solution (D-12, D-14, D-17)', () => {
   const CAUGHT = (): AnswerResponse =>
     gradedAnswer({

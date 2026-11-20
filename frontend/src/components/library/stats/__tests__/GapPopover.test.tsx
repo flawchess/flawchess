@@ -31,7 +31,10 @@ function blunderCell(overrides: Partial<GapCell> = {}): GapCell {
   };
 }
 
-function openPopover(cell: GapCell): HTMLElement {
+function openPopover(
+  cell: GapCell,
+  extra: { omitDirection?: boolean; rangeNote?: string } = {},
+): HTMLElement {
   render(
     <GapPopover
       testId={TRIGGER_ID}
@@ -41,6 +44,7 @@ function openPopover(cell: GapCell): HTMLElement {
       noun="blunders"
       basis={BASIS}
       cell={cell}
+      {...extra}
     />,
   );
   fireEvent.click(screen.getByTestId(TRIGGER_ID));
@@ -63,6 +67,22 @@ describe('GapPopover', () => {
     const indexes = parts.map((part) => text.indexOf(part));
     indexes.forEach((index, i) => expect(index, `missing: ${parts[i]}`).toBeGreaterThanOrEqual(0));
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
+  });
+
+  it('drops the direction sentence with omitDirection and keeps the rest', () => {
+    const text = openPopover(blunderCell(), { omitDirection: true }).textContent ?? '';
+    expect(text).toContain('Blunders: Moves that dropped your expected score by 15+ points.');
+    expect(text).not.toContain('Fewer is better.');
+    expect(text).toContain('You: 5.46 per 100 moves. Opponents: 6.12.');
+  });
+
+  it('shows a rangeNote as the first list item in place of the typical-gap line', () => {
+    const note = 'There is no typical range for facepalm blunders yet.';
+    const popover = openPopover(blunderCell(), { omitDirection: true, rangeNote: note });
+    const items = Array.from(popover.querySelectorAll('li')).map((li) => li.textContent);
+    expect(items[0]).toBe(note);
+    expect(items[1]).toBe(BASIS);
+    expect(popover.textContent).not.toContain('Typical gap');
   });
 
   it('puts the statistics below a separator in a greyed footer', () => {

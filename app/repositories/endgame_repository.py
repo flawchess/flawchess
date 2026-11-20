@@ -303,7 +303,15 @@ async def query_endgame_entry_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
-        game_ids=game_ids,
+        # game_ids=None on purpose (quick 261120-li5): the inner span aggregation already
+        # restricts to the ranked ids, and the join on Game.id makes an outer
+        # `games.id = ANY(:ids)` redundant. With it, the planner multiplied
+        # user_id x ANY x platform into a 1-row estimate for games, picked a nested loop
+        # with games outer, and re-ran the whole grouped game_positions aggregate once per
+        # ranked game: prod user with 1,435 ranked ids took 14.5 s / 6.56M buffers vs
+        # 30 ms / 8.9k without it (/api/endgames/ranked-stats p95 was 82 s).
+        # Do NOT pass game_ids here for consistency with the other filters.
+        game_ids=None,
     )
 
     result = await session.execute(stmt)
@@ -458,7 +466,10 @@ async def query_endgame_bucket_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
-        game_ids=game_ids,
+        # game_ids=None on purpose: the inner first_endgame aggregation already restricts to the ranked ids, so an
+        # outer `games.id = ANY(:ids)` is redundant and flips the plan into a per-game
+        # rescan of the aggregate (15-110 s). See query_endgame_entry_rows (quick 261120-li5).
+        game_ids=None,
     )
 
     result = await session.execute(stmt)
@@ -610,7 +621,10 @@ async def query_endgame_performance_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
-        game_ids=game_ids,
+        # game_ids=None on purpose: the endgame IN-subquery already restricts to the ranked ids, so an
+        # outer `games.id = ANY(:ids)` is redundant and flips the plan into a per-game
+        # rescan of the aggregate (15-110 s). See query_endgame_entry_rows (quick 261120-li5).
+        game_ids=None,
     )
 
     # Non-endgame games: id NOT in the endgame subquery
@@ -627,6 +641,8 @@ async def query_endgame_performance_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        # Keep game_ids here: under NOT IN the outer predicate is the only thing that
+        # restricts non-endgame rows to the ranked sample (unlike the endgame half above).
         game_ids=game_ids,
     )
 
@@ -757,7 +773,10 @@ async def query_clock_stats_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
-        game_ids=game_ids,
+        # game_ids=None on purpose: the inner clock_per_game aggregation already restricts to the ranked ids, so an
+        # outer `games.id = ANY(:ids)` is redundant and flips the plan into a per-game
+        # rescan of the aggregate (15-110 s). See query_endgame_entry_rows (quick 261120-li5).
+        game_ids=None,
     )
 
     result = await session.execute(stmt)

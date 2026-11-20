@@ -21,6 +21,7 @@ import {
   PRESET_LABELS,
   PRESET_ORDER,
   derivePreset,
+  facepalmScoreMeaning,
   formatFacepalmSummary,
   presetToRange,
   sliderToRange,
@@ -89,11 +90,7 @@ export function FacepalmFilter({ value, onChange }: FacepalmFilterProps) {
       infoAriaLabel="Facepalm score filter info"
       infoChildren={
         <>
-          <p>
-            How easy it is to see for a player at your level that the move is a blunder, as
-            estimated by our model. A high facepalm score means it should be easy to see, low
-            means it's probably hard to see.
-          </p>
+          <p>{facepalmScoreMeaning()}</p>
           <p className="mt-2">
             Low keeps 0 to 30%, Mid 30 to 70%, High 70 to 100%. Drag either handle for a custom
             range. Any range other than All shows blunders only.

@@ -3,6 +3,8 @@
  * a plain definition + "Fewer is better.", the You/Opponents rates with their unit, the
  * typical gap range in words with the verdict, the basis, then the counts, 99% CI and
  * p-value greyed below a separator. It says flaws, blunders or mistakes, never "events".
+ * `omitDirection` drops "Fewer is better." and `rangeNote` replaces the range line with a
+ * fixed first list item (257 D-16: the facepalm rows have no typical range and no direction).
  * A zoneless cell has no range line; an out-of-band gap that is not
  * significant says it could be chance instead of a verdict. The benchmark basis
  * (including the blitz/bullet-reads-rapid stopgap) is deliberately silent here.
@@ -50,6 +52,10 @@ interface GapPopoverProps {
   cell: GapCell;
   /** Overrides the significance sentence of a zoneless significant cell (default names the tactic). */
   zonelessSignificantCopy?: string;
+  /** 257 D-16: leave out the "Fewer is better." sentence after the definition. */
+  omitDirection?: boolean;
+  /** 257 D-16: shown as the first list item instead of the typical-range line. */
+  rangeNote?: string;
 }
 
 function formatCount(value: number): string {
@@ -90,12 +96,15 @@ function GapPopoverBody({
   basis,
   cell,
   zonelessSignificantCopy = COPY_ZONELESS_SIGNIFICANT,
+  omitDirection = false,
+  rangeNote,
 }: GapPopoverProps) {
-  const range = rangeLine(cell, zonelessSignificantCopy);
+  const range = rangeNote ?? rangeLine(cell, zonelessSignificantCopy);
   return (
     <div className="space-y-1.5">
       <p>
-        <strong>{label}:</strong> {definition.replace(/\.$/, '')}. Fewer is better.
+        <strong>{label}:</strong> {definition.replace(/\.$/, '')}.
+        {omitDirection ? '' : ' Fewer is better.'}
       </p>
       <p>
         <strong>

@@ -14,10 +14,10 @@ interpolation of user input.
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import chess
-from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, true
+from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased, defer
 from sqlalchemy.sql.elements import ColumnElement
@@ -33,8 +33,14 @@ from app.repositories.game_flaws_repository import (
     _TEMPO_INT,
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
-from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
-from app.services.facepalm_score import facepalm_expr
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
+from app.services.facepalm_score import (
+    FacepalmType,
+    facepalm_expr,
+    facepalm_type_expr,
+    facepalm_type_from_sql,
+)
+from app.schemas.normalization import Color, TimeControlBucket
 from app.schemas.library import (
     TEMPO_PHASE_PHASES,
     TEMPO_PHASE_TEMPOS,
@@ -985,6 +991,7 @@ def _build_flaw_item(
     pos_two_before: GamePosition | None,
     *,
     facepalm_score: float | None,
+    facepalm_type: FacepalmType | None,
     tactic_families: Sequence[str],
     orientation: TacticOrientation,
     min_tactic_depth: int | None,
@@ -1004,7 +1011,8 @@ def _build_flaw_item(
     are unaffected — the flaw still exists and counts.
 
     `facepalm_score` is the chip value the query computed with the library-lambda expression
-    (D-01): never read from the stored column, never recomputed in Python.
+    (D-01): never read from the stored column, never recomputed in Python. `facepalm_type` is the
+    257 D-02 type of the same row from `facepalm_type_expr`; it is nulled with the score below.
     """
     row_decided_lost = is_decided_lost(
         pos_before.eval_cp if pos_before else None,
@@ -1088,6 +1096,11 @@ def _build_flaw_item(
         missed_tactic_confidence=(flaw.missed_tactic_confidence if missed_visible else None),
         missed_tactic_depth=(flaw.missed_tactic_depth if missed_visible else None),
         facepalm_score=facepalm_score,
+        # 257 D-08: the type is NULL only for an unknown loss, while the score is also NULL for a
+        # missing played probability, spread or best-move probability (244 of 11,020 dev rows),
+        # so the reader nulls the type with the score: a chip needs both, and a typed row
+        # without a score would otherwise leak a type next to no score.
+        facepalm_type=facepalm_type if facepalm_score is not None else None,
     )
 
 
@@ -1278,7 +1291,11 @@ async def query_flaws(
     # Paginate, ordered recent-first.
     # The chip column is added only here, not to base_stmt: the count above does not need it.
     paged_stmt = (
-        base_stmt.add_columns(facepalm_chip.label("facepalm_chip"))
+        base_stmt.add_columns(
+            facepalm_chip.label("facepalm_chip"),
+            # Not labelled `t`: Row.t is a deprecated SQLAlchemy Row attribute.
+            facepalm_type_expr().label("facepalm_type"),
+        )
         .order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
         .offset(offset)
         .limit(limit)
@@ -1293,12 +1310,13 @@ async def query_flaws(
             pos_before,
             pos_two_before,
             facepalm_score=chip,
+            facepalm_type=facepalm_type_from_sql(ftype),
             tactic_families=tactic_families or (),
             orientation=orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
         )
-        for flaw, game, pos_at, pos_before, pos_two_before, chip in rows
+        for flaw, game, pos_at, pos_before, pos_two_before, chip, ftype in rows
     ]
     return items, matched_count
 
@@ -1369,27 +1387,41 @@ async def fetch_page_game_flaws_both_colors(
     return result
 
 
+class FacepalmChipValue(NamedTuple):
+    """257 D-08: the marker value of one scored owner-side blunder (score plus its type)."""
+
+    score: float
+    facepalm_type: FacepalmType
+
+
 async def fetch_page_facepalm_scores(
     session: AsyncSession,
     user_id: int,
     game_ids: Sequence[int],
-) -> dict[int, dict[int, float]]:
-    """Batch-compute the facepalm score of every scored flaw row for a page of games.
+) -> dict[int, dict[int, FacepalmChipValue]]:
+    """Batch-compute the facepalm score and type of every scored flaw row for a page of games.
 
-    Returns game_id -> {ply: score}; games without a scored row are absent. The score is the
-    query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01, D-04: the eval-chart tooltip and
-    the analysis move-list markers use the library lambda, never a Python computation). Rows
-    whose expression is NULL (unscored) are skipped. Returns owner-side plies only
-    (`player_only_gate` on the game's own user_color): opponent rows carry facts and score in
-    SQL since SEED-261114-iuv Part A step 4, but opponent markers keep a null facepalm score
-    because showing opponent scores is an open product decision (Part B). Callers still gate
-    on severity. User-scoped via GameFlaw.user_id == user_id (IDOR).
+    Returns game_id -> {ply: FacepalmChipValue(score, facepalm_type)}; games without a scored
+    row are absent. The score is the query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01,
+    D-04: the eval-chart tooltip and the analysis move-list markers use the library lambda,
+    never a Python computation); the type is `facepalm_type_expr()` of the same row, selected in
+    the same statement (257 D-08). Rows whose score expression is NULL (unscored) are skipped.
+    Returns owner-side plies only (`player_only_gate` on the game's own user_color): opponent
+    rows carry facts and score in SQL since SEED-261114-iuv Part A step 4, but opponent markers
+    keep a null facepalm score and type because showing opponent scores is an open product
+    decision (Part B; 257 D-06). Callers still gate on severity. User-scoped via
+    GameFlaw.user_id == user_id (IDOR).
     """
     if not game_ids:
         return {}
     score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
     stmt = (
-        select(GameFlaw.game_id, GameFlaw.ply, score)
+        select(
+            GameFlaw.game_id,
+            GameFlaw.ply,
+            score.label("score"),
+            facepalm_type_expr().label("ftype"),
+        )
         .join(Game, Game.id == GameFlaw.game_id)
         .where(
             GameFlaw.user_id == user_id,
@@ -1398,9 +1430,14 @@ async def fetch_page_facepalm_scores(
             score.isnot(None),
         )
     )
-    result: dict[int, dict[int, float]] = {}
-    for game_id, ply, value in (await session.execute(stmt)).all():
-        result.setdefault(game_id, {})[ply] = float(value)
+    result: dict[int, dict[int, FacepalmChipValue]] = {}
+    for game_id, ply, value, ftype in (await session.execute(stmt)).all():
+        narrowed = facepalm_type_from_sql(ftype)
+        if narrowed is None:
+            # Cannot happen while the score is non-NULL: the score needs a known loss and the
+            # type is NULL only for an unknown loss. Skip rather than emit a typeless chip.
+            continue
+        result.setdefault(game_id, {})[ply] = FacepalmChipValue(float(value), narrowed)
     return result
 
 
@@ -1552,7 +1589,9 @@ async def fetch_flaw_trend_rows(
     picked by user_color) directly — NOT game_flaws. _compute_flaw_trend turns these
     into per-100-move MACRO rates over a trailing FLAW_TREND_WINDOW-game window, bucketed
     by ISO week. One row per filtered game that has oracle move-quality data
-    (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC.
+    (oracle-present gate) and a usable played_at + ply_count, ordered played_at ASC then
+    game id (257 D-03: the tie-break makes the order deterministic, and game_id keys the
+    facepalm counts from fetch_facepalm_counts onto these rows).
 
     The oracle columns are populated from lichess analysis (NULL for chess.com /
     unanalyzed games), so the oracle-present gate is what defines "analyzed" here —
@@ -1581,6 +1620,7 @@ async def fetch_flaw_trend_rows(
 
     stmt = (
         select(
+            Game.id.label("game_id"),
             Game.played_at,
             Game.user_color,
             Game.ply_count,
@@ -1602,10 +1642,102 @@ async def fetch_flaw_trend_rows(
                 (Game.user_color == "black") & Game.black_blunders.isnot(None),
             ),
         )
-        .order_by(Game.played_at.asc())
+        .order_by(Game.played_at.asc(), Game.id.asc())
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
+
+
+class FacepalmGameCounts(NamedTuple):
+    """One game's own-blunder counts for the Flaws Timeline facepalm band (257 D-17, D-18)."""
+
+    blunders: int
+    scored: int
+    facepalm: int
+
+
+async def disable_jit_for_transaction(session: AsyncSession) -> None:
+    """Turn PostgreSQL JIT off for the rest of the current transaction (257 D-21).
+
+    The facepalm score is one ~34 KB expression. Above jit_optimize_above_cost PostgreSQL spends
+    seconds compiling it on every call (prod: 4.0 s of an 11 s comparison on the largest
+    account; dev: 2.2 to 3.5 s of compile for a 2x faster evaluation), and JIT without the
+    optimizer gives no speedup. SET LOCAL ends with the transaction, so it never leaks into
+    other requests through the pool; call it right before the facepalm statements.
+    """
+    await session.execute(text("SET LOCAL jit = off"))
+
+
+async def fetch_facepalm_counts(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> dict[int, FacepalmGameCounts]:
+    """Per-game blunder, scored and facepalm counts of the user's own blunders (257 D-17, D-18).
+
+    Returns {game_id: FacepalmGameCounts} over the filtered game set. `blunders` counts all of
+    the user's game_flaws blunders (the coverage denominator of D-18); `scored` those whose
+    `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` is non-NULL (COUNT skips NULL); `facepalm` those
+    scored at or above FACEPALM_STATS_MIN (D-01). Mistakes and opponent blunders are never
+    counted (`player_only_gate`). The result feeds the Flaws Timeline facepalm band only: it is
+    aggregate counts, not a filter or a drill selection (D-06). User-scoped on both tables
+    (IDOR), and the game set comes from `_filtered_games_base`, the one place the filters are
+    composed. Reads ix_game_flaws_blunder_facts index-only and runs with JIT off (D-21).
+    """
+    await disable_jit_for_transaction(session)
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered_share")
+
+    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    per_blunder = (
+        select(GameFlaw.game_id.label("game_id"), score.label("s"))
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            Game.user_id == user_id,
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            player_only_gate(GameFlaw.ply, Game.user_color),
+            GameFlaw.game_id.in_(select(base_filtered_subq.c.id)),
+        )
+        # Optimization fence: without it PostgreSQL pulls the subquery up and re-evaluates
+        # the ~34 KB score expression in each aggregate below that references it.
+        .offset(0)
+        .subquery("per_blunder")
+    )
+    stmt = select(
+        per_blunder.c.game_id,
+        func.count().label("blunders"),
+        func.count(per_blunder.c.s).label("scored"),
+        func.count(per_blunder.c.s).filter(per_blunder.c.s >= FACEPALM_STATS_MIN).label("facepalm"),
+    ).group_by(per_blunder.c.game_id)
+    rows = (await session.execute(stmt)).all()
+    return {
+        int(row.game_id): FacepalmGameCounts(
+            blunders=int(row.blunders), scored=int(row.scored), facepalm=int(row.facepalm)
+        )
+        for row in rows
+    }
 
 
 def _filtered_games_base(
@@ -1994,8 +2126,7 @@ def _tempo_phase_count_columns(user_color_col: Any) -> list[Any]:
     return columns
 
 
-async def fetch_flaw_comparison(
-    session: AsyncSession,
+def _flaw_comparison_anchor(
     user_id: int,
     analyzed_game_ids_subq: Subquery,
     *,
@@ -2009,21 +2140,14 @@ async def fetch_flaw_comparison(
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
     color: str | None,
-) -> list[Any]:
-    """Per-game player/opp counts for the 12 metrics over the analyzed+filtered set.
+) -> Subquery:
+    """The analyzed+filtered game set with its user move count (game_id, user_color, tc, user_moves).
 
-    LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
-    with zero flaws contribute a zero-delta row (all-analyzed-games basis).
-    Returns one row per (game_id, tc, user_moves) with 42 COUNT columns (12 player +
-    12 opp marginals, plus 18 crossed tempo x phase columns). The tc column lets the
-    service bucket rows per time control in Python; games with a NULL
-    time_control_bucket are excluded. Python aggregates mean + CI per metric.
-
-    Divide-by-zero guard: games with ply_count IS NULL or ply_count = 0
-    are excluded at the anchor level — _analyzed_game_ids_subquery does NOT
-    filter ply_count. Use func.count(GameFlaw.ply) NOT func.count() so absent
-    LEFT-JOIN rows (NULL ply) are not counted. Use is_opponent_expr from
-    query_utils — never inline ply % 2 math.
+    The one anchor of fetch_flaw_comparison and fetch_facepalm_comparison (257 D-12), so both
+    return the same (game_id, tc, user_moves) set and the facepalm rows pair with the other
+    comparison rows game for game. Divide-by-zero guard: games with ply_count NULL or 0 are
+    excluded here (`_analyzed_game_ids_subquery` does not filter ply_count), and a NULL
+    time_control_bucket cannot be placed on the TC switch.
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -2064,6 +2188,55 @@ async def fetch_flaw_comparison(
             Game.time_control_bucket.isnot(None),
         )
         .subquery("anchor")
+    )
+
+    return anchor_subq
+
+
+async def fetch_flaw_comparison(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> list[Any]:
+    """Per-game player/opp counts for the 12 metrics over the analyzed+filtered set.
+
+    LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
+    with zero flaws contribute a zero-delta row (all-analyzed-games basis).
+    Returns one row per (game_id, tc, user_moves) with 42 COUNT columns (12 player +
+    12 opp marginals, plus 18 crossed tempo x phase columns). The tc column lets the
+    service bucket rows per time control in Python; games with a NULL
+    time_control_bucket are excluded. Python aggregates mean + CI per metric.
+
+    Divide-by-zero guard: games with ply_count IS NULL or ply_count = 0
+    are excluded at the anchor level — _analyzed_game_ids_subquery does NOT
+    filter ply_count. Use func.count(GameFlaw.ply) NOT func.count() so absent
+    LEFT-JOIN rows (NULL ply) are not counted. Use is_opponent_expr from
+    query_utils — never inline ply % 2 math.
+    """
+    anchor_subq = _flaw_comparison_anchor(
+        user_id,
+        analyzed_game_ids_subq,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
     )
 
     # LEFT JOIN game_flaws — 42 COUNT(GameFlaw.ply) FILTER columns (12 metrics × 2 sides,
@@ -2242,6 +2415,121 @@ async def fetch_flaw_comparison(
             GameFlaw,
             (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
         )
+        .group_by(
+            anchor_subq.c.game_id,
+            anchor_subq.c.tc,
+            anchor_subq.c.user_moves,
+            anchor_subq.c.user_color,
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return list(rows)
+
+
+async def fetch_facepalm_comparison(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[TimeControlBucket] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: Literal["human", "bot", "both", "all"],
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: Color | None,
+) -> list[Any]:
+    """Per-game facepalm blunder counts of both sides, total and per type (257 D-11 / D-12).
+
+    One row per (game_id, tc, user_moves) of `_flaw_comparison_anchor`, the same game set as
+    fetch_flaw_comparison, with six COUNT FILTER columns: player_/opp_ facepalm (a scored
+    blunder at or above FACEPALM_STATS_MIN), and the same split by `facepalm_type_expr`
+    (..._missed_win, ..._allowed_loss). Per game and side the total equals missed wins plus
+    allowed losses. Opponent scores enter only as these aggregate counts (D-06): nothing here
+    feeds a filter or a drill selection. User-scoped through the anchor and the inner scan.
+    Four more columns, player_/opp_ blunders and blunders_scored, give the service the scored
+    coverage of each side: an unscored blunder (NULL score) is in no facepalm count, so a side
+    with few scored blunders would read as a low facepalm rate.
+
+    The score and the type are evaluated once per blunder in the `facepalm_scored` subquery,
+    fenced with .offset(0): without it PostgreSQL inlines the ~34 KB score expression into each
+    of the six FILTERs. The inner scan reads only the anchor's games, so a filtered request does
+    not score the user's other blunders. Games without a facepalm blunder join no row and give
+    zero counts (all-analyzed-games basis). The inner scan reads ix_game_flaws_blunder_facts
+    index-only, and the statement runs with JIT off (257 D-21).
+    """
+    await disable_jit_for_transaction(session)
+    anchor_subq = _flaw_comparison_anchor(
+        user_id,
+        analyzed_game_ids_subq,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    )
+    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    scored = (
+        select(
+            GameFlaw.game_id.label("game_id"),
+            GameFlaw.ply.label("ply"),
+            score.label("s"),
+            # Never labelled `t`: the anchor already exposes a `tc` column.
+            facepalm_type_expr().label("ftype"),
+        )
+        .where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            # correlate(None): the IN list must not auto-correlate with the anchor in the
+            # outer FROM, or the inner scan would lose its restriction to the anchor's games.
+            GameFlaw.game_id.in_(select(anchor_subq.c.game_id).correlate(None)),
+        )
+        # Optimization fence: see the docstring (single evaluation of the score and the type).
+        .offset(0)
+        .subquery("facepalm_scored")
+    )
+
+    def side_count(label: str, *, opponent: bool, facepalm_type: FacepalmType | None) -> Any:
+        side_pred = is_opponent_expr(scored.c.ply, anchor_subq.c.user_color)
+        conditions = [side_pred if opponent else ~side_pred, scored.c.s >= FACEPALM_STATS_MIN]
+        if facepalm_type is not None:
+            conditions.append(scored.c.ftype == facepalm_type)
+        return func.count(scored.c.ply).filter(*conditions).label(label)
+
+    def coverage_count(label: str, *, opponent: bool, scored_only: bool) -> Any:
+        side_pred = is_opponent_expr(scored.c.ply, anchor_subq.c.user_color)
+        # COUNT skips NULL: the score column counts the scored blunders, the ply column all.
+        counted = scored.c.s if scored_only else scored.c.ply
+        return func.count(counted).filter(side_pred if opponent else ~side_pred).label(label)
+
+    stmt = (
+        select(
+            anchor_subq.c.game_id,
+            anchor_subq.c.tc,
+            anchor_subq.c.user_moves,
+            side_count("player_facepalm", opponent=False, facepalm_type=None),
+            side_count("opp_facepalm", opponent=True, facepalm_type=None),
+            side_count("player_facepalm_missed_win", opponent=False, facepalm_type="missed_win"),
+            side_count("opp_facepalm_missed_win", opponent=True, facepalm_type="missed_win"),
+            side_count(
+                "player_facepalm_allowed_loss", opponent=False, facepalm_type="allowed_loss"
+            ),
+            side_count("opp_facepalm_allowed_loss", opponent=True, facepalm_type="allowed_loss"),
+            coverage_count("player_blunders", opponent=False, scored_only=False),
+            coverage_count("player_blunders_scored", opponent=False, scored_only=True),
+            coverage_count("opp_blunders", opponent=True, scored_only=False),
+            coverage_count("opp_blunders_scored", opponent=True, scored_only=True),
+        )
+        .select_from(anchor_subq)
+        .outerjoin(scored, scored.c.game_id == anchor_subq.c.game_id)
         .group_by(
             anchor_subq.c.game_id,
             anchor_subq.c.tc,

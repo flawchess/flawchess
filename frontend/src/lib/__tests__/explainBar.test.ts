@@ -116,6 +116,13 @@ describe('resolveExplainBarState', () => {
     });
   });
 
+  it('flags a facepalm blunder (score >= 70%) so the badge reads "???"', () => {
+    const at = (score: number) =>
+      resolveExplainBarState(inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: score })] }));
+    expect(at(0.7)).toMatchObject({ kind: 'explain', facepalm: true });
+    expect(at(0.699)).not.toHaveProperty('facepalm');
+  });
+
   it('keeps the bar with one usable line and marks the other unusable', () => {
     const onlyAllowed = tacticLines({ missed_moves: null, allowed_moves: ['Qh5', 'Nc6'] });
     expect(resolveExplainBarState(inputs({ tacticLines: onlyAllowed }))).toMatchObject({

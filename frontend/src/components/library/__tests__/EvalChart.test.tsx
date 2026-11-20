@@ -16,7 +16,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
-import { MAIA_ACCENT, GREAT_ACCENT } from '@/lib/theme';
+import { MAIA_ACCENT, GREAT_ACCENT, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type { EvalPoint, FlawMarker, PhaseTransitions } from '@/types/library';
 
 // Recharts' <ResponsiveContainer> measures its parent with ResizeObserver; in jsdom
@@ -39,7 +39,7 @@ vi.mock('recharts', async () => {
   };
 });
 
-import { EvalChart } from '../EvalChart';
+import { EvalChart, FacepalmTooltipLine } from '../EvalChart';
 import { bestMoveDotSpec } from '@/lib/bestMoveDot';
 
 beforeAll(() => {
@@ -192,5 +192,28 @@ describe('EvalChart gem/great dot layer — mount smoke test', () => {
       />,
     );
     expect(screen.getByTestId('eval-chart-99')).toBeTruthy();
+  });
+});
+
+/** jsdom normalizes color strings (oklch(0.50 ..) -> oklch(0.5 ..)); compare normalized forms. */
+function normalized(color: string): string {
+  const probe = document.createElement('div');
+  probe.style.color = color;
+  return probe.style.color;
+}
+
+describe('FacepalmTooltipLine (257 D-08 / D-10)', () => {
+  it('names an allowed loss in text and tints it crimson', () => {
+    render(<FacepalmTooltipLine score={0.957} type="allowed_loss" />);
+    const line = screen.getByTestId('eval-chart-tooltip-facepalm');
+    expect(line.textContent).toBe('Facepalm 95% \u00b7 allowed loss');
+    expect(line.style.color).toBe(normalized(TAC_ALLOWED));
+  });
+
+  it('names a missed win in text and tints it teal', () => {
+    render(<FacepalmTooltipLine score={0.4} type="missed_win" />);
+    const line = screen.getByTestId('eval-chart-tooltip-facepalm');
+    expect(line.textContent).toBe('Facepalm 40% \u00b7 missed win');
+    expect(line.style.color).toBe(normalized(TAC_MISSED));
   });
 });

@@ -58,6 +58,11 @@ MAX_BLUNDER_POSITION: int = 5
 # 2026-11-16 the owner kept 0.50 (reports/blunder-check/facepalm-fit-2026-11-16.md, "Owner
 # section"); the orchestrator had recommended 0.70 to cut false alarms, the owner declined.
 FACEPALM_SCORE_MIN: float = 0.5
+# 257 D-01: the library stats cut, the label meaning of a facepalm blunder (253 D-23: "should
+# score above 70%"). Separate from the drill's FACEPALM_SCORE_MIN on purpose. It equals the
+# Facepalm filter's High preset bound (70 / 100.0 in library_repository), so a stats row counts
+# exactly the blunders the High preset lists (257 research Pitfall 7).
+FACEPALM_STATS_MIN: float = 0.7
 # Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
 PLAYED_PROB_OFFSET: float = 0.01
 # Plies of the stored refutation line the score reads (one depth for all ratings in this phase).

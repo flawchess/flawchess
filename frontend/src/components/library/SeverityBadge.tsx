@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import type { FlawSeverity } from '@/types/library';
 
 // Badge bg = foreground at 14% alpha, border = 30% alpha.
@@ -61,6 +62,8 @@ const SEVERITY_LABELS_SINGULAR: Record<FlawSeverity, string> = {
   inaccuracy: 'Inaccuracy',
 };
 
+const BADGE_ICON_CLASS = 'h-4 w-4 shrink-0';
+
 interface SeverityBadgeProps {
   severity: FlawSeverity;
   count: number;
@@ -95,6 +98,11 @@ interface SeverityBadgeProps {
    * Defaults to false (Games card count badges stay icon-less).
    */
   showIcon?: boolean;
+  /**
+   * With showIcon on a blunder: lead with the "???" facepalm-blunder glyph instead of "??"
+   * (the flaw's facepalm score reaches the 70% stats cut). Defaults to false.
+   */
+  facepalm?: boolean;
   /** Extra classes merged onto the badge span (e.g. `self-start` to size to content). */
   className?: string;
 }
@@ -120,6 +128,7 @@ export function SeverityBadge({
   showCount = true,
   showActiveFilterRing = true,
   showIcon = false,
+  facepalm = false,
   className,
 }: SeverityBadgeProps) {
   const [flawFilter] = useFlawFilterStore();
@@ -205,7 +214,12 @@ export function SeverityBadge({
           : undefined
       }
     >
-      {showIcon && <MoveQualityIcon quality={severity} className="h-4 w-4 shrink-0" />}
+      {showIcon &&
+        (facepalm && severity === 'blunder' ? (
+          <FacepalmBlunderIcon className={BADGE_ICON_CLASS} />
+        ) : (
+          <MoveQualityIcon quality={severity} className={BADGE_ICON_CLASS} />
+        ))}
       {showCount && <span className="text-base font-bold">{count}</span>}
       <span className="text-sm font-bold">
         {showCount ? SEVERITY_LABELS[severity] : SEVERITY_LABELS_SINGULAR[severity]}

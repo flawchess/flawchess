@@ -160,25 +160,36 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
   // never in the message: an interpolated value would fragment Sentry
   // grouping (CLAUDE.md). `otherLiveSlots` excludes this slot, which is
   // marked dead immediately below.
-  Sentry.captureException(new Error('Stockfish worker pool: grading watchdog timeout'), {
-    tags: { source: 'stockfish-worker-pool' },
-    contexts: {
-      stockfishWatchdog: {
-        elapsedMs,
-        sinceLastInfoMs,
-        suspendRearms: slot.watchdogSuspendRearms,
-        livenessRearms: slot.watchdogLivenessRearms,
-        hiddenRearms: slot.watchdogHiddenRearms,
-        gradingDepth: slot.current?.gradingDepth ?? null,
-        candidateCount: slot.current?.candidateUcis.length ?? null,
-        gradesAccumulated: slot.accumulator.size,
-        visibilityState: document.visibilityState,
-        poolSize: state.slots.length,
-        otherLiveSlots: state.slots.filter((other) => other !== slot && !other.dead).length,
-        slotRespawns: state.slotRespawns,
+  // Bug fix (FLAWCHESS-9G, fourth pass): the only way to reach this point in
+  // a hidden tab is with the `MAX_WATCHDOG_HIDDEN_REARMS` budget spent, i.e.
+  // a tab left in the background for over ten minutes. Both events that
+  // reopened the issue had that shape (`hiddenRearms: 10`,
+  // `visibilityState: "hidden"`): throttling, not a bug we can fix. The slot
+  // is still killed and replaced below so it is not held forever, but the
+  // kill is no longer reported, matching the hidden-tab policy in
+  // instrument.ts (FLAWCHESS-C2/C3/C4). A fire in a visible tab always
+  // reports.
+  if (document.visibilityState !== 'hidden') {
+    Sentry.captureException(new Error('Stockfish worker pool: grading watchdog timeout'), {
+      tags: { source: 'stockfish-worker-pool' },
+      contexts: {
+        stockfishWatchdog: {
+          elapsedMs,
+          sinceLastInfoMs,
+          suspendRearms: slot.watchdogSuspendRearms,
+          livenessRearms: slot.watchdogLivenessRearms,
+          hiddenRearms: slot.watchdogHiddenRearms,
+          gradingDepth: slot.current?.gradingDepth ?? null,
+          candidateCount: slot.current?.candidateUcis.length ?? null,
+          gradesAccumulated: slot.accumulator.size,
+          visibilityState: document.visibilityState,
+          poolSize: state.slots.length,
+          otherLiveSlots: state.slots.filter((other) => other !== slot && !other.dead).length,
+          slotRespawns: state.slotRespawns,
+        },
       },
-    },
-  });
+    });
+  }
   slot.isReady = false;
   slot.dead = true;
   // Settle with a NEW empty Map — never `slot.accumulator`. A watchdog fire
