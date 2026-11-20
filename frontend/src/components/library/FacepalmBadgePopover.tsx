@@ -16,8 +16,9 @@ import * as React from 'react';
 import type { ReactNode } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
-import { toFacepalmPct } from '@/lib/facepalm';
+import { FACEPALM_TYPE_LABEL, toFacepalmPct } from '@/lib/facepalm';
 import { cn } from '@/lib/utils';
+import type { FacepalmType } from '@/types/library';
 import { FacepalmExplanation } from './FacepalmExplanation';
 
 /** Hover-open delay, the TagChip value. */
@@ -30,11 +31,13 @@ interface FacepalmBadgePopoverProps {
   testId: string;
   /** Raw 0..1 facepalm score. */
   score: number;
+  /** Facepalm type; named in the aria-label and the popover body (257 D-10). */
+  type: FacepalmType;
   /** The chip span. */
   children: ReactNode;
 }
 
-export function FacepalmBadgePopover({ testId, score, children }: FacepalmBadgePopoverProps) {
+export function FacepalmBadgePopover({ testId, score, type, children }: FacepalmBadgePopoverProps) {
   const [open, setOpen] = useTrackedPopoverOpen(testId);
   const pct = toFacepalmPct(score);
   const openTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,7 +87,7 @@ export function FacepalmBadgePopover({ testId, score, children }: FacepalmBadgeP
       <PopoverPrimitive.Trigger asChild>
         <button
           type="button"
-          aria-label={`Facepalm ${pct}%`}
+          aria-label={`Facepalm ${pct}%, ${FACEPALM_TYPE_LABEL[type].toLowerCase()}`}
           data-testid={testId}
           className="inline-flex cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onPointerEnter={armOpen}
@@ -136,7 +139,7 @@ export function FacepalmBadgePopover({ testId, score, children }: FacepalmBadgeP
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <FacepalmExplanation score={score} />
+          <FacepalmExplanation score={score} type={type} />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

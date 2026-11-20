@@ -34,7 +34,7 @@ import { FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
-import type { FlawSeverity } from '@/types/library';
+import type { FacepalmType, FlawSeverity } from '@/types/library';
 import { trackFeature } from '@/lib/analytics';
 
 // Subtle zebra stripe for the desktop move list. A faint
@@ -127,12 +127,13 @@ function MoveListMarker({
       />
     );
   }
-  // A scored blunder gets the Facepalm mini-chip right after its "??" glyph.
-  if (flaw?.severity === 'blunder' && flaw.facepalmScore != null) {
+  // A scored blunder gets the Facepalm mini-chip right after its "??" glyph. 257 D-09: the chip
+  // needs the type as well (it picks the tint), so a score without a type renders no chip.
+  if (flaw?.severity === 'blunder' && flaw.facepalmScore != null && flaw.facepalmType != null) {
     return (
       <>
         <Icon className={className} aria-hidden />
-        <FacepalmMoveChip score={flaw.facepalmScore} byOpponent={flaw.facepalmByOpponent} />
+        <FacepalmMoveChip score={flaw.facepalmScore} type={flaw.facepalmType} byOpponent={flaw.facepalmByOpponent} />
       </>
     );
   }
@@ -193,6 +194,8 @@ export interface FlawMarkerEntry {
    * after the blunder glyph. Set only from a game flaw marker that carries a score.
    */
   facepalmScore?: number;
+  /** Facepalm type of the same blunder; set together with facepalmScore from a marker that carries both. */
+  facepalmType?: FacepalmType;
   /** True when the opponent played the scored blunder: switches the popover wording. */
   facepalmByOpponent?: boolean;
   /**

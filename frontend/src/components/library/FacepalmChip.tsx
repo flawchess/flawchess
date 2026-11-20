@@ -25,7 +25,7 @@ interface FacepalmChipProps {
 export function FacepalmChip({ score, type, gameId, ply }: FacepalmChipProps) {
   const style = FACEPALM_TYPE_STYLE[type];
   return (
-    <FacepalmBadgePopover testId={`facepalm-badge-${gameId}-${ply}`} score={score}>
+    <FacepalmBadgePopover testId={`facepalm-badge-${gameId}-${ply}`} score={score} type={type}>
       <span
         className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold whitespace-nowrap transition-all hover:-translate-y-px hover:brightness-125"
         style={{ color: style.color, backgroundColor: style.bg, borderColor: style.border }}

@@ -152,6 +152,21 @@ export interface FacepalmTypeStyle {
  * of the same orientation. The missed border is the full teal and the allowed border the
  * lower-alpha crimson (the TacticMotifChip convention, which keeps the crimson fill legible).
  */
+/** 257 D-10: short type name, shown lower-cased in aria-labels and the eval-chart tooltip. */
+export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
+  missed_win: 'Missed win',
+  allowed_loss: 'Allowed loss',
+};
+
+/**
+ * 257 D-10: what the type means, in one mover-neutral sentence (so the opponent variant needs no
+ * second wording). No probability words (D-05). Read as `${LABEL}: ${SENTENCE}`.
+ */
+export const FACEPALM_TYPE_SENTENCE: Record<FacepalmType, string> = {
+  missed_win: 'the best move won material that was not taken.',
+  allowed_loss: 'the move gave away material.',
+};
+
 export const FACEPALM_TYPE_STYLE: Record<FacepalmType, FacepalmTypeStyle> = {
   missed_win: { color: TAC_MISSED, bg: TAC_MISSED_BG, border: TAC_MISSED },
   allowed_loss: { color: TAC_ALLOWED, bg: TAC_ALLOWED_BG, border: TAC_ALLOWED_BORDER },
