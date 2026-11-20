@@ -15,6 +15,9 @@
  * the react-query key are unchanged. Cloned in spirit from tacticDepth.ts.
  */
 
+import { TAC_ALLOWED, TAC_ALLOWED_BG, TAC_ALLOWED_BORDER, TAC_MISSED, TAC_MISSED_BG } from '@/lib/theme';
+import type { FacepalmType } from '@/types/library';
+
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
 
 /** Slider domain minimum (whole percent). */
@@ -29,8 +32,36 @@ export const FACEPALM_STEP = 5;
 /** Low / Mid boundary, included in both (whole percent, UI cutoff, D-09). */
 const FACEPALM_MID_CUTOFF = 30;
 
-/** Mid / High boundary, included in both (whole percent, UI cutoff, D-09). */
-const FACEPALM_HIGH_CUTOFF = 70;
+/**
+ * Mid / High boundary, included in both (whole percent, UI cutoff, D-09). It is also the stats
+ * cut: the Flaws Timeline facepalm band and the Facepalm rows name it. The backend FACEPALM_STATS_MIN is
+ * pinned to the same 70% by test.
+ */
+export const FACEPALM_HIGH_CUTOFF = 70;
+
+/**
+ * 257 D-20: the info popovers of the Facepalm blunders card and the Flaws Timeline facepalm
+ * band. What a facepalm blunder is, plus the training pointer ("trains you to spot them", not a
+ * promise to reduce them: no training effect is measured). No link, since a hover popover cannot
+ * be pinned to click it.
+ */
+const FACEPALM_DEFINITION = `blunders that should have been easy to see for a player at your level`;
+const FACEPALM_TRAINING = 'Blunder Check trains you to spot them before you move.';
+export const FACEPALM_CARD_INFO = `Facepalm blunders are ${FACEPALM_DEFINITION}: our model gives them a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more. ${FACEPALM_TRAINING}`;
+/** Shown in place of the comparison when too few of either side's blunders are scored. */
+export const FACEPALM_LOW_COVERAGE_NOTE =
+  'Not enough blunders in these games have a facepalm score yet to compare you with your opponents.';
+export const FACEPALM_TIMELINE_INFO = `The darker band shows facepalm blunders: ${FACEPALM_DEFINITION} (facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more). ${FACEPALM_TRAINING}`;
+
+/**
+ * What the facepalm score means, in one sentence. Shared by the score popover
+ * (FacepalmExplanation) and the Facepalm Score filter info, so the two never drift.
+ * `byOpponent` switches "your level" to "their level" for the opponent's blunders.
+ */
+export function facepalmScoreMeaning(byOpponent = false): string {
+  const level = byOpponent ? 'their' : 'your';
+  return `A high facepalm score tells you the blunder should have been easy to see for a player at ${level} level, a low one that it was probably hard to see.`;
+}
 
 /** Multiplier turning a 0..1 score into a percent. */
 const FACEPALM_PCT_SCALE = 100;
@@ -134,3 +165,45 @@ export function toFacepalmPct(score: number): number {
   const pct = Math.floor(score * FACEPALM_PCT_SCALE);
   return Math.max(FACEPALM_PCT_MIN, Math.min(FACEPALM_PCT_MAX, pct));
 }
+
+/**
+ * True when a blunder's score makes it a facepalm blunder (the "???" badge): the floored chip
+ * percent reaches FACEPALM_HIGH_CUTOFF, the same cut the KPI tile, card and timeline band count.
+ */
+export function isFacepalmBlunder(score: number | null | undefined): boolean {
+  return score != null && toFacepalmPct(score) >= FACEPALM_HIGH_CUTOFF;
+}
+
+// ─── Facepalm type tint (257 D-08) ──────────────────────────────────────────
+
+/** Inline colours of a type-tinted Facepalm chip. */
+export interface FacepalmTypeStyle {
+  color: string;
+  bg: string;
+  border: string;
+}
+
+/** 257 D-10: short type name, shown lower-cased in aria-labels and the eval-chart tooltip. */
+export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
+  missed_win: 'Missed win',
+  allowed_loss: 'Allowed loss',
+};
+
+/**
+ * 257 D-10: what the type means, in one mover-neutral sentence (so the opponent variant needs no
+ * second wording). No probability words (D-05). Read as `${LABEL}: ${SENTENCE}`.
+ */
+export const FACEPALM_TYPE_SENTENCE: Record<FacepalmType, string> = {
+  missed_win: 'the best move won material or led to checkmate, and was not played.',
+  allowed_loss: 'the move gave away material or allowed checkmate.',
+};
+
+/**
+ * 257 D-08: teal for a missed win, crimson for an allowed loss, the same hues as the tactic chips
+ * of the same orientation. The missed border is the full teal and the allowed border the
+ * lower-alpha crimson (the TacticMotifChip convention, which keeps the crimson fill legible).
+ */
+export const FACEPALM_TYPE_STYLE: Record<FacepalmType, FacepalmTypeStyle> = {
+  missed_win: { color: TAC_MISSED, bg: TAC_MISSED_BG, border: TAC_MISSED },
+  allowed_loss: { color: TAC_ALLOWED, bg: TAC_ALLOWED_BG, border: TAC_ALLOWED_BORDER },
+};

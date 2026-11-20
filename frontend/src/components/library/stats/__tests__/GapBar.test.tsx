@@ -57,6 +57,7 @@ describe('GapBar', () => {
     ['not-significant worse', { delta: 0.5, significant: false }, GAUGE_NEUTRAL, false],
     ['zoneless significant', { delta: -0.66, hasZone: false }, ZONE_SUCCESS, true],
     ['zoneless not significant', { delta: -0.66, hasZone: false, significant: false }, GAUGE_NEUTRAL, false],
+    ['noVerdict zoneless significant', { delta: -0.66, hasZone: false, noVerdict: true }, GAUGE_NEUTRAL, false],
   ] as const)('colours a %s cell', (_name, overrides, dotColor, coloredWords) => {
     renderBar(cell(overrides));
     expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(dotColor));
@@ -68,6 +69,11 @@ describe('GapBar', () => {
       expect(words.style.color).toBe('');
       expect(words.className).toContain('text-foreground');
     }
+  });
+
+  it('draws no band for a noVerdict cell', () => {
+    renderBar(cell({ hasZone: false, noVerdict: true }));
+    expect(screen.queryByTestId('bar-band')).toBeNull();
   });
 
   it('writes the gap in words', () => {

@@ -342,6 +342,82 @@ class TestGetFlawComparison:
         assert resp.status_code == 422
 
 
+class TestGetFacepalmComparison:
+    """Tests for GET /library/facepalm-comparison (257 D-21, split from /flaw-comparison)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_401_without_auth(self) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/facepalm-comparison")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/facepalm-comparison", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"tcs": []}  # a fresh user has no analyzed games
+
+    @pytest.mark.asyncio
+    async def test_returns_422_when_from_date_after_to_date(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/facepalm-comparison",
+                params={"from_date": "2025-06-01", "to_date": "2025-01-01"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"color": "purple"},
+            {"opponent_type": "xyz"},
+            {"time_control": "hyperbullet"},
+            {"platform": "myspace"},
+        ],
+    )
+    async def test_returns_422_for_an_unknown_filter_value(
+        self, auth_headers: dict[str, str], params: dict[str, str]
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/facepalm-comparison", params=params, headers=auth_headers
+            )
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("opponent_type", ["human", "bot", "both", "all"])
+    async def test_accepts_every_opponent_type_the_frontend_sends(
+        self, auth_headers: dict[str, str], opponent_type: str
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/facepalm-comparison",
+                params={"opponent_type": opponent_type, "color": "white"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Helpers for GET /library/flaws test seeding (committed sessions)
 # ---------------------------------------------------------------------------
@@ -1572,7 +1648,9 @@ class TestEvalSeriesPayload:
         by_ply = {m["ply"]: m for m in card["flaw_markers"]}
         assert by_ply[2]["severity"] == "blunder"
         assert by_ply[2]["facepalm_score"] == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert by_ply[2]["facepalm_type"] == "allowed_loss"
         assert all(m["facepalm_score"] is None for p, m in by_ply.items() if p != 2)
+        assert all(m["facepalm_type"] is None for p, m in by_ply.items() if p != 2)
 
     @pytest.mark.asyncio
     async def test_unanalyzed_game_has_null_eval_fields(
@@ -2573,6 +2651,26 @@ class TestFacepalmFilterEndToEnd:
         )
         assert "facepalm_score" in by_key[(game1, 6)]
         assert by_key[(game1, 6)]["facepalm_score"] is None
+
+    @pytest.mark.asyncio
+    async def test_flaws_payload_carries_facepalm_type(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        """Every row carries facepalm_type: the 0.95 seed loses material (allowed loss), an unscored row is null."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaws",
+                params={"limit": 100},
+                headers=facepalm_test_state["headers"],
+            )
+        assert resp.status_code == 200
+        by_key = {(f["game_id"], f["ply"]): f for f in resp.json()["flaws"]}
+        game1 = facepalm_test_state["game1"]
+        assert by_key[(game1, 2)]["facepalm_type"] == "allowed_loss"
+        assert "facepalm_type" in by_key[(game1, 6)]
+        assert by_key[(game1, 6)]["facepalm_type"] is None
 
 
 # ---------------------------------------------------------------------------

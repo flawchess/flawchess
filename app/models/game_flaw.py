@@ -12,7 +12,7 @@ is the one denormalized display column that cannot be recovered without PGN repl
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, SmallInteger, String, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +34,29 @@ class GameFlaw(Base):
         # Covers: filter by user_id + severity (set-membership) for Games-tab EXISTS
         # and Flaws-tab SELECT queries without a full table scan per user.
         Index("ix_game_flaws_user_severity", "user_id", "severity"),
+        # Phase 257 D-21: covering partial index for the facepalm aggregates (Flaws Timeline
+        # band, "Facepalm blunders" comparison). It carries every column facepalm_expr and
+        # facepalm_type_expr read, so scoring a user's blunders is an index-only scan instead of
+        # a heap fetch of each wide row. Keep the INCLUDE list in step with
+        # facepalm_score._game_flaw_columns (a new score input not listed here silently brings
+        # the heap fetches back). Severity 2 = blunder (_SEVERITY_INT).
+        Index(
+            "ix_game_flaws_blunder_facts",
+            "user_id",
+            "game_id",
+            postgresql_include=[
+                "ply",
+                "maia_played_prob",
+                "maia_reply_spread",
+                "played_line_material",
+                "line_mate_ply",
+                "best_line_material",
+                "best_line_mate_ply",
+                "maia_best_prob",
+                "maia_pre_spread",
+            ],
+            postgresql_where=text("severity = 2"),
+        ),
         # Phase 254 array shape checks, NOT VALID so the migration skips the table scan
         # (metadata matches alembic/versions/..._a7d2c9e1b254_phase_254_facepalm_facts.py).
         CheckConstraint(

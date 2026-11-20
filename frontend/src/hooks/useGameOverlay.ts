@@ -29,6 +29,7 @@ import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import type { EvalPoint, FlawMarker, FlawSeverity } from '@/types/library';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
 import type { PvLine } from '@/hooks/uciParser';
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import {
@@ -108,6 +109,8 @@ interface PlyMaps {
   bestMoveByPly: Map<number, string>;
   evalByPly: Map<number, EvalPoint>;
   severityByPly: Map<number, FlawSeverity>;
+  /** Plies of facepalm blunders (score >= the 70% stats cut), drawn with the "???" badge. */
+  facepalmPlies: Set<number>;
   depthByPly: Map<number, { missed?: string; allowed?: string }>;
 }
 
@@ -123,9 +126,12 @@ function buildPlyMaps(
   }
 
   const severityByPly = new Map<number, FlawSeverity>();
+  // Blunders whose facepalm score reaches the stats cut draw the "???" badge (both colors).
+  const facepalmPlies = new Set<number>();
   const depthByPly = new Map<number, { missed?: string; allowed?: string }>();
   for (const fm of flawMarkers ?? []) {
     severityByPly.set(fm.ply, fm.severity);
+    if (fm.severity === 'blunder' && isFacepalmBlunder(fm.facepalm_score)) facepalmPlies.add(fm.ply);
     // Opponent tactic arrows (crimson allowed / teal missed) are surfaced in
     // the eval-chart tooltip (built separately in EvalChart) but NOT on the board — suppress
     // the opponent's tactic depths here so no tactic arrow paints for them (the move list does
@@ -147,7 +153,7 @@ function buildPlyMaps(
       depthByPly.set(fm.ply, { missed: missed ?? undefined, allowed: allowed ?? undefined });
     }
   }
-  return { bestMoveByPly, evalByPly, severityByPly, depthByPly };
+  return { bestMoveByPly, evalByPly, severityByPly, facepalmPlies, depthByPly };
 }
 
 /**
@@ -279,6 +285,7 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
         squareMarkers.push({
           square: lastMove.to,
           severity,
+          ...(maps.facepalmPlies.has(k) ? { facepalm: true } : {}),
         });
         lastMoveHighlightColor = MOVE_HIGHLIGHT_SEVERITY[severity];
       } else {

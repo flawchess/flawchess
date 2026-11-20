@@ -16,7 +16,13 @@ from app.services.blunder_check_rules import (
     FACEPALM_DRILL_LAMBDA,
     FACEPALM_LIBRARY_LAMBDA,
 )
-from app.services.facepalm_score import FACEPALM_MODEL, FacepalmModel, facepalm_expr
+from app.services.facepalm_score import (
+    FACEPALM_MODEL,
+    FacepalmModel,
+    FacepalmType,
+    facepalm_expr,
+    facepalm_type_expr,
+)
 from tests.facepalm_seed import (
     SEED_FACEPALM_MARGIN,
     SEED_FACEPALM_TOLERANCE,
@@ -77,3 +83,23 @@ async def test_none_target_is_unscored(db_session: AsyncSession) -> None:
 def test_unreachable_target_raises() -> None:
     with pytest.raises(ValueError):
         facepalm_fact_columns(1.0 - 1e-12, lam=FACEPALM_DRILL_LAMBDA)
+
+
+@pytest.mark.parametrize(
+    ("facepalm_type", "target"),
+    [("missed_win", 0.8), ("allowed_loss", 0.8), ("missed_win", 0.72)],
+)
+async def test_seeded_type_and_target(
+    db_session: AsyncSession, facepalm_type: FacepalmType, target: float
+) -> None:
+    """257 D-02: a typed seed reads back both its target score and its facepalm type."""
+    facts = facepalm_fact_columns(target, lam=FACEPALM_LIBRARY_LAMBDA, facepalm_type=facepalm_type)
+    game_id = await seed_flaw_rows(db_session, [facts], user_id=SEED_USER_ID)
+    result = await db_session.execute(
+        select(facepalm_expr(FACEPALM_LIBRARY_LAMBDA), facepalm_type_expr()).where(
+            GameFlaw.game_id == game_id
+        )
+    )
+    score, seeded_type = result.one()
+    assert score == pytest.approx(target, abs=SEED_FACEPALM_TOLERANCE)
+    assert seeded_type == facepalm_type

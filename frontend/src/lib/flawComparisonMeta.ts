@@ -2,6 +2,7 @@
  * Metadata for the Library Stats you-vs-opponents views.
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
+ * FACEPALM_METRICS / FACEPALM_GAP_META / facepalmMetricCell (the three neutral facepalm rows),
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
  * flawMetricCell / tempoPhaseGapCell (API bullet or crossed tempo x phase cell ->
  * gap-bar view model), TEMPO_PHASE_TEMPOS / TEMPO_PHASE_PHASES (the heatmap axes), libraryBasisText /
@@ -19,8 +20,11 @@ import type { ComponentType, CSSProperties } from 'react';
 
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { BLUNDER_DROP, MISTAKE_DROP, TIME_PRESSURE_CLOCK_FRACTION } from '@/generated/flawThresholds';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
 import type { GapCell } from '@/lib/gapBar';
 import type {
+  FacepalmBullet,
+  FacepalmMetric,
   FlawBullet,
   FlawComparisonTc,
   FlawDeltaMetric,
@@ -126,6 +130,40 @@ export const FLAW_GAP_META: Record<FlawDeltaMetric, FlawGapMeta> = {
   },
 };
 
+// ─── Facepalm rows (257) ────────────────────────────────────────────────────────
+
+/** The three facepalm rows in display order: the total, then the two types. */
+export const FACEPALM_METRICS: readonly FacepalmMetric[] = [
+  'facepalm',
+  'facepalm_missed_win',
+  'facepalm_allowed_loss',
+];
+
+/**
+ * Label, hint, definition and noun of the facepalm rows (257 D-14, D-15). The 70% comes from
+ * FACEPALM_HIGH_CUTOFF so it cannot drift from the High preset.
+ */
+export const FACEPALM_GAP_META: Record<FacepalmMetric, FlawGapMeta> = {
+  facepalm: {
+    label: 'Facepalm blunders',
+    hint: `Blunders with a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more`,
+    definition: `Blunders with a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more`,
+    noun: 'facepalm blunders',
+  },
+  facepalm_missed_win: {
+    label: 'Missed wins',
+    hint: 'Facepalm blunders that passed up winning material or checkmate',
+    definition: 'Facepalm blunders that passed up winning material or checkmate',
+    noun: 'missed-win facepalm blunders',
+  },
+  facepalm_allowed_loss: {
+    label: 'Allowed losses',
+    hint: 'Facepalm blunders that gave away material or allowed checkmate',
+    definition: 'Facepalm blunders that gave away material or allowed checkmate',
+    noun: 'allowed-loss facepalm blunders',
+  },
+};
+
 // ─── You vs. your opponents: the four context-tag cards ─────────────────────────
 
 export type ContextTagCardKey = 'clock' | 'phase' | 'opponent_errors' | 'lost_advantages';
@@ -170,7 +208,7 @@ export const CONTEXT_TAG_CARDS: readonly ContextTagCardDef[] = [
 ];
 
 /** `low_clock` -> `low-clock`: the metric segment of the gap testids. */
-export function metricTestIdSegment(metric: FlawDeltaMetric): string {
+export function metricTestIdSegment(metric: FlawDeltaMetric | FacepalmMetric): string {
   return metric.replace(/_/g, '-');
 }
 
@@ -212,6 +250,19 @@ export function flawBulletToGapCell(b: Omit<FlawBullet, 'tag'>): GapCell {
 export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetric): GapCell | null {
   const bullet = tcStats.bullets.find((b) => b.tag === metric);
   return bullet ? flawBulletToGapCell(bullet) : null;
+}
+
+/**
+ * The neutral gap-bar cell of one facepalm row (257 D-13): significance is carried for the
+ * popover but `noVerdict` keeps the bar free of any verdict colour. Null when the payload
+ * carries no such row.
+ */
+export function facepalmMetricCell(
+  bullets: readonly FacepalmBullet[],
+  metric: FacepalmMetric,
+): GapCell | null {
+  const bullet = bullets.find((b) => b.tag === metric);
+  return bullet ? { ...flawBulletToGapCell(bullet), noVerdict: true } : null;
 }
 
 const TEMPO_ADJECTIVE: Record<FlawTempoMetric, string> = {

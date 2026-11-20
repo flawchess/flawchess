@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,9 @@ from app.services.facepalm_score import (
     FACEPALM_MODEL,
     FacepalmFacts,
     FacepalmModel,
+    FacepalmType,
     facepalm_score,
+    facepalm_type as facepalm_type_of_facts,
 )
 from tests.conftest import ensure_test_user
 
@@ -40,6 +42,9 @@ SEED_SPREADS: Final[tuple[float, ...]] = (1.0, 2.0, 4.0, 8.0, 16.0)
 # (played_3 0) reads the best-move term, and since 254 WR-01 / 256 D-04 an unknown best-move
 # probability leaves that row unscored, so seeded rows carry one.
 SEED_BEST_PROB: Final[float] = 0.2
+# Best-move probabilities a missed-win seed searches: a missed win scores 0.8 and above only with
+# a likely best move (about 0.96 at 0.9; 257 research A4).
+SEED_BEST_PROBS: Final[tuple[float, ...]] = (SEED_BEST_PROB, 0.5, 0.9)
 # Played-move probability used to read the rest of the linear predictor off the Python twin.
 _PROBE_PROB: Final[float] = 0.5
 _ARRAY_SLOTS: Final[int] = 9
@@ -64,19 +69,28 @@ def _unscored_facts() -> dict[str, Any]:
     }
 
 
-def _rest_of_z(model: FacepalmModel, lam: float, played_3: int, spread: float) -> float | None:
+def _rest_of_z(
+    model: FacepalmModel,
+    lam: float,
+    played_3: int,
+    spread: float,
+    best_material: list[int | None] | None = None,
+    best_prob: float = SEED_BEST_PROB,
+) -> float | None:
     """The linear predictor without the played-probability term, via the Python twin.
 
     Reading it off `facepalm_score` keeps the seed valid for every model shape: the twin owns
-    the term rules. None when the twin leaves the row unscored.
+    the term rules. None when the twin leaves the row unscored. `best_material` and `best_prob`
+    carry the best line the seed stores (257: a missed-win seed has one).
     """
-    # The probe reads the same array the seed stores, so it is valid under every material input.
+    # The probe reads the same arrays the seed stores, so it is valid under every material input.
     facts = FacepalmFacts(
         played_prob=_PROBE_PROB,
         reply_spread=spread,
         played_material=_material_array(played_3),
         mate_ply=None,
-        best_prob=SEED_BEST_PROB,
+        best_material=best_material,
+        best_prob=best_prob,
     )
     score = facepalm_score(facts, lam=lam, model=model)
     if score is None:
@@ -85,19 +99,49 @@ def _rest_of_z(model: FacepalmModel, lam: float, played_3: int, spread: float) -
     return z_probe - model.played_coef * math.log(_PROBE_PROB + PLAYED_PROB_OFFSET)
 
 
+def _seed_candidates(
+    model: FacepalmModel, facepalm_type: FacepalmType | None
+) -> Iterator[tuple[int, list[int | None] | None, float]]:
+    """(played_3, best-line array, best-move probability) grid points of a seed, in search order.
+
+    Untyped: the played depth-3 material from 0 down to -LOSS_CAP, no best line (today's search).
+    allowed_loss: from -1 down to -LOSS_CAP with no best line (missed 0, so loss > 0 >= missed).
+    missed_win: played_3 0 (no loss) and best-line gains from the model's missed cap down to 1.
+    """
+    if facepalm_type == "missed_win":
+        for gain in range(model.missed_cap, 0, -1):
+            for best_prob in SEED_BEST_PROBS:
+                yield 0, _material_array(gain), best_prob
+        return
+    first = -1 if facepalm_type == "allowed_loss" else 0
+    for played_3 in range(first, -LOSS_CAP - 1, -1):
+        yield played_3, None, SEED_BEST_PROB
+
+
 def facepalm_fact_columns(
-    target: float | None, *, lam: float, model: FacepalmModel = FACEPALM_MODEL
+    target: float | None,
+    *,
+    lam: float,
+    model: FacepalmModel = FACEPALM_MODEL,
+    facepalm_type: FacepalmType | None = None,
 ) -> dict[str, Any]:
     """GameFlaw keyword values whose `facepalm_expr(lam, model)` equals `target` (None = unscored).
 
     Reader tests seed facts, never the stored score, since readers use the expression from R2
-    on (D-01). The best line and the pre-blunder spread stay NULL, so the missed term is 0 and
-    `lam` does not move the value; the best-move probability is SEED_BEST_PROB (a no-loss row
-    stays scored under best_prob_for_misses, 254 WR-01). Search: the played depth-3 material from 0 down to
-    -LOSS_CAP, spreads from SEED_SPREADS, the first grid point whose solved played probability
-    lies in [SEED_PROB_MIN, 1.0] wins; the probability is solved in closed form from the logit
-    of the target. Raises ValueError when no grid point reaches the target (for example a refit
-    that flips the sign of the played coefficient, or a target outside the model's range).
+    on (D-01). Untyped (`facepalm_type=None`): the best line and the pre-blunder spread stay NULL,
+    so the missed term is 0 and `lam` does not move the value; the best-move probability is
+    SEED_BEST_PROB (a no-loss row stays scored under best_prob_for_misses, 254 WR-01). Search: the
+    played depth-3 material from 0 down to -LOSS_CAP, spreads from SEED_SPREADS, the first grid
+    point whose solved played probability lies in [SEED_PROB_MIN, 1.0] wins; the probability is
+    solved in closed form from the logit of the target. Raises ValueError when no grid point
+    reaches the target (for example a refit that flips the sign of the played coefficient, or a
+    target outside the model's range).
+
+    Untyped high targets are allowed losses (257 research Pitfall 8): the first grid point that
+    reaches them loses material. `facepalm_type` (257 D-02) pins the type of the seeded row:
+    "allowed_loss" searches only losing grid points, "missed_win" keeps played_3 at 0 and stores a
+    best line (`best_line_material`, `maia_best_prob`) whose gain the missed term reads. A typed
+    seed is checked against the Python type twin and the search goes on until the type matches.
     """
     if target is None:
         return _unscored_facts()
@@ -106,21 +150,43 @@ def facepalm_fact_columns(
     if model.played_coef == 0.0:
         raise ValueError("a zero played coefficient cannot be solved for the probability")
     z_target = math.log(target / (1.0 - target))
-    for played_3 in range(0, -LOSS_CAP - 1, -1):
+    for played_3, best_material, best_prob in _seed_candidates(model, facepalm_type):
         for spread in SEED_SPREADS:
-            rest = _rest_of_z(model, lam, played_3, spread)
+            rest = _rest_of_z(model, lam, played_3, spread, best_material, best_prob)
             if rest is None:
                 continue
             probability = math.exp((z_target - rest) / model.played_coef) - PLAYED_PROB_OFFSET
-            if SEED_PROB_MIN <= probability <= 1.0:
-                return {
-                    **_unscored_facts(),
-                    "maia_played_prob": probability,
-                    "maia_reply_spread": spread,
-                    "played_line_material": _material_array(played_3),
-                    "maia_best_prob": SEED_BEST_PROB,
-                }
+            if not SEED_PROB_MIN <= probability <= 1.0:
+                continue
+            facts = {
+                **_unscored_facts(),
+                "maia_played_prob": probability,
+                "maia_reply_spread": spread,
+                "played_line_material": _material_array(played_3),
+                "best_line_material": best_material,
+                "maia_best_prob": best_prob,
+            }
+            if facepalm_type is None or _typed_as(facts, model, facepalm_type):
+                return facts
     raise ValueError("no seed grid point reaches the target score")
+
+
+def _typed_as(facts: dict[str, Any], model: FacepalmModel, facepalm_type: FacepalmType) -> bool:
+    """True when the Python type twin reads `facts` as `facepalm_type`."""
+    return (
+        facepalm_type_of_facts(
+            FacepalmFacts(
+                played_prob=facts["maia_played_prob"],
+                reply_spread=facts["maia_reply_spread"],
+                played_material=facts["played_line_material"],
+                mate_ply=None,
+                best_material=facts["best_line_material"],
+                best_prob=facts["maia_best_prob"],
+            ),
+            model=model,
+        )
+        == facepalm_type
+    )
 
 
 async def seed_flaw_rows(

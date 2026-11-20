@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
 from app.services.flaw_delta_zones import FlawDeltaMetric, FlawPhaseMetric, FlawTempoMetric
+from app.services.facepalm_score import FacepalmType
 from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
@@ -97,6 +98,9 @@ class FlawMarker(BaseModel):
     # blunders are scored). Same value and flooring as FlawListItem.facepalm_score. A ranking,
     # not a probability.
     facepalm_score: float | None = None
+    # 257 D-08: missed win / allowed loss of the same row. Same source and same blunder gate as
+    # facepalm_score, null whenever the score is null.
+    facepalm_type: FacepalmType | None = None
 
 
 class PhaseTransitions(BaseModel):
@@ -244,6 +248,9 @@ class FlawListItem(BaseModel):
     # D-01), set only for the user's own blunders and None when unscored. The frontend floors
     # it to a whole percent. A ranking, not a probability (250 D-01).
     facepalm_score: float | None = None
+    # 257 D-08: missed win / allowed loss of the same row, from facepalm_type_expr (D-02). Null
+    # whenever facepalm_score is null, so a chip always has both.
+    facepalm_type: FacepalmType | None = None
 
 
 class LibraryFlawsResponse(BaseModel):
@@ -286,6 +293,13 @@ class FlawTrendPoint(BaseModel):
     FLAW_TREND_WINDOW-game window of (oracle_count / user_moves * 100), from the
     games-table oracle columns (NOT game_flaws). games_in_window is the window size
     (<= FLAW_TREND_WINDOW); per_week_games is the games played that ISO week (volume bars).
+
+    257 D-17 to D-19 (the facepalm band inside the Blunders area): facepalm_rate is the user's
+    facepalm blunders per 100 of their moves, the same macro mean over the same window as
+    blunder_rate, but counted from game_flaws (scored blunders at or above FACEPALM_STATS_MIN).
+    facepalm_share is facepalm / scored blunders pooled over the window (sum over sum), for the
+    tooltip. Both are null when fewer than FACEPALM_MIN_SCORED_COVERAGE of the window's
+    game_flaws blunders are scored (D-18: unscored, freshly imported games must not fake a dip).
     """
 
     date: str
@@ -294,6 +308,8 @@ class FlawTrendPoint(BaseModel):
     inaccuracy_rate: float
     games_in_window: int
     per_week_games: int
+    facepalm_rate: float | None = None
+    facepalm_share: float | None = None
 
 
 class FlawTrendTc(BaseModel):
@@ -398,6 +414,68 @@ class TempoPhaseCell(BaseModel):
     zone_hi: float
     has_zone: bool
     significant: bool
+
+
+# The three facepalm rows of FlawComparisonTc.facepalm_bullets (257 D-12): the total and one row
+# per type (D-04: a type is only ever paired with the same type of the opponents). Deliberately
+# NOT part of FlawDeltaMetric / FLAW_DELTA_METRICS, which drive the 12-metric zone registry and
+# the benchmark generator.
+FacepalmMetric = Literal["facepalm", "facepalm_missed_win", "facepalm_allowed_loss"]
+FACEPALM_METRICS: Final[tuple[FacepalmMetric, ...]] = (
+    "facepalm",
+    "facepalm_missed_win",
+    "facepalm_allowed_loss",
+)
+
+
+class FacepalmBullet(BaseModel):
+    """One facepalm row of the flaw comparison: you vs your opponents, per 100 of your moves.
+
+    FlawBullet's fields exactly, on the same paired basis (both sides divided by the user's move
+    count per game, so player_rate - opp_rate == delta). D-13: no benchmark band exists in this
+    phase, so has_zone is False and zone_lo == zone_hi == 0.0. p_value and significant are still
+    computed so the card can state them, but they drive no colour.
+    """
+
+    tag: FacepalmMetric
+    delta: float | None
+    ci_low: float | None
+    ci_high: float | None
+    player_rate: float | None
+    opp_rate: float | None
+    p_value: float | None
+    player_events: int
+    opp_events: int
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool = False
+    significant: bool
+
+
+class FacepalmComparisonTc(BaseModel):
+    """One time control's facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
+
+    bullets: the three FACEPALM_METRICS rows (total, missed wins, allowed losses), neutral
+             (no band), on the same anchor game set as FlawComparisonTc. Empty when
+             low_coverage is True.
+    low_coverage: True when too few of either side's blunders in this TC carry a facepalm
+                  score for the two rates to be comparable; the rows are then withheld.
+    """
+
+    tc: TimeControlBucket
+    bullets: list[FacepalmBullet]
+    low_coverage: bool = False
+
+
+class FacepalmComparisonResponse(BaseModel):
+    """Response for GET /api/library/facepalm-comparison (257 D-21: split from /flaw-comparison).
+
+    tcs: one entry per time control with at least one game in the comparison's anchor set,
+         ordered bullet, blitz, rapid, classical. The analyzed-games gate is
+         FlawComparisonResponse.analyzed_gate; the card sits behind that section's gate.
+    """
+
+    tcs: list[FacepalmComparisonTc]
 
 
 class FlawComparisonTc(BaseModel):

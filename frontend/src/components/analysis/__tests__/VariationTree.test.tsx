@@ -23,6 +23,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { VariationTree } from '../VariationTree';
 import type { FlawMarkerEntry } from '../VariationTree';
+import { TAC_ALLOWED } from '@/lib/theme';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 
 beforeAll(() => {
@@ -537,16 +538,20 @@ describe('VariationTree', () => {
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmByOpponent: true }]])}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmType: 'allowed_loss', facepalmByOpponent: true }]])}
         onNodeClick={vi.fn()}
       />,
     );
     const chips = screen.getAllByTestId('facepalm-move-popover');
     expect(chips.length).toBeGreaterThan(0);
     expect((chips[0] as HTMLElement).textContent).toBe('95%');
-    expect((chips[0] as HTMLElement).querySelector('svg.lucide-tree-palm')).not.toBeNull();
+    expect((chips[0] as HTMLElement).querySelector('svg.lucide-gauge')).not.toBeNull();
+    // 257 D-08: an allowed loss is tinted crimson (jsdom normalizes colour strings).
+    const probe = document.createElement('div');
+    probe.style.color = TAC_ALLOWED;
+    expect(((chips[0] as HTMLElement).querySelector('span') as HTMLElement).style.color).toBe(probe.style.color);
     unmount();
-    render(
+    const { unmount: unmount2 } = render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
@@ -556,6 +561,66 @@ describe('VariationTree', () => {
       />,
     );
     expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+    unmount2();
+    // 257 D-09: a score without a type renders no chip at all.
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957 }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+    // Nor the "???" glyph: nothing would explain it without the popover (257 D-22).
+    const glyphTexts = Array.from(screen.getByTestId('variation-tree-desktop').querySelectorAll('svg'))
+      .filter((svg) => svg.querySelector('text') !== null)
+      .map((svg) => svg.textContent ?? '');
+    expect(glyphTexts).toContain('??');
+    expect(glyphTexts).not.toContain('???');
+    expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
+  });
+
+  it('(10c) a blunder at or above the 70% facepalm cut shows "???" instead of "??"', () => {
+    const { nodes, mainLine } = buildPvFixture();
+    const entry: FlawMarkerEntry = {
+      missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1,
+      facepalmType: 'allowed_loss',
+    };
+    const glyphs = (): string[] =>
+      Array.from(screen.getByTestId('variation-tree-desktop').querySelectorAll('svg'))
+        .filter((svg) => svg.querySelector('text') !== null)
+        .map((svg) => svg.textContent ?? '');
+    const { unmount } = render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.7 }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(glyphs()).toContain('???');
+    expect(glyphs()).not.toContain('??');
+    // 257 D-22: the "???" glyph opens the facepalm explanation, naming the 70% cut.
+    fireEvent.click(screen.getAllByTestId('facepalm-glyph-popover')[0] as HTMLElement);
+    expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
+      '???Facepalm blunder: a facepalm score of 70% or more.',
+    );
+    unmount();
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.699 }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(glyphs()).toContain('??');
+    expect(glyphs()).not.toContain('???');
+    expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
   });
 
   it('(11) inaccuracy severity renders no chip and no marker', () => {

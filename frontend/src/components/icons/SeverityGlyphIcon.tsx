@@ -17,7 +17,9 @@
 
 import type { CSSProperties } from 'react';
 
-import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
+import { GlyphText } from '@/components/icons/GlyphText';
+import { FACEPALM_GLYPH, SEVERITY_GLYPH } from '@/lib/severityGlyph';
+import type { GlyphSpec } from '@/lib/severityGlyph';
 
 export interface SeverityGlyphIconProps {
   className?: string;
@@ -25,21 +27,12 @@ export interface SeverityGlyphIconProps {
   'aria-hidden'?: boolean | 'true' | 'false';
 }
 
-interface GlyphBadgeProps extends SeverityGlyphIconProps {
-  symbol: string;
-  color: string;
-  /** Glyph font-size in viewBox units — smaller for the two-char "??". */
-  fontSize: number;
-}
-
 function GlyphBadge({
-  symbol,
-  color,
-  fontSize,
+  glyph,
   className,
   style,
   'aria-hidden': ariaHidden = true,
-}: GlyphBadgeProps) {
+}: SeverityGlyphIconProps & { glyph: GlyphSpec }) {
   // No letter-spacing tightening: the two-char "??"/"?!" clears the dot edge at
   // this font size on its own, and matching the board glyph (boardMarkers, which
   // applies none) keeps the "??" from reading cramped in the move list.
@@ -52,33 +45,25 @@ function GlyphBadge({
       aria-hidden={ariaHidden}
       role="img"
     >
-      <circle cx="12" cy="12" r="11" fill={color} />
-      <text
-        x="12"
-        y="12.5"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontWeight="700"
-        fontSize={fontSize}
-      >
-        {symbol}
-      </text>
+      <circle cx="12" cy="12" r="11" fill={glyph.color} />
+      <GlyphText glyph={glyph} x={12} y={12.5} />
     </svg>
   );
 }
 
 /** "??" on a red dot — blunder. */
 export function BlunderIcon(props: SeverityGlyphIconProps) {
-  const g = SEVERITY_GLYPH.blunder;
-  return <GlyphBadge symbol={g.symbol} color={g.color} fontSize={g.fontSize} {...props} />;
+  return <GlyphBadge glyph={SEVERITY_GLYPH.blunder} {...props} />;
 }
 
 /** "?" on an orange dot — mistake. */
 export function MistakeIcon(props: SeverityGlyphIconProps) {
-  const g = SEVERITY_GLYPH.mistake;
-  return <GlyphBadge symbol={g.symbol} color={g.color} fontSize={g.fontSize} {...props} />;
+  return <GlyphBadge glyph={SEVERITY_GLYPH.mistake} {...props} />;
+}
+
+/** "???" (three overlapping marks) on a dark red dot — facepalm blunder (score >= 70%). */
+export function FacepalmBlunderIcon(props: SeverityGlyphIconProps) {
+  return <GlyphBadge glyph={FACEPALM_GLYPH} {...props} />;
 }
 
 // The inaccuracy "!?" yellow glyph is defined in SEVERITY_GLYPH (lib/severityGlyph)

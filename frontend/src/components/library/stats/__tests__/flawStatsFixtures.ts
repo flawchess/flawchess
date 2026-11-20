@@ -7,6 +7,9 @@ import { TEMPO_PHASE_PHASES, TEMPO_PHASE_TEMPOS } from '@/lib/flawComparisonMeta
 import { TACTIC_COMPARISON_FAMILIES, type TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
+  FacepalmBullet,
+  FacepalmComparisonResponse,
+  FacepalmMetric,
   FlawBullet,
   FlawComparisonResponse,
   FlawComparisonTc,
@@ -80,6 +83,48 @@ export function makeTempoPhaseCell(
     significant: false,
     ...overrides,
   };
+}
+
+/** The three facepalm rows in payload order (mirrors backend FACEPALM_METRICS). */
+const FACEPALM_METRICS: readonly FacepalmMetric[] = [
+  'facepalm',
+  'facepalm_missed_win',
+  'facepalm_allowed_loss',
+];
+
+/** A neutral facepalm row (no band) with a small positive gap and event counts unless overridden. */
+export function makeFacepalmBullet(
+  tag: FacepalmMetric,
+  overrides: Partial<FacepalmBullet> = {},
+): FacepalmBullet {
+  return {
+    tag,
+    delta: 0.4,
+    ci_low: 0.1,
+    ci_high: 0.7,
+    player_rate: 0.9,
+    opp_rate: 0.5,
+    p_value: 0.02,
+    player_events: 60,
+    opp_events: 35,
+    zone_lo: 0,
+    zone_hi: 0,
+    has_zone: false,
+    significant: false,
+    ...overrides,
+  };
+}
+
+/** The three facepalm rows of one TC, with per-row overrides (total, missed win, allowed loss). */
+export function makeFacepalmRows(
+  overrides: Partial<Record<FacepalmMetric, Partial<FacepalmBullet>>> = {},
+): FacepalmBullet[] {
+  return FACEPALM_METRICS.map((tag) => makeFacepalmBullet(tag, overrides[tag]));
+}
+
+/** A /facepalm-comparison payload with the default three rows for each TC. */
+export function makeFacepalmComparison(tcs: readonly TimeControlBucket[]): FacepalmComparisonResponse {
+  return { tcs: tcs.map((tc) => ({ tc, bullets: makeFacepalmRows() })) };
 }
 
 interface TcEntryOptions {
@@ -167,7 +212,10 @@ export function makeComparison(tcs: FlawComparisonTc[], totalN?: number): FlawCo
   };
 }
 
-export function makeTrendPoint(date: string): FlawTrendPoint {
+export function makeTrendPoint(
+  date: string,
+  overrides: Partial<FlawTrendPoint> = {},
+): FlawTrendPoint {
   return {
     date,
     blunder_rate: 5,
@@ -175,6 +223,9 @@ export function makeTrendPoint(date: string): FlawTrendPoint {
     inaccuracy_rate: 9,
     games_in_window: 20,
     per_week_games: 4,
+    facepalm_rate: 1.25,
+    facepalm_share: 0.25,
+    ...overrides,
   };
 }
 

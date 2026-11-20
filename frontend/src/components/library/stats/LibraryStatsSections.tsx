@@ -16,6 +16,7 @@ import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import {
+  useLibraryFacepalmComparison,
   useLibraryFlawComparison,
   useLibraryFlawStats,
   useTacticComparison,
@@ -25,13 +26,20 @@ import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
 import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
+import { FacepalmCard } from './FacepalmCard';
 import { TempoPhaseHeatmap } from './TempoPhaseHeatmap';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
 import { MostCommonTacticsCard } from './MostCommonTacticsCard';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
-import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/types/library';
+import type {
+  FacepalmBullet,
+  FacepalmComparisonResponse,
+  FlawComparisonTc,
+  FlawStatsResponse,
+  TacticComparisonTc,
+} from '@/types/library';
 
 const NO_TCS: readonly FlawComparisonTc[] = [];
 const NO_TACTIC_TCS: readonly TacticComparisonTc[] = [];
@@ -71,7 +79,10 @@ interface FlawTimelineProps {
   selectedTc: TimeControlBucket;
 }
 
-/** The selected time control's timeline; its own load/error states never hide the tiles. */
+/**
+ * The selected time control's timeline (with the 257 D-17 facepalm band inside the Blunders
+ * area); its own load/error states never hide the tiles.
+ */
 function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelineProps) {
   if (isError) return <LoadError resource="flaws timeline" />;
   if (isLoading || !stats) {
@@ -181,10 +192,35 @@ export function LibraryStatsTcSwitch({ filters, idPrefix }: LibraryStatsTcSwitch
   );
 }
 
-/** Flaw Stats: heading, coverage basis line, tiles, timeline. */
+/**
+ * The selected TC's facepalm rows, undefined while they load. A TC missing from the response
+ * counts as loading too: both requests read the same game set, so that only happens while
+ * /facepalm-comparison is still behind a refetched /flaw-comparison, and the skeleton says so
+ * where an empty list left the tile and the card rows silently blank (PR #495 review).
+ */
+function facepalmRowsFor(
+  data: FacepalmComparisonResponse | undefined,
+  tc: TimeControlBucket,
+): readonly FacepalmBullet[] | undefined {
+  return data?.tcs.find((t) => t.tc === tc)?.bullets;
+}
+
+/** True when the selected TC's facepalm rows are withheld for low scored coverage. */
+function facepalmLowCoverageFor(
+  data: FacepalmComparisonResponse | undefined,
+  tc: TimeControlBucket,
+): boolean {
+  return data?.tcs.find((t) => t.tc === tc)?.low_coverage ?? false;
+}
+
+/**
+ * Flaw Stats: heading, coverage basis line, tiles, timeline. The Facepalm tile reads the same
+ * facepalm query as the You vs. your opponents card (one cache entry, one request).
+ */
 function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
   const stats = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
+  const facepalm = useLibraryFacepalmComparison(filters, DEFAULT_FLAW_FILTER);
   // The selected TC picks an entry out of the payload; it is never part of a query key.
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
@@ -211,7 +247,13 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
           tc={tcStats.tc}
           isGuest={isGuest}
         />
-        <FlawTiles tcStats={tcStats} analyzedGate={comparison.data.analyzed_gate} />
+        <FlawTiles
+          tcStats={tcStats}
+          analyzedGate={comparison.data.analyzed_gate}
+          facepalmBullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
+          facepalmError={facepalm.isError}
+          facepalmLowCoverage={facepalmLowCoverageFor(facepalm.data, tcStats.tc)}
+        />
         <FlawTimeline
           stats={stats.data}
           isLoading={stats.isLoading}
@@ -247,13 +289,15 @@ function VsOpponentsSkeleton() {
 
 /**
  * You vs. your opponents: the four context-tag cards with the full-width Clock by
- * game phase heatmap after the first row, for the selected TC. It reads the same
- * comparison query as Flaw Stats (one cache entry, no extra request) and the same
- * remembered TC store as the page's one switch.
+ * game phase heatmap after the first row, then the Facepalm blunders card, for the selected TC.
+ * It reads the same comparison query as Flaw Stats (one cache entry, no extra request) and the
+ * same remembered TC store as the page's one switch. The facepalm rows come from their own
+ * request (257 D-21), started here in parallel so the card never waits for the section.
  * Below the gate one slot replaces everything.
  */
 function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
+  const facepalm = useLibraryFacepalmComparison(filters, DEFAULT_FLAW_FILTER);
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
@@ -275,6 +319,14 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
       <ContextTagCards
         tcStats={tcStats}
         afterFirstRow={<TempoPhaseHeatmap tcStats={tcStats} />}
+        trailing={
+          <FacepalmCard
+            tcStats={tcStats}
+            bullets={facepalmRowsFor(facepalm.data, tcStats.tc)}
+            isError={facepalm.isError}
+            lowCoverage={facepalmLowCoverageFor(facepalm.data, tcStats.tc)}
+          />
+        }
       />
     );
   };

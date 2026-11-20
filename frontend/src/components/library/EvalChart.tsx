@@ -34,14 +34,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Cpu, TreePalm } from 'lucide-react';
+import { Clock, Cpu, Gauge } from 'lucide-react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { bestMoveDotSpec } from '@/lib/bestMoveDot';
-import { toFacepalmPct } from '@/lib/facepalm';
+import { FACEPALM_TYPE_LABEL, FACEPALM_TYPE_STYLE, toFacepalmPct } from '@/lib/facepalm';
 import { isUserPly } from '@/lib/plyOwnership';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
@@ -69,6 +69,7 @@ import {
 import { isRareMoveTier } from '@/types/library';
 import type {
   EvalPoint,
+  FacepalmType,
   FlawMarker,
   FlawSeverity,
   FlawTag,
@@ -527,6 +528,33 @@ function formatClock(seconds: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Facepalm line of the eval-chart tooltip. 257 D-08 / D-10: tinted by the type (teal missed win,
+ * crimson allowed loss) and the type is named in text, since the tooltip has no popover.
+ * Exported for the unit test.
+ */
+export function FacepalmTooltipLine({
+  score,
+  type,
+}: {
+  score: number;
+  type: FacepalmType;
+}): React.ReactElement {
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      style={{ color: FACEPALM_TYPE_STYLE[type].color }}
+      data-testid="eval-chart-tooltip-facepalm"
+    >
+      {/* Icon inherits the line colour via currentColor. */}
+      <Gauge className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>
+        Facepalm {toFacepalmPct(score)}% &middot; {FACEPALM_TYPE_LABEL[type].toLowerCase()}
+      </span>
+    </div>
+  );
 }
 
 /** Inline glyph matching the chart's flaw dot, for the tooltip flaw detail. */
@@ -1190,15 +1218,14 @@ export function EvalChart({
                   </span>
                 </div>
                 {/* Facepalm score of a scored blunder, on its own line below the verdict. */}
-                {activeMarker.severity === 'blunder' && activeMarker.facepalm_score != null && (
-                  <div
-                    className="flex items-center gap-1.5 text-muted-foreground"
-                    data-testid="eval-chart-tooltip-facepalm"
-                  >
-                    <TreePalm className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    <span>Facepalm {toFacepalmPct(activeMarker.facepalm_score)}%</span>
-                  </div>
-                )}
+                {activeMarker.severity === 'blunder' &&
+                  activeMarker.facepalm_score != null &&
+                  activeMarker.facepalm_type != null && (
+                    <FacepalmTooltipLine
+                      score={activeMarker.facepalm_score}
+                      type={activeMarker.facepalm_type}
+                    />
+                  )}
                 {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
                     {/* Tactic motifs listed first, each prefixed with its

@@ -90,14 +90,17 @@ interface ContextTagCardsProps {
   tcStats: FlawComparisonTc;
   /** Full-width content between the first and second card rows (the Clock by game phase heatmap). */
   afterFirstRow?: ReactNode;
+  /** The last grid child, after the four cards (the Facepalm blunders card): one column from lg up, last on phones. */
+  trailing?: ReactNode;
 }
 
 /**
  * The four context-tag cards: Game phase, Clock, Lost advantages, Opponent
  * errors. Two columns from lg up, one on phones. Each card ends with the
- * better / worse axis caption: fewer flaws (better) sit left on every gap bar.
+ * better / worse axis caption: fewer flaws (better) sit left on every gap bar. A `trailing`
+ * card goes in last, with no axis caption of its own.
  */
-export function ContextTagCards({ tcStats, afterFirstRow }: ContextTagCardsProps) {
+export function ContextTagCards({ tcStats, afterFirstRow, trailing }: ContextTagCardsProps) {
   const renderCards = (cards: readonly ContextTagCardDef[]) =>
     cards.map((card) => <ContextTagCard key={card.key} card={card} tcStats={tcStats} />);
   return (
@@ -105,6 +108,7 @@ export function ContextTagCards({ tcStats, afterFirstRow }: ContextTagCardsProps
       {renderCards(CONTEXT_TAG_CARDS.slice(0, CARDS_PER_ROW))}
       {afterFirstRow && <div className="lg:col-span-2">{afterFirstRow}</div>}
       {renderCards(CONTEXT_TAG_CARDS.slice(CARDS_PER_ROW))}
+      {trailing}
     </div>
   );
 }

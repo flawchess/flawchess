@@ -23,18 +23,19 @@ import { X } from 'lucide-react';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
-import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { BlunderIcon, FacepalmBlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
-import { FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
+import { FacepalmGlyphBadge, FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
-import type { FlawSeverity } from '@/types/library';
+import type { FacepalmType, FlawSeverity } from '@/types/library';
 import { trackFeature } from '@/lib/analytics';
 
 // Subtle zebra stripe for the desktop move list. A faint
@@ -43,6 +44,17 @@ const ZEBRA_ROW_BG = 'bg-foreground/[0.03]';
 /** Zebra background for a 0-based row index (odd rows striped). */
 function zebraBg(rowIdx: number): string {
   return rowIdx % 2 === 1 ? ZEBRA_ROW_BG : '';
+}
+
+/**
+ * "???" for a facepalm blunder (score >= the 70% stats cut), else "??" / "?". The type is
+ * required too: without it MoveListMarker renders no popover or chip, and "???" is not a
+ * standard NAG, so it would stand unexplained (257 D-22, PR #495 review).
+ */
+function severityIcon(flaw: FlawMarkerEntry): typeof BlunderIcon {
+  if (flaw.severity !== 'blunder') return MistakeIcon;
+  const explained = flaw.facepalmType != null && isFacepalmBlunder(flaw.facepalmScore);
+  return explained ? FacepalmBlunderIcon : BlunderIcon;
 }
 
 /**
@@ -69,7 +81,7 @@ function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
   if (flaw != null && (flaw.severity === 'blunder' || flaw.severity === 'mistake')) {
     return {
       show: true,
-      Icon: flaw.severity === 'blunder' ? BlunderIcon : MistakeIcon,
+      Icon: severityIcon(flaw),
       isGem: false,
       isGreat: false,
     };
@@ -127,12 +139,25 @@ function MoveListMarker({
       />
     );
   }
-  // A scored blunder gets the Facepalm mini-chip right after its "??" glyph.
-  if (flaw?.severity === 'blunder' && flaw.facepalmScore != null) {
+  // A scored blunder gets the Facepalm mini-chip right after its "??" / "???" glyph. 257 D-09: the chip
+  // needs the type as well (it picks the tint), so a score without a type renders no chip.
+  if (flaw?.severity === 'blunder' && flaw.facepalmScore != null && flaw.facepalmType != null) {
+    // 257 D-22: a "???" glyph opens the same explanation as the chip (it is not a standard NAG).
+    const glyph =
+      Icon === FacepalmBlunderIcon ? (
+        <FacepalmGlyphBadge
+          score={flaw.facepalmScore}
+          type={flaw.facepalmType}
+          byOpponent={flaw.facepalmByOpponent}
+          className={className}
+        />
+      ) : (
+        <Icon className={className} aria-hidden />
+      );
     return (
       <>
-        <Icon className={className} aria-hidden />
-        <FacepalmMoveChip score={flaw.facepalmScore} byOpponent={flaw.facepalmByOpponent} />
+        {glyph}
+        <FacepalmMoveChip score={flaw.facepalmScore} type={flaw.facepalmType} byOpponent={flaw.facepalmByOpponent} />
       </>
     );
   }
@@ -193,6 +218,8 @@ export interface FlawMarkerEntry {
    * after the blunder glyph. Set only from a game flaw marker that carries a score.
    */
   facepalmScore?: number;
+  /** Facepalm type of the same blunder; set together with facepalmScore from a marker that carries both. */
+  facepalmType?: FacepalmType;
   /** True when the opponent played the scored blunder: switches the popover wording. */
   facepalmByOpponent?: boolean;
   /**

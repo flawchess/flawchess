@@ -21,6 +21,8 @@ import {
   presetToRange,
   sliderToRange,
   toFacepalmPct,
+  isFacepalmBlunder,
+  facepalmScoreMeaning,
 } from '../facepalm';
 
 describe('named constants', () => {
@@ -116,6 +118,26 @@ describe('formatFacepalmSummary', () => {
     expect(formatFacepalmSummary({ min: 40, max: 40 })).toBe('40%');
     expect(formatFacepalmSummary({ min: 40, max: 55 })).toBe('40-55%');
     expect(formatFacepalmSummary({ min: 100, max: 100 })).toBe('100%');
+  });
+});
+
+describe('facepalmScoreMeaning', () => {
+  it('names the level of whoever played the blunder', () => {
+    expect(facepalmScoreMeaning()).toContain('a player at your level');
+    expect(facepalmScoreMeaning(true)).toContain('a player at their level');
+  });
+});
+
+describe('isFacepalmBlunder', () => {
+  it('uses the floored percent against the 70% stats cut', () => {
+    expect(isFacepalmBlunder(0.7)).toBe(true);
+    expect(isFacepalmBlunder(0.699)).toBe(false);
+    expect(isFacepalmBlunder(1)).toBe(true);
+  });
+
+  it('is false for an unscored blunder', () => {
+    expect(isFacepalmBlunder(null)).toBe(false);
+    expect(isFacepalmBlunder(undefined)).toBe(false);
   });
 });
 

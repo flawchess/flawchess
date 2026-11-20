@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { SquareMarkerGroup, type SquareMarker } from '../boardMarkers';
-import { MAIA_ACCENT, GREAT_ACCENT, BOOK_MARKER_COLOR } from '@/lib/theme';
+import { MAIA_ACCENT, GREAT_ACCENT, BOOK_MARKER_COLOR, SEV_FACEPALM } from '@/lib/theme';
 
 function renderMarker(marker: SquareMarker) {
   return render(
@@ -44,6 +44,20 @@ describe('SquareMarkerGroup', () => {
     // No gem icon rendered.
     const nestedIcon = container.querySelectorAll('svg');
     expect(nestedIcon.length).toBe(1);
+  });
+
+  it('renders the dark red "???" facepalm badge for a facepalm blunder marker', () => {
+    const { container } = renderMarker({ square: 'e4', severity: 'blunder', facepalm: true });
+    // Three overlapping "?" texts, each outlined in the dot color.
+    const texts = Array.from(container.querySelectorAll('text'));
+    expect(texts.map((t) => t.textContent)).toEqual(['?', '?', '?']);
+    expect(texts[0]?.getAttribute('stroke')).toBe(SEV_FACEPALM);
+    expect(container.querySelector('circle')?.getAttribute('fill')).toBe(SEV_FACEPALM);
+  });
+
+  it('ignores the facepalm flag on a non-blunder marker', () => {
+    const { container } = renderMarker({ square: 'e4', severity: 'mistake', facepalm: true });
+    expect(container.querySelector('text')?.textContent).toBe('?');
   });
 
   // Book marker on the board corner marker.

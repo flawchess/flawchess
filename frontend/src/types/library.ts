@@ -35,6 +35,12 @@ export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
  */
 export type TacticOrientation = 'either' | 'missed' | 'allowed';
 
+/**
+ * 257 D-02: the type of a scored blunder. A missed win passed up material the best move won; an
+ * allowed loss gave material away. Mirrors backend FacepalmType (facepalm_score.py).
+ */
+export type FacepalmType = 'missed_win' | 'allowed_loss';
+
 /** Analysis state of a game (whether engine evals are present). */
 export type AnalysisState = 'analyzed' | 'no_engine_analysis';
 
@@ -181,6 +187,11 @@ export interface FlawMarker {
    * backend FlawMarker.facepalm_score.
    */
   facepalm_score?: number | null;
+  /**
+   * 257 D-08: missed win / allowed loss of this blunder, same source and blunder gate as
+   * facepalm_score (null/absent whenever the score is). Mirrors backend FlawMarker.facepalm_type.
+   */
+  facepalm_type?: FacepalmType | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -214,6 +225,14 @@ export interface FlawTrendPoint {
   inaccuracy_rate: number;
   games_in_window: number;
   per_week_games: number;
+  /**
+   * 257 D-17: the user's facepalm blunders per 100 of their moves, averaged per game over the
+   * same window as blunder_rate (the bottom band under the Blunders line). Null when too few of
+   * the window's blunders are scored yet (D-18).
+   */
+  facepalm_rate?: number | null;
+  /** 257 D-19: facepalm / scored blunders pooled over the window, for the tooltip; null with the rate or without blunders. */
+  facepalm_share?: number | null;
 }
 
 /** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */
@@ -295,6 +314,12 @@ export interface FlawListItem {
    * the blunder was, not a probability. Mirrors backend FlawListItem.facepalm_score.
    */
   facepalm_score: number | null;
+  /**
+   * 257 D-08: missed win / allowed loss of the same blunder (backend facepalm_type_expr). Null
+   * whenever facepalm_score is null; the chip tints by it and a scored row without a type shows
+   * no chip. Mirrors backend FlawListItem.facepalm_type.
+   */
+  facepalm_type: FacepalmType | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */
@@ -367,6 +392,21 @@ export interface TempoPhaseCell extends Omit<FlawBullet, 'tag'> {
   phase: FlawPhaseMetric;
 }
 
+/** The three facepalm rows of a time control (mirrors backend FacepalmMetric / FACEPALM_METRICS). */
+export type FacepalmMetric = 'facepalm' | 'facepalm_missed_win' | 'facepalm_allowed_loss';
+
+/**
+ * One facepalm row of the flaw comparison (mirrors backend FacepalmBullet): the user's facepalm
+ * blunders per 100 of their moves next to their opponents' in the same games, paired per game
+ * like FlawBullet (player_rate - opp_rate === delta). 257 D-13: no benchmark band, so
+ * has_zone is always false and zone_lo === zone_hi === 0; `significant` is the server's 99%
+ * test, stated on the card but never a colour. 257 D-04: a type row pairs the user's count of
+ * that type with the opponents' count of the same type only.
+ */
+export interface FacepalmBullet extends Omit<FlawBullet, 'tag'> {
+  tag: FacepalmMetric;
+}
+
 /** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
 export interface FlawComparisonTc {
   tc: TimeControlBucket;
@@ -378,6 +418,26 @@ export interface FlawComparisonTc {
   bullets: FlawBullet[];
   /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
   tempo_phase_cells: TempoPhaseCell[];
+}
+
+/** One time control's facepalm rows (mirrors backend FacepalmComparisonTc). */
+export interface FacepalmComparisonTc {
+  tc: TimeControlBucket;
+  /**
+   * The 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate.
+   * Empty when low_coverage is true.
+   */
+  bullets: FacepalmBullet[];
+  /**
+   * True when too few of either side's blunders carry a facepalm score for the two rates to
+   * be comparable; the rows are withheld. Absent from an older backend.
+   */
+  low_coverage?: boolean;
+}
+
+/** Response for GET /api/library/facepalm-comparison (257 D-21, split from /flaw-comparison). */
+export interface FacepalmComparisonResponse {
+  tcs: FacepalmComparisonTc[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
