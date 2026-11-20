@@ -27,14 +27,14 @@ describe('FacepalmExplanation', () => {
   it('names a missed win in one line', () => {
     const { getByTestId } = render(<FacepalmExplanation score={0.8} type="missed_win" />);
     expect(getByTestId('facepalm-explanation-type').textContent).toBe(
-      'Missed win: the best move won material that was not taken.',
+      'Missed win: the best move won material or led to checkmate, and was not played.',
     );
   });
 
   it('names an allowed loss in one line', () => {
     const { getByTestId } = render(<FacepalmExplanation score={0.8} type="allowed_loss" />);
     expect(getByTestId('facepalm-explanation-type').textContent).toBe(
-      'Allowed loss: the move gave away material.',
+      'Allowed loss: the move gave away material or allowed checkmate.',
     );
   });
 

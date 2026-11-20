@@ -22,6 +22,7 @@ import {
   sliderToRange,
   toFacepalmPct,
   isFacepalmBlunder,
+  facepalmScoreMeaning,
 } from '../facepalm';
 
 describe('named constants', () => {
@@ -117,6 +118,13 @@ describe('formatFacepalmSummary', () => {
     expect(formatFacepalmSummary({ min: 40, max: 40 })).toBe('40%');
     expect(formatFacepalmSummary({ min: 40, max: 55 })).toBe('40-55%');
     expect(formatFacepalmSummary({ min: 100, max: 100 })).toBe('100%');
+  });
+});
+
+describe('facepalmScoreMeaning', () => {
+  it('names the level of whoever played the blunder', () => {
+    expect(facepalmScoreMeaning()).toContain('a player at your level');
+    expect(facepalmScoreMeaning(true)).toContain('a player at their level');
   });
 });
 

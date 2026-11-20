@@ -141,6 +141,20 @@ bias against a benchmark, the type-by-clock matrix, the training weighting.
   - Not changed: Train puzzle cards (the train API carries no score), the Blunder Check "good move or
     blunder?" badge (would give the answer away), the eval-chart flaw dots, the Move Stats counts and the
     Facepalm Score filter (it filters the score, not facepalm blunders).
+  - Explanation: the shared score popover (`FacepalmExplanation`) carries a line with the "???" icon,
+    "Facepalm blunder: a facepalm score of 70% or more." at or above the cut, "70% or more counts as a
+    facepalm blunder." below it. The move-list "???" opens that same popover (like the gem/great badges,
+    Umami target `facepalm-glyph-popover`). No separate trigger on the Flaws card badge (its chip already
+    opens the popover) or on the board marker (the move list next to it carries it).
+- **D-23: Facepalm copy.**
+  - Score sentence, shared by the score popover and the Facepalm Score filter info
+    (`facepalmScoreMeaning`): "A high facepalm score tells you the blunder should have been easy to see
+    for a player at your level, a low one that it was probably hard to see." ("their level" for the
+    opponent's blunders). "As estimated by our model" is dropped here; the card info still names the model.
+  - Type sentences include checkmate, matching D-02's inputs (a mate within LINE_DEPTH plies sets the
+    loss / missed input): "Missed win: the best move won material or led to checkmate, and was not
+    played." / "Allowed loss: the move gave away material or allowed checkmate." Row hints: "passed up
+    winning material or checkmate" / "gave away material or allowed checkmate".
 
 </decisions>
 

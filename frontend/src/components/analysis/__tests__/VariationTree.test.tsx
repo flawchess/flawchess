@@ -596,6 +596,11 @@ describe('VariationTree', () => {
     );
     expect(glyphs()).toContain('???');
     expect(glyphs()).not.toContain('??');
+    // 257 D-22: the "???" glyph opens the facepalm explanation, naming the 70% cut.
+    fireEvent.click(screen.getAllByTestId('facepalm-glyph-popover')[0] as HTMLElement);
+    expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
+      '???Facepalm blunder: a facepalm score of 70% or more.',
+    );
     unmount();
     render(
       <VariationTree
@@ -608,6 +613,7 @@ describe('VariationTree', () => {
     );
     expect(glyphs()).toContain('??');
     expect(glyphs()).not.toContain('???');
+    expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
   });
 
   it('(11) inaccuracy severity renders no chip and no marker', () => {

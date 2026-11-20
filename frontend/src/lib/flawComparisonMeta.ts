@@ -152,14 +152,14 @@ export const FACEPALM_GAP_META: Record<FacepalmMetric, FlawGapMeta> = {
   },
   facepalm_missed_win: {
     label: 'Missed wins',
-    hint: 'Facepalm blunders that passed up a material win',
-    definition: 'Facepalm blunders that passed up a material win',
+    hint: 'Facepalm blunders that passed up winning material or checkmate',
+    definition: 'Facepalm blunders that passed up winning material or checkmate',
     noun: 'missed-win facepalm blunders',
   },
   facepalm_allowed_loss: {
     label: 'Allowed losses',
-    hint: 'Facepalm blunders that gave away material',
-    definition: 'Facepalm blunders that gave away material',
+    hint: 'Facepalm blunders that gave away material or allowed checkmate',
+    definition: 'Facepalm blunders that gave away material or allowed checkmate',
     noun: 'allowed-loss facepalm blunders',
   },
 };

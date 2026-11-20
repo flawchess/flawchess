@@ -58,8 +58,8 @@ describe('FacepalmCard', () => {
     const labels = ['Facepalm blunders', 'Missed wins', 'Allowed losses'];
     labels.forEach((label) => expect(text).toContain(label));
     expect(text).toContain('Blunders with a facepalm score of 70% or more');
-    expect(text).toContain('Facepalm blunders that passed up a material win');
-    expect(text).toContain('Facepalm blunders that gave away material');
+    expect(text).toContain('Facepalm blunders that passed up winning material or checkmate');
+    expect(text).toContain('Facepalm blunders that gave away material or allowed checkmate');
   });
 
   it('has no better / worse axis caption and no grey band in any row', () => {

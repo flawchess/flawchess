@@ -201,11 +201,11 @@ describe('facepalm gap metadata', () => {
     expect(FACEPALM_GAP_META.facepalm.hint).toBe('Blunders with a facepalm score of 70% or more');
     expect(FACEPALM_GAP_META.facepalm_missed_win.label).toBe('Missed wins');
     expect(FACEPALM_GAP_META.facepalm_missed_win.hint).toBe(
-      'Facepalm blunders that passed up a material win',
+      'Facepalm blunders that passed up winning material or checkmate',
     );
     expect(FACEPALM_GAP_META.facepalm_allowed_loss.label).toBe('Allowed losses');
     expect(FACEPALM_GAP_META.facepalm_allowed_loss.hint).toBe(
-      'Facepalm blunders that gave away material',
+      'Facepalm blunders that gave away material or allowed checkmate',
     );
   });
 

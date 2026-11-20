@@ -504,18 +504,23 @@ describe('Facepalm chip and severity icon', () => {
       fireEvent.click(screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement);
       const popover = screen.getByTestId('facepalm-badge-7-24-popover');
       expect(popover.textContent).toContain('Facepalm 94%');
-      expect(popover.textContent).toContain('Allowed loss: the move gave away material.');
+      expect(popover.textContent).toContain('Allowed loss: the move gave away material or allowed checkmate.');
       expect(
         (screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement).getAttribute('aria-label'),
       ).toBe('Facepalm 94%, allowed loss');
       expect(popover.textContent).toContain(
-        "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
+        "A high facepalm score tells you the blunder should have been easy to see for a player at your level, a low one that it was probably hard to see.",
       );
     });
 
     it('floors 0.697 to 69%', () => {
       render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.697, facepalm_type: 'allowed_loss', game_id: 7, ply: 24 })} />);
       expect((screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement).textContent).toContain('69%');
+      // Below the cut the popover names the cut instead of calling it a facepalm blunder.
+      fireEvent.click(screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement);
+      expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
+        '???70% or more counts as a facepalm blunder.',
+      );
     });
 
     it('an unscored blunder has no Facepalm chip', () => {

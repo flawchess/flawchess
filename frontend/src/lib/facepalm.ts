@@ -50,6 +50,16 @@ const FACEPALM_TRAINING = 'Blunder Check trains you to spot them before you move
 export const FACEPALM_CARD_INFO = `Facepalm blunders are ${FACEPALM_DEFINITION}: our model gives them a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more. ${FACEPALM_TRAINING}`;
 export const FACEPALM_TIMELINE_INFO = `The darker band shows facepalm blunders: ${FACEPALM_DEFINITION} (facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more). ${FACEPALM_TRAINING}`;
 
+/**
+ * What the facepalm score means, in one sentence. Shared by the score popover
+ * (FacepalmExplanation) and the Facepalm Score filter info, so the two never drift.
+ * `byOpponent` switches "your level" to "their level" for the opponent's blunders.
+ */
+export function facepalmScoreMeaning(byOpponent = false): string {
+  const level = byOpponent ? 'their' : 'your';
+  return `A high facepalm score tells you the blunder should have been easy to see for a player at ${level} level, a low one that it was probably hard to see.`;
+}
+
 /** Multiplier turning a 0..1 score into a percent. */
 const FACEPALM_PCT_SCALE = 100;
 
@@ -186,8 +196,8 @@ export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
  * second wording). No probability words (D-05). Read as `${LABEL}: ${SENTENCE}`.
  */
 export const FACEPALM_TYPE_SENTENCE: Record<FacepalmType, string> = {
-  missed_win: 'the best move won material that was not taken.',
-  allowed_loss: 'the move gave away material.',
+  missed_win: 'the best move won material or led to checkmate, and was not played.',
+  allowed_loss: 'the move gave away material or allowed checkmate.',
 };
 
 export const FACEPALM_TYPE_STYLE: Record<FacepalmType, FacepalmTypeStyle> = {

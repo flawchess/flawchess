@@ -74,7 +74,7 @@ describe('FacepalmBadgePopover content and name', () => {
   it('names the type in the popover body', () => {
     focusEl(trigger());
     expect(screen.getByTestId('facepalm-explanation-type').textContent).toBe(
-      'Allowed loss: the move gave away material.',
+      'Allowed loss: the move gave away material or allowed checkmate.',
     );
   });
 

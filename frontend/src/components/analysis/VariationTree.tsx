@@ -30,7 +30,7 @@ import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
-import { FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
+import { FacepalmGlyphBadge, FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
 import { isFacepalmBlunder } from '@/lib/facepalm';
 import { moveLabel } from '@/lib/moveNumberLabel';
@@ -137,9 +137,21 @@ function MoveListMarker({
   // A scored blunder gets the Facepalm mini-chip right after its "??" / "???" glyph. 257 D-09: the chip
   // needs the type as well (it picks the tint), so a score without a type renders no chip.
   if (flaw?.severity === 'blunder' && flaw.facepalmScore != null && flaw.facepalmType != null) {
+    // 257 D-22: a "???" glyph opens the same explanation as the chip (it is not a standard NAG).
+    const glyph =
+      Icon === FacepalmBlunderIcon ? (
+        <FacepalmGlyphBadge
+          score={flaw.facepalmScore}
+          type={flaw.facepalmType}
+          byOpponent={flaw.facepalmByOpponent}
+          className={className}
+        />
+      ) : (
+        <Icon className={className} aria-hidden />
+      );
     return (
       <>
-        <Icon className={className} aria-hidden />
+        {glyph}
         <FacepalmMoveChip score={flaw.facepalmScore} type={flaw.facepalmType} byOpponent={flaw.facepalmByOpponent} />
       </>
     );
