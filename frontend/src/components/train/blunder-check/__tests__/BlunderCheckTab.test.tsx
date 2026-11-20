@@ -12,7 +12,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import type { AxiosResponse } from 'axios';
 import { act } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
+import type { ReactElement } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
@@ -1552,6 +1553,32 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
 
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(composeOrResumeSession).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('blunder_check_solution_cache')).toBeNull();
+  });
+
+  it('a stale restored solution is dropped even when the exit unmounts the host at once', async () => {
+    // Regression: the page's onExit unmounts the host in the same commit as the reset, so
+    // the entry must be cleared before the exit, not by a later effect of the host.
+    await analyzeAndLeave();
+    getOpenSession.mockImplementation(async () => null);
+    function Host(): ReactElement | null {
+      const [active, setActive] = useState(true);
+      if (!active) return null;
+      return <BlunderCheckTab onImmersiveChange={() => {}} onExit={() => setActive(false)} />;
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <TooltipProvider>
+            <Host />
+          </TooltipProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await advance(50);
+
+    expect(screen.queryByTestId('blunder-check-solution-heading')).toBeNull();
     expect(sessionStorage.getItem('blunder_check_solution_cache')).toBeNull();
   });
 

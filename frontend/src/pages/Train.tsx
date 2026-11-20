@@ -41,7 +41,10 @@ import { TrainArchiveTab } from '@/components/train/TrainArchiveTab';
 import { BlunderCheckTab } from '@/components/train/blunder-check/BlunderCheckTab';
 import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
 import type { TrainTodayActions } from '@/components/train/trainTodayActions';
-import { readBlunderCheckSolutionCache } from '@/lib/blunderCheckSolutionCache';
+import {
+  clearBlunderCheckSolutionCache,
+  readBlunderCheckSolutionCache,
+} from '@/lib/blunderCheckSolutionCache';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
 import { feedbackAskDays } from '@/lib/feedbackAsk';
 import { unlockAudio } from '@/lib/sounds';
@@ -193,6 +196,9 @@ export default function TrainPage(): ReactElement {
     // points at Train).
     // The lead-in's move sounds play from timers, not from a tap: unlock audio in this one.
     unlockAudio();
+    // A Start tap composes or resumes, it never restores: a solution cached before the page
+    // mounted on another tab (so the host never validated it) must not swallow the tap.
+    clearBlunderCheckSolutionCache();
     // Callable from the puzzle score screen (the D-12 hand-off): leave it first. From the
     // landing there is nothing to leave, so skip the session re-read it would fire.
     if (showLoop || showScoreScreen || restoredActive) loop.returnToLanding();

@@ -276,6 +276,11 @@ export function BlunderCheckTab({
   useEffect(() => {
     if (restoredSessionId === null || openSessionId === undefined) return;
     if (openSessionId === restoredSessionId) return;
+    // Bug fix: drop the stale entry here, not through the effect above. The page's onExit
+    // unmounts this host in the same commit as the RESET, so that effect never ran and the
+    // entry outlived the exit: every later Start (the card's, and the puzzle score screen's
+    // "Continue with Blunder Check") mounted straight into it and bounced back to Today.
+    clearBlunderCheckSolutionCache();
     dispatch({ type: 'RESET' });
     onExit();
   }, [restoredSessionId, openSessionId, onExit]);
