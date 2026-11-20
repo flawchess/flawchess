@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 257
 current_phase_name: Facepalm Rate in the Library Stats (SEED-261114-iuv)
 status: executing
-stopped_at: Completed 257-02-PLAN.md
-last_updated: "2026-11-20T12:45:34.826Z"
+stopped_at: Completed 257-03-PLAN.md
+last_updated: "2026-11-20T12:51:02.781Z"
 last_activity: 2026-11-20
 last_activity_desc: Phase 257 execution started
-state_head: 2129a4a573c20d83db6f84039b6f2982407cd18c
+state_head: ae6dab21bf1c0df1105cd1ae141d69f0382dd9ba
 progress:
   total_phases: 11
   completed_phases: 63
   total_plans: 100
-  completed_plans: 92
+  completed_plans: 93
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,7 +22,7 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 ## Current Position
 
 Phase: 257 (Facepalm Rate in the Library Stats (SEED-261114-iuv)) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 
 Status: Ready to execute
 
@@ -957,6 +957,7 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 255]: 255-06: Train step completes in Train.tsx handleEnterLoop (Start/Resume), route dots arrive as boolean props on hook-free TrainStartScreen and TrainSubnav
 - [Phase 257]: facepalm type rule (loss > 0 and loss >= missed) lives next to the score twin; readers null the type with the score
 - [Phase 257]: FacepalmChipValue field named facepalm_type (not type) to avoid shadowing the builtin; reader skips a row whose type narrows to None so markers never carry a score without a type
+- [Phase 257]: Facepalm type line is mover-neutral; eval-chart tooltip names the type in text ('Facepalm NN% · allowed loss')
 
 ### Pending Todos
 
@@ -1210,8 +1211,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-20T12:45:33.045Z
-**Stopped at:** Completed 257-02-PLAN.md
+**Last session:** 2026-11-20T12:51:00.799Z
+**Stopped at:** Completed 257-03-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1496,6 +1497,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 255 P07 | n/a | 2 tasks | 1 files |
 | Phase 257 P01 | 20 min | 2 tasks | 15 files |
 | Phase 257 P02 | 12 min | 1 tasks | 7 files |
+| Phase 257 P03 | 15min | 2 tasks | 14 files |
 
 ## Performance Metrics
 
