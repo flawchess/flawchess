@@ -265,7 +265,11 @@ class TestReimportFlow:
         from app.repositories.import_job_repository import create_import_job, update_import_job
         from scripts.reimport_games import reimport_user
 
-        user_id = 999
+        # Bug fix: ids 997-999 sat inside the range of the users id sequence. The
+        # serial CI run registers enough users before this file that a registered
+        # user can own id 999, and its committed games broke count_before == 1
+        # (CI saw 3). Use ids far above the sequence.
+        user_id = 999_901
         await ensure_test_user(db_session, user_id)
 
         # Insert a completed import job so reimport_user knows which platform to use
@@ -317,7 +321,7 @@ class TestReimportFlow:
         from tests.conftest import ensure_test_user
         from scripts.reimport_games import reimport_user
 
-        user_id = 998
+        user_id = 999_902  # above the users id sequence, see above
         await ensure_test_user(db_session, user_id)
         # No import jobs for this user
 
@@ -333,7 +337,7 @@ class TestReimportFlow:
         from app.repositories.import_job_repository import create_import_job, update_import_job
         from scripts.reimport_games import get_platform_jobs_for_user
 
-        user_id = 997
+        user_id = 999_903  # above the users id sequence, see above
         await ensure_test_user(db_session, user_id)
 
         # Insert a completed job and a failed job
