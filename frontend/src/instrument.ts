@@ -276,6 +276,10 @@ Sentry.init({
     // TypeError reading "Script <url> load failed", so the pattern above never
     // matched it and all 6 events were Mobile Safari.
     /Script \S+\/sw\.js load failed/,
+    // FLAWCHESS-DH: `runtime.sendMessage` is a browser-extension API, never
+    // called by our code. The rejection arrives with no stack frames, so the
+    // extension filter in denyUrls below cannot match it.
+    /Invalid call to runtime\.sendMessage\(\)/,
   ],
   denyUrls: [
     // These frames are entirely inside Cloudflare Web Analytics, not our code.

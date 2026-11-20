@@ -452,6 +452,16 @@ describe('Sentry.init config', () => {
     expect(ignoreErrors.some((p) => p.test(unrelated))).toBe(false);
   });
 
+  it('ignoreErrors matches a browser-extension runtime.sendMessage rejection (FLAWCHESS-DH)', async () => {
+    const Sentry = await import('@sentry/react');
+    await import('@/instrument');
+
+    const initCall = vi.mocked(Sentry.init).mock.calls[0]?.[0];
+    const ignoreErrors = (initCall?.ignoreErrors ?? []) as RegExp[];
+    const prodMessage = 'Invalid call to runtime.sendMessage(). Tab not found.';
+    expect(ignoreErrors.some((p) => p.test(prodMessage))).toBe(true);
+  });
+
   it('denyUrls matches a Cloudflare beacon.min.js frame URL', async () => {
     const Sentry = await import('@sentry/react');
     await import('@/instrument');
