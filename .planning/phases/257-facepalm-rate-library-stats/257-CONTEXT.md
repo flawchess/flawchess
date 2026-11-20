@@ -95,6 +95,38 @@ bias against a benchmark, the type-by-clock matrix, the training weighting.
 - Schema shape of the type (a `Literal["missed_win", "allowed_loss"]`, null when the score is null).
 - Umami event targets and `data-testid` names (follow the existing library-stats patterns).
 
+### UAT revisions (owner, 2026-11-20) — these override D-03 and part of D-16
+- **D-17: No separate share chart. The facepalm blunders become a band inside the Flaws Timeline**
+  (replaces D-03's own chart and its pooled share as the plotted metric). The Blunders series is drawn as
+  two stacked transparent areas under the unchanged Blunders line: facepalm blunders at the bottom in a
+  darker red, the other blunders above in red. Unit: facepalm blunders per 100 of the user's moves, the
+  same per-game-then-mean (macro) aggregation over the same 100-game window as `blunder_rate`, so it
+  matches the "Facepalm blunders" card's unit. The upper band is `blunder_rate - facepalm_rate`, floored at
+  0 (the games-table counts and `game_flaws` agree on 99.9% of games, prod DB report 2026-11-20), so the
+  top of the stack is exactly the Blunders line. A "Facepalm" legend entry toggles the split (on by
+  default); hiding Blunders hides both bands. `FacepalmShareChart` and `FACEPALM_SHARE_MIN_SCORED` go.
+- **D-18: Coverage gate instead of the share floor.** Prod: about 93% of the user's blunders are scored
+  (median user with 500+ blunders 92%, 98 of 469 such users below 90%), flat across years. Unscored
+  blunders count in the upper band, so the facepalm band reads a few percent low everywhere (accepted). A
+  window shows the band only when at least a named fraction (0.8) of its `game_flaws` blunders are scored,
+  so freshly imported, not yet Maia-scored games do not fake a recent dip.
+- **D-19: The tooltip keeps the share:** "Facepalm 1.10 / 100 (34% of blunders)", the pooled facepalm /
+  scored blunders of the window, shown with the band.
+- **D-20: Info popovers** on the Flaws Timeline (facepalm band) and on the "Facepalm blunders" card, no
+  link (popovers cannot be pinned to click a link). This revises D-16's "no sentence on what a higher rate
+  means" for the training pointer only. Wording ("trains you to spot them", not "reduces them": no measured
+  training effect):
+  - Card: "Facepalm blunders are blunders that should have been easy to see for a player at your level:
+    our model gives them a facepalm score of 70% or more. Blunder Check trains you to spot them before you
+    move."
+  - Timeline: "The darker band shows facepalm blunders: blunders that should have been easy to see for a
+    player at your level (facepalm score of 70% or more). Blunder Check trains you to spot them before you
+    move."
+- **D-21: Latency.** The facepalm rows move to their own endpoint so the rest of "You vs. your opponents"
+  does not wait on them, and the facepalm statements run with JIT off (4 s of the 11 s on the largest prod
+  account). A covering partial index on the score inputs is measured on a non-prod DB before any
+  migration; a stored score column is not an option (254 removed it on purpose).
+
 </decisions>
 
 <canonical_refs>
