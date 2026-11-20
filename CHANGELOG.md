@@ -25,6 +25,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Activity dashboard: the Train sessions section is split into Personalized Puzzles and Blunder Check, and Blunder Check gets its own cards for sessions per day by outcome, sequences judged per day, score % over time and the daily mix of cleared, caught, missed and false-alarm sequences. The guest Train note is gone. (quick 261120-c1x)
 - Activity dashboard: a new Blunder Check card compares red herrings with blunder sequences, and own games with foreign games, as outcome shares over the selected range, so it is visible which kind is easier to get right.
+- Activity dashboard: the "How long until the first import?" card is removed.
 - Train: the red dot now clears when you start a training session, not when you open Train.
 - Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
 - Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.

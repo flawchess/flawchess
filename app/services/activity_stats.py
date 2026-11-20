@@ -107,7 +107,6 @@ async def build_payload(
             bot_players=await queries.fetch_bot_players(conn, window.window_start, end),
             elo=await queries.fetch_elo(conn, window.window_start, end),
             funnel=await queries.fetch_funnel(conn, window.window_start, end),
-            tti=await queries.fetch_time_to_import(conn, window.window_start, end),
             stick=await queries.fetch_stickiness(conn, window.window_start, end),
             conversion=await queries.fetch_conversion(conn, window.window_start, end),
             conversion_compare=await queries.fetch_conversion_compare(

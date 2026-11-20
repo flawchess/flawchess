@@ -73,7 +73,6 @@ export interface ActivityStatsPayload {
   bot_players: number;
   elo: number[][];
   funnel: (string | number | null)[][];
-  tti: (string | number | null)[][];
   stick: (string | number | null)[][];
   conversion: Record<string, number | string>;
   conversion_compare: (string | number | null)[][];

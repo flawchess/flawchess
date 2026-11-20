@@ -425,15 +425,6 @@ export default function ActivityPage() {
             </details>
           </div>
           <div className="card">
-            <h3>How long until the first import?</h3>
-            <p className="note">
-              Time from account creation to the first import job, as a share of each cohort. The
-              decision is made in the first minutes or not at all.
-            </p>
-            <div className="legend" id="tti-legend"></div>
-            <div className="chart" id="c-tti"></div>
-          </div>
-          <div className="card">
             <h3>Guest → registered</h3>
             <p className="note">
               A guest who signs up is promoted in place: the same row keeps its games, its imports
@@ -665,7 +656,7 @@ export default function ActivityPage() {
               two rows.
             </li>
             <li>
-              <b>A promoted guest stays in the guest funnel and guest time-to-import cohort</b>,
+              <b>A promoted guest stays in the guest funnel</b>,
               dated to when the guest session started — promotion happens in place on the same
               row, so there is no second account and no second creation date.
             </li>
@@ -687,7 +678,7 @@ export default function ActivityPage() {
                 <span id="cav-purged-guest">—</span> guest sessions.
               </b>{' '}
               Accounts whose game history was purged (guest 30-day cleanup, or a user deleting
-              their games) are excluded from the funnel and time-to-import cards, because their <span className="mono">import_jobs</span>{' '}
+              their games) are excluded from the funnel, because their <span className="mono">import_jobs</span>{' '}
               rows are gone and they would otherwise read as "never imported".
             </li>
           </ul>

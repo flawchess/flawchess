@@ -119,7 +119,6 @@ class Payload(TypedDict):
     bot_players: int
     elo: list[list[int]]
     funnel: list[list[Any]]
-    tti: list[list[Any]]
     stick: list[list[Any]]
     conversion: dict[str, Any]
     conversion_compare: list[list[Any]]
@@ -805,14 +804,13 @@ async def fetch_funnel(
 async def fetch_purged_excluded(
     conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> dict[str, int]:
-    """Per-cohort count of users the four game-derived cards above dropped.
+    """Per-cohort count of users the three game-derived cards above dropped.
 
     A user with ``games_purged_at`` set (guest 30-day cleanup, or
-    ``DELETE /api/games``) is excluded from ``fetch_funnel``,
-    ``fetch_time_to_import``, ``fetch_stickiness`` and
+    ``DELETE /api/games``) is excluded from ``fetch_funnel``, ``fetch_stickiness`` and
     ``fetch_conversion_compare`` instead of reading as "never imported".
     This is the count each of those cards dropped, so the page can footnote
-    it. One query covers all four cards because they share the same
+    it. One query covers all three cards because they share the same
     ``users.created_at`` cohort window.
     """
     row = (
@@ -833,66 +831,6 @@ async def fetch_purged_excluded(
     return {"registered": int(row[0]), "guest": int(row[1])}
 
 
-async def fetch_time_to_import(
-    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
-) -> list[list[Any]]:
-    """How long after account creation the first import job started.
-
-    Sourced from ``users.first_import_started_at`` -- a retained fact that
-    survives a games/import_jobs purge -- rather than
-    ``MIN(import_jobs.started_at)``, and purged users
-    (``games_purged_at IS NOT NULL``) are excluded from the cohort entirely
-    (see ``fetch_purged_excluded``) instead of silently falling into the
-    "Never" bucket.
-
-    Cohort split uses ``_GUEST_COHORT`` for the same reason ``fetch_funnel``
-    does: a promoted guest stays in the GUEST columns.
-
-    Cohort card: windowed on ``users.created_at`` (entry) only, bounded
-    on both sides.
-    """
-    row = (
-        await _rows(
-            conn,
-            f"""
-            WITH u AS (
-              SELECT id, ({_GUEST_COHORT}) AS guest, created_at, first_import_started_at
-              FROM users u
-              WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
-                AND games_purged_at IS NULL)
-            SELECT
-              count(*) FILTER (WHERE NOT u.guest
-                               AND u.first_import_started_at < u.created_at + interval '5 min') AS r0,
-              count(*) FILTER (WHERE NOT u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '5 min'
-                               AND u.first_import_started_at < u.created_at + interval '1 hour') AS r1,
-              count(*) FILTER (WHERE NOT u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '1 hour'
-                               AND u.first_import_started_at < u.created_at + interval '1 day') AS r2,
-              count(*) FILTER (WHERE NOT u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '1 day') AS r3,
-              count(*) FILTER (WHERE NOT u.guest AND u.first_import_started_at IS NULL) AS r4,
-              count(*) FILTER (WHERE u.guest
-                               AND u.first_import_started_at < u.created_at + interval '5 min') AS g0,
-              count(*) FILTER (WHERE u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '5 min'
-                               AND u.first_import_started_at < u.created_at + interval '1 hour') AS g1,
-              count(*) FILTER (WHERE u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '1 hour'
-                               AND u.first_import_started_at < u.created_at + interval '1 day') AS g2,
-              count(*) FILTER (WHERE u.guest
-                               AND u.first_import_started_at >= u.created_at + interval '1 day') AS g3,
-              count(*) FILTER (WHERE u.guest AND u.first_import_started_at IS NULL) AS g4
-            FROM u
-            """,
-            first=window_start,
-            last=_end_exclusive(window_end),
-        )
-    )[0]
-    buckets = ["Under 5 min", "5–60 min", "1–24 h", "Later than a day", "Never"]
-    return [[label, int(row[i]), int(row[i + 5])] for i, label in enumerate(buckets)]
-
-
 async def fetch_stickiness(
     conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> list[list[Any]]:
@@ -904,8 +842,7 @@ async def fetch_stickiness(
     NULL``) are excluded from the cohort entirely (see
     ``fetch_purged_excluded``).
 
-    This card keeps RAW ``is_guest`` -- unlike ``fetch_funnel`` /
-    ``fetch_time_to_import`` it is deliberately NOT part of the
+    This card keeps RAW ``is_guest`` -- unlike ``fetch_funnel`` it is deliberately NOT part of the
     ``_GUEST_COHORT`` switch, so a promoted guest still lands in the
     "Registered" row here.
 

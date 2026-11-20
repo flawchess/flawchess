@@ -192,7 +192,7 @@ deliberately not hardcoded anywhere on the card itself.
 
 ## Query cost
 
-`build_payload()` awaits 20 `queries.fetch_*` calls, 22 SQL statements in all
+`build_payload()` awaits 19 `queries.fetch_*` calls, 21 SQL statements in all
 (`fetch_window` and `fetch_train_funnel` each run two), sequentially over the
 full tracked history. Measured against the **dev** database (25 users, 70 `user_activity`
 rows, 59 tracked days, 163,781 games), three consecutive cold calls:

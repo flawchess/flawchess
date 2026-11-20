@@ -132,7 +132,6 @@ def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
         bot_players=0,
         elo=[],
         funnel=[],
-        tti=[],
         stick=[],
         conversion={},
         conversion_compare=[],
@@ -1238,8 +1237,8 @@ async def _stamp_user(test_engine, user_id: int, **values: object) -> None:
 
 @pytest.mark.asyncio
 async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
-    """A purged user is dropped from fetch_funnel/fetch_time_to_import/
-    fetch_stickiness/fetch_conversion_compare instead of reading as "never
+    """A purged user is dropped from fetch_funnel/fetch_stickiness/
+    fetch_conversion_compare instead of reading as "never
     imported"; fetch_purged_excluded counts it under the right cohort key;
     fetch_funnel has exactly 4 stages and no "Chess account linked" label.
 
@@ -1256,7 +1255,6 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
 
     async with test_engine.connect() as conn:
         baseline_funnel = await queries.fetch_funnel(conn, window_start, window_end)
-        baseline_tti = await queries.fetch_time_to_import(conn, window_start, window_end)
         baseline_stick = await queries.fetch_stickiness(conn, window_start, window_end)
         baseline_compare = await queries.fetch_conversion_compare(conn, window_start, window_end)
         baseline_purged = await queries.fetch_purged_excluded(conn, window_start, window_end)
@@ -1300,7 +1298,6 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
 
     async with test_engine.connect() as conn:
         funnel = await queries.fetch_funnel(conn, window_start, window_end)
-        tti = await queries.fetch_time_to_import(conn, window_start, window_end)
         stick = await queries.fetch_stickiness(conn, window_start, window_end)
         compare = await queries.fetch_conversion_compare(conn, window_start, window_end)
         purged = await queries.fetch_purged_excluded(conn, window_start, window_end)
@@ -1318,13 +1315,6 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
     assert created_delta == [1, 2]
     assert started_delta == [1, 1]
     assert imported_delta == [1, 1]
-
-    # fetch_time_to_import: "Under 5 min" (index 0) registered=importer_id,
-    # guest=promoted_id; "Never" (index 4) guest=guest_never_imported.
-    r0_delta = [tti[0][i] - baseline_tti[0][i] for i in (1, 2)]
-    g4_delta = tti[4][2] - baseline_tti[4][2]
-    assert r0_delta == [1, 1]
-    assert g4_delta == 1
 
     # fetch_stickiness keeps RAW is_guest (not _GUEST_COHORT): promoted_id
     # (is_guest=False) lands in the "Registered" row, not "Guest".

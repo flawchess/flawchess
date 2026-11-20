@@ -354,22 +354,6 @@ function buildCases(fc) {
     },
     {
       chart: "gbar",
-      name: "gbar 5-bucket (time-to-import)",
-      invoke: (host) =>
-        fc.gbar(host, {
-          labels: ["Under 5 min", "5–60 min", "1–24 h", "Later than a day", "Never"],
-          h: 250,
-          max: 1,
-          yFmt: (v) => Math.round(v * 100) + "%",
-          fmt: (v) => Math.round(v * 100) + "%",
-          series: [
-            { name: "Registered accounts", color: "#B25A28", values: [0.4, 0.25, 0.15, 0.1, 0.1] },
-            { name: "Guest sessions", color: "#B44A8E", values: [0.5, 0.2, 0.15, 0.1, 0.05] },
-          ],
-        }),
-    },
-    {
-      chart: "gbar",
       name: "gbar 2-group (stickiness)",
       invoke: (host) =>
         fc.gbar(host, {

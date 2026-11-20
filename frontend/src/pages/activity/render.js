@@ -27,7 +27,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
-    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], CONV=null, PURGED=null,
+    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], CONV=null, PURGED=null,
     BCSESS=[], BCWIN=[], BCDIFF=[];
 
 function apply(payload){
@@ -39,7 +39,7 @@ function apply(payload){
   SIGNUPS=payload.signups; BOT=payload.bot; TRAIN=payload.train; SOLVES=payload.solves;
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
   TRAINFUN=payload.train_funnel;
-  FUNNEL=payload.funnel; TTI=payload.tti;
+  FUNNEL=payload.funnel;
   CONV=payload.conversion; PURGED=payload.purged_excluded;
   BCSESS=payload.blunder_check_sessions; BCWIN=payload.blunder_check_windows;
   BCDIFF=payload.blunder_check_difficulty;
@@ -233,15 +233,6 @@ function renderFunnelCard(){
     rows:FUNNEL.map((f,i)=>({label:i?f[0]:"Guest session started",value:f[2]}))});
   table("#t-funnel",["Stage","Registered","% of registered","Guests","% of guests"],
     FUNNEL.map(f=>[f[0],f[1],pctText(f[1],FUNNEL[0][1]),f[2],pctText(f[2],FUNNEL[0][2])]));
-}
-
-function renderTtiCard(){
-  const c=C();
-  legend("#tti-legend",[{name:"Registered accounts",color:c.s1},{name:"Guest sessions",color:c.s5}]);
-  gbar($("#c-tti"),{labels:TTI.map(t=>t[0]),h:250,max:1,
-    yFmt:v=>Math.round(v*100)+"%", fmt:v=>Math.round(v*100)+"%",
-    series:[{name:"Registered accounts",color:c.s1,values:TTI.map(t=>ratio(t[1],FUNNEL[0][1]))},
-            {name:"Guest sessions",color:c.s5,values:TTI.map(t=>ratio(t[2],FUNNEL[0][2]))}]});
 }
 
 function renderConversionCard(){
@@ -482,7 +473,6 @@ function render(){
   renderSignupsCard();
   renderRetentionCard();
   renderFunnelCard();
-  renderTtiCard();
   renderConversionCard();
   renderBotCard();
   renderTrainCard();
