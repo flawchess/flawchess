@@ -675,7 +675,7 @@ opponent blunder scoring on prod (seed Part A, done: Maia columns 99.2%, line fa
 user blunders). Does not wait for the Phase 252 repair: the gap in line facts is the same on both sides, so it
 does not skew the paired comparison.
 **Requirements**: TBD
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -697,7 +697,7 @@ Plans:
 - [x] 257-06-PLAN.md — Frontend: Facepalm blunders card in You vs. your opponents, neutral cells (noVerdict), D-14 to D-16 copy (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 257-07-PLAN.md — Changelog, D-06 / D-14 end-of-phase guards, full pre-merge gate, prod checks handed to UAT (wave 7)
+- [x] 257-07-PLAN.md — Changelog, D-06 / D-14 end-of-phase guards, full pre-merge gate, prod checks handed to UAT (wave 7)
 
 ## Backlog
 
