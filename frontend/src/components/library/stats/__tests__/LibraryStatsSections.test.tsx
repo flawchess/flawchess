@@ -55,6 +55,16 @@ vi.mock('@/components/library/FlawTrendChart', () => ({
   ),
 }));
 
+vi.mock('@/components/library/FacepalmShareChart', () => ({
+  FacepalmShareChart: ({ trend, windowSize }: { trend: { date: string }[]; windowSize: number }) => (
+    <div
+      data-testid="share-stub"
+      data-dates={trend.map((p) => p.date).join(',')}
+      data-window={windowSize}
+    />
+  ),
+}));
+
 vi.mock('@/components/library/EvalCoverageBadge', () => ({
   CoverageSignupButton: () => <button data-testid="btn-coverage-signup" />,
 }));
@@ -142,6 +152,15 @@ describe('Flaw Stats section (default selection)', () => {
     const trend = await screen.findByTestId('trend-stub');
     expect(trend.getAttribute('data-dates')).toBe('2026-02-02,2026-02-09');
     expect(trend.getAttribute('data-window')).toBe(String(TREND_WINDOW));
+  });
+
+  it('feeds the facepalm share chart the same dates and window as the timeline', async () => {
+    await renderLoaded();
+    const trend = await screen.findByTestId('trend-stub');
+    const share = await screen.findByTestId('share-stub');
+    expect(share.getAttribute('data-dates')).toBe('2026-02-02,2026-02-09');
+    expect(share.getAttribute('data-dates')).toBe(trend.getAttribute('data-dates'));
+    expect(share.getAttribute('data-window')).toBe(trend.getAttribute('data-window'));
   });
 
   it('uses the Fredoka brand font on the three section titles', async () => {
@@ -267,6 +286,7 @@ describe('TC switch', () => {
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 6.12');
     expect(text('flaw-stats-basis')).toBe('All 1,000 blitz games in the current filters are analyzed.');
     expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
+    expect(screen.getByTestId('share-stub').getAttribute('data-dates')).toBe('2026-01-05');
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
       target: 'library-stats-tc',
@@ -380,6 +400,8 @@ describe('empty and failed states', () => {
     mocks.getFlawStats.mockRejectedValue(new Error('boom'));
     await renderLoaded();
     expect(await screen.findByText(/Failed to load flaws timeline/)).not.toBeNull();
+    expect(screen.getAllByText(/Failed to load flaws timeline/)).toHaveLength(1);
+    expect(screen.queryByTestId('share-stub')).toBeNull();
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });
 });
