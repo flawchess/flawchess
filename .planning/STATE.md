@@ -1157,7 +1157,7 @@ None active.
 | 261120-c1x | Activity Pulse: split Train sessions into Personalized Puzzles and Blunder Check blocks, derive session outcomes at query time | 2026-11-20 | 3b383db94 | [261120-c1x-activity-pulse-split-train-sessions-into](./quick/261120-c1x-activity-pulse-split-train-sessions-into/) |
 | 179 | Activity Pulse: Blunder Check difficulty card (red herring vs blunder window, own vs foreign game) | 2026-11-20 | d03d31147 | — |
 | 261120-j5f | Blunder check: resync from the server when the session moved on on another device (Sentry FLAWCHESS-DJ) | 2026-11-20 | 4fe7eccfc | [261120-j5f-blunder-check-cross-device-resync-on-sta](./quick/261120-j5f-blunder-check-cross-device-resync-on-sta/) |
-| 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | da679c89b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
+| 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
 
 ## Deferred Items
 

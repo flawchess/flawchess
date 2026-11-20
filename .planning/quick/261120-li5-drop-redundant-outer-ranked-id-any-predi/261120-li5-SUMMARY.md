@@ -2,8 +2,8 @@
 quick_id: 261120-li5
 status: complete
 completed: 2026-11-20
-commit: da679c89b
-branch: quick/ranked-stats-redundant-any
+commit: d06c5847b
+branch: main (squash of quick/ranked-stats-redundant-any)
 files_modified:
   - app/repositories/endgame_repository.py
   - tests/test_endgame_repository.py
@@ -66,7 +66,6 @@ warmer cache than the first "before" runs, but the same-cache EXPLAIN pair above
 
 ## Not done
 
-- Not merged to `main`. The full pre-merge gate (frontend steps, nesting-depth gate) has not
-  been run; only the backend suite and lint/type checks on the touched files.
+- Merged to `main` as squash commit `d06c5847b` after the full pre-merge gate passed (backend 7,200 passed; frontend lint, build, 6,634 tests, knip). Not yet deployed.
 - Remaining per-request time (~0.5-1 s) is dominated by the endgame/non-endgame performance
   rows and the `recent_capped` slice fetch, not by the plan pathology. No further change proposed.
