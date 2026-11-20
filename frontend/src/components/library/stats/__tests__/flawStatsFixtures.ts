@@ -7,6 +7,8 @@ import { TEMPO_PHASE_PHASES, TEMPO_PHASE_TEMPOS } from '@/lib/flawComparisonMeta
 import { TACTIC_COMPARISON_FAMILIES, type TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
+  FacepalmBullet,
+  FacepalmMetric,
   FlawBullet,
   FlawComparisonResponse,
   FlawComparisonTc,
@@ -82,6 +84,36 @@ export function makeTempoPhaseCell(
   };
 }
 
+/** The three facepalm rows in payload order (mirrors backend FACEPALM_METRICS). */
+const FACEPALM_METRICS: readonly FacepalmMetric[] = [
+  'facepalm',
+  'facepalm_missed_win',
+  'facepalm_allowed_loss',
+];
+
+/** A neutral facepalm row (no band) with a small positive gap and event counts unless overridden. */
+export function makeFacepalmBullet(
+  tag: FacepalmMetric,
+  overrides: Partial<FacepalmBullet> = {},
+): FacepalmBullet {
+  return {
+    tag,
+    delta: 0.4,
+    ci_low: 0.1,
+    ci_high: 0.7,
+    player_rate: 0.9,
+    opp_rate: 0.5,
+    p_value: 0.02,
+    player_events: 60,
+    opp_events: 35,
+    zone_lo: 0,
+    zone_hi: 0,
+    has_zone: false,
+    significant: false,
+    ...overrides,
+  };
+}
+
 interface TcEntryOptions {
   analyzedN: number;
   /** Coverage denominator; defaults to analyzedN (fully analyzed). */
@@ -92,6 +124,8 @@ interface TcEntryOptions {
   overrides?: Partial<Record<FlawDeltaMetric, Partial<FlawBullet>>>;
   /** Per-cell overrides of the 9 crossed tempo x phase cells, keyed `tempo:phase`. */
   tempoPhase?: Partial<Record<`${FlawTempoMetric}:${FlawPhaseMetric}`, Partial<TempoPhaseCell>>>;
+  /** Per-row overrides of the three facepalm rows (total, missed win, allowed loss). */
+  facepalm?: Partial<Record<FacepalmMetric, Partial<FacepalmBullet>>>;
 }
 
 /** One TC entry with all 12 bullets; blunder and mistake can be overridden per test. */
@@ -109,6 +143,9 @@ export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): Fla
       TEMPO_PHASE_TEMPOS.map((tempo) =>
         makeTempoPhaseCell(tempo, phase, options.tempoPhase?.[`${tempo}:${phase}`]),
       ),
+    ),
+    facepalm_bullets: FACEPALM_METRICS.map((tag) =>
+      makeFacepalmBullet(tag, options.facepalm?.[tag]),
     ),
   };
 }

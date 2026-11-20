@@ -415,6 +415,42 @@ class TempoPhaseCell(BaseModel):
     significant: bool
 
 
+# The three facepalm rows of FlawComparisonTc.facepalm_bullets (257 D-12): the total and one row
+# per type (D-04: a type is only ever paired with the same type of the opponents). Deliberately
+# NOT part of FlawDeltaMetric / FLAW_DELTA_METRICS, which drive the 12-metric zone registry and
+# the benchmark generator.
+FacepalmMetric = Literal["facepalm", "facepalm_missed_win", "facepalm_allowed_loss"]
+FACEPALM_METRICS: Final[tuple[FacepalmMetric, ...]] = (
+    "facepalm",
+    "facepalm_missed_win",
+    "facepalm_allowed_loss",
+)
+
+
+class FacepalmBullet(BaseModel):
+    """One facepalm row of the flaw comparison: you vs your opponents, per 100 of your moves.
+
+    FlawBullet's fields exactly, on the same paired basis (both sides divided by the user's move
+    count per game, so player_rate - opp_rate == delta). D-13: no benchmark band exists in this
+    phase, so has_zone is False and zone_lo == zone_hi == 0.0. p_value and significant are still
+    computed so the card can state them, but they drive no colour.
+    """
+
+    tag: FacepalmMetric
+    delta: float | None
+    ci_low: float | None
+    ci_high: float | None
+    player_rate: float | None
+    opp_rate: float | None
+    p_value: float | None
+    player_events: int
+    opp_events: int
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool = False
+    significant: bool
+
+
 class FlawComparisonTc(BaseModel):
     """One time control's you-vs-opponent flaw comparison.
 
@@ -428,6 +464,8 @@ class FlawComparisonTc(BaseModel):
     tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
                        middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
                        Computed also below the gate, like bullets.
+    facepalm_bullets: always the three FACEPALM_METRICS rows (total, missed wins, allowed
+                      losses), neutral (no band). Computed also below the gate.
     """
 
     tc: TimeControlBucket
@@ -436,6 +474,7 @@ class FlawComparisonTc(BaseModel):
     below_gate: bool
     bullets: list[FlawBullet]
     tempo_phase_cells: list[TempoPhaseCell]
+    facepalm_bullets: list[FacepalmBullet]
 
 
 class FlawComparisonResponse(BaseModel):

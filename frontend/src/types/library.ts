@@ -391,6 +391,21 @@ export interface TempoPhaseCell extends Omit<FlawBullet, 'tag'> {
   phase: FlawPhaseMetric;
 }
 
+/** The three facepalm rows of a time control (mirrors backend FacepalmMetric / FACEPALM_METRICS). */
+export type FacepalmMetric = 'facepalm' | 'facepalm_missed_win' | 'facepalm_allowed_loss';
+
+/**
+ * One facepalm row of the flaw comparison (mirrors backend FacepalmBullet): the user's facepalm
+ * blunders per 100 of their moves next to their opponents' in the same games, paired per game
+ * like FlawBullet (player_rate - opp_rate === delta). 257 D-13: no benchmark band, so
+ * has_zone is always false and zone_lo === zone_hi === 0; `significant` is the server's 99%
+ * test, stated on the card but never a colour. 257 D-04: a type row pairs the user's count of
+ * that type with the opponents' count of the same type only.
+ */
+export interface FacepalmBullet extends Omit<FlawBullet, 'tag'> {
+  tag: FacepalmMetric;
+}
+
 /** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
 export interface FlawComparisonTc {
   tc: TimeControlBucket;
@@ -402,6 +417,8 @@ export interface FlawComparisonTc {
   bullets: FlawBullet[];
   /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
   tempo_phase_cells: TempoPhaseCell[];
+  /** Always 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate. */
+  facepalm_bullets: FacepalmBullet[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────

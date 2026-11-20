@@ -42,6 +42,9 @@ from app.repositories.library_repository import (
 from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS, mover_is_white_at_ply
 from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
+    FACEPALM_METRICS,
+    FacepalmBullet,
+    FacepalmMetric,
     FlawBullet,
     FlawComparisonResponse,
     FlawComparisonTc,
@@ -1662,6 +1665,61 @@ def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> li
     return cells
 
 
+def _build_facepalm_bullet(metric: FacepalmMetric, series: _PairedSeries) -> FacepalmBullet:
+    """Build one neutral FacepalmBullet; mirrors _build_tempo_phase_cell without a band (D-13).
+
+    zone_lo = zone_hi = 0.0 and has_zone False on both return paths. Significance is still
+    computed (the card may state it) but the frontend lets it drive no colour.
+    """
+    if series.player_total == 0 and series.opp_total == 0:
+        # Zero-event row: no facepalm on either side, render a muted placeholder.
+        return FacepalmBullet(
+            tag=metric,
+            delta=None,
+            ci_low=None,
+            ci_high=None,
+            player_rate=None,
+            opp_rate=None,
+            p_value=None,
+            player_events=0,
+            opp_events=0,
+            zone_lo=0.0,
+            zone_hi=0.0,
+            has_zone=False,
+            significant=False,
+        )
+    mean, p_value, ci_low, ci_high, significant = _paired_gap_test(series.deltas)
+    n_games = len(series.player_rates)
+    return FacepalmBullet(
+        tag=metric,
+        delta=mean,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        player_rate=sum(series.player_rates) / n_games if n_games else 0.0,
+        opp_rate=sum(series.opp_rates) / n_games if n_games else 0.0,
+        p_value=p_value,
+        player_events=series.player_total,
+        opp_events=series.opp_total,
+        zone_lo=0.0,
+        zone_hi=0.0,
+        has_zone=False,
+        significant=significant,
+    )
+
+
+def _compute_facepalm_bullets(rows: Sequence[Any]) -> list[FacepalmBullet]:
+    """The three facepalm rows of one TC in FACEPALM_METRICS order (257 D-12).
+
+    Rows carry player_/opp_ facepalm, facepalm_missed_win and facepalm_allowed_loss counts;
+    _paired_series owns the per-100-user-moves denominator, so each row stays paired per game
+    and a type is only ever set against the same type of the opponents (D-04).
+    """
+    return [
+        _build_facepalm_bullet(metric, _paired_series(rows, f"player_{metric}", f"opp_{metric}"))
+        for metric in FACEPALM_METRICS
+    ]
+
+
 async def get_flaw_comparison(
     session: AsyncSession,
     user_id: int,
@@ -1690,6 +1748,8 @@ async def get_flaw_comparison(
        zone bounds from the per-TC registry; also the 9 crossed tempo x phase
        cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
        for below-gate TCs, so tiles can show rates; below_gate is flagged.
+    4. fetch_facepalm_comparison (awaited after step 2, same anchor game set) +
+       _compute_facepalm_bullets: the three neutral facepalm rows per TC (257 D-12, no band).
 
     IDOR guard: user_id is from current_active_user, never a request param.
 
@@ -1746,7 +1806,16 @@ async def get_flaw_comparison(
             analyzed_subq,
             **_filter_kwargs,
         )
+        # Sequential on the same session (never gather): the facepalm rows read the same
+        # anchor game set, scored once per blunder.
+        facepalm_rows = await library_repository.fetch_facepalm_comparison(
+            session,
+            user_id,
+            analyzed_subq,
+            **_filter_kwargs,
+        )
         rows_by_tc = _bucket_rows_by_tc(rows)
+        facepalm_by_tc = _bucket_rows_by_tc(facepalm_rows)
         tcs = [
             FlawComparisonTc(
                 tc=tc,
@@ -1755,6 +1824,7 @@ async def get_flaw_comparison(
                 below_gate=counts[tc] < FLAW_COMPARISON_GATE,
                 bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
                 tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, []), tc),
+                facepalm_bullets=_compute_facepalm_bullets(facepalm_by_tc.get(tc, [])),
             )
             for tc in LIBRARY_TC_ORDER
             if counts.get(tc)
