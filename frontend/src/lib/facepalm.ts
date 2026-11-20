@@ -32,8 +32,12 @@ export const FACEPALM_STEP = 5;
 /** Low / Mid boundary, included in both (whole percent, UI cutoff, D-09). */
 const FACEPALM_MID_CUTOFF = 30;
 
-/** Mid / High boundary, included in both (whole percent, UI cutoff, D-09). */
-const FACEPALM_HIGH_CUTOFF = 70;
+/**
+ * Mid / High boundary, included in both (whole percent, UI cutoff, D-09). It is also the stats
+ * cut: the facepalm share chart and the Facepalm rows name it. The backend FACEPALM_STATS_MIN is
+ * pinned to the same 70% by test.
+ */
+export const FACEPALM_HIGH_CUTOFF = 70;
 
 /** Multiplier turning a 0..1 score into a percent. */
 const FACEPALM_PCT_SCALE = 100;

@@ -515,6 +515,9 @@ export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading.
 export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
+// 257 D-04: the facepalm share line is untyped, so it takes neither type tint (teal / crimson);
+// the neutral light grey of the eval chart line.
+export const FACEPALM_SHARE_LINE = EVAL_CHART_LINE;
 
 // Primary line of the per-opening Score over time chart (expanded repertoire row): the
 // rolling expected score from the opening eval.

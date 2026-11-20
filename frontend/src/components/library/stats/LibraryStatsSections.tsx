@@ -12,6 +12,7 @@ import {
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { TcSwitch } from '@/components/stats/TcSwitch';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { FacepalmShareChart } from '@/components/library/FacepalmShareChart';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
@@ -71,14 +72,23 @@ interface FlawTimelineProps {
   selectedTc: TimeControlBucket;
 }
 
-/** The selected time control's timeline; its own load/error states never hide the tiles. */
+/**
+ * The selected time control's timeline with the facepalm share chart directly below it (257
+ * D-03: same points, same window, same load and error states); its own load/error states never
+ * hide the tiles.
+ */
 function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelineProps) {
   if (isError) return <LoadError resource="flaws timeline" />;
   if (isLoading || !stats) {
     return <div className="h-48 animate-pulse rounded border border-border bg-charcoal" />;
   }
   const points = stats.trend_by_tc.find((t) => t.tc === selectedTc)?.points ?? [];
-  return <FlawTrendChart trend={points} windowSize={stats.trend_window} />;
+  return (
+    <>
+      <FlawTrendChart trend={points} windowSize={stats.trend_window} />
+      <FacepalmShareChart trend={points} windowSize={stats.trend_window} />
+    </>
+  );
 }
 
 /**
