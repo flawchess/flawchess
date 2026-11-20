@@ -40,6 +40,7 @@ from app.services.flaw_delta_zones import (
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
     _build_flaw_bullet,
+    get_facepalm_comparison,
     get_flaw_comparison,
 )
 from app.services.facepalm_score import FacepalmType
@@ -897,7 +898,7 @@ def _facts(score: float | None, facepalm_type: FacepalmType | None = None) -> di
 
 
 def _facepalm_bullet(tc_entry: Any, tag: str) -> Any:
-    return next(b for b in tc_entry.facepalm_bullets if b.tag == tag)
+    return next(b for b in tc_entry.bullets if b.tag == tag)
 
 
 async def _seed_facepalm_game(db_session: AsyncSession, **game_kwargs: Any) -> Game:
@@ -923,10 +924,10 @@ async def test_facepalm_rows_are_paired_per_100_user_moves(db_session: AsyncSess
     for ply, severity, facts in kinds:
         await _seed_flaw(db_session, game=game, ply=ply, severity=severity, facts=facts)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
     tc_entry = result.tcs[0]
-    assert [b.tag for b in tc_entry.facepalm_bullets] == list(_FACEPALM_ROWS)
+    assert [b.tag for b in tc_entry.bullets] == list(_FACEPALM_ROWS)
     expected = {
         "facepalm": (2, 1),
         "facepalm_missed_win": (1, 0),
@@ -1036,7 +1037,7 @@ async def test_facepalm_cut_is_the_stats_min(db_session: AsyncSession) -> None:
     await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(above))
     await _seed_flaw(db_session, game=game, ply=4, severity=_BLUNDER, facts=_facts(below))
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
     assert _facepalm_bullet(result.tcs[0], "facepalm").player_events == 1
 
@@ -1052,12 +1053,15 @@ async def test_facepalm_rows_have_no_zone_and_exist_below_the_gate(
         game = await _seed_facepalm_game(db_session, time_control_bucket=bucket)
         await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    flaw_result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
-    assert [t.below_gate for t in result.tcs] == [True, True]
+    # Same TCs as the flaw comparison, which flags both as below its gate.
+    assert [t.tc for t in result.tcs] == [t.tc for t in flaw_result.tcs] == ["blitz", "rapid"]
+    assert [t.below_gate for t in flaw_result.tcs] == [True, True]
     for tc_entry in result.tcs:
-        assert tuple(b.tag for b in tc_entry.facepalm_bullets) == FACEPALM_METRICS
-        for bullet in tc_entry.facepalm_bullets:
+        assert tuple(b.tag for b in tc_entry.bullets) == FACEPALM_METRICS
+        for bullet in tc_entry.bullets:
             assert bullet.has_zone is False
             assert (bullet.zone_lo, bullet.zone_hi) == (0.0, 0.0)
 
@@ -1068,9 +1072,9 @@ async def test_facepalm_zero_event_rows_are_neutral_placeholders(db_session: Asy
     for _ in range(FLAW_COMPARISON_GATE):
         await _seed_facepalm_game(db_session)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
-    for bullet in result.tcs[0].facepalm_bullets:
+    for bullet in result.tcs[0].bullets:
         assert bullet.delta is None and bullet.player_rate is None and bullet.opp_rate is None
         assert bullet.significant is False
         assert (bullet.player_events, bullet.opp_events) == (0, 0)
@@ -1084,7 +1088,7 @@ async def test_facepalm_one_sided_total_is_significant(db_session: AsyncSession)
         game = await _seed_facepalm_game(db_session, user_color="white")
         await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
     total = _facepalm_bullet(result.tcs[0], "facepalm")
     assert total.opp_events == 0
@@ -1105,13 +1109,20 @@ async def test_facepalm_two_user_isolation(db_session: AsyncSession) -> None:
         await _seed_flaw(db_session, game=theirs, ply=2, severity=_BLUNDER, facts=_facts(0.8))
         await _seed_flaw(db_session, game=theirs, ply=3, severity=_BLUNDER, facts=_facts(0.9))
 
-    mine_result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
-    other_result = await get_flaw_comparison(db_session, _OTHER_USER, **_DEFAULT_FILTER_KWARGS)
+    mine_result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    other_result = await get_facepalm_comparison(db_session, _OTHER_USER, **_DEFAULT_FILTER_KWARGS)
 
     total = _facepalm_bullet(mine_result.tcs[0], "facepalm")
     assert (total.player_events, total.opp_events) == (1, 0)
     other_total = _facepalm_bullet(other_result.tcs[0], "facepalm")
     assert (other_total.player_events, other_total.opp_events) == (3, 3)
+
+
+def test_flaw_comparison_no_longer_carries_facepalm_rows() -> None:
+    """257 D-21: the facepalm rows moved to /facepalm-comparison; /flaw-comparison never waits."""
+    from app.schemas.library import FlawComparisonTc
+
+    assert "facepalm_bullets" not in FlawComparisonTc.model_fields
 
 
 def test_facepalm_bullet_field_parity() -> None:
@@ -1128,3 +1139,37 @@ def test_facepalm_metrics_not_in_flaw_delta_metrics() -> None:
 
     assert len(FACEPALM_METRICS) == 3
     assert not set(FACEPALM_METRICS) & set(FLAW_DELTA_METRICS)
+
+
+@pytest.mark.asyncio
+async def test_facepalm_reads_run_with_jit_off(db_session: AsyncSession) -> None:
+    """257 D-21: both facepalm readers switch JIT off for their transaction."""
+    from sqlalchemy import text
+
+    from app.repositories.library_repository import fetch_facepalm_comparison, fetch_facepalm_counts
+
+    for reader in ("comparison", "counts"):
+        await db_session.execute(text("SET LOCAL jit = on"))
+        if reader == "comparison":
+            await fetch_facepalm_comparison(
+                db_session,
+                _TEST_USER,
+                _analyzed_game_ids_subquery(_TEST_USER),
+                **_DEFAULT_FILTER_KWARGS,
+            )
+        else:
+            await fetch_facepalm_counts(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+        assert (await db_session.execute(text("SHOW jit"))).scalar_one() == "off", reader
+
+
+def test_blunder_facts_index_covers_every_score_input() -> None:
+    """257 D-21: a score input missing from the covering index brings the heap fetches back."""
+    from app.models.base import Base
+    from app.models.game_flaw import GameFlaw
+    from app.services.facepalm_score import _game_flaw_columns
+
+    table = Base.metadata.tables[GameFlaw.__tablename__]
+    index = next(i for i in table.indexes if i.name == "ix_game_flaws_blunder_facts")
+    covered = {c.name for c in index.columns} | set(index.dialect_options["postgresql"]["include"])
+    inputs = {column.key for column in _game_flaw_columns()}
+    assert inputs | {"ply", "game_id", "user_id"} <= covered

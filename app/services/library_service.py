@@ -33,6 +33,7 @@ from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
     FacepalmChipValue,
+    FacepalmGameCounts,
     TacticOrientation,
     MIN_TACTIC_CHIP_CONFIDENCE,
     _TEMPO_INT_TO_TAG,
@@ -44,6 +45,8 @@ from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
     FACEPALM_METRICS,
     FacepalmBullet,
+    FacepalmComparisonResponse,
+    FacepalmComparisonTc,
     FacepalmMetric,
     FlawBullet,
     FlawComparisonResponse,
@@ -1114,12 +1117,13 @@ _PER_100 = 100.0
 # Timeline window (endgame_service.ENDGAME_ELO_TIMELINE_WINDOW = 100) so the two
 # time-series charts read consistently.
 FLAW_TREND_WINDOW = 100
-# 257 D-03: a window needs at least this many scored blunders before its facepalm share is
-# shown (the point itself stays, only the share is null). Raised from the 20 announced in
-# CONTEXT: at 20 the first points of a filling window jumped 8 to 19 points on benchmark users
-# (research A1); a full 100-game window holds about 100 or more scored blunders, so the floor
-# only acts while a time control's window fills. The prod probe is still pending (plan 07).
-FACEPALM_SHARE_MIN_SCORED: int = 50
+# 257 D-18: a window shows the facepalm band only when at least this fraction of its game_flaws
+# blunders are scored. Prod (2026-11-20): about 93% of users' blunders are scored, flat across
+# years, so a full window clears it; freshly imported games that Maia has not scored yet would
+# otherwise read as a sudden drop in facepalm blunders.
+FACEPALM_MIN_SCORED_COVERAGE: float = 0.8
+# A game without own blunders in game_flaws (absent from fetch_facepalm_counts).
+_NO_FACEPALM_COUNTS = FacepalmGameCounts(blunders=0, scored=0, facepalm=0)
 
 
 def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
@@ -1135,15 +1139,29 @@ def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
     return ply_count // 2  # floor
 
 
-def _window_share(facepalm: int, scored: int) -> float | None:
-    """Pooled facepalm share of a window, null below FACEPALM_SHARE_MIN_SCORED scored blunders."""
-    if scored < FACEPALM_SHARE_MIN_SCORED:
-        return None
-    return round(facepalm / scored, 4)
+def _window_facepalm(
+    counts: Sequence[FacepalmGameCounts], facepalm_rates: Sequence[float]
+) -> tuple[float | None, float | None]:
+    """(facepalm_rate, facepalm_share) of one trend window (257 D-17 to D-19).
+
+    facepalm_rate is the macro mean of the per-game facepalm rates (per 100 user moves), like
+    blunder_rate; facepalm_share pools facepalm / scored blunders (sum over sum). Both are null
+    below FACEPALM_MIN_SCORED_COVERAGE scored blunders; a window without any blunder has a
+    zero band and no share.
+    """
+    blunders = sum(c.blunders for c in counts)
+    if blunders == 0:
+        return 0.0, None
+    scored = sum(c.scored for c in counts)
+    if scored / blunders < FACEPALM_MIN_SCORED_COVERAGE:
+        return None, None
+    facepalm = sum(c.facepalm for c in counts)
+    rate = round(sum(facepalm_rates) / len(facepalm_rates), 4)
+    return rate, round(facepalm / scored, 4)
 
 
 def _compute_flaw_trend(
-    rows: list[Any], share_by_game: Mapping[int, tuple[int, int]] | None = None
+    rows: list[Any], facepalm_by_game: Mapping[int, FacepalmGameCounts] | None = None
 ) -> list[FlawTrendPoint]:
     """ISO-week per-100-move MACRO flaw trend over a trailing FLAW_TREND_WINDOW window.
 
@@ -1155,21 +1173,21 @@ def _compute_flaw_trend(
     that ISO week (drives the volume bars). Weeks whose window has fewer than
     MIN_GAMES_FOR_TIMELINE games are dropped (partial-window floor).
 
-    257 D-03: the same walk also pools the facepalm share. share_by_game maps game id to
-    (scored blunders, facepalm blunders) from fetch_facepalm_share_counts (a game absent
-    from it counts (0, 0)); each point sums both over the window (sum over sum, never a
-    mean of per-game shares), so every share point has exactly the trend point's date.
+    257 D-17: the same walk also builds the facepalm band. facepalm_by_game maps game id to
+    its own-blunder counts from fetch_facepalm_counts (a game absent from it has none); the
+    facepalm rate is averaged per game like blunder_rate, so the band sits under the Blunders
+    line on the same basis, and _window_facepalm applies the D-18 coverage gate.
 
     rows come from fetch_flaw_trend_rows: (game_id, played_at, user_color, ply_count,
     blunders, mistakes, inaccuracies), oracle move-quality counts picked by color,
     played_at ASC.
     """
-    shares = share_by_game or {}
+    facepalm_counts = facepalm_by_game or {}
     b_rates: list[float] = []
     m_rates: list[float] = []
     i_rates: list[float] = []
-    scored_counts: list[int] = []
-    facepalm_counts: list[int] = []
+    f_rates: list[float] = []
+    game_counts: list[FacepalmGameCounts] = []
     per_week_games: dict[tuple[int, int], int] = {}
     point_by_week: dict[tuple[int, int], FlawTrendPoint] = {}
 
@@ -1180,9 +1198,9 @@ def _compute_flaw_trend(
         b_rates.append(int(row.blunders or 0) / moves * _PER_100)
         m_rates.append(int(row.mistakes or 0) / moves * _PER_100)
         i_rates.append(int(row.inaccuracies or 0) / moves * _PER_100)
-        scored, facepalm = shares.get(int(row.game_id), (0, 0))
-        scored_counts.append(scored)
-        facepalm_counts.append(facepalm)
+        counts = facepalm_counts.get(int(row.game_id), _NO_FACEPALM_COUNTS)
+        game_counts.append(counts)
+        f_rates.append(counts.facepalm / moves * _PER_100)
 
         iso = row.played_at.isocalendar()
         week_key = (iso.year, iso.week)
@@ -1194,8 +1212,9 @@ def _compute_flaw_trend(
             continue
         window_m = m_rates[-FLAW_TREND_WINDOW:]
         window_i = i_rates[-FLAW_TREND_WINDOW:]
-        scored_w = sum(scored_counts[-FLAW_TREND_WINDOW:])
-        facepalm_w = sum(facepalm_counts[-FLAW_TREND_WINDOW:])
+        facepalm_rate, facepalm_share = _window_facepalm(
+            game_counts[-FLAW_TREND_WINDOW:], f_rates[-FLAW_TREND_WINDOW:]
+        )
         # Last-write-wins per ISO week -> the point reflects the week's final game,
         # so per_week_games (accumulated above) is the full week count at emit time.
         monday = datetime.date.fromisocalendar(iso.year, iso.week, 1)
@@ -1206,27 +1225,26 @@ def _compute_flaw_trend(
             inaccuracy_rate=round(sum(window_i) / n, 4),
             games_in_window=n,
             per_week_games=per_week_games[week_key],
-            facepalm_share=_window_share(facepalm_w, scored_w),
-            facepalm_in_window=facepalm_w,
-            scored_blunders_in_window=scored_w,
+            facepalm_rate=facepalm_rate,
+            facepalm_share=facepalm_share,
         )
     return [point_by_week[key] for key in sorted(point_by_week)]
 
 
 def _compute_flaw_trend_by_tc(
-    rows: Sequence[Any], share_by_game: Mapping[int, tuple[int, int]] | None = None
+    rows: Sequence[Any], facepalm_by_game: Mapping[int, FacepalmGameCounts] | None = None
 ) -> list[FlawTrendTc]:
     """One Flaws Timeline series per time control.
 
     Buckets the trend rows by their tc column and runs the unchanged
-    _compute_flaw_trend per TC in LIBRARY_TC_ORDER (share_by_game passes through, 257 D-03).
+    _compute_flaw_trend per TC in LIBRARY_TC_ORDER (facepalm_by_game passes through, 257 D-17).
     A TC is emitted only when it has at least one trend point (the partial-window floor
     can leave a TC with none).
     """
     rows_by_tc = _bucket_rows_by_tc(rows)
     series: list[FlawTrendTc] = []
     for tc in LIBRARY_TC_ORDER:
-        points = _compute_flaw_trend(rows_by_tc.get(tc, []), share_by_game)
+        points = _compute_flaw_trend(rows_by_tc.get(tc, []), facepalm_by_game)
         if points:
             series.append(FlawTrendTc(tc=tc, points=points))
     return series
@@ -1264,8 +1282,8 @@ async def get_flaw_stats(
        analyzed set returns zeros + empty trend_by_tc, never raises.
     2. fetch_flaw_trend_rows — oracle per-game rows (with their tc), bucketed per time
        control by _compute_flaw_trend_by_tc.
-    3. fetch_facepalm_share_counts — per-game (scored, facepalm) counts of the user's own
-       blunders (257 D-03), pooled over the same window walk as the trend.
+    3. fetch_facepalm_counts — per-game (blunders, scored, facepalm) counts of the user's own
+       blunders (257 D-17), averaged over the same window walk as the trend.
 
     analyzed_n derives from the eval-coverage subquery — NOT from game_flaws
     row counts. An analyzed game with zero M+B flaws counts toward
@@ -1314,8 +1332,8 @@ async def get_flaw_stats(
             opponent_gap_max=opponent_gap_max,
             color=color,
         )
-        # Sequential on the same session (never gather): the share counts key by game id.
-        share_by_game = await library_repository.fetch_facepalm_share_counts(
+        # Sequential on the same session (never gather): the facepalm counts key by game id.
+        facepalm_by_game = await library_repository.fetch_facepalm_counts(
             session,
             user_id,
             time_control=time_control,
@@ -1335,7 +1353,7 @@ async def get_flaw_stats(
         raise
 
     return FlawStatsResponse(
-        trend_by_tc=_compute_flaw_trend_by_tc(trend_rows, share_by_game),
+        trend_by_tc=_compute_flaw_trend_by_tc(trend_rows, facepalm_by_game),
         trend_window=FLAW_TREND_WINDOW,
         analyzed_n=analyzed_n,
     )
@@ -1748,8 +1766,8 @@ async def get_flaw_comparison(
        zone bounds from the per-TC registry; also the 9 crossed tempo x phase
        cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
        for below-gate TCs, so tiles can show rates; below_gate is flagged.
-    4. fetch_facepalm_comparison (awaited after step 2, same anchor game set) +
-       _compute_facepalm_bullets: the three neutral facepalm rows per TC (257 D-12, no band).
+    The three facepalm rows are served by get_facepalm_comparison on their own endpoint
+    (257 D-21), so this response never waits on the facepalm score.
 
     IDOR guard: user_id is from current_active_user, never a request param.
 
@@ -1806,16 +1824,7 @@ async def get_flaw_comparison(
             analyzed_subq,
             **_filter_kwargs,
         )
-        # Sequential on the same session (never gather): the facepalm rows read the same
-        # anchor game set, scored once per blunder.
-        facepalm_rows = await library_repository.fetch_facepalm_comparison(
-            session,
-            user_id,
-            analyzed_subq,
-            **_filter_kwargs,
-        )
         rows_by_tc = _bucket_rows_by_tc(rows)
-        facepalm_by_tc = _bucket_rows_by_tc(facepalm_rows)
         tcs = [
             FlawComparisonTc(
                 tc=tc,
@@ -1824,7 +1833,6 @@ async def get_flaw_comparison(
                 below_gate=counts[tc] < FLAW_COMPARISON_GATE,
                 bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
                 tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, []), tc),
-                facepalm_bullets=_compute_facepalm_bullets(facepalm_by_tc.get(tc, [])),
             )
             for tc in LIBRARY_TC_ORDER
             if counts.get(tc)
@@ -1833,6 +1841,67 @@ async def get_flaw_comparison(
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_comparison", {"user_id": user_id})
+        sentry_sdk.capture_exception(exc)
+        raise
+
+
+async def get_facepalm_comparison(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    color: str | None = None,
+    include_pasted: bool = False,
+) -> FacepalmComparisonResponse:
+    """Per-TC facepalm rows of "You vs. your opponents" (257 D-11 to D-13, own endpoint D-21).
+
+    fetch_facepalm_comparison reads the same anchor game set as get_flaw_comparison (same
+    filters, same platform resolution), so the facepalm rows pair with the flaw rows game for
+    game; _compute_facepalm_bullets turns each TC's rows into the three neutral rows. A TC is
+    listed when the anchor has at least one game of it (the LEFT JOIN anchor yields a row per
+    game even without facepalm blunders), ordered bullet..classical. The analyzed-games gate
+    stays with /flaw-comparison: the card sits behind that section's gate.
+
+    IDOR guard: user_id is from current_active_user, never a request param.
+    """
+    platform = resolve_library_platforms(
+        platform, include_pasted=include_pasted, surface="analytics"
+    )
+    try:
+        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
+        rows = await library_repository.fetch_facepalm_comparison(
+            session,
+            user_id,
+            analyzed_subq,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            flaw_severity=flaw_severity,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
+            color=color,
+        )
+        rows_by_tc = _bucket_rows_by_tc(rows)
+        tcs = [
+            FacepalmComparisonTc(tc=tc, bullets=_compute_facepalm_bullets(rows_by_tc[tc]))
+            for tc in LIBRARY_TC_ORDER
+            if rows_by_tc.get(tc)
+        ]
+        return FacepalmComparisonResponse(tcs=tcs)
+
+    except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
+        sentry_sdk.set_context("facepalm_comparison", {"user_id": user_id})
         sentry_sdk.capture_exception(exc)
         raise
 

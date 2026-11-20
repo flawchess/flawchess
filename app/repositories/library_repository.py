@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from typing import Any, Literal, NamedTuple
 
 import chess
-from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, true
+from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased, defer
 from sqlalchemy.sql.elements import ColumnElement
@@ -1647,7 +1647,27 @@ async def fetch_flaw_trend_rows(
     return list(rows)
 
 
-async def fetch_facepalm_share_counts(
+class FacepalmGameCounts(NamedTuple):
+    """One game's own-blunder counts for the Flaws Timeline facepalm band (257 D-17, D-18)."""
+
+    blunders: int
+    scored: int
+    facepalm: int
+
+
+async def disable_jit_for_transaction(session: AsyncSession) -> None:
+    """Turn PostgreSQL JIT off for the rest of the current transaction (257 D-21).
+
+    The facepalm score is one ~34 KB expression. Above jit_optimize_above_cost PostgreSQL spends
+    seconds compiling it on every call (prod: 4.0 s of an 11 s comparison on the largest
+    account; dev: 2.2 to 3.5 s of compile for a 2x faster evaluation), and JIT without the
+    optimizer gives no speedup. SET LOCAL ends with the transaction, so it never leaks into
+    other requests through the pool; call it right before the facepalm statements.
+    """
+    await session.execute(text("SET LOCAL jit = off"))
+
+
+async def fetch_facepalm_counts(
     session: AsyncSession,
     user_id: int,
     *,
@@ -1661,17 +1681,19 @@ async def fetch_facepalm_share_counts(
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
     color: str | None,
-) -> dict[int, tuple[int, int]]:
-    """Per-game (scored blunders, facepalm blunders) of the user's own blunders (257 D-03).
+) -> dict[int, FacepalmGameCounts]:
+    """Per-game blunder, scored and facepalm counts of the user's own blunders (257 D-17, D-18).
 
-    Returns {game_id: (scored, facepalm)} over the filtered game set. `scored` counts the
-    user's blunders whose `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` is non-NULL (COUNT skips
-    NULL, so unscored blunders sit in neither count); `facepalm` counts those scored at or
-    above FACEPALM_STATS_MIN (D-01). Mistakes and opponent blunders are never counted
-    (`player_only_gate`). The result feeds the Flaws Timeline share only: it is aggregate
-    counts, not a filter or a drill selection (D-06). User-scoped on both tables (IDOR), and
-    the game set comes from `_filtered_games_base`, the one place the filters are composed.
+    Returns {game_id: FacepalmGameCounts} over the filtered game set. `blunders` counts all of
+    the user's game_flaws blunders (the coverage denominator of D-18); `scored` those whose
+    `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` is non-NULL (COUNT skips NULL); `facepalm` those
+    scored at or above FACEPALM_STATS_MIN (D-01). Mistakes and opponent blunders are never
+    counted (`player_only_gate`). The result feeds the Flaws Timeline facepalm band only: it is
+    aggregate counts, not a filter or a drill selection (D-06). User-scoped on both tables
+    (IDOR), and the game set comes from `_filtered_games_base`, the one place the filters are
+    composed. Reads ix_game_flaws_blunder_facts index-only and runs with JIT off (D-21).
     """
+    await disable_jit_for_transaction(session)
     base_filtered_subq = _filtered_games_base(
         user_id,
         time_control=time_control,
@@ -1704,11 +1726,17 @@ async def fetch_facepalm_share_counts(
     )
     stmt = select(
         per_blunder.c.game_id,
+        func.count().label("blunders"),
         func.count(per_blunder.c.s).label("scored"),
         func.count(per_blunder.c.s).filter(per_blunder.c.s >= FACEPALM_STATS_MIN).label("facepalm"),
     ).group_by(per_blunder.c.game_id)
     rows = (await session.execute(stmt)).all()
-    return {int(row.game_id): (int(row.scored), int(row.facepalm)) for row in rows}
+    return {
+        int(row.game_id): FacepalmGameCounts(
+            blunders=int(row.blunders), scored=int(row.scored), facepalm=int(row.facepalm)
+        )
+        for row in rows
+    }
 
 
 def _filtered_games_base(
@@ -2426,8 +2454,10 @@ async def fetch_facepalm_comparison(
     fenced with .offset(0): without it PostgreSQL inlines the ~34 KB score expression into each
     of the six FILTERs. The inner scan reads only the anchor's games, so a filtered request does
     not score the user's other blunders. Games without a facepalm blunder join no row and give
-    zero counts (all-analyzed-games basis).
+    zero counts (all-analyzed-games basis). The inner scan reads ix_game_flaws_blunder_facts
+    index-only, and the statement runs with JIT off (257 D-21).
     """
+    await disable_jit_for_transaction(session)
     anchor_subq = _flaw_comparison_anchor(
         user_id,
         analyzed_game_ids_subq,

@@ -14,6 +14,7 @@ from app.core.database import get_async_session
 from app.models.user import User
 from app.repositories import library_repository
 from app.schemas.library import (
+    FacepalmComparisonResponse,
     FlawComparisonResponse,
     FlawStatsResponse,
     GameFlawCard,
@@ -247,6 +248,47 @@ async def get_flaw_comparison(
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await library_service.get_flaw_comparison(
+        session,
+        user_id=user.id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=list(severity) if severity else None,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+        include_pasted=include_pasted,
+    )
+
+
+@router.get("/facepalm-comparison", response_model=FacepalmComparisonResponse)
+async def get_facepalm_comparison(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    severity: list[SeverityFilter] | None = Query(default=None),
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
+    rated: bool | None = Query(default=None),
+    opponent_type: str = Query(default="human"),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
+    include_pasted: bool = Query(default=False),
+) -> FacepalmComparisonResponse:
+    """Return the per-TC facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
+
+    Same filters and game set as /flaw-comparison, on its own endpoint (257 D-21) so the
+    rest of the section never waits on the facepalm score. user_id is taken exclusively from
+    the authenticated user (IDOR prevention).
+    """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
+    return await library_service.get_facepalm_comparison(
         session,
         user_id=user.id,
         time_control=time_control,

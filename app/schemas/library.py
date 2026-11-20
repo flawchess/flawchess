@@ -294,10 +294,12 @@ class FlawTrendPoint(BaseModel):
     games-table oracle columns (NOT game_flaws). games_in_window is the window size
     (<= FLAW_TREND_WINDOW); per_week_games is the games played that ISO week (volume bars).
 
-    257 D-03: facepalm_share is facepalm blunders / scored blunders pooled over the same
-    window (sum over sum), read from game_flaws (not the oracle columns), the user's own
-    scored blunders only; null below FACEPALM_SHARE_MIN_SCORED scored blunders.
-    facepalm_in_window and scored_blunders_in_window are the two counts behind it.
+    257 D-17 to D-19 (the facepalm band inside the Blunders area): facepalm_rate is the user's
+    facepalm blunders per 100 of their moves, the same macro mean over the same window as
+    blunder_rate, but counted from game_flaws (scored blunders at or above FACEPALM_STATS_MIN).
+    facepalm_share is facepalm / scored blunders pooled over the window (sum over sum), for the
+    tooltip. Both are null when fewer than FACEPALM_MIN_SCORED_COVERAGE of the window's
+    game_flaws blunders are scored (D-18: unscored, freshly imported games must not fake a dip).
     """
 
     date: str
@@ -306,9 +308,8 @@ class FlawTrendPoint(BaseModel):
     inaccuracy_rate: float
     games_in_window: int
     per_week_games: int
+    facepalm_rate: float | None = None
     facepalm_share: float | None = None
-    facepalm_in_window: int = 0
-    scored_blunders_in_window: int = 0
 
 
 class FlawTrendTc(BaseModel):
@@ -451,6 +452,28 @@ class FacepalmBullet(BaseModel):
     significant: bool
 
 
+class FacepalmComparisonTc(BaseModel):
+    """One time control's facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
+
+    bullets: always the three FACEPALM_METRICS rows (total, missed wins, allowed losses),
+             neutral (no band), on the same anchor game set as FlawComparisonTc.
+    """
+
+    tc: TimeControlBucket
+    bullets: list[FacepalmBullet]
+
+
+class FacepalmComparisonResponse(BaseModel):
+    """Response for GET /api/library/facepalm-comparison (257 D-21: split from /flaw-comparison).
+
+    tcs: one entry per time control with at least one game in the comparison's anchor set,
+         ordered bullet, blitz, rapid, classical. The analyzed-games gate is
+         FlawComparisonResponse.analyzed_gate; the card sits behind that section's gate.
+    """
+
+    tcs: list[FacepalmComparisonTc]
+
+
 class FlawComparisonTc(BaseModel):
     """One time control's you-vs-opponent flaw comparison.
 
@@ -464,8 +487,6 @@ class FlawComparisonTc(BaseModel):
     tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
                        middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
                        Computed also below the gate, like bullets.
-    facepalm_bullets: always the three FACEPALM_METRICS rows (total, missed wins, allowed
-                      losses), neutral (no band). Computed also below the gate.
     """
 
     tc: TimeControlBucket
@@ -474,7 +495,6 @@ class FlawComparisonTc(BaseModel):
     below_gate: bool
     bullets: list[FlawBullet]
     tempo_phase_cells: list[TempoPhaseCell]
-    facepalm_bullets: list[FacepalmBullet]
 
 
 class FlawComparisonResponse(BaseModel):

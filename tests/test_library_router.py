@@ -342,6 +342,44 @@ class TestGetFlawComparison:
         assert resp.status_code == 422
 
 
+class TestGetFacepalmComparison:
+    """Tests for GET /library/facepalm-comparison (257 D-21, split from /flaw-comparison)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_401_without_auth(self) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/facepalm-comparison")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/facepalm-comparison", headers=auth_headers)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"tcs": []}  # a fresh user has no analyzed games
+
+    @pytest.mark.asyncio
+    async def test_returns_422_when_from_date_after_to_date(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/facepalm-comparison",
+                params={"from_date": "2025-06-01", "to_date": "2025-01-01"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Helpers for GET /library/flaws test seeding (committed sessions)
 # ---------------------------------------------------------------------------
