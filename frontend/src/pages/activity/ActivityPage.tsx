@@ -658,7 +658,8 @@ export default function ActivityPage() {
                 The funnel counts accounts created on or after <span id="cav-funnel">—</span>
               </b>{' '}
               — earlier accounts are excluded, so it measures recent accounts rather than the whole
-              user base. Train is registered-only, which is why no guest ever reaches it.
+              user base. Train is open to guests, and the Train charts above count guest and
+              registered sessions together.
             </li>
             <li>
               <b>Bot games and Train sessions arrived later</b> — <span id="cav-features"></span>,
