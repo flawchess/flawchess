@@ -60,4 +60,4 @@ Planned and executed inline in the worktree `../flawchess-bc-resync` (branch
 `quick/blunder-check-cross-device-resync`, off `main`), not through planner and executor
 subagents: the main checkout was mid-phase 257 with uncommitted work.
 
-Commit: be47e7dcb
+Commit: 4fe7eccfc
