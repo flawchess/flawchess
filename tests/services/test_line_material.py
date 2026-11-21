@@ -44,6 +44,8 @@ from app.services.line_material import (
     best_line_facts,
     line_facts,
     material_at_depth,
+    quiet_best_line_facts,
+    quiet_line_facts,
 )
 from tests.services.line_material_fixtures import (
     LINE_FIXTURES,
@@ -216,6 +218,171 @@ def test_synthetic_rules(
     facts = line_facts(_board_after(moves), blunder, line)
     assert _losses(facts) == expected_loss
     assert facts.mate_ply == expected_mate
+
+
+@pytest.mark.parametrize("fixture", LINE_FIXTURES, ids=lambda f: f"n{f.label_n}")
+def test_label_fixture_quiet_rule(fixture: LineFixture) -> None:
+    """259 D-02: the quiet walk on every committed fixture (13 unchanged, 4 read past depth 7/9)."""
+    facts = quiet_line_facts(chess.Board(fixture.pre_fen), fixture.played_uci, fixture.line)
+    assert _losses(facts) == fixture.expected_quiet_loss
+    assert facts.mate_ply == fixture.expected_mate_ply
+
+
+# Even depths are never filled by the quiet rule (D-03: only the odd depths are stored).
+_EVEN_DEPTHS = (2, 4, 6, 8)
+
+# A four-capture even trade on d5 (Nxd5 Rxd5 Rxd5 Rxd5) right after the blunderer's quiet first move.
+_TRADE_FEN = "6k1/3r4/5n2/3N4/8/8/3R4/3R2K1 w - - 0 1"
+_TRADE_LINE = "f6d5 d2d5 d7d5 d1d5 g8g7 h1g1 g7f6 g1f1 f6g7 f1g1"
+
+# The blunderer's own last move is a capture that the opponent can recapture: the old rule keeps
+# the +1, the quiet rule settles it (pawn for pawn).
+_LAST_CAPTURE_FEN = "3q2k1/p7/8/3p4/4P3/8/8/6K1 w - - 0 1"
+_LAST_CAPTURE_LINE = "a7a6 e4d5"
+
+# The opponent's last capture cannot be recaptured: the full rook is lost.
+_UNRECAPTURED_FEN = "4k3/8/8/8/8/8/r7/R5K1 w - - 0 1"
+
+# Desperado: the blunderer's rook steps to a2 (no capture) and the opponent takes it there. That
+# capture is the engine's spite move, not material the blunder cost, so it is not counted.
+_DESPERADO_FEN = "4k3/8/8/8/8/8/1r6/R5K1 w - - 0 1"
+
+# (id, fen, blunder, stored line, expected quiet loss per odd depth, expected mate ply)
+_QUIET_SYNTHETIC = [
+    ("even_four_capture_trade", _TRADE_FEN, "g1h1", _TRADE_LINE, _ZERO_LOSS, None),
+    # Last line move is the blunderer's capture of a protected pawn: settled in the opponent's favour.
+    (
+        "line_ends_on_blunderer_capture",
+        _LAST_CAPTURE_FEN,
+        "g1h1",
+        _LAST_CAPTURE_LINE,
+        _ZERO_LOSS,
+        None,
+    ),
+    # Last line move is the opponent's rook capture and the blunderer recaptures it (label 176).
+    (
+        "line_ends_on_opponent_capture_recaptured",
+        _LABEL_176_PRE_FEN,
+        _LABEL_176_PLAYED,
+        _LABEL_176_LINE,
+        _ZERO_LOSS,
+        None,
+    ),
+    (
+        "line_ends_on_opponent_capture_unrecaptured",
+        _UNRECAPTURED_FEN,
+        "g1h1",
+        "a2a1",
+        (5, 5, 5, 5, 5),
+        None,
+    ),
+    (
+        "desperado_capture_is_not_counted",
+        _DESPERADO_FEN,
+        "g1h1",
+        "e8e7 a1a2 b2a2",
+        _ZERO_LOSS,
+        None,
+    ),
+    # No capture and a two-ply line: depth 1 is settled, the rest is too short to tell (D-05).
+    (
+        "quiet_line_too_short",
+        "4k3/8/8/8/8/8/8/R3K3 w - - 0 1",
+        "a1a2",
+        "e8e7 e1d1",
+        (0,) + (None,) * 4,
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("fen", "blunder", "line", "expected_loss", "expected_mate"),
+    [case[1:] for case in _QUIET_SYNTHETIC],
+    ids=[case[0] for case in _QUIET_SYNTHETIC],
+)
+def test_quiet_synthetic_rules(
+    fen: str,
+    blunder: str,
+    line: str,
+    expected_loss: tuple[int | None, ...],
+    expected_mate: int | None,
+) -> None:
+    facts = quiet_line_facts(chess.Board(fen), blunder, line)
+    assert _losses(facts) == expected_loss
+    assert facts.mate_ply == expected_mate
+    assert all(facts.loss_at(depth) is None for depth in _EVEN_DEPTHS)
+
+
+def test_quiet_rule_differs_from_the_old_rule_on_a_blunderer_capture_ending() -> None:
+    """The old walk keeps the blunderer's last capture; the quiet rule settles the recapture."""
+    board = chess.Board(_LAST_CAPTURE_FEN)
+    old = line_facts(board, "g1h1", _LAST_CAPTURE_LINE)
+    assert old.loss_at(1) == -1
+    assert quiet_line_facts(board, "g1h1", _LAST_CAPTURE_LINE).loss_at(1) == 0
+
+
+def test_quiet_mate_settles_short_line() -> None:
+    # Fool's mate: the blunderer is mated at ply 1, which settles every odd depth.
+    facts = quiet_line_facts(_board_after("f2f3 e7e5"), "g2g4", "d8h4")
+    assert facts.mate_ply == 1
+    assert _losses(facts) == _ZERO_LOSS
+
+
+def test_quiet_best_line_mate_by_first_move() -> None:
+    facts = quiet_best_line_facts(_board_after("f2f3 e7e5 g2g4"), "d8h4")
+    assert facts.opponent_mate_ply == 0
+    assert facts.mate_ply is None
+    assert facts.material_at(3) == 0
+
+
+@pytest.mark.parametrize(
+    ("played", "line"),
+    [
+        ("e2e4", None),
+        ("e2e4", ""),
+        ("e2e4", "zz99"),
+        ("e2e4", "a1a8"),
+        ("e2e5", "e7e5"),
+        ("zz99", "e7e5"),
+        ("e2e4", "zz99 e7e5"),
+    ],
+    ids=[
+        "no_line",
+        "empty_line",
+        "malformed_first_token",
+        "illegal_first_token",
+        "illegal_played_move",
+        "malformed_played_move",
+        "malformed_first_token_with_tail",
+    ],
+)
+def test_quiet_unusable_input_gives_null_facts(played: str, line: str | None) -> None:
+    facts = quiet_line_facts(chess.Board(), played, line)
+    assert _losses(facts) == _NO_LOSS
+    assert facts.mate_ply is None
+    assert facts.material_array() == [None] * LINE_MATERIAL_SLOTS
+
+
+@pytest.mark.parametrize(
+    "best_pv",
+    [None, "", "zz99", "a1a8", "zz99 e7e5", "e2e4"],
+    ids=["none", "empty", "malformed", "illegal", "malformed_with_tail", "too_short"],
+)
+def test_quiet_best_line_bad_tokens_null(best_pv: str | None) -> None:
+    facts = quiet_best_line_facts(chess.Board(), best_pv)
+    assert facts.material_at(3) is None
+    assert facts.mate_ply is None
+    assert facts.opponent_mate_ply is None
+
+
+def test_quiet_caller_board_is_not_mutated() -> None:
+    board = _board_after("e2e4 e7e5")
+    fen_before, stack_before = board.fen(), len(board.move_stack)
+    quiet_line_facts(board, "g1f3", "b8c6 f1c4 g8f6 e1g1")
+    quiet_best_line_facts(board, "g1f3 b8c6 f1c4")
+    assert board.fen() == fen_before
+    assert len(board.move_stack) == stack_before
 
 
 @pytest.mark.parametrize(

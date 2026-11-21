@@ -778,10 +778,53 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 5/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 259 to break down)
+**Wave 1**
+- [x] 259-01-PLAN.md — quiet-point material rule and the write-time loss / missed function (D-02 to D-04, D-13)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 259-02-PLAN.md — features TSV with the new inputs and the offline D-09 review tool
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 259-03-PLAN.md — D-09 owner review on prod lines (orchestrator checkpoint)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 259-04-PLAN.md — R1 columns and dual-write of the scalars and the best-reply probability
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 259-05-PLAN.md — reply backfill mode, its stamp and the readiness status counts
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 259-06-PLAN.md — R1 release, prod line pass, reply pass launch; branch and checkout map
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 259-07-PLAN.md — fixed-shape fit tool on the scalar inputs (D-01), fit tests trimmed
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 259-08-PLAN.md — calibration chain and miss labels on the stored inputs
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 259-09-PLAN.md — scalar score and type twins, constants, seed helper, score tests trimmed
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 259-10-PLAN.md — covering index ix_game_flaws_facepalm_inputs (D-17) and the SQL builder removal
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 259-11-PLAN.md — readiness gate, prod index build, refit and the D-15 owner checkpoint
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 259-13-PLAN.md — drop code: facts-only writers, scripts off the arrays, shipped rule deleted
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 259-14-PLAN.md — drop migration, model cleanup, D-18 code outcome
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 259-15-PLAN.md — human-gated drop release (D-06)
 
 ## Backlog
 

@@ -9,7 +9,7 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
     --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob,
                        the facepalm columns (the eight Phase 250 values plus the Phase 254 played
                        and best line material arrays and best-line mate ply), the two pre-blunder
-                       keys and the four stamps.
+                       keys, the best-reply probability and the five stamps.
     --mode spread      games that are base-stamped with facepalm_spread_completed_at NULL (the
                        Maia pass of the facepalm backfill, 250 D-08). One post-blunder inference
                        per user-side blunder yields the reply spread; the line facts are derived
@@ -38,6 +38,16 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        facepalm_pre_completed_at: never maia_played_prob, the reply spread or the line
                        facts. Resumable (the stamp is the checkpoint, a second
                        run selects 0 games) and sharded by hash residue like the spread pass.
+
+    --mode reply       (Phase 259 D-07, D-10) games that are base-stamped with facepalm_reply_completed_at
+                       NULL. ONE post-blunder Maia inference per blunder of EITHER side that carries
+                       a stored maia_played_prob fills maia_best_reply_prob, the probability of the
+                       first token of the stored refutation line, exactly as the hook derives it
+                       (no inference when the stored line has no first token). Writes only that
+                       column and stamps only facepalm_reply_completed_at: never maia_played_prob,
+                       the spread, the arrays, the scalars, the pre inputs or another stamp.
+                       Resumable (the stamp is the checkpoint, a second run selects 0 games) and
+                       sharded by hash residue. Needs Maia (exit 3 without it).
 
     --mode opponent    (SEED-261114-iuv Part A) selection BY ROW: games with an opponent blunder whose
                        maia_played_prob is set and maia_reply_spread is NULL (no base stamp
@@ -101,6 +111,11 @@ Usage:
     PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode opponent --workers 8 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode opponent
     (opponent mode: row predicate is the checkpoint, re-run to resume; run after the hook deploy)
+    PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode reply --workers 12 --throttle-ms 50
+    uv run python scripts/backfill_maia_flaws.py --db prod --status --mode reply
+    (reply mode, 259 D-07: 12 workers is the ceiling, one connection each: prod max_connections is 50,
+     the app pool takes up to 20 and operator connections must stay under about 25. No other
+     operator run may overlap. The stamp is the checkpoint, re-run to resume after the 02:15 UTC reboot)
 """
 
 from __future__ import annotations
@@ -173,7 +188,7 @@ BackfillDb = Literal["dev", "benchmark", "prod"]
 BACKFILL_DB_CHOICES: tuple[str, ...] = ("dev", "benchmark", "prod")
 AbortReason = Literal["maia_unavailable", "too_many_batch_failures"]
 BackfillMode = ScoringMode
-BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line", "pre", "opponent")
+BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line", "pre", "opponent", "reply")
 DEFAULT_MODE: BackfillMode = "full"
 
 # Top 8 hex digits of md5(game id) as an unsigned 32-bit integer. Unseeded and pure, so a
@@ -203,6 +218,12 @@ _SPREAD_PENDING_CLAUSE: str = (
 # and the status counts, a constant and never user input.
 _PRE_PENDING_CLAUSE: str = (
     "g.facepalm_pre_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
+)
+
+# Games the reply pass (259 D-07) still has to do: base-stamped, reply stamp NULL. Shared by the
+# selector and the status counts, a constant and never user input (T-259-10).
+_REPLY_PENDING_CLAUSE: str = (
+    "g.facepalm_reply_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
 )
 
 # Games whose line stamp predates the cutoff (or was never set): the line pass is re-runnable, so
@@ -241,6 +262,7 @@ _STAMP_CLAUSE_BY_MODE: dict[BackfillMode, str] = {
     "full": "g.maia_flaws_completed_at IS NULL",
     "spread": _SPREAD_PENDING_CLAUSE,
     "pre": _PRE_PENDING_CLAUSE,
+    "reply": _REPLY_PENDING_CLAUSE,
     "opponent": _OPPONENT_PENDING_CLAUSE,
     "line": f"{_LINE_STALE_CLAUSE} AND g.facepalm_spread_completed_at IS NOT NULL",
 }
@@ -344,6 +366,10 @@ class ShardReport:
     # SEED-261114-iuv Part A step 4). The user counterpart is scores_set / scores_null.
     opponent_scores_set: int = 0
     opponent_scores_null: int = 0
+    # Blunders of either side whose best-reply probability was written non-NULL / left NULL (modes
+    # full and reply; 259 D-07, reason in `reasons`).
+    reply_probs_set: int = 0
+    reply_probs_null: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
@@ -402,6 +428,10 @@ def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
         report.opponent_spreads_null += score.opponent_blunders - score.opponent_spreads_scored
         report.opponent_pre_scored += score.opponent_pre_scored
         report.opponent_pre_null += score.opponent_blunders - score.opponent_pre_scored
+    if score.mode in ("full", "reply"):
+        reply_blunders = score.user_blunders + score.opponent_blunders
+        report.reply_probs_set += score.reply_probs_set
+        report.reply_probs_null += reply_blunders - score.reply_probs_set
     for reason, n in score.reasons.items():
         report.reasons[reason] = report.reasons.get(reason, 0) + n
 
@@ -536,7 +566,8 @@ def _progress_line(report: ShardReport, done: int, started: float) -> str:
         f"({report.flaws_scored / elapsed:.1f} flaws/s) "
         f"spreads_scored={report.spreads_scored} scores_set={report.scores_set} "
         f"pre_scored={report.pre_scored} "
-        f"opponent_spreads_scored={report.opponent_spreads_scored}"
+        f"opponent_spreads_scored={report.opponent_spreads_scored} "
+        f"reply_probs_set={report.reply_probs_set}"
         + (f" cutoff={report.cutoff}" if report.cutoff else "")
     )
 
@@ -768,7 +799,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "blunders, on base-stamped games (Phase 250). line: the Maia-free line pass (needs "
         "--cutoff). pre: the two pre-blunder Maia inputs of user-side blunders, on "
         "base-stamped games (Phase 254). opponent: the three Maia columns of opponent blunders, "
-        "selected by row, no stamp (SEED-261114-iuv Part A).",
+        "selected by row, no stamp (SEED-261114-iuv Part A). reply: the best-reply probability "
+        "of blunders of both sides, on base-stamped games (Phase 259).",
     )
     parser.add_argument(
         "--cutoff",
@@ -858,6 +890,26 @@ def _user_blunder_count_stmt(
             GameFlaw.severity == _SEVERITY_INT["blunder"],
             not_(is_opponent_expr(GameFlaw.ply, Game.user_color)),
         )
+    )
+    if extra_where:
+        stmt = stmt.where(*extra_where)
+    if user_id is not None:
+        stmt = stmt.where(Game.user_id == user_id)
+    return stmt
+
+
+def _blunder_count_stmt(
+    user_id: int | None,
+    *,
+    extra_where: Sequence[ColumnElement[bool]] = (),
+) -> Select[Any]:
+    """Count of blunders of BOTH sides (severity blunder, no side filter; 259 D-10), joined to games
+    for the user filter. `extra_where` narrows the count."""
+    stmt = (
+        select(func.count())
+        .select_from(GameFlaw)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(GameFlaw.severity == _SEVERITY_INT["blunder"])
     )
     if extra_where:
         stmt = stmt.where(*extra_where)
@@ -989,6 +1041,67 @@ async def _fetch_pre_status(session: AsyncSession, user_id: int | None) -> dict[
     return counts
 
 
+_REPLY_STATUS_QUERIES: dict[str, str] = {
+    "reply_stamped_games": (
+        "SELECT count(*) FROM games g WHERE g.facepalm_reply_completed_at IS NOT NULL{u}"
+    ),
+    "reply_pending_games": (
+        f"SELECT count(*) FROM games g WHERE {_REPLY_PENDING_CLAUSE}"
+        " AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id){u}"
+    ),
+}
+
+
+async def _fetch_reply_status(session: AsyncSession, user_id: int | None) -> dict[str, int]:
+    """Reply pass progress (259 D-07), the counts the readiness gate before the switch reads.
+
+    The stamp counts, then blunders of both sides in total and with a best-reply probability, then
+    the residues a finished pass leaves (each restricted to rows the hook scored, played probability
+    set): `reply_residue_losing` (a losing blunder, material_loss > 0, still without a reply
+    probability: no refutation line or a reply outside the policy), `unscored_pure_miss_no_best`
+    (no material loss and no best-move probability: the score cannot be computed) and
+    `blunders_without_material_inputs` (the line pass has not filled the scalars).
+    """
+    counts = await _stamp_counts(session, user_id, _REPLY_STATUS_QUERIES)
+    scored = GameFlaw.maia_played_prob.is_not(None)
+    value_filters: dict[str, Sequence[ColumnElement[bool]]] = {
+        "blunders_total": (),
+        "blunders_with_reply_prob": [GameFlaw.maia_best_reply_prob.is_not(None)],
+        "reply_residue_losing": [
+            scored,
+            GameFlaw.material_loss > 0,
+            GameFlaw.maia_best_reply_prob.is_(None),
+        ],
+        "unscored_pure_miss_no_best": [
+            scored,
+            GameFlaw.material_loss <= 0,
+            GameFlaw.maia_best_prob.is_(None),
+        ],
+        "blunders_without_material_inputs": [scored, GameFlaw.material_loss.is_(None)],
+    }
+    for key, extra_where in value_filters.items():
+        counts[key] = await _scalar_count(
+            session, _blunder_count_stmt(user_id, extra_where=extra_where)
+        )
+    return counts
+
+
+async def _fetch_material_input_counts(
+    session: AsyncSession, user_id: int | None
+) -> dict[str, int]:
+    """Line pass progress on the stored material inputs (259 D-05): blunders of each side whose
+    material_loss is written, the counts the readiness gate compares with the blunder totals."""
+    has_loss = [GameFlaw.material_loss.is_not(None)]
+    return {
+        "user_blunders_with_material_inputs": await _scalar_count(
+            session, _user_blunder_count_stmt(user_id, extra_where=has_loss)
+        ),
+        "opponent_blunders_with_material_inputs": await _scalar_count(
+            session, _opponent_blunder_count_stmt(user_id, extra_where=has_loss)
+        ),
+    }
+
+
 # Opponent pass progress (SEED-261114-iuv Part A): the games the selector would pick, from its own
 # constant so the two cannot drift apart.
 _OPPONENT_STATUS_QUERIES: dict[str, str] = {
@@ -1074,8 +1187,10 @@ async def fetch_status(
     Full mode keeps the four 247 counts (the 247-07 monitor greps that line); spread mode
     returns the Phase 250 stamp and value counts; pre mode the 254 stamp and pre-input counts;
     opponent mode (SEED-261114-iuv Part A) the pending games, the opponent-blunder counts per
-    filled column and the residue (`opponent_blunders_pending`); line mode (needs `cutoff`) the
-    games done / pending against it plus the user score counts, then the opponent line counts.
+    filled column and the residue (`opponent_blunders_pending`); reply mode (259 D-07) the stamp
+    counts, the both-sides blunder counts and the readiness residues; line mode (needs `cutoff`)
+    the games done / pending against it plus the user score counts, then the opponent line counts
+    and the material-input counts of both sides.
     """
     if mode == "spread":
         async with session_maker() as session:
@@ -1088,6 +1203,9 @@ async def fetch_status(
     if mode == "opponent":
         async with session_maker() as session:
             return await _fetch_opponent_status(session, user_id)
+    if mode == "reply":
+        async with session_maker() as session:
+            return await _fetch_reply_status(session, user_id)
     if mode == "line":
         if cutoff is None:
             raise ValueError("line mode status needs a cutoff")
@@ -1097,6 +1215,7 @@ async def fetch_status(
             )
             # The unchanged user keys come first, then the opponent counts (line facts of both sides).
             counts.update(await _fetch_opponent_line_counts(session, user_id))
+            counts.update(await _fetch_material_input_counts(session, user_id))
             return counts
     user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
     params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}

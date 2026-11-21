@@ -33,6 +33,7 @@ from app.models.user import User
 from app.repositories.game_flaws_repository import (
     FACEPALM_COLUMNS,
     FACEPALM_PRE_COLUMNS,
+    FACEPALM_REPLY_COLUMNS,
     MAIA_FLAW_COLUMNS,
 )
 from app.services import maia_engine, maia_flaw_scoring
@@ -1302,6 +1303,8 @@ async def test_line_status_counts(
         "opponent_blunders_total",
         "opponent_blunders_with_line_facts",
         "opponent_blunders_with_score",
+        "user_blunders_with_material_inputs",
+        "opponent_blunders_with_material_inputs",
     ]
     # Two games with one opponent blunder (ply 5) each; the run (limit=1) covered one game, so one
     # opponent blunder holds line facts. Its score is NULL here: the fixture row has no Maia values.
@@ -2022,3 +2025,220 @@ async def test_opponent_mode_status_counts(
     await backfill._print_status("dev", _TEST_USER_ID, "opponent")
     line = capsys.readouterr().out.strip().splitlines()[-1]
     assert line == " ".join(f"{k}={v}" for k, v in expected.items())
+
+
+# ---------------------------------------------------------------------------
+# Reply mode (259 D-07, D-10, D-11)
+# ---------------------------------------------------------------------------
+
+# Stand-ins for values the reply pass must never touch (every other facepalm column is written by
+# other passes and has its own stored value on the seeded rows).
+_SEEDED_BEFORE_REPLY: dict[str, Any] = {
+    "maia_reply_spread": 3.5,
+    "maia_best_prob": 0.2,
+    "maia_pre_spread": 6.5,
+    "material_loss": 2.0,
+    "material_missed": 1.0,
+}
+
+
+async def _columns_except_reply(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    """Every game_flaws column but the best-reply probability, per ply."""
+    columns = [c for c in GameFlaw.__table__.columns if c.name not in FACEPALM_REPLY_COLUMNS]
+    async with maker() as session:
+        rows = (
+            await session.execute(select(*columns).where(GameFlaw.game_id == game_id))
+        ).mappings()
+        return {row["ply"]: dict(row) for row in rows}
+
+
+async def _reply_probs(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, float | None]:
+    async with maker() as session:
+        flaws = (
+            (await session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+            .scalars()
+            .all()
+        )
+    return {f.ply: f.maia_best_reply_prob for f in flaws}
+
+
+async def _stamps_but_reply(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> tuple[Any, ...]:
+    async with maker() as session:
+        row = (
+            await session.execute(
+                select(
+                    Game.maia_flaws_completed_at,
+                    Game.facepalm_spread_completed_at,
+                    Game.facepalm_line_completed_at,
+                    Game.facepalm_pre_completed_at,
+                ).where(Game.id == game_id)
+            )
+        ).one()
+    return tuple(row)
+
+
+async def _reply_stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(Game.facepalm_reply_completed_at).where(Game.id == game_id)
+            )
+        ).scalar_one()
+
+
+def _post_blunder_fen(ply: int) -> str:
+    """The position after the blunder at `ply` (independent python-chess replay)."""
+    board, played = _boards_by_ply(_PGN)[ply]
+    board.push(chess.Move.from_uci(played))
+    return board.fen()
+
+
+async def _reply_game(
+    maker: async_sessionmaker[AsyncSession], make_game: MakeGame, **kwargs: Any
+) -> int:
+    """A base-stamped game with a stored played probability on every flaw (so both sides' blunders
+    qualify), refutation lines for the plies 2 and 5 blunders (none for ply 8: it is the game's
+    last ply) and values of the other passes seeded on every row."""
+    game_id = await make_game(
+        base_stamped=True,
+        seed_base=True,
+        pv={3: _LINE_AFTER_PLY_2, 6: _LINE_AFTER_PLY_5},
+        **kwargs,
+    )
+    for ply in _FLAW_PLIES:
+        await _set_flaw(maker, game_id, ply, **_SEEDED_BEFORE_REPLY)
+    return game_id
+
+
+@pytest.mark.asyncio
+async def test_reply_mode_fills_both_sides_and_stamps(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tracer (D-07, D-10, D-11): one post-blunder inference per blunder of either side that has a
+    refutation line fills maia_best_reply_prob and stamps the reply stamp; nothing else changes and
+    a second run selects 0 games."""
+    game_id = await _reply_game(session_factory, make_game)
+    columns_before = await _columns_except_reply(session_factory, game_id)
+    stamps_before = await _stamps_but_reply(session_factory, game_id)
+    assert await _reply_stamp(session_factory, game_id) is None
+    policy_calls: list[str] = []
+
+    def _spy_policy(fen: str, elo: float) -> dict[str, float]:
+        policy_calls.append(fen)
+        return fake_full_policy(fen, elo)
+
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _spy_policy)
+
+    report = await _run(session_factory, tmp_path, mode="reply")
+
+    assert report.mode == "reply"
+    assert report.games_stamped == 1
+    # One post-blunder inference for the user blunder (ply 2) and the opponent blunder (ply 5);
+    # the ply 8 blunder has no stored refutation line, so it spends none.
+    assert policy_calls == [_post_blunder_fen(2), _post_blunder_fen(5)]
+    probs = await _reply_probs(session_factory, game_id)
+    first_reply_ply2 = _LINE_AFTER_PLY_2.split(" ")[0]
+    first_reply_ply5 = _LINE_AFTER_PLY_5.split(" ")[0]
+    assert probs[2] == pytest.approx(
+        fake_full_policy(_post_blunder_fen(2), 1500.0)[first_reply_ply2], rel=1e-5
+    )
+    assert probs[5] == pytest.approx(
+        fake_full_policy(_post_blunder_fen(5), 1600.0)[first_reply_ply5], rel=1e-5
+    )
+    assert probs[8] is None
+    # Nothing but the reply key changed on rows, and no other stamp moved.
+    assert await _columns_except_reply(session_factory, game_id) == columns_before
+    assert await _stamps_but_reply(session_factory, game_id) == stamps_before
+    stamp = await _reply_stamp(session_factory, game_id)
+    assert stamp is not None
+    saved = json.loads((tmp_path / f"dev-reply-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["reply_probs_set"] == 2
+    assert saved["reply_probs_null"] == 1
+    assert saved["reasons"] == {"reply_missing": 1}
+
+    second = await _run(session_factory, tmp_path, mode="reply")
+    assert second.games_selected == 0
+    assert second.games_stamped == 0
+    assert await _reply_probs(session_factory, game_id) == probs
+    assert await _reply_stamp(session_factory, game_id) == stamp
+
+
+@pytest.mark.asyncio
+async def test_reply_status_counts_and_residues(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reply status after one pass: stamp counts, both-sides blunder counts and the three residues
+    the readiness gate reads, each from one seeded row."""
+    game_id = await _reply_game(session_factory, make_game)
+    await _run(session_factory, tmp_path, mode="reply")
+    # After the pass plies 2 and 5 hold a reply probability and ply 8 (no refutation line) does not.
+    # Ply 2: no material inputs yet. Ply 5: a pure miss (no loss) without a best-move probability.
+    # Ply 8: a losing blunder still without a reply probability (the losing residue).
+    await _set_flaw(session_factory, game_id, 2, material_loss=None, material_missed=None)
+    await _set_flaw(
+        session_factory, game_id, 5, material_loss=0.0, material_missed=0.0, maia_best_prob=None
+    )
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "reply")
+
+    expected = {
+        "reply_stamped_games": 1,
+        "reply_pending_games": 0,
+        "blunders_total": 3,
+        "blunders_with_reply_prob": 2,
+        "reply_residue_losing": 1,
+        "unscored_pure_miss_no_best": 1,
+        "blunders_without_material_inputs": 1,
+    }
+    assert counts == expected
+    assert list(counts) == list(expected), "the key order is part of the printed contract"
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "reply")
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line == " ".join(f"{k}={v}" for k, v in expected.items())
+    # A reply-pending game is counted as pending until the pass stamps it.
+    await _set_game(session_factory, game_id, facepalm_reply_completed_at=None)
+    pending = await backfill.fetch_status(session_factory, _TEST_USER_ID, "reply")
+    assert (pending["reply_stamped_games"], pending["reply_pending_games"]) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_line_status_prints_material_input_counts(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Line status also counts the blunders of each side whose material_loss is written (259 D-05)."""
+    game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+    # One user blunder (ply 2) and one opponent blunder (ply 5) hold the scalar pair (CHECK: both set).
+    await _set_flaw(session_factory, game_id, 2, material_loss=1.5, material_missed=0.5)
+    await _set_flaw(session_factory, game_id, _OPPONENT_PLY, material_loss=2.5, material_missed=0.0)
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "line", _CUTOFF)
+
+    assert counts["user_blunders_with_material_inputs"] == 1
+    assert counts["opponent_blunders_with_material_inputs"] == 1
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "line", _CUTOFF)
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line.endswith(
+        "user_blunders_with_material_inputs=1 opponent_blunders_with_material_inputs=1"
+    )

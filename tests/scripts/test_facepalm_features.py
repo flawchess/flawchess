@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
+from app.services.facepalm_inputs import facepalm_material_inputs, material_inputs_from_facts
 from app.services.line_material import best_line_facts, line_facts, null_line_facts
 from app.services.maia_flaw_scoring import replay_flaw_boards
 from app.services.maia_flaw_stats import reply_spread
@@ -26,7 +27,10 @@ from scripts.blunder_check.facepalm_features import (
     EXIT_MAIA_UNAVAILABLE,
     EXIT_OK,
     EXIT_ROWS_MISSING,
+    FACTS_FEATURE_COLUMNS,
     FEATURE_COLUMNS,
+    NOTE_REPLY_MISSING,
+    QUIET_FEATURE_COLUMNS,
     CollectedRows,
     FeatureRow,
     GameInputs,
@@ -41,7 +45,9 @@ from scripts.blunder_check.facepalm_features import (
     resolve_feature_row,
     write_features_tsv,
 )
+from scripts.blunder_check.fit_facepalm import load_features
 from scripts.blunder_check.sample import make_readonly_engine
+from tests.services.line_material_fixtures import D13_FIXTURE, LINE_FIXTURES
 from tests.blunder_check_seed import (
     SEED_PGN,
     SeedBlunder,
@@ -97,6 +103,10 @@ def test_tsv_header_and_spread_match_the_apps_functions(tmp_path: Path) -> None:
     lines = out.read_text().splitlines()
     assert lines[0].split("\t") == list(FEATURE_COLUMNS)
     assert len(lines) == 1 + len(TRACER_PLIES)
+    # Phase 259: exactly the ten quiet columns follow the facts schema, in order (append only).
+    assert len(QUIET_FEATURE_COLUMNS) == 10
+    assert FACTS_FEATURE_COLUMNS[-1] == "note"
+    assert FEATURE_COLUMNS == (*FACTS_FEATURE_COLUMNS, *QUIET_FEATURE_COLUMNS)
 
     for row, pre_board, played, pv in built:
         post_board = pre_board.copy(stack=False)
@@ -587,3 +597,190 @@ def test_builder_has_no_write_path() -> None:
     source = Path(facepalm_features.__file__).read_text()
 
     assert WRITE_PATH_RE.search(source) is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 259 plan 02: reply probability, quiet / shipped material inputs, raw lines, --skip-missing
+# ---------------------------------------------------------------------------
+
+
+def _row_with_best_line(
+    pv: str | None = None, best_pv: str | None = None, best_move: str | None = None
+) -> tuple[FeatureRow, chess.Board, str]:
+    pre_board, played = _seed_pre_board()
+    row = build_feature_row(
+        _label(),
+        pre_board=pre_board,
+        played_uci=played,
+        pinned_elo=TRACER_ELO,
+        played_prob=TRACER_PLAYED_PROB,
+        pv=pv,
+        pv_source="db",
+        policy_fn=fake_full_policy,
+        best_pv=best_pv,
+        best_move=best_move,
+    )
+    return row, pre_board, played
+
+
+def _record(row: FeatureRow, tmp_path: Path) -> dict[str, str]:
+    out = tmp_path / "one.tsv"
+    write_features_tsv([row], out)
+    header, line = out.read_text().splitlines()
+    return dict(zip(header.split("\t"), line.split("\t"), strict=True))
+
+
+def test_quiet_and_shipped_material_columns_match_the_app(tmp_path: Path) -> None:
+    pre_board, _ = _seed_pre_board()
+    pv, best_pv = _seed_line(), _best_line_for(pre_board)
+    row, pre_board, played = _row_with_best_line(pv=pv, best_pv=best_pv)
+
+    record = _record(row, tmp_path)
+
+    quiet = facepalm_material_inputs(pre_board, played, pv, best_pv)
+    shipped = material_inputs_from_facts(
+        line_facts(pre_board, played, pv), best_line_facts(pre_board, best_pv)
+    )
+    assert row.quiet == quiet
+    assert row.shipped == shipped
+    for column, value in (
+        ("loss", quiet.loss),
+        ("missed", quiet.missed),
+        ("loss_shipped", shipped.loss),
+        ("missed_shipped", shipped.missed),
+    ):
+        assert record[column] == ("" if value is None else f"{value:.6g}"), column
+    # The raw inputs make every value recomputable offline.
+    assert record["pre_fen"] == pre_board.fen()
+    assert record["played_uci"] == played
+    assert record["played_line"] == pv
+    assert record["best_line"] == best_pv
+
+
+def test_best_move_stands_in_for_a_missing_best_line(tmp_path: Path) -> None:
+    pre_board, _ = _seed_pre_board()
+    best_move = sorted(pre_board.legal_moves, key=lambda m: m.uci())[0].uci()
+    row, _, _ = _row_with_best_line(pv=_seed_line(), best_move=best_move)
+
+    assert _record(row, tmp_path)["best_line"] == best_move
+
+
+def test_reply_prob_is_the_policy_of_the_first_refutation_token(tmp_path: Path) -> None:
+    pv = _seed_line()
+    row, pre_board, played = _row_with_best_line(pv=pv)
+    post_board = pre_board.copy(stack=False)
+    post_board.push_uci(played)
+    first_token = pv.split(" ")[0]
+
+    expected = fake_full_policy(post_board.fen(), TRACER_ELO)[first_token]
+    record = _record(row, tmp_path)
+
+    assert row.reply_uci == first_token
+    assert row.reply_prob == expected
+    assert record["reply_uci"] == first_token
+    assert float(record["reply_prob"]) == float(f"{expected:.6g}")
+    assert NOTE_REPLY_MISSING not in row.note
+
+
+def test_reply_prob_comes_from_the_spread_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One post-blunder policy call feeds both reply_spread and reply_prob (no second inference)."""
+    pre_board, played = _seed_pre_board()
+    post_board = pre_board.copy(stack=False)
+    post_board.push_uci(played)
+    calls: list[str] = []
+
+    def counting_policy(fen: str, elo: float) -> dict[str, float]:
+        calls.append(fen)
+        return fake_full_policy(fen, elo)
+
+    build_feature_row(
+        _label(),
+        pre_board=pre_board,
+        played_uci=played,
+        pinned_elo=TRACER_ELO,
+        played_prob=0.05,
+        pv=_seed_line(),
+        pv_source="db",
+        policy_fn=counting_policy,
+    )
+
+    assert calls.count(post_board.fen()) == 1
+
+
+def test_reply_missing_note_without_a_refutation_line(tmp_path: Path) -> None:
+    row, _, _ = _row_with_best_line(pv=None)
+
+    record = _record(row, tmp_path)
+
+    assert row.reply_uci is None and row.reply_prob is None
+    assert record["reply_uci"] == "" and record["reply_prob"] == ""
+    assert NOTE_REPLY_MISSING in row.note.split(";")
+    assert row.reply_spread is not None  # the spread itself is still computed
+
+
+def test_reply_missing_note_for_a_token_outside_the_policy() -> None:
+    row, _, _ = _row_with_best_line(pv="a1a1 b1b1")
+
+    assert row.reply_uci == "a1a1"
+    assert row.reply_prob is None
+    assert NOTE_REPLY_MISSING in row.note.split(";")
+
+
+def test_cli_skip_missing_exits_0_and_lists_rows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    row = _resolved_row(_seed_inputs(pv=_seed_line()))
+    _fake_run_environment(monkeypatch, CollectedRows(rows=[row], missing=["4", "9"], mismatches=[]))
+    argv, out = _cli(tmp_path)
+
+    assert facepalm_features.main([*argv, "--skip-missing"]) == EXIT_OK
+    assert len(out.read_text().splitlines()) == 2
+    assert "missing: 4, 9" in capsys.readouterr().out
+    # Without the flag the same collection still exits 5 and writes nothing.
+    out.unlink()
+    assert facepalm_features.main(argv) == EXIT_ROWS_MISSING
+    assert not out.exists()
+
+
+def test_current_fit_tool_loads_the_extended_table(tmp_path: Path) -> None:
+    out = tmp_path / "features.tsv"
+    write_features_tsv([row for row, *_ in _feature_rows()], out)
+
+    table = load_features(out)
+
+    assert table.schema == "facts"
+    assert len(table.rows) == len(TRACER_PLIES)
+
+
+def test_quiet_and_shipped_columns_are_not_swapped_on_changed_positions(tmp_path: Path) -> None:
+    """Fixture 154 moves the loss and the D-13 row moves the missed term, so a swapped pair shows."""
+    fixture = next(f for f in LINE_FIXTURES if f.label_n == 154)
+    cases = (
+        (fixture.pre_fen, fixture.played_uci, fixture.line, None, "loss"),
+        (
+            D13_FIXTURE.pre_fen,
+            D13_FIXTURE.played_uci,
+            D13_FIXTURE.refutation_line,
+            D13_FIXTURE.best_line,
+            "missed",
+        ),
+    )
+    for fen, played, pv, best_pv, term in cases:
+        row = build_feature_row(
+            _label(),
+            pre_board=chess.Board(fen),
+            played_uci=played,
+            pinned_elo=TRACER_ELO,
+            played_prob=TRACER_PLAYED_PROB,
+            pv=pv,
+            pv_source="db",
+            policy_fn=fake_full_policy,
+            best_pv=best_pv,
+        )
+        record = _record(row, tmp_path)
+
+        assert float(record[term]) != float(record[f"{term}_shipped"]), term
+        assert float(record[term]) == pytest.approx(getattr(row.quiet, term), rel=1e-5)
+        assert float(record[f"{term}_shipped"]) == pytest.approx(
+            getattr(row.shipped, term), rel=1e-5
+        )

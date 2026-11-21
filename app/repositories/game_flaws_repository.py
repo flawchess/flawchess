@@ -190,6 +190,10 @@ FACEPALM_COLUMNS: tuple[str, ...] = (
     "played_line_material",
     "best_line_material",
     "best_line_mate_ply",
+    # Phase 259 D-05: the stored decaying-mean loss and missed gain (facepalm_material_inputs).
+    # Line mode writes them without Maia, so they belong here.
+    "material_loss",
+    "material_missed",
 )
 
 # Phase 254 D-08: the two pre-blunder Maia inputs (the best move's probability and the effective
@@ -201,6 +205,14 @@ FACEPALM_PRE_COLUMNS: tuple[str, ...] = (
     "maia_best_prob",
     "maia_pre_spread",
 )
+
+# Phase 259 D-07: Maia's probability of the first refutation token (the opponent's punishing
+# reply). Written in full mode from the same post-blunder policy that yields maia_reply_spread.
+# Its OWN tuple, deliberately NOT part of FACEPALM_COLUMNS: line mode writes FACEPALM_COLUMNS
+# minus the spread without running Maia, so a reply key there would overwrite a stored value
+# with NULL (Pitfall 4). flaw_record_to_row must never emit this key: the diff/upsert preserves
+# it by omission.
+FACEPALM_REPLY_COLUMNS: tuple[str, ...] = ("maia_best_reply_prob",)
 
 
 async def bulk_update_tactic_tags(
@@ -304,7 +316,8 @@ async def bulk_update_flaw_maia_stats(
     """Write the Maia stat columns on existing game_flaws rows (bulk update by PK).
 
     Every dict carries user_id, game_id, ply plus the SAME key set (full mode: the
-    MAIA_FLAW_COLUMNS, the FACEPALM_COLUMNS and the FACEPALM_PRE_COLUMNS; None for a value that
+    MAIA_FLAW_COLUMNS, the FACEPALM_COLUMNS, the FACEPALM_PRE_COLUMNS and the
+    FACEPALM_REPLY_COLUMNS; None for a value that
     could not be produced), so one executemany
     statement compiles and a re-score never leaves a stale value behind (D-08). No-op on an
     empty list.
@@ -387,13 +400,33 @@ async def mark_facepalm_pre_completed(session: AsyncSession, game_ids: Sequence[
     await session.execute(stmt)
 
 
+async def mark_facepalm_reply_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
+    """Stamp games.facepalm_reply_completed_at for the given games (no-op on empty ids).
+
+    Same D-05 guardrail as mark_maia_flaws_completed: callers MUST only pass games whose scoring
+    pass completed with a Maia session loaded (the best-reply probability comes from the Maia
+    inference on the post-blunder board); a wrong stamp permanently hides the game from the
+    backfill selector.
+    """
+    if not game_ids:
+        return
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id.in_(list(game_ids)))
+        .values(facepalm_reply_completed_at=datetime.now(timezone.utc))
+    )
+    await session.execute(stmt)
+
+
 async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> bool:
-    """Clear all four stamps for one game: maia_flaws_completed_at, facepalm_spread_completed_at,
-    facepalm_line_completed_at and facepalm_pre_completed_at.
+    """Clear all five stamps for one game: maia_flaws_completed_at, facepalm_spread_completed_at,
+    facepalm_line_completed_at, facepalm_pre_completed_at and facepalm_reply_completed_at.
 
     A reclassification can change a game's flaw set, its Stockfish best move or its stored
     line, so every derived value may be stale: the played-move Maia probability, the Phase 250
-    facepalm values (D-05, D-18) and the Phase 254 pre-blunder inputs (D-08). Clearing the four
+    facepalm values (D-05, D-18), the Phase 254 pre-blunder inputs (D-08) and the Phase 259 best
+    reply probability (it depends on the refutation line, D-07). Clearing the five
     stamps in one UPDATE makes the re-runnable
     backfills re-score the game. All five reclassify callers go through this helper. Returns True
     when any stamp was actually cleared, so callers can count games that need the backfill.
@@ -408,6 +441,7 @@ async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> boo
                 games_table.c.facepalm_spread_completed_at.isnot(None),
                 games_table.c.facepalm_line_completed_at.isnot(None),
                 games_table.c.facepalm_pre_completed_at.isnot(None),
+                games_table.c.facepalm_reply_completed_at.isnot(None),
             ),
         )
         .values(
@@ -415,6 +449,7 @@ async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> boo
             facepalm_spread_completed_at=None,
             facepalm_line_completed_at=None,
             facepalm_pre_completed_at=None,
+            facepalm_reply_completed_at=None,
         )
         .returning(games_table.c.id)
     )

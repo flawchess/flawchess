@@ -98,10 +98,12 @@ line-length = 100
 # notebook's globals (F821 everywhere); they are scratch probes, not modules.
 # .planning/research/perf-profiling-* holds throwaway profiling scripts kept for re-measurement.
 # .planning/sketches/ holds throwaway sketch analysis scripts (sketch 013 broke `ruff check .` on main).
+# .planning/phases/*/spike/ holds throwaway spike scripts (phase 259's spike broke `ruff check .` on its branch).
 extend-exclude = [
     "analysis/tilt_study/probes",
     ".planning/research/perf-profiling-*",
     ".planning/sketches",
+    ".planning/phases/*/spike",
 ]
 
 [tool.ruff.lint]

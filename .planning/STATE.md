@@ -3,18 +3,17 @@ gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 259
 current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
-status: planning
-stopped_at: Phase 258 complete, ready to plan Phase 259
-last_updated: "2026-11-21T15:46:20.821Z"
+status: executing
+stopped_at: Completed 259-05-PLAN.md
+last_updated: "2026-11-21T16:53:36.350Z"
 last_activity: 2026-11-21
-last_activity_desc: Phase 258 complete, transitioned to Phase 259
-state_head: edc89e46c26e528b9151236f293c64191089b3f4
+last_activity_desc: Phase 259 execution started
+state_head: bbc60b39fb790f287179dc77c67804d0832eee74
 progress:
   total_phases: 13
   completed_phases: 63
-  total_plans: 105
-  completed_plans: 102
-  percent: 97
+  total_plans: 120
+  completed_plans: 107
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 259 — Facepalm Score Refit on First Principles (SEED-261121-tau)
-Plan: Not started
+Phase: 259 (Facepalm Score Refit on First Principles (SEED-261121-tau)) — EXECUTING
+Plan: 6 of 15
 
-Status: Ready to plan
+Status: Ready to execute
 
-Last activity: 2026-11-21 — Phase 258 complete, transitioned to Phase 259
+Last activity: 2026-11-21 — Phase 259 execution started
 
 Open threads carried forward (not blockers):
 
@@ -974,6 +973,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 258]: Facepalm lists every TC with a window game (analyzed or not); tactic drops its unwindowed blob-gated count and reads the window's tactic-ready ids; JIT off only on the facepalm path until plan 04's EXPLAIN
 - [Phase 258]: 258-03: quiet-TC message names the real Recency label '5 years' as plain text (no button); popover basis reads 'in the recent sample'; a remembered quiet TC stays selected
 - [Phase 258]: Plan 04: the D-18 timing script runs on dev (all PASS on default filters, windowed facepalm regressed on the --from-date path); prod D-18/D-19 measurement is handed to the orchestrator before the squash-merge
+- [Phase 259]: 259-01: quiet walk added beside the old rule (live arrays untouched, D-11); one writer facepalm_material_inputs stores loss/missed as the decaying mean
+- [Phase 259]: 259-02: FEATURE_COLUMNS = facts columns + ten appended quiet columns; review drift check rounds recomputed values to the TSV's 6 significant digits first
+- [Phase 259]: FULL_ROW_COLUMNS is the single statement of the full-mode key set; maia_best_reply_prob lives in FACEPALM_REPLY_COLUMNS outside FACEPALM_COLUMNS so line mode cannot null it (Pitfall 4)
+- [Phase 259]: 259-05: reply mode scope is blunders of both sides with a stored played probability; its stamp facepalm_reply_completed_at is the checkpoint and full mode sets it with the other four
 
 ### Pending Todos
 
@@ -1232,8 +1235,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-21T12:59:06.664Z
-**Stopped at:** Phase 258 complete, ready to plan Phase 259
+**Last session:** 2026-11-21T16:53:34.082Z
+**Stopped at:** Completed 259-05-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1527,6 +1530,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 258 P02 | 10 min | 3 tasks | 9 files |
 | Phase 258 P03 | 15min | 3 tasks | 14 files |
 | Phase 258 P04 | 25 min | 2 tasks | 3 files |
+| Phase 259 P01 | 22 min | 2 tasks | 5 files |
+| Phase 259 P02 | 35 min | 2 tasks | 4 files |
+| Phase 259 P04 | 22 min | 2 tasks | 7 files |
+| Phase 259 P05 | 20 min | 2 tasks | 8 files |
 
 ## Performance Metrics
 

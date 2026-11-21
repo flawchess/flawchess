@@ -202,22 +202,30 @@ def _recapture_credit(steps: list[_Step], end_board: chess.Board) -> int | None:
     return _best_recapture(end_board, last.to_square)
 
 
+def _count_step(loss: int, quiet_square: int | None, step: _Step) -> tuple[int, int | None]:
+    """Fold one line step into the running loss (the 250 D-02 counting rule, shared by both walks).
+
+    An opponent capture adds its victim unless it lands on `quiet_square`, the square the
+    blunderer's last move reached without capturing (the desperado exclusion); a blunderer move
+    subtracts its victim and sets `quiet_square` only when it captured nothing. Returns the new
+    loss and the new quiet square.
+    """
+    if step.opponent_move:
+        if step.victim_value and step.to_square != quiet_square:
+            loss += step.victim_value
+        return loss, None
+    loss -= step.victim_value
+    return loss, (step.to_square if step.victim_value == 0 else None)
+
+
 def _net_loss(first_victim: int, steps: list[_Step], depth: int) -> int:
     """Net material the blunderer is down over the first `depth` plies plus a depth + 1 recapture."""
     loss = -first_victim
-    quiet_blunderer_square: int | None = (
-        None  # where the blunderer's last move landed without capturing
-    )
+    quiet_square: int | None = None  # where the blunderer's last move landed without capturing
     for index, step in enumerate(steps[: depth + 1], start=1):
         if index == depth + 1 and (step.opponent_move or step.victim_value == 0):
             break  # only a blunderer capture is taken at depth + 1
-        if step.opponent_move:
-            if step.victim_value and step.to_square != quiet_blunderer_square:
-                loss += step.victim_value
-            quiet_blunderer_square = None
-        else:
-            loss -= step.victim_value
-            quiet_blunderer_square = step.to_square if step.victim_value == 0 else None
+        loss, quiet_square = _count_step(loss, quiet_square, step)
     return loss
 
 
@@ -319,3 +327,104 @@ def best_line_facts(pre_board: chess.Board, best_pv: str | None) -> LineFacts:
     if best is None or best not in pre_board.legal_moves:
         return null_line_facts()
     return _facts_after_first_move(pre_board, best, tokens[1:])
+
+
+# --- Phase 259 D-02: the quiet-point rule -------------------------------------------------------
+# Each odd depth is read at the first quiet point at or after it: the walk takes `depth` plies,
+# then keeps going while the next line move is a capture (on any square), so an equal exchange of
+# any length nets to zero instead of being cut mid-trade. A stored line that ends inside an
+# exchange is settled by a static exchange on the last capture's square. The live arrays
+# (`line_facts` / `best_line_facts`) keep the old rule until the switch release (D-11).
+
+
+def _quiet_walk_end(steps: Sequence[_Step], depth: int) -> int:
+    """Index after the last step the quiet walk consumes: `depth` plies, then every capture."""
+    end = min(depth, len(steps))
+    while end < len(steps) and steps[end].victim_value:
+        end += 1
+    return end
+
+
+def _ends_in_exchange(steps: Sequence[_Step]) -> bool:
+    """Whether the line's last step captured without mating anybody (an unfinished exchange)."""
+    last = steps[-1]
+    return bool(last.victim_value) and not (last.blunderer_mated or last.opponent_mated)
+
+
+def _quiet_loss(
+    first_victim: int, steps: Sequence[_Step], depth: int, end_board: chess.Board
+) -> int | None:
+    """Net loss at `depth` read at the first quiet point; None when the line is too short to tell."""
+    if not steps:
+        return None
+    ends_in_exchange = _ends_in_exchange(steps)
+    mated = any(step.blunderer_mated or step.opponent_mated for step in steps[:depth])
+    if len(steps) < depth and not mated and not ends_in_exchange:
+        return None
+    end = _quiet_walk_end(steps, depth)
+    loss = -first_victim
+    quiet_square: int | None = None
+    for step in steps[:end]:
+        loss, quiet_square = _count_step(loss, quiet_square, step)
+    if end == len(steps) and ends_in_exchange:
+        # The line stops inside an exchange: settle it with a static exchange on that square.
+        last = steps[-1]
+        swing = _best_recapture(end_board, last.to_square)
+        loss += -swing if last.opponent_move else swing
+    return loss
+
+
+def _quiet_facts_after_first_move(
+    pre_board: chess.Board, first: chess.Move, rest: list[str]
+) -> LineFacts:
+    """The quiet-rule counterpart of `_facts_after_first_move` (odd depths only, even depths None)."""
+    board = pre_board.copy(stack=False)
+    blunderer = board.turn
+    first_victim = _victim_value(board, first)
+    board.push(first)
+    if board.is_checkmate():
+        # Before the empty-steps check: a mating best move with a one-token line must still settle
+        # every depth (Pitfall 2).
+        return LineFacts(
+            loss_by_depth=dict.fromkeys(LINE_MATERIAL_DEPTHS, -first_victim),
+            mate_ply=None,
+            opponent_mate_ply=0,
+        )
+    steps, end_board = _replay_line(board, rest, blunderer)
+    if not steps:
+        return null_line_facts()
+    loss_by_depth: dict[int, int | None] = dict.fromkeys(LINE_MATERIAL_DEPTHS)
+    for depth in LINE_LOSS_DEPTHS:
+        loss_by_depth[depth] = _quiet_loss(first_victim, steps, depth, end_board)
+    return LineFacts(
+        loss_by_depth=loss_by_depth,
+        mate_ply=_mate_ply(steps),
+        opponent_mate_ply=_opponent_mate_ply(steps),
+    )
+
+
+def quiet_line_facts(pre_board: chess.Board, played_uci: str, pv: str | None) -> LineFacts:
+    """Quiet-point line facts for one blunder (D-02; no I/O, `pre_board` is never mutated).
+
+    Same inputs and guards as `line_facts`. Only the odd depths are filled.
+    """
+    if not pv:
+        return null_line_facts()
+    played = _parse_move(played_uci)
+    if played is None or played not in pre_board.legal_moves:
+        return null_line_facts()
+    return _quiet_facts_after_first_move(pre_board, played, pv.split(_PV_SEPARATOR))
+
+
+def quiet_best_line_facts(pre_board: chess.Board, best_pv: str | None) -> LineFacts:
+    """Quiet-point line facts for the best line (D-02; no I/O, `pre_board` is never mutated).
+
+    Same inputs and guards as `best_line_facts`: `best_pv` is the best move first, then its line.
+    """
+    if not best_pv:
+        return null_line_facts()
+    tokens = best_pv.split(_PV_SEPARATOR)
+    best = _parse_move(tokens[0])
+    if best is None or best not in pre_board.legal_moves:
+        return null_line_facts()
+    return _quiet_facts_after_first_move(pre_board, best, tokens[1:])
