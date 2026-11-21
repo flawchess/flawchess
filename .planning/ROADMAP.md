@@ -746,6 +746,40 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 258-04-PLAN.md — Prod timing tool and window EXPLAIN (D-18 / D-19 handed to UAT), changelog, full pre-merge gate (wave 3)
 
+### Phase 259: Facepalm Score Refit on First Principles (SEED-261121-tau)
+
+**Goal**: Make the facepalm score read what a human would read from the lines, then refit it. Two changes share
+one refit. Found on prod game 2883555 ply 47: an even four-capture trade in the best line scored as a missed
+queen, and the model has no input for how findable the punishing move is. Details and the term breakdown in the
+seed.
+
+- **Best-reply probability:** a stored `maia_best_reply_prob` on `game_flaws`, Maia's probability at the
+  blunderer's pinned Elo of the engine's best reply to the blunder. Allowed losses then have the same pair of
+  inputs as missed wins (`maia_best_prob` + `maia_pre_spread`). Free going forward from the existing reply-spread
+  inference; existing rows need a re-inference backfill.
+- **Quiet-point material input:** read the material of the played and the best line only at quiet points (the
+  next line move is not a capture), so an equal exchange of any length is exactly neutral, and discount the
+  settled value by its onset depth. Replaces `decaying_mean`. Needs a recompute of the stored line material.
+- **Owner decision (2026-11-21):** pick the input that makes the most sense from first principles; the AUC only
+  has to stay in a similar range as the Phase 256 fit (cross-validated 0.902, set 8 0.821). No choice by small
+  AUC differences on the 261 owner labels.
+- **First step in discuss-phase:** define the quiet-point rule and the onset discount, compute the new input for
+  the labelled rows and check the AUC range, before the column and backfill work is planned.
+- **Prod runs in sequence:** the re-inference backfill and the material recompute cover about 7.8M `game_flaws`
+  rows and must not run beside another operator job (prod `max_connections` is 50).
+- **Downstream:** a refit shifts the score distribution, so the facepalm benchmark zones (SEED-261120-bzq) and
+  the preliminary bands (`quick/facepalm-prelim-bands`) should be built on, or re-derived from, the new score.
+- **Out of scope:** a fit on user blunder-check answers (later, once enough exist; nothing below a score of 0.50
+  is served); the `detect_sacrifice` gap for an offered sacrifice the engine declines (noted in the seed).
+
+**Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
+pass 2026-11-18). Independent of Phase 258; built in its own worktree.
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 259 to break down)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

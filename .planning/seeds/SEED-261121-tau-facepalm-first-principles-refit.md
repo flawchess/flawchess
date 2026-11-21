@@ -1,6 +1,6 @@
 ---
 id: SEED-261121-tau
-status: dormant
+status: active
 planted: 2026-11-21
 planted_during: owner review of one facepalm score on prod (game 2883555, ply 47), outside any phase
 trigger_when: the next facepalm score refit, or any phase that touches the stored line material or the Maia facepalm columns. Best after the Phase 252 short-line repair has finished, since the material recompute reads the same lines
@@ -10,6 +10,8 @@ scope: medium. One new game_flaws column with a re-inference backfill, a recompu
 # SEED-261121-tau: Facepalm score refit on first principles (best-reply probability, quiet-point material)
 
 Two changes to the facepalm score model that need the same refit.
+
+**Promoted 2026-11-21 to Phase 259** (`.planning/ROADMAP.md`, Active Phases).
 
 ## Part 1: Maia probability of the best reply
 
