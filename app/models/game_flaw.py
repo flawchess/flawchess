@@ -69,6 +69,23 @@ class GameFlaw(Base):
             name="ck_game_flaws_best_line_material_shape",
             postgresql_not_valid=True,
         ),
+        # Phase 259 D-05 scalar checks, NOT VALID so the migration skips the table scan
+        # (metadata matches alembic/versions/..._d1e5f7a9c259_phase_259_facepalm_scalars.py).
+        CheckConstraint(
+            "(material_loss IS NULL) = (material_missed IS NULL)",
+            name="ck_game_flaws_material_pair",
+            postgresql_not_valid=True,
+        ),
+        CheckConstraint(
+            "material_loss >= 0",
+            name="ck_game_flaws_material_loss_nonneg",
+            postgresql_not_valid=True,
+        ),
+        CheckConstraint(
+            "material_missed >= 0",
+            name="ck_game_flaws_material_missed_nonneg",
+            postgresql_not_valid=True,
+        ),
     )
 
     # Natural composite PK: (user_id, game_id, ply) — mirrors game_positions PK.
@@ -188,6 +205,20 @@ class GameFlaw(Base):
     best_line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     maia_best_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
     maia_pre_spread: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+
+    # Phase 259 stored scalar inputs of the first-principles facepalm score (D-05, D-07).
+    # Nullable. Written only by app/services/maia_flaw_scoring.py, never by flaw_record_to_row,
+    # so a diff/upsert preserves them by omission.
+    #   material_loss        = decaying-mean material the blunderer loses along the played line
+    #                          under the quiet rule; NULL pair with material_missed = unscored or
+    #                          not computed yet.
+    #   material_missed      = decaying-mean material gain the blunderer left on the table along
+    #                          the engine's best line under the same rule.
+    #   maia_best_reply_prob = Maia's probability of the first token of the stored refutation
+    #                          line (the opponent's punishing reply) at the blunderer's pinned Elo.
+    material_loss: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    material_missed: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_best_reply_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
 
     # PV-line blob family: write-once JSONB blobs, nullable.
     # These store the principal-variation nodes for the forcing-line tactic gate.

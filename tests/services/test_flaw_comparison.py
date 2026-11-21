@@ -15,6 +15,7 @@ The db_session fixture wraps each test in a transaction that is always rolled
 back, so seeded users and games never leak into other tests.
 """
 
+import datetime
 import math
 import uuid
 from typing import Any
@@ -29,6 +30,7 @@ from app.repositories.library_repository import (
     _analyzed_game_ids_subquery,
     count_analyzed_by_tc,
     fetch_flaw_comparison,
+    fetch_recent_window_rows,
 )
 from app.services.flaw_delta_zones import (
     FLAW_DELTA_METRICS,
@@ -37,11 +39,14 @@ from app.services.flaw_delta_zones import (
     flaw_delta_zone,
     tempo_phase_zone,
 )
+from app.services.canonical_slice_sql import RECENT_GAMES_PER_TC_CAP
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
     _build_flaw_bullet,
     get_facepalm_comparison,
     get_flaw_comparison,
+    recent_window_start,
+    summarize_window,
 )
 from app.services.facepalm_score import FacepalmType
 from app.services.score_confidence import VERDICT_CI_Z_99
@@ -50,6 +55,12 @@ from tests.facepalm_seed import SEED_FACEPALM_MARGIN, facepalm_fact_columns
 # ---------------------------------------------------------------------------
 # Seed helpers (mirror tests/test_library_repository.py pattern)
 # ---------------------------------------------------------------------------
+
+# 258: the Library Stats snapshot ranks games inside a recent window anchored on now_utc, so a
+# seed without a played_at would fall out of it. A fixed _NOW keeps the tests independent of
+# the real clock.
+_NOW = datetime.datetime(2026, 11, 21, 12, 0, tzinfo=datetime.timezone.utc)
+_SEED_PLAYED_AT = _NOW - datetime.timedelta(days=1)
 
 
 async def _ensure_user(session: AsyncSession, user_id: int) -> None:
@@ -74,6 +85,7 @@ async def _seed_game(
     platform: str = "lichess",
     time_control_bucket: str | None = "blitz",
     time_control_str: str = "600+0",
+    played_at: datetime.datetime = _SEED_PLAYED_AT,
 ) -> Game:
     game = Game(
         user_id=user_id,
@@ -91,6 +103,7 @@ async def _seed_game(
         rated=True,
         is_computer_game=False,
         ply_count=ply_count,
+        played_at=played_at,
     )
     session.add(game)
     await session.flush()
@@ -105,8 +118,6 @@ async def _seed_analyzed(session: AsyncSession, *, game: "Game") -> None:  # typ
     cheap Game.is_analyzed detector (white_blunders IS NOT NULL) is seeded too, as
     a real Lichess analyzed game satisfies both.
     """
-    import datetime
-
     # Cheap analyzed detector: move-quality counts present (0 = analyzed, no blunders).
     if game.white_blunders is None:
         game.white_blunders = 0
@@ -206,7 +217,9 @@ async def test_per_tc_split(db_session: AsyncSession) -> None:
         g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
         await _seed_analyzed(db_session, game=g)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert [t.tc for t in result.tcs] == ["blitz", "rapid"]
     for tc_entry in result.tcs:
@@ -227,7 +240,9 @@ async def test_no_analyzed_games(db_session: AsyncSession) -> None:
     """No analyzed games -> tcs == [] and analyzed_gate is the gate constant."""
     await _seed_game(db_session, user_id=_TEST_USER)  # not analyzed
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert result.tcs == []
     assert result.analyzed_gate == FLAW_COMPARISON_GATE
@@ -239,7 +254,9 @@ async def test_no_analyzed_games(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_no_games_total_n_zero(db_session: AsyncSession) -> None:
     """No games at all -> tcs == [] and total_n == 0 (the true "nothing here" case)."""
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert result.tcs == []
     assert result.total_n == 0
@@ -254,7 +271,9 @@ async def test_bullets_and_zone_bounds(db_session: AsyncSession) -> None:
             await _seed_analyzed(db_session, game=g)
             await _seed_flaw(db_session, game=g, ply=2, severity=1, tempo=1)  # hasty
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert [t.tc for t in result.tcs] == ["blitz", "rapid"]
     for tc_entry in result.tcs:
@@ -281,7 +300,9 @@ async def test_rates_and_pvalue(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=game)
         await _seed_flaw(db_session, game=game, ply=2, severity=1)  # player mistake
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
 
     # Per-player rates present and consistent with the delta (paired pairing).
@@ -382,7 +403,9 @@ async def test_filter_plumbing(db_session: AsyncSession) -> None:
         )
         await _seed_analyzed(db_session, game=g_rapid)
 
-    result_all = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result_all = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     assert [(t.tc, t.analyzed_n) for t in result_all.tcs] == [
         ("blitz", FLAW_COMPARISON_GATE),
         ("rapid", FLAW_COMPARISON_GATE),
@@ -391,6 +414,7 @@ async def test_filter_plumbing(db_session: AsyncSession) -> None:
     result_blitz = await get_flaw_comparison(
         db_session,
         _TEST_USER,
+        now_utc=_NOW,
         **_filters(time_control=["blitz"]),
     )
     assert [(t.tc, t.analyzed_n) for t in result_blitz.tcs] == [("blitz", FLAW_COMPARISON_GATE)]
@@ -420,10 +444,13 @@ async def test_severity_filter_zones(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=game)
         await _seed_flaw(db_session, game=game, ply=2, severity=1)  # mistake only
 
-    result_all = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result_all = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     result_blunder = await get_flaw_comparison(
         db_session,
         _TEST_USER,
+        now_utc=_NOW,
         **_filters(flaw_severity=["blunder"]),
     )
 
@@ -455,7 +482,9 @@ async def test_zero_event_bullet(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=game)
         # No flaw rows added -> clean game contributes zero-delta anchor row
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     tc_entry = result.tcs[0]
     assert tc_entry.below_gate is False
@@ -493,7 +522,9 @@ async def test_below_gate_tc_keeps_bullets(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=g)
         await _seed_flaw(db_session, game=g, ply=2, severity=1)  # player mistake
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert len(result.tcs) == 1
     tc_entry = result.tcs[0]
@@ -517,11 +548,13 @@ async def test_tc_filter_narrows_list_and_omits_unanalyzed_tc(db_session: AsyncS
         # classical games exist but none is analyzed
         await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="classical")
 
-    result_all = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result_all = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     assert [t.tc for t in result_all.tcs] == ["blitz", "rapid"]
 
     result_rapid = await get_flaw_comparison(
-        db_session, _TEST_USER, **_filters(time_control=["rapid"])
+        db_session, _TEST_USER, now_utc=_NOW, **_filters(time_control=["rapid"])
     )
     assert [t.tc for t in result_rapid.tcs] == ["rapid"]
 
@@ -537,7 +570,9 @@ async def test_null_time_control_bucket_excluded(db_session: AsyncSession) -> No
         await _seed_analyzed(db_session, game=g)
         await _seed_flaw(db_session, game=g, ply=2, severity=1)  # would be a player mistake
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert [t.tc for t in result.tcs] == ["blitz"]
     assert result.tcs[0].analyzed_n == FLAW_COMPARISON_GATE
@@ -578,7 +613,9 @@ async def test_null_or_zero_ply_count_not_counted(db_session: AsyncSession) -> N
     counts = await count_analyzed_by_tc(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
     assert counts == {"blitz": FLAW_COMPARISON_GATE}
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     assert [t.tc for t in result.tcs] == ["blitz"]
     assert result.tcs[0].analyzed_n == FLAW_COMPARISON_GATE
 
@@ -601,7 +638,9 @@ async def test_total_n_counts_unanalyzed_games(db_session: AsyncSession) -> None
     g.ply_count = None
     await db_session.flush()
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert [(t.tc, t.analyzed_n, t.total_n) for t in result.tcs] == [
         ("blitz", FLAW_COMPARISON_GATE, FLAW_COMPARISON_GATE + 3),
@@ -630,7 +669,9 @@ async def test_balanced_cell_is_not_significant(db_session: AsyncSession) -> Non
     """Mistakes split evenly between you and opponents: the 99% CI covers 0."""
     await _seed_mistake_cell(db_session, user_id=_TEST_USER, total_flaws=_SIGNIFICANCE_GAMES)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
     assert mistake.player_events == mistake.opp_events
@@ -645,7 +686,9 @@ async def test_one_sided_cell_is_significant(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=g)
         await _seed_flaw(db_session, game=g, ply=2, severity=1)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
     assert mistake.opp_events == 0
@@ -660,7 +703,9 @@ async def test_zero_event_bullet_is_not_significant(db_session: AsyncSession) ->
         g = await _seed_game(db_session, user_id=_TEST_USER)
         await _seed_analyzed(db_session, game=g)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     for bullet in result.tcs[0].bullets:
         assert bullet.delta is None
@@ -690,7 +735,9 @@ async def test_classical_and_bullet_bands(
         g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
         await _seed_analyzed(db_session, game=g)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     by_tc = {t.tc: next(b for b in t.bullets if b.tag == "hasty") for t in result.tcs}
     assert set(by_tc) == {"bullet", "classical"}
@@ -713,8 +760,12 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
         await _seed_flaw(db_session, game=g, ply=2, severity=1)  # B: player mistake
         await _seed_flaw(db_session, game=g, ply=4, severity=1)  # B: second player mistake
 
-    result_a = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
-    result_b = await get_flaw_comparison(db_session, _OTHER_USER, **_DEFAULT_FILTER_KWARGS)
+    result_a = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+    result_b = await get_flaw_comparison(
+        db_session, _OTHER_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert result_a.tcs[0].analyzed_n == user_a_games
     assert result_b.tcs[0].analyzed_n == user_b_games
@@ -753,7 +804,9 @@ async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> No
         g = await _seed_game(db_session, user_id=_TEST_USER)
         await _seed_analyzed(db_session, game=g)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     cells = result.tcs[0].tempo_phase_cells
     assert len(cells) == _CELL_COUNT
@@ -786,7 +839,9 @@ async def test_tempo_phase_cells_count_both_sides(db_session: AsyncSession) -> N
         await _seed_flaw(db_session, game=g, ply=3, tempo=_TEMPO_HASTY, phase=_PHASE_MIDDLEGAME)
         await _seed_flaw(db_session, game=g, ply=4, tempo=_TEMPO_HASTY, phase=_PHASE_ENDGAME)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     entry = result.tcs[0]
 
     hasty_mid = _cell(entry, "hasty", "middlegame")
@@ -808,7 +863,9 @@ async def test_tempo_phase_cells_exclude_null_tempo(db_session: AsyncSession) ->
         await _seed_analyzed(db_session, game=g)
         await _seed_flaw(db_session, game=g, ply=2, tempo=None, phase=_PHASE_MIDDLEGAME)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     entry = result.tcs[0]
 
     middlegame = next(b for b in entry.bullets if b.tag == "middlegame")
@@ -839,7 +896,9 @@ async def test_tempo_phase_cells_marginal_sum_invariant(db_session: AsyncSession
         for ply, tempo, phase in combos:
             await _seed_flaw(db_session, game=g, ply=ply, tempo=tempo, phase=phase)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
     entry = result.tcs[0]
     bullets = {b.tag: b for b in entry.bullets}
 
@@ -861,7 +920,9 @@ async def test_tempo_phase_cell_significance(db_session: AsyncSession) -> None:
         await _seed_analyzed(db_session, game=g)
         await _seed_flaw(db_session, game=g, ply=2, tempo=_TEMPO_HASTY, phase=_PHASE_MIDDLEGAME)
 
-    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     cell = _cell(result.tcs[0], "hasty", "middlegame")
     assert cell.ci_low is not None and cell.ci_low > 0.0
@@ -925,7 +986,9 @@ async def test_facepalm_rows_are_paired_per_100_user_moves(db_session: AsyncSess
     for ply, severity, facts in kinds:
         await _seed_flaw(db_session, game=game, ply=ply, severity=severity, facts=facts)
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     tc_entry = result.tcs[0]
     assert [b.tag for b in tc_entry.bullets] == list(_FACEPALM_ROWS)
@@ -1038,7 +1101,9 @@ async def test_facepalm_cut_is_the_stats_min(db_session: AsyncSession) -> None:
     await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(above))
     await _seed_flaw(db_session, game=game, ply=4, severity=_BLUNDER, facts=_facts(below))
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     assert _facepalm_bullet(result.tcs[0], "facepalm").player_events == 1
 
@@ -1054,8 +1119,12 @@ async def test_facepalm_rows_have_no_zone_and_exist_below_the_gate(
         game = await _seed_facepalm_game(db_session, time_control_bucket=bucket)
         await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
-    flaw_result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+    flaw_result = await get_flaw_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     # Same TCs as the flaw comparison, which flags both as below its gate.
     assert [t.tc for t in result.tcs] == [t.tc for t in flaw_result.tcs] == ["blitz", "rapid"]
@@ -1089,7 +1158,9 @@ async def test_facepalm_rows_are_withheld_below_the_scored_coverage(
             db_session, game=game, ply=unscored_side_ply + 2 * step, severity=_BLUNDER, facts=facts
         )
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     (tc_entry,) = result.tcs
     assert tc_entry.low_coverage is True
@@ -1107,7 +1178,9 @@ async def test_facepalm_coverage_gate_is_inclusive_and_per_side(db_session: Asyn
                 db_session, game=game, ply=first_ply + 2 * step, severity=_BLUNDER, facts=facts
             )
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     (tc_entry,) = result.tcs
     assert tc_entry.low_coverage is False
@@ -1121,7 +1194,9 @@ async def test_facepalm_zero_event_rows_are_neutral_placeholders(db_session: Asy
     for _ in range(FLAW_COMPARISON_GATE):
         await _seed_facepalm_game(db_session)
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     for bullet in result.tcs[0].bullets:
         assert bullet.delta is None and bullet.player_rate is None and bullet.opp_rate is None
@@ -1137,7 +1212,9 @@ async def test_facepalm_one_sided_total_is_significant(db_session: AsyncSession)
         game = await _seed_facepalm_game(db_session, user_color="white")
         await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
 
-    result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     total = _facepalm_bullet(result.tcs[0], "facepalm")
     assert total.opp_events == 0
@@ -1158,8 +1235,12 @@ async def test_facepalm_two_user_isolation(db_session: AsyncSession) -> None:
         await _seed_flaw(db_session, game=theirs, ply=2, severity=_BLUNDER, facts=_facts(0.8))
         await _seed_flaw(db_session, game=theirs, ply=3, severity=_BLUNDER, facts=_facts(0.9))
 
-    mine_result = await get_facepalm_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
-    other_result = await get_facepalm_comparison(db_session, _OTHER_USER, **_DEFAULT_FILTER_KWARGS)
+    mine_result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+    other_result = await get_facepalm_comparison(
+        db_session, _OTHER_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
 
     total = _facepalm_bullet(mine_result.tcs[0], "facepalm")
     assert (total.player_events, total.opp_events) == (1, 0)
@@ -1222,3 +1303,119 @@ def test_blunder_facts_index_covers_every_score_input() -> None:
     covered = {c.name for c in index.columns} | set(index.dialect_options["postgresql"]["include"])
     inputs = {column.key for column in _game_flaw_columns()}
     assert inputs | {"ply", "game_id", "user_id"} <= covered
+
+
+# ---------------------------------------------------------------------------
+# 258: the facepalm rows read the same recent window as the flaw rows (D-06, D-10, D-15)
+# ---------------------------------------------------------------------------
+
+_FOUR_YEARS = datetime.timedelta(days=4 * 365)
+
+
+@pytest.mark.asyncio
+async def test_facepalm_same_game_set_on_the_window(db_session: AsyncSession) -> None:
+    """D-06: both readers aggregate the analyzed window ids only; a 4-year-old game is out."""
+    from app.repositories.library_repository import fetch_facepalm_comparison
+
+    recent = await _seed_facepalm_game(db_session, played_at=_NOW - datetime.timedelta(days=1))
+    old = await _seed_facepalm_game(db_session, played_at=_NOW - _FOUR_YEARS)
+    for game in (recent, old):
+        await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
+
+    window_rows = await fetch_recent_window_rows(
+        db_session,
+        _TEST_USER,
+        window_start=recent_window_start(_NOW, None, None),
+        **_DEFAULT_FILTER_KWARGS,
+    )
+    ids = list(summarize_window(window_rows, RECENT_GAMES_PER_TC_CAP)["blitz"].analyzed_ids)
+    analyzed = _analyzed_game_ids_subquery(_TEST_USER, game_ids=ids)
+    facepalm_rows = await fetch_facepalm_comparison(
+        db_session, _TEST_USER, analyzed, **_DEFAULT_FILTER_KWARGS
+    )
+    flaw_rows = await fetch_flaw_comparison(
+        db_session, _TEST_USER, analyzed, **_DEFAULT_FILTER_KWARGS
+    )
+
+    def keys(rows: list[Any]) -> set[tuple[int, str, int]]:
+        return {(row.game_id, row.tc, int(row.user_moves)) for row in rows}
+
+    assert keys(facepalm_rows) == keys(flaw_rows) == {(recent.id, "blitz", 20)}
+
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+    (tc_entry,) = result.tcs
+    assert _facepalm_bullet(tc_entry, "facepalm").player_events == 1  # not 2
+
+
+@pytest.mark.asyncio
+async def test_facepalm_low_coverage_on_the_window(db_session: AsyncSession) -> None:
+    """D-10: the coverage rule sees only window rows; old unscored blunders cannot trip it."""
+    old = await _seed_facepalm_game(db_session, user_color="white", played_at=_NOW - _FOUR_YEARS)
+    for step in range(5):  # five user blunders, none scored: low coverage on its own
+        await _seed_flaw(
+            db_session, game=old, ply=2 + 2 * step, severity=_BLUNDER, facts=_facts(None)
+        )
+    recent = await _seed_facepalm_game(
+        db_session, user_color="white", played_at=_NOW - datetime.timedelta(days=1)
+    )
+    await _seed_flaw(db_session, game=recent, ply=2, severity=_BLUNDER, facts=_facts(0.8))
+
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+
+    (tc_entry,) = result.tcs
+    assert tc_entry.low_coverage is False
+    assert [b.tag for b in tc_entry.bullets] == list(_FACEPALM_ROWS)
+
+
+@pytest.mark.asyncio
+async def test_facepalm_lists_window_tcs(db_session: AsyncSession) -> None:
+    """D-15: every TC with a window game is listed; a TC whose games are all old is absent."""
+    await _seed_facepalm_game(db_session, played_at=_NOW - datetime.timedelta(days=1))
+    # Recent but unanalyzed: in the window, so the Facepalm tile of rapid never waits.
+    await _seed_game(
+        db_session,
+        user_id=_TEST_USER,
+        time_control_bucket="rapid",
+        played_at=_NOW - datetime.timedelta(days=2),
+    )
+    await _seed_facepalm_game(
+        db_session, time_control_bucket="classical", played_at=_NOW - _FOUR_YEARS
+    )
+
+    result = await get_facepalm_comparison(
+        db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert [t.tc for t in result.tcs] == ["blitz", "rapid"]
+    rapid = result.tcs[1]
+    assert rapid.low_coverage is False
+    assert [b.tag for b in rapid.bullets] == list(_FACEPALM_ROWS)
+    for bullet in rapid.bullets:
+        assert (bullet.player_events, bullet.opp_events) == (0, 0)
+        assert bullet.delta is None
+
+
+@pytest.mark.asyncio
+async def test_facepalm_jit_is_off_before_the_window_statement(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """258 D-10: JIT is already off when the window statement runs in the facepalm transaction."""
+    from sqlalchemy import text
+
+    from app.services import library_service
+
+    seen: list[str] = []
+    real_fetch = library_service._fetch_recent_window
+
+    async def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append((await db_session.execute(text("SHOW jit"))).scalar_one())
+        return await real_fetch(*args, **kwargs)
+
+    await db_session.execute(text("SET LOCAL jit = on"))
+    monkeypatch.setattr(library_service, "_fetch_recent_window", spy)
+    await get_facepalm_comparison(db_session, _TEST_USER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS)
+    assert seen == ["off"]

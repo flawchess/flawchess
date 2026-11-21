@@ -29,8 +29,19 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function lib(tc: TimeControlBucket, analyzed_n: number, below_gate = false): LibraryTcCount {
-  return { tc, analyzed_n, below_gate };
+function lib(
+  tc: TimeControlBucket,
+  analyzed_n: number,
+  below_gate = false,
+  total_n?: number,
+  history_analyzed_n?: number,
+): LibraryTcCount {
+  return { tc, analyzed_n, below_gate, total_n, history_analyzed_n };
+}
+
+/** A TC with games in the filters but none in the recent window (258 D-15). */
+function quiet(tc: TimeControlBucket, history_analyzed_n: number): LibraryTcCount {
+  return lib(tc, 0, true, 0, history_analyzed_n);
 }
 
 describe('pickDefaultLibraryTc', () => {
@@ -56,6 +67,23 @@ describe('pickDefaultLibraryTc', () => {
   it('returns null for an empty list', () => {
     expect(library.pickDefaultLibraryTc([])).toBeNull();
   });
+
+  it('picks the quiet TC with the most history when every TC is quiet', () => {
+    expect(library.pickDefaultLibraryTc([quiet('blitz', 300), quiet('rapid', 900)])).toBe('rapid');
+  });
+
+  it('breaks an all-quiet history tie toward the faster TC', () => {
+    expect(library.pickDefaultLibraryTc([quiet('rapid', 300), quiet('blitz', 300)])).toBe('blitz');
+  });
+
+  it('never picks a quiet TC over a TC with recent games, however large its history', () => {
+    const tcs = [quiet('blitz', 5000), lib('rapid', 3, true, 4, 3)];
+    expect(library.pickDefaultLibraryTc(tcs)).toBe('rapid');
+  });
+
+  it('keeps today\'s ranking for entries without total_n', () => {
+    expect(library.pickDefaultLibraryTc([lib('blitz', 180), lib('rapid', 871)])).toBe('rapid');
+  });
 });
 
 describe('useLibraryStatsTc', () => {
@@ -75,6 +103,48 @@ describe('useLibraryStatsTc', () => {
     localStorage.setItem(library.LIBRARY_STATS_TC_STORAGE_KEY, 'blitz');
     const { result } = renderHook(() => library.useLibraryStatsTc(tcs));
     expect(result.current[0]).toBe('blitz');
+  });
+
+  it('keeps a remembered quiet TC selected while it is offered', () => {
+    localStorage.setItem(library.LIBRARY_STATS_TC_STORAGE_KEY, 'blitz');
+    const withQuiet = [quiet('blitz', 300), lib('rapid', 871)];
+    const { result } = renderHook(() => library.useLibraryStatsTc(withQuiet));
+    expect(result.current[0]).toBe('blitz');
+  });
+
+  it('defaults to the TC with recent games when another TC is quiet', () => {
+    const withQuiet = [quiet('blitz', 5000), lib('rapid', 871)];
+    const { result } = renderHook(() => library.useLibraryStatsTc(withQuiet));
+    expect(result.current[0]).toBe('rapid');
+  });
+
+  it('drops a pinned default that turned quiet when cached filters come back', () => {
+    // All time: blitz is quiet, rapid has recent games. Then a Recency period (new query
+    // key, empty list, blitz leads). Then back to the cached All-time list.
+    const allTime = [quiet('blitz', 5000), lib('rapid', 871)];
+    const fiveYears = [lib('blitz', 900), lib('rapid', 871)];
+    const loading: LibraryTcCount[] = [];
+    const { result, rerender } = renderHook(
+      ({ list }: { list: LibraryTcCount[] }) => library.useLibraryStatsTc(list),
+      { initialProps: { list: allTime } },
+    );
+    expect(result.current[0]).toBe('rapid');
+    rerender({ list: loading });
+    rerender({ list: fiveYears });
+    expect(result.current[0]).toBe('blitz');
+    rerender({ list: allTime });
+    expect(result.current[0]).toBe('rapid');
+  });
+
+  it('keeps a pinned quiet default when every TC is quiet', () => {
+    const allQuiet = [quiet('blitz', 300), quiet('rapid', 900)];
+    const { result, rerender } = renderHook(
+      ({ list }: { list: LibraryTcCount[] }) => library.useLibraryStatsTc(list),
+      { initialProps: { list: allQuiet } },
+    );
+    expect(result.current[0]).toBe('rapid');
+    rerender({ list: [quiet('blitz', 2000), quiet('rapid', 900)] });
+    expect(result.current[0]).toBe('rapid');
   });
 
   it('ignores a stored TC that is not offered', () => {

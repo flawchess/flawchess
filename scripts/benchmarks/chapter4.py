@@ -12,8 +12,8 @@ and its own acceptance tests:
   - Generator : `scripts/gen_global_percentile_cdf.py` (`--target benchmark`, manual recalibration)
   - Artifact  : `app/services/global_percentile_cdf.py` (`COHORT_PERCENTILE_CDF` registry)
   - Report    : `reports/percentile/cohort-percentile-cdf-latest.md`
-  - Gates     : `tests/scripts/test_gen_global_percentile_cdf_pooled.py`,
-                `tests/scripts/test_gen_global_percentile_cdf_unchanged.py`
+  - Gates     : `tests/scripts/test_gen_global_percentile_cdf_unchanged.py`,
+                `tests/scripts/test_gen_global_percentile_cdf_opening_out.py`
 
 The live artifact is the Phase 94.4 *cohort sliding-window* `COHORT_PERCENTILE_CDF`
 (8 metrics × ~37 anchors × 4 TC, K-nearest-anchor cohorts); the retired Phase 93/94.2 *flat*

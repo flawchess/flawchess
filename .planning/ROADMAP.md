@@ -699,6 +699,133 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 257-07-PLAN.md — Changelog, D-06 / D-14 end-of-phase guards, full pre-merge gate, prod checks handed to UAT (wave 7)
 
+### Phase 258: Library Stats Recent Sample for Snapshot Charts (SEED-261121-3ou)
+
+**Goal**: Make the Library Stats snapshot charts describe how the player plays now, while the timelines keep
+the whole career. Today the page defaults to all time, so the "you vs your opponents" flaw, facepalm and tactic
+comparisons lump a career into one average and are graded against zones built on recent games. Decisions in the
+seed ("Decided Shape", 2026-11-21).
+
+- **Split by chart type, no filter-default changes.** The shared filter store keeps its defaults, so the Library
+  Games and Flaws tabs are untouched.
+- **Timelines keep full history.** Sidebar filters, including an explicit recency choice, still crop them.
+- **Snapshot charts always use a recent sample:** `/library/flaw-comparison`, `/library/facepalm-comparison` and
+  `/library/tactic-comparison` are computed on the most recent 1000 games per time control within the last 36
+  months (`RECENT_GAMES_PER_TC_CAP`, `RECENCY_WINDOW_MONTHS`), taken from the games the sidebar filters leave.
+- **An explicit recency filter replaces the 36-month bound;** the 1000-game cap stays.
+- **The cap counts all filtered games, then the analyzed subset is shown,** so the window matches Endgames and
+  stays time-defined.
+- **One shared windowed game set** for the counts and all three comparisons, so the basis line and the tiles
+  always agree.
+- **Basis line under the snapshot section header,** for example "Based on your most recent 1000 blitz games
+  (since Mar 2025), 640 analyzed". The API returns the window start and the sample sizes.
+- **No "Recent / All games" switch:** the lifetime snapshot is deliberately unreachable.
+- **No default opponent strength of ±100:** the flaw zones are already equal-footing calibrated and the user's
+  value stays unfiltered; the filter remains available.
+- **Performance check on a large account:** the ranked "recent 1000 per time control" subquery is a new query
+  shape on a page where the facepalm comparison was already split out for speed.
+- **Accepted:** the last timeline point (trailing 100 games) and the snapshot tile (up to 1000 games) show
+  different numbers.
+- **Open for discuss-phase:** whether the cap applies before or after the "played as" colour filter (same period
+  for both colours, or the most recent 1000 games of that colour).
+- **Out of scope:** restoring full-history timelines on Endgames Stats with the same split (a separate
+  decision); any change to the Endgames ranked sample.
+
+**Depends on**: Phase 257 (the facepalm comparison endpoint and the current Library Stats layout).
+**Requirements**: TBD
+**Plans:** 5/5 plans complete
+
+Plans:
+**Wave 1**
+- [x] 258-01-PLAN.md — Tracer: the recent window (1000 per TC, 36 months or the chosen period) from SQL to the Flaw Stats basis line on /flaw-comparison, seed migration of the comparison tests (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 258-02-PLAN.md — Backend: window and decision tests, then facepalm and tactic comparisons on the same window, JIT off from the window statement on (wave 2)
+- [x] 258-03-PLAN.md — Frontend: quiet time control message with hidden snapshot sections, default TC, timeline caption, basis-line variants, popover wording, default-filter guards (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 258-04-PLAN.md — Prod timing tool and window EXPLAIN (D-18 / D-19 handed to UAT), changelog, full pre-merge gate (wave 3)
+
+**Gap closure** *(UAT G-258-3)*
+- [x] 258-05-PLAN.md — Quiet-TC message gets the basis line's " in the current filters" qualifier and the hint "Choose a longer period or a custom range under Recency" (wave 3)
+
+### Phase 259: Facepalm Score Refit on First Principles (SEED-261121-tau)
+
+**Goal**: Make the facepalm score read what a human would read from the lines, then refit it. Two changes share
+one refit. Found on prod game 2883555 ply 47: an even four-capture trade in the best line scored as a missed
+queen, and the model has no input for how findable the punishing move is. Details and the term breakdown in the
+seed.
+
+- **Best-reply probability:** a stored `maia_best_reply_prob` on `game_flaws`, Maia's probability at the
+  blunderer's pinned Elo of the engine's best reply to the blunder. Allowed losses then have the same pair of
+  inputs as missed wins (`maia_best_prob` + `maia_pre_spread`). Free going forward from the existing reply-spread
+  inference; existing rows need a re-inference backfill.
+- **Quiet-point material input:** read the material of the played and the best line only at quiet points (the
+  next line move is not a capture), so an equal exchange of any length is exactly neutral, and discount the
+  settled value by its onset depth. Replaces `decaying_mean`. Needs a recompute of the stored line material.
+- **Owner decision (2026-11-21):** pick the input that makes the most sense from first principles; the AUC only
+  has to stay in a similar range as the Phase 256 fit (cross-validated 0.902, set 8 0.821). No choice by small
+  AUC differences on the 261 owner labels.
+- **First step in discuss-phase:** define the quiet-point rule and the onset discount, compute the new input for
+  the labelled rows and check the AUC range, before the column and backfill work is planned.
+- **Prod runs in sequence:** the re-inference backfill and the material recompute cover about 7.8M `game_flaws`
+  rows and must not run beside another operator job (prod `max_connections` is 50).
+- **Downstream:** a refit shifts the score distribution, so the facepalm benchmark zones (SEED-261120-bzq) and
+  the preliminary bands (`quick/facepalm-prelim-bands`) should be built on, or re-derived from, the new score.
+- **Out of scope:** a fit on user blunder-check answers (later, once enough exist; nothing below a score of 0.50
+  is served); the `detect_sacrifice` gap for an offered sacrifice the engine declines (noted in the seed).
+
+**Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
+pass 2026-11-18). Independent of Phase 258; built in its own worktree.
+**Requirements**: TBD
+**Plans:** 5/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+
+Plans:
+**Wave 1**
+- [x] 259-01-PLAN.md — quiet-point material rule and the write-time loss / missed function (D-02 to D-04, D-13)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 259-02-PLAN.md — features TSV with the new inputs and the offline D-09 review tool
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 259-03-PLAN.md — D-09 owner review on prod lines (orchestrator checkpoint)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 259-04-PLAN.md — R1 columns and dual-write of the scalars and the best-reply probability
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 259-05-PLAN.md — reply backfill mode, its stamp and the readiness status counts
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 259-06-PLAN.md — R1 release, prod line pass, reply pass launch; branch and checkout map
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 259-07-PLAN.md — fixed-shape fit tool on the scalar inputs (D-01), fit tests trimmed
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 259-08-PLAN.md — calibration chain and miss labels on the stored inputs
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 259-09-PLAN.md — scalar score and type twins, constants, seed helper, score tests trimmed
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 259-10-PLAN.md — covering index ix_game_flaws_facepalm_inputs (D-17) and the SQL builder removal
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 259-11-PLAN.md — readiness gate, prod index build, refit and the D-15 owner checkpoint
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 259-13-PLAN.md — drop code: facts-only writers, scripts off the arrays, shipped rule deleted
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 259-14-PLAN.md — drop migration, model cleanup, D-18 code outcome
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 259-15-PLAN.md — human-gated drop release (D-06)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

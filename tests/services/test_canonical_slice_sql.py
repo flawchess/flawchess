@@ -1180,7 +1180,7 @@ class TestRecoveryRateTcBuilder:
 # refresh the hashes.
 #
 # Hashes refreshed 2026-10-31 for the 1000-game cap; persisted percentiles regenerated
-# by scripts/recompute_capped_user_percentiles.py.
+# by scripts/archive/recompute_capped_user_percentiles.py.
 # ---------------------------------------------------------------------------
 
 _GOLDEN_BUILDER_SHA256: dict[str, str] = {

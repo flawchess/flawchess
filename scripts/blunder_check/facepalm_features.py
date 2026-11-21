@@ -20,6 +20,9 @@ Usage (database access is read-only, see ``make_readonly_engine``)::
         --pv-cache temp/blunder-check \
         --extra 2099808:23 --out <features.tsv>
 
+Phase 259 appends QUIET_FEATURE_COLUMNS (reply probability, quiet and shipped loss / missed, raw
+lines); ``--skip-missing`` lists label rows whose game is gone instead of exiting 5.
+
 ``--labels`` may be given more than once (the rows of every file, in argument order, then the
 ``--extra`` rows). The best line always comes from the database (``game_positions.pv`` at the
 flaw ply); ``--pv-cache`` only ever covered the refutation line.
@@ -58,6 +61,11 @@ from app.models.user import User  # noqa: E402, F401
 from app.schemas.normalization import Platform, TimeControlBucket  # noqa: E402
 from app.services import maia_engine  # noqa: E402
 from app.services.best_move_candidates import pinned_elo_for_mover  # noqa: E402
+from app.services.facepalm_inputs import (  # noqa: E402
+    MaterialInputs,
+    facepalm_material_inputs,
+    material_inputs_from_facts,
+)
 from app.services.facepalm_score import loss_feature  # noqa: E402
 from app.services.line_material import (  # noqa: E402
     LINE_MATERIAL_DEPTHS,
@@ -82,7 +90,7 @@ BEST_MAT_COLUMNS: tuple[str, ...] = tuple(f"best_mat_{depth}" for depth in LINE_
 
 # The facts schema (Phase 254). The committed 2026-11-13 table uses the older "legacy" schema
 # (line_loss_N columns) that fit_facepalm.py still reads.
-FEATURE_COLUMNS: tuple[str, ...] = (
+FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
     "n",
     "set",
     "game_id",
@@ -104,6 +112,27 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "note",
 )
 
+# Phase 259 D-07, D-12: appended after the facts schema, so `fit_facepalm.load_features` still reads
+# the table as its "facts" schema (it picks columns by name and ignores the extras). `reply_uci` /
+# `reply_prob` are Maia's probability of the first token of the stored refutation line, from the same
+# post-blunder policy call as `reply_spread`; `loss` / `missed` are the stored inputs under the quiet
+# rule (`facepalm_material_inputs`), `*_shipped` the same aggregation over the shipped rule's facts;
+# the last four are the raw inputs, so every material value is recomputable offline.
+QUIET_FEATURE_COLUMNS: tuple[str, ...] = (
+    "reply_uci",
+    "reply_prob",
+    "loss",
+    "missed",
+    "loss_shipped",
+    "missed_shipped",
+    "pre_fen",
+    "played_uci",
+    "played_line",
+    "best_line",
+)
+
+FEATURE_COLUMNS: tuple[str, ...] = (*FACTS_FEATURE_COLUMNS, *QUIET_FEATURE_COLUMNS)
+
 # Float cells are written with this many significant digits (the fit does not need more).
 FLOAT_SIGNIFICANT_DIGITS: int = 6
 
@@ -116,6 +145,7 @@ NOTE_ILLEGAL_PLAYED: str = "illegal_played_move"
 NOTE_NO_ELO: str = "rating_unknown"
 NOTE_NO_POLICY: str = "no_policy"
 NOTE_NO_PRE_POLICY: str = "no_pre_policy"
+NOTE_REPLY_MISSING: str = "reply_missing"
 NOTE_SEPARATOR: str = ";"
 NOTE_GAME_OVER: str = "post_board_game_over"
 
@@ -148,6 +178,16 @@ class FeatureRow:
     pv_plies: int
     best_pv_plies: int
     note: str
+    # Phase 259 (D-07, D-12): the reply probability, the quiet and the shipped material inputs, and
+    # the raw inputs they were computed from.
+    reply_uci: str | None
+    reply_prob: float | None
+    quiet: MaterialInputs
+    shipped: MaterialInputs
+    pre_fen: str
+    played_uci: str
+    played_line: str
+    best_line: str
 
 
 def _pv_plies(pv: str | None) -> int:
@@ -160,17 +200,26 @@ def _join_notes(*notes: str) -> str:
 
 
 def _spread_for(
-    post_board: chess.Board, pinned_elo: float | None, policy_fn: PolicyFn
-) -> tuple[float | None, str]:
-    """The reply spread of the full policy after the blunder, with a note when it is None."""
+    post_board: chess.Board,
+    pinned_elo: float | None,
+    policy_fn: PolicyFn,
+    reply_uci: str | None = None,
+) -> tuple[float | None, float | None, str]:
+    """(reply spread, reply probability, note) of the full policy after the blunder.
+
+    One policy call gives both numbers (D-07). The reply probability is the policy's value for
+    `reply_uci`, the first token of the stored refutation line; a missing line or a token the policy
+    does not carry gives None and NOTE_REPLY_MISSING. A None spread keeps its own note.
+    """
     if pinned_elo is None:
-        return None, NOTE_NO_ELO
+        return None, None, NOTE_NO_ELO
     if not any(post_board.legal_moves):
-        return None, NOTE_GAME_OVER
+        return None, None, NOTE_GAME_OVER
     policy = policy_fn(post_board.fen(), pinned_elo)
     if not policy:
-        return None, NOTE_NO_POLICY
-    return reply_spread(policy), ""
+        return None, None, NOTE_NO_POLICY
+    reply_prob = policy.get(reply_uci) if reply_uci else None
+    return reply_spread(policy), reply_prob, "" if reply_prob is not None else NOTE_REPLY_MISSING
 
 
 def best_uci_of(best_pv: str | None, best_move: str | None) -> str | None:
@@ -224,14 +273,17 @@ def build_feature_row(
     best_uci = best_uci_of(best_pv, best_move)
     best_prob, pre_spread, pre_note = _pre_inputs(pre_board, best_uci, pinned_elo, policy_fn)
     post_board = pre_board.copy(stack=False)
+    reply_uci = pv.split(PV_SEPARATOR)[0] if pv else None
     try:
         post_board.push_uci(played_uci)
     except ValueError:
-        spread, note = None, NOTE_ILLEGAL_PLAYED
+        spread, reply_prob, note = None, None, NOTE_ILLEGAL_PLAYED
         facts = line_facts(pre_board, played_uci, None)
     else:
-        spread, note = _spread_for(post_board, pinned_elo, policy_fn)
+        spread, reply_prob, note = _spread_for(post_board, pinned_elo, policy_fn, reply_uci)
         facts = line_facts(pre_board, played_uci, pv)
+    best_line = best_pv or best_move or ""
+    best_facts = best_line_facts(pre_board, best_line)
     return FeatureRow(
         label_row=label_row,
         pinned_elo=pinned_elo,
@@ -240,12 +292,22 @@ def build_feature_row(
         best_prob=best_prob,
         pre_spread=pre_spread,
         facts=facts,
-        best_facts=best_line_facts(pre_board, best_pv or best_move),
+        best_facts=best_facts,
         best_uci=best_uci,
         pv_source=pv_source,
         pv_plies=_pv_plies(pv),
         best_pv_plies=_pv_plies(best_pv),
         note=_join_notes(note, pre_note),
+        reply_uci=reply_uci,
+        reply_prob=reply_prob,
+        # The stored inputs come only from the writer function; the shipped pair is the same
+        # aggregation over the old rule's facts, the D-09 baseline.
+        quiet=facepalm_material_inputs(pre_board, played_uci, pv, best_line),
+        shipped=material_inputs_from_facts(facts, best_facts),
+        pre_fen=pre_board.fen(),
+        played_uci=played_uci,
+        played_line=pv or "",
+        best_line=best_line,
     )
 
 
@@ -281,6 +343,16 @@ def feature_cells(row: FeatureRow) -> list[str]:
         row.pv_plies,
         row.best_pv_plies,
         row.note,
+        row.reply_uci,
+        row.reply_prob,
+        row.quiet.loss,
+        row.quiet.missed,
+        row.shipped.loss,
+        row.shipped.missed,
+        row.pre_fen,
+        row.played_uci,
+        row.played_line,
+        row.best_line,
     ]
     return [_cell(value) for value in values]
 
@@ -617,6 +689,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--extra", action="append", default=[], metavar="GAME:PLY", help="unlabelled extra row"
     )
+    parser.add_argument(
+        "--skip-missing",
+        action="store_true",
+        help="list label rows whose game or flaw row is gone and still write the table (exit 0)",
+    )
     parser.add_argument("--out", type=Path, required=True, help="features TSV to write")
     parser.add_argument("--maia-threads", type=int, default=DEFAULT_MAIA_THREADS)
     args = parser.parse_args(argv)
@@ -642,9 +719,12 @@ async def _run(args: argparse.Namespace) -> int:
     if collected.mismatches:
         print(f"cache mismatch on rows: {', '.join(collected.mismatches)}", file=sys.stderr)
         return EXIT_CACHE_MISMATCH
-    if collected.missing:
+    if collected.missing and not args.skip_missing:
         print(f"game or flaw row missing for rows: {', '.join(collected.missing)}", file=sys.stderr)
         return EXIT_ROWS_MISSING
+    if collected.missing:
+        # --skip-missing: a prod pull legitimately lacks games deleted since labelling (Pitfall 10).
+        print(f"missing: {', '.join(collected.missing)}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     write_features_tsv(collected.rows, args.out)
     print(f"wrote {args.out}")

@@ -47,7 +47,7 @@ interface GapPopoverProps {
   unit: GapUnit;
   /** Plural noun for the footer counts: "blunders", "low-clock flaws". */
   noun: string;
-  /** The "Based on your N analyzed rapid games in the current filters." line. */
+  /** The "Based on your N analyzed rapid games in the recent sample." line. */
   basis: string;
   cell: GapCell;
   /** Overrides the significance sentence of a zoneless significant cell (default names the tactic). */

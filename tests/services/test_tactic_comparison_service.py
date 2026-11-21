@@ -16,7 +16,9 @@ Coverage plan:
 - test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
 """
 
+import datetime
 import uuid
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -28,6 +30,12 @@ from app.models.game import Game
 # ---------------------------------------------------------------------------
 # Seed helpers
 # ---------------------------------------------------------------------------
+
+# 258: the Library Stats snapshot ranks games inside a recent window anchored on now_utc, so a
+# seed without a played_at would fall out of it. A fixed _NOW keeps the tests independent of
+# the real clock.
+_NOW = datetime.datetime(2026, 11, 21, 12, 0, tzinfo=datetime.timezone.utc)
+_SEED_PLAYED_AT = _NOW - datetime.timedelta(days=1)
 
 
 async def _ensure_user(session: AsyncSession, user_id: int) -> None:
@@ -51,6 +59,7 @@ async def _seed_game(
     ply_count: int = 40,
     platform: str = "lichess",
     time_control_bucket: str = "blitz",
+    played_at: datetime.datetime = _SEED_PLAYED_AT,
 ) -> Game:
     game = Game(
         user_id=user_id,
@@ -68,6 +77,7 @@ async def _seed_game(
         rated=True,
         is_computer_game=False,
         ply_count=ply_count,
+        played_at=played_at,
     )
     session.add(game)
     await session.flush()
@@ -81,8 +91,6 @@ async def _seed_analyzed(session: AsyncSession, *, game: "Game", blobs_done: boo
     set by default; pass blobs_done=False to seed an analyzed game whose tactic blobs
     are still pending.
     """
-    import datetime
-
     now = datetime.datetime.now(tz=datetime.timezone.utc)
     if game.white_blunders is None:
         game.white_blunders = 0
@@ -156,6 +164,9 @@ _TEST_USER_ISO_A = 77709
 _TEST_USER_ISO_B = 77710
 _TEST_USER_E2E = 77711
 _TEST_USER_BLOBS = 77712
+_TEST_USER_WINDOW = 77713
+_TEST_USER_WINDOW_GATE = 77714
+_TEST_USER_QUIET = 77715
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -172,6 +183,9 @@ async def _create_test_users(db_session: AsyncSession) -> None:
         _TEST_USER_ISO_B,
         _TEST_USER_E2E,
         _TEST_USER_BLOBS,
+        _TEST_USER_WINDOW,
+        _TEST_USER_WINDOW_GATE,
+        _TEST_USER_QUIET,
     ]:
         await _ensure_user(db_session, uid)
 
@@ -329,7 +343,7 @@ async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
     )
 
     result = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_ORDER, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_ORDER, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert result.analyzed_gate == TACTIC_COMPARISON_GATE
@@ -374,7 +388,7 @@ async def test_per_100_games_unit(db_session: AsyncSession) -> None:
     )
 
     result = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_UNIT, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_UNIT, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert [tc.tc for tc in result.tcs] == ["blitz"]
@@ -402,6 +416,7 @@ async def test_zero_event_family_delta_none(db_session: AsyncSession) -> None:
     result = await get_tactic_comparison(
         db_session,
         user_id=_TEST_USER_ZERO,
+        now_utc=_NOW,
         **_DEFAULT_FILTER_KWARGS,
     )
     assert len(result.tcs) == 1
@@ -434,7 +449,7 @@ async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> No
     )
 
     result = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_GATE, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_GATE, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert 12 < TACTIC_COMPARISON_GATE
@@ -481,7 +496,7 @@ async def test_blob_pending_games_excluded_from_tactic_population(
     )
 
     tactic = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_BLOBS, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_BLOBS, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
     assert [tc.tc for tc in tactic.tcs] == ["blitz"]
     assert tactic.tcs[0].analyzed_n == blob_done
@@ -493,6 +508,7 @@ async def test_blob_pending_games_excluded_from_tactic_population(
     flaw = await get_flaw_comparison(
         db_session,
         _TEST_USER_BLOBS,
+        now_utc=_NOW,
         **{k: v for k, v in _DEFAULT_FILTER_KWARGS.items() if k != "tactic_families"},
     )
     assert flaw.tcs[0].analyzed_n == blob_done + blob_pending
@@ -530,7 +546,7 @@ async def test_significance_gate(db_session: AsyncSession) -> None:
 
     async def fork_missed_bullet():  # noqa: ANN202 — local helper
         result = await get_tactic_comparison(
-            db_session, user_id=_TEST_USER_LOW, **_DEFAULT_FILTER_KWARGS
+            db_session, user_id=_TEST_USER_LOW, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
         )
         return next(
             b for b in result.tcs[0].bullets if (b.family, b.orientation) == ("fork", "missed")
@@ -574,7 +590,7 @@ async def test_zone_lookup_uses_each_bullets_tc(
         await _seed_analyzed(db_session, game=g)
 
     result = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_BAND, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_BAND, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert [tc.tc for tc in result.tcs] == ["bullet", "blitz", "classical"]
@@ -607,7 +623,7 @@ async def test_accepted_viable_entries_report_the_registry_band_end_to_end(
         await _seed_analyzed(db_session, game=g)
 
     result = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_E2E, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_E2E, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert [tc.tc for tc in result.tcs] == ["blitz"]
@@ -657,10 +673,10 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
         return bullet.you_events + bullet.opp_events
 
     res_a = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_ISO_A, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_ISO_A, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
     res_b = await get_tactic_comparison(
-        db_session, user_id=_TEST_USER_ISO_B, **_DEFAULT_FILTER_KWARGS
+        db_session, user_id=_TEST_USER_ISO_B, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
     )
 
     assert events(res_a, "fork") == 1
@@ -729,3 +745,123 @@ async def test_confidence_gate_chip_field(db_session: AsyncSession) -> None:
     assert high_conf_flaw is not None
     assert high_conf_flaw.allowed_tactic_motif == "pin"  # at/above threshold → string
     assert high_conf_flaw.allowed_tactic_confidence == high_confidence
+
+
+# ---------------------------------------------------------------------------
+# 258: the tactic rows read the recent window (D-06, D-10, D-15, D-04)
+# ---------------------------------------------------------------------------
+
+_FOUR_YEARS = datetime.timedelta(days=4 * 365)
+
+
+def _filters(**overrides: Any) -> dict[str, Any]:
+    return {**_DEFAULT_FILTER_KWARGS, **overrides}
+
+
+def _months_ago(months: int) -> datetime.datetime:
+    from app.services.library_service import months_before
+
+    return months_before(_NOW, months)
+
+
+@pytest.mark.asyncio
+async def test_tactic_window_ids(db_session: AsyncSession) -> None:
+    """D-06: analyzed_n is the window's tactic-ready count; an old fork stays out of the events."""
+    from app.repositories.library_repository import fetch_recent_window_rows
+    from app.services.canonical_slice_sql import RECENT_GAMES_PER_TC_CAP
+    from app.services.library_service import (
+        get_tactic_comparison,
+        recent_window_start,
+        summarize_window,
+    )
+    from app.services.tactic_detector import TacticMotifInt
+
+    old = await _seed_game(
+        db_session, user_id=_TEST_USER_WINDOW, user_color="white", played_at=_NOW - _FOUR_YEARS
+    )
+    await _seed_analyzed(db_session, game=old)
+    await _seed_flaw(
+        db_session, game=old, ply=2, missed_motif=int(TacticMotifInt.FORK), missed_confidence=90
+    )
+    for _ in range(3):
+        g = await _seed_game(db_session, user_id=_TEST_USER_WINDOW, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+    pending = await _seed_game(db_session, user_id=_TEST_USER_WINDOW, user_color="white")
+    await _seed_analyzed(db_session, game=pending, blobs_done=False)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_WINDOW, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+
+    rows = await fetch_recent_window_rows(
+        db_session,
+        _TEST_USER_WINDOW,
+        window_start=recent_window_start(_NOW, None, None),
+        **_DEFAULT_FILTER_KWARGS,
+    )
+    summary = summarize_window(rows, RECENT_GAMES_PER_TC_CAP)["blitz"]
+    (blitz,) = result.tcs
+    # The blob-pending game is in the window but not in the tactic count (research Pitfall 3).
+    assert summary.total_n == 4 and summary.tactic_analyzed_n == 3
+    assert blitz.analyzed_n == summary.tactic_analyzed_n == 3
+    fork_missed = blitz.bullets[0]
+    assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+    assert fork_missed.you_events + fork_missed.opp_events == 0
+
+
+@pytest.mark.asyncio
+async def test_tactic_gate_on_window(db_session: AsyncSession) -> None:
+    """D-10: 25 tactic-ready games, 10 older than 36 months: analyzed_n 15, below the gate."""
+    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+
+    for i in range(15):
+        g = await _seed_game(
+            db_session,
+            user_id=_TEST_USER_WINDOW_GATE,
+            played_at=_NOW - datetime.timedelta(days=i + 1),
+        )
+        await _seed_analyzed(db_session, game=g)
+    for i in range(10):
+        g = await _seed_game(
+            db_session, user_id=_TEST_USER_WINDOW_GATE, played_at=_months_ago(40 + i)
+        )
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_WINDOW_GATE, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+
+    (blitz,) = result.tcs
+    assert blitz.analyzed_n == 15
+    assert 15 < TACTIC_COMPARISON_GATE
+    assert blitz.below_gate is True
+    assert len(blitz.bullets) == 38
+
+
+@pytest.mark.asyncio
+async def test_tactic_quiet_tc_absent(db_session: AsyncSession) -> None:
+    """D-15 / D-04: a TC whose tactic-ready games are all old is absent; a wide period lists it."""
+    from app.services.library_service import get_tactic_comparison
+
+    recent = await _seed_game(db_session, user_id=_TEST_USER_QUIET)
+    await _seed_analyzed(db_session, game=recent)
+    old = await _seed_game(
+        db_session,
+        user_id=_TEST_USER_QUIET,
+        time_control_bucket="rapid",
+        played_at=_months_ago(48),
+    )
+    await _seed_analyzed(db_session, game=old)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_QUIET, now_utc=_NOW, **_DEFAULT_FILTER_KWARGS
+    )
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+
+    wide = await get_tactic_comparison(
+        db_session,
+        user_id=_TEST_USER_QUIET,
+        now_utc=_NOW,
+        **_filters(from_date=_months_ago(60).date()),
+    )
+    assert [tc.tc for tc in wide.tcs] == ["blitz", "rapid"]

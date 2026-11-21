@@ -1,10 +1,9 @@
 """Anchor-ladder rating-fit tests.
 
 Pure-function unit tests over `scripts.calibration_anchor_fit` — no DB, no
-engines, no TSV files on disk (small in-memory synthetic dicts only). Mirrors
-`tests/scripts/test_backfill_eval.py`'s "public API import, not CLI-only"
-convention, but this module is purely synchronous (no `pytestmark =
-pytest.mark.asyncio`) since the fit is pure stdlib math over static data.
+engines, no TSV files on disk (small in-memory synthetic dicts only). Imports
+the public API rather than driving the CLI, and is purely synchronous since the
+fit is pure stdlib math over static data.
 
 Tests cover (one function per behavior):
 - test_fit_converges: Zermelo/MM fit recovers known ground-truth pairwise

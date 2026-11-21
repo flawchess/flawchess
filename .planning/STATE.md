@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 252
-current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
+current_phase: 259
+current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
 status: executing
-stopped_at: Phase 251 complete, ready to execute Phase 252
-last_updated: "2026-11-20T18:27:52.746Z"
-last_activity: 2026-11-20
-last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: e5315983487628c91d369d926945bf76a5fba123
+stopped_at: Completed 259-05-PLAN.md
+last_updated: "2026-11-21T16:53:36.350Z"
+last_activity: 2026-11-21
+last_activity_desc: Phase 259 execution started
+state_head: bbc60b39fb790f287179dc77c67804d0832eee74
 progress:
-  total_phases: 11
+  total_phases: 13
   completed_phases: 63
-  total_plans: 100
-  completed_plans: 97
+  total_plans: 120
+  completed_plans: 107
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 252 — Short Engine Line Repair Backfill (SEED-261112-s4v)
-Plan: 6
+Phase: 259 (Facepalm Score Refit on First Principles (SEED-261121-tau)) — EXECUTING
+Plan: 6 of 15
 
 Status: Ready to execute
 
-Last activity: 2026-11-20 - Completed quick task 261120-qzo: Sentry noise fixes (FLAWCHESS-9G hidden-tab watchdog, FLAWCHESS-DH extension rejection)
+Last activity: 2026-11-21 — Phase 259 execution started
 
 Open threads carried forward (not blockers):
 
@@ -53,6 +53,10 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-11-19 after Phase 251)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau)**, ready to plan. Phase 258 (Library Stats Recent Sample for Snapshot Charts, SEED-261121-3ou) complete 2026-11-21 on branch `gsd/phase-258-library-stats-recent-sample-snapshots`: verified 20/20, UAT 5/5 (test 3 resolved by gap plan 258-05), threats_open 0; Nyquist validation still draft (`/gsd-validate-phase 258`); not yet squash-merged to `main`.
+
+### Superseded: focus after Phase 251
+
 Current focus: **Phase 251 (Blunder-Check Schedule, Streak and Leaderboards, SEED-261108-dk0) complete 2026-11-19** on branch `gsd/phase-251-...`: verified 25/25, UAT 5/5 (browser launch walk), threats_open 0, Nyquist-compliant; not yet squash-merged to `main` (pre-merge gate + serial suite already green). Next on the roadmap: Phase 252 (Short Engine Line Repair Backfill).
 
 ### Superseded: focus after the v2.28/v2.29 close
@@ -199,6 +203,8 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 259 added 2026-11-21 (explicit user request, "add phase 259 and start the discuss phase", after the owner reviewed the facepalm score of prod game 2883555 ply 47 and the seed was planted the same day): **Facepalm Score Refit on First Principles** (SEED-261121-tau). A stored best-reply Maia probability and a quiet-point material input replacing `decaying_mean`, one refit; the input is chosen by first principles, the AUC only has to stay in a similar range. Built in its own worktree in parallel with Phase 258; `current_phase` stays 258. Standalone phase, no open milestone.
+- Phase 258 added 2026-11-21 (explicit user request, "add it as a phase to the roadmap", after the `/gsd-explore` session that planted the seed the same day): **Library Stats Recent Sample for Snapshot Charts** (SEED-261121-3ou). Timelines keep full history; the flaw, facepalm and tactic comparisons always use the most recent 1000 games per time control within 36 months, taken from the filtered games. No filter-default changes, no "all games" switch. Standalone phase, no open milestone.
 - Phase 257 added 2026-11-20 (explicit user request via `/gsd-phase @.planning/seeds/SEED-261114-iuv-facepalm-rate-library-stats.md`, seed refined the same day): **Facepalm Rate in the Library Stats** (SEED-261114-iuv). Benchmark-free part only: a stats cut at 0.7 separate from `FACEPALM_SCORE_MIN`, facepalm type per blunder (allowed loss / missed win on the raw material inputs) in the library API, chip colour by type, a facepalm-share chart below the Flaws Timeline (facepalm / scored blunders, pooled over the rolling window, from `game_flaws`), and paired you-vs-opponents rows (total and per type; no type-share statistic). Opponent scoring (seed Part A) is already on prod. Benchmark zones, the clock matrix and the training weighting are deferred to SEED-261120-bzq. Written by hand as 257 (known mature-ROADMAP behavior); `current_phase` stays 252. Next: `/gsd-discuss-phase 257`.
 - Phase 255 added 2026-11-15 (explicit user request; seed recovered the same day from an unsaved `/gsd-explore` session of 2026-11-09): **Feature Discovery Dot Route** (SEED-261115-d0t). One ordered route for the red pulsating dot, one dot at a time, completion stored server-side. Built in its own worktree while Phases 252 and 254 wait on their prod runs; `current_phase` stays 254.
 
@@ -963,6 +969,14 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 257]: 257-06: facepalm card is the trailing child of ContextTagCards; significance sentences describe the gap and drive no colour (owner confirms D-05 reading at UAT)
 - [Phase 257]: 257-06: GapCell.noVerdict is an opt-in flag so zoneless tactic cells keep their significance-based colouring
 - [Phase 257]: 257-07: changelog bullets avoid probability wording and banned verdict names; full pre-merge gate green on the phase branch
+- [Phase 258]: Window bound computed in Python from dev_now_utc (months_before); analyzed_n/total_n keep their names and become windowed; offered TCs come from the unwindowed analyzed set so a quiet TC stays on the switch
+- [Phase 258]: Facepalm lists every TC with a window game (analyzed or not); tactic drops its unwindowed blob-gated count and reads the window's tactic-ready ids; JIT off only on the facepalm path until plan 04's EXPLAIN
+- [Phase 258]: 258-03: quiet-TC message names the real Recency label '5 years' as plain text (no button); popover basis reads 'in the recent sample'; a remembered quiet TC stays selected
+- [Phase 258]: Plan 04: the D-18 timing script runs on dev (all PASS on default filters, windowed facepalm regressed on the --from-date path); prod D-18/D-19 measurement is handed to the orchestrator before the squash-merge
+- [Phase 259]: 259-01: quiet walk added beside the old rule (live arrays untouched, D-11); one writer facepalm_material_inputs stores loss/missed as the decaying mean
+- [Phase 259]: 259-02: FEATURE_COLUMNS = facts columns + ten appended quiet columns; review drift check rounds recomputed values to the TSV's 6 significant digits first
+- [Phase 259]: FULL_ROW_COLUMNS is the single statement of the full-mode key set; maia_best_reply_prob lives in FACEPALM_REPLY_COLUMNS outside FACEPALM_COLUMNS so line mode cannot null it (Pitfall 4)
+- [Phase 259]: 259-05: reply mode scope is blunders of both sides with a stored played probability; its stamp facepalm_reply_completed_at is the checkpoint and full mode sets it with the other four
 
 ### Pending Todos
 
@@ -1168,6 +1182,7 @@ None active.
 | 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
 | 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
 | 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
+| 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
 
 ## Deferred Items
 
@@ -1220,8 +1235,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-20T13:30:03.372Z
-**Stopped at:** Completed 257-07-PLAN.md
+**Last session:** 2026-11-21T16:53:34.082Z
+**Stopped at:** Completed 259-05-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1511,6 +1526,14 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 257 P05 | 40 min | 1 tasks | 6 files |
 | Phase 257 P06 | 20 min | 2 tasks | 11 files |
 | Phase 257 P07 | 12 min | 2 tasks | 1 files |
+| Phase 258 P01 | 25 min | 2 tasks | 14 files |
+| Phase 258 P02 | 10 min | 3 tasks | 9 files |
+| Phase 258 P03 | 15min | 3 tasks | 14 files |
+| Phase 258 P04 | 25 min | 2 tasks | 3 files |
+| Phase 259 P01 | 22 min | 2 tasks | 5 files |
+| Phase 259 P02 | 35 min | 2 tasks | 4 files |
+| Phase 259 P04 | 22 min | 2 tasks | 7 files |
+| Phase 259 P05 | 20 min | 2 tasks | 8 files |
 
 ## Performance Metrics
 

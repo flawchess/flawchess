@@ -6,7 +6,9 @@
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
  * flawMetricCell / tempoPhaseGapCell (API bullet or crossed tempo x phase cell ->
  * gap-bar view model), TEMPO_PHASE_TEMPOS / TEMPO_PHASE_PHASES (the heatmap axes), libraryBasisText /
- * libraryCoverageBasisText (the basis lines), and the FlawIcon type shared with the Flaws
+ * librarySampleBasisText / libraryFreshImportBasisText (the Flaw Stats basis lines),
+ * isQuietTc / libraryNoRecentGamesText / NO_RECENT_GAMES_HINT (the time control with games but
+ * none in the recent window, 258 D-15 to D-17), and the FlawIcon type shared with the Flaws
  * filter panel.
  *
  * Read by the Library Stats tiles (FlawTiles), the context-tag cards,
@@ -17,6 +19,7 @@
  */
 
 import type { ComponentType, CSSProperties } from 'react';
+import { format, parseISO } from 'date-fns';
 
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { BLUNDER_DROP, MISTAKE_DROP, TIME_PRESSURE_CLOCK_FRACTION } from '@/generated/flawThresholds';
@@ -300,27 +303,104 @@ export function tempoPhaseGapCell(
 }
 
 function scopeText(analyzedN: number, tc: TimeControlBucket): string {
-  return `your ${analyzedN.toLocaleString('en-US')} analyzed ${tc} games in the current filters.`;
+  return `your ${analyzedN.toLocaleString('en-US')} analyzed ${tc} games in the recent sample.`;
 }
 
-/** The popover basis line: "Based on your 1,841 analyzed rapid games in the current filters." */
+/**
+ * The popover basis line: "Based on your 1,841 analyzed rapid games in the recent sample."
+ * analyzedN is the windowed count (258); the Flaw Stats basis line above the tiles spells the
+ * sample out, so a popover only names it.
+ */
 export function libraryBasisText(analyzedN: number, tc: TimeControlBucket): string {
   return `Based on ${scopeText(analyzedN, tc)}`;
 }
 
-/**
- * The Flaw Stats basis line, which doubles as the per-TC coverage readout:
- * "1,768 of 1,790 rapid games analyzed in the current filters.", or
- * "All 1,841 rapid games in the current filters are analyzed." once complete.
- */
-export function libraryCoverageBasisText(
-  analyzedN: number,
-  totalN: number,
-  tc: TimeControlBucket | null,
-): string {
-  const fmt = (n: number): string => n.toLocaleString('en-US');
-  // tc is null before any game is analyzed (no TC on the switch yet): "0 of 523 games ...".
-  const games = tc === null ? 'games' : `${tc} games`;
-  if (analyzedN >= totalN) return `All ${fmt(totalN)} ${games} in the current filters are analyzed.`;
-  return `${fmt(analyzedN)} of ${fmt(totalN)} ${games} analyzed in the current filters.`;
+/** Inputs of the Flaw Stats basis line (the recent-window sample of one time control). */
+interface SampleBasis {
+  tc: TimeControlBucket;
+  /** Games of the TC in the recent window. */
+  totalN: number;
+  /** Analyzed games among them. */
+  analyzedN: number;
+  /** True when the window hit the games cap. */
+  capReached: boolean;
+  /** ISO date of the oldest game in the window. */
+  sampleSince: string | null;
+  /** True when an explicit period (recency filter) replaced the default window bound. */
+  recencyFiltered: boolean;
+  /** True when a sidebar filter other than recency is active. */
+  otherFiltersActive: boolean;
+  /** Default window length in months. */
+  windowMonths: number;
 }
+
+function samplePlaceText(recencyFiltered: boolean, otherFiltersActive: boolean): string {
+  if (recencyFiltered && otherFiltersActive) return ' in the selected period and the current filters';
+  if (recencyFiltered) return ' in the selected period';
+  if (otherFiltersActive) return ' in the current filters';
+  return '';
+}
+
+/**
+ * The Flaw Stats basis line: names the bound that cut the sample (258 D-13).
+ *  - at the cap: "Based on your most recent 1,000 blitz games (since Mar 2025), 640 analyzed."
+ *  - under the cap: "Based on your 412 blitz games from the last 36 months, 300 analyzed."
+ * With a recency filter the "from the last N months" clause becomes "in the selected period";
+ * " in the current filters" is added only when a sidebar filter other than recency is active.
+ */
+export function librarySampleBasisText(b: SampleBasis): string {
+  const fmt = (n: number): string => n.toLocaleString('en-US');
+  const games = `${b.tc} ${b.totalN === 1 ? 'game' : 'games'}`;
+  const place = samplePlaceText(b.recencyFiltered, b.otherFiltersActive);
+  const analyzed = `${fmt(b.analyzedN)} analyzed`;
+  if (b.capReached) {
+    const since = b.sampleSince ? ` (since ${format(parseISO(b.sampleSince), 'MMM yyyy')})` : '';
+    return `Based on your most recent ${fmt(b.totalN)} ${games}${place}${since}, ${analyzed}.`;
+  }
+  if (b.recencyFiltered) return `Based on your ${fmt(b.totalN)} ${games}${place}, ${analyzed}.`;
+  return `Based on your ${fmt(b.totalN)} ${games} from the last ${b.windowMonths} months${place}, ${analyzed}.`;
+}
+
+/**
+ * The basis line before any game is analyzed: "0 of 523 games analyzed in the current
+ * filters." There is no TC on the switch yet and so no window to describe; totalN is the
+ * unwindowed count of the filtered games.
+ */
+export function libraryFreshImportBasisText(totalN: number): string {
+  return `0 of ${totalN.toLocaleString('en-US')} games analyzed in the current filters.`;
+}
+
+/**
+ * True for a time control that has games in the filters but none in the recent window (258
+ * D-15): the flaw comparison keeps it on the switch with `total_n` 0. The tactic payload never
+ * lists a quiet TC and so carries no `total_n`; such an entry is not quiet.
+ */
+export function isQuietTc(tcStats: { total_n?: number }): boolean {
+  return tcStats.total_n === 0;
+}
+
+/**
+ * The quiet-TC message, first sentence: "No blitz games in the last 36 months." With a sidebar
+ * filter other than recency active it ends "... in the current filters." (258 D-13), the same
+ * qualifier the basis line uses.
+ */
+export function libraryNoRecentGamesText(
+  tc: TimeControlBucket,
+  windowMonths: number,
+  otherFiltersActive: boolean,
+): string {
+  // recencyFiltered is always false here: a quiet TC only exists under the default window,
+  // because an explicit recency also bounds the offered time controls.
+  const place = samplePlaceText(false, otherFiltersActive);
+  return `No ${tc} games in the last ${windowMonths} months${place}.`;
+}
+
+/**
+ * The quiet-TC message, second sentence. It names Recency in general rather than one preset:
+ * the five-year preset bounds the offered time controls too, so a TC whose newest matching game
+ * is older than five years leaves the switch under that preset (258 UAT test 2, user 7 Classic),
+ * while a custom range reaches any date. Plain text, never a button: 258 D-17 forbids an action
+ * that would change the shared filter store.
+ */
+export const NO_RECENT_GAMES_HINT =
+  'Choose a longer period or a custom range under Recency to include older games.';

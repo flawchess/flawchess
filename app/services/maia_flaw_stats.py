@@ -28,6 +28,9 @@ MaiaReason = Literal[
     # Phase 254 D-08: the best move is unknown (no pv and no best_move at the flaw ply) or is not
     # in Maia's policy, so maia_best_prob stays NULL; the row is still scored on the loss alone.
     "best_move_missing",
+    # Phase 259 D-07: the first refutation token is absent or not in Maia's policy, so
+    # maia_best_reply_prob stays NULL; the row is still scored from the other inputs.
+    "reply_missing",
 ]
 
 
@@ -52,6 +55,10 @@ class FacepalmStats(TypedDict):
     played_line_material: list[int | None] | None
     best_line_material: list[int | None] | None
     best_line_mate_ply: int | None
+    # Phase 259 D-05: the stored decaying-mean loss and missed gain under the quiet rule
+    # (facepalm_material_inputs); both None together.
+    material_loss: float | None
+    material_missed: float | None
 
 
 def null_facepalm_stats() -> FacepalmStats:
@@ -66,6 +73,8 @@ def null_facepalm_stats() -> FacepalmStats:
         played_line_material=None,
         best_line_material=None,
         best_line_mate_ply=None,
+        material_loss=None,
+        material_missed=None,
     )
 
 
@@ -79,6 +88,17 @@ class MaiaPreStats(TypedDict):
 def null_maia_pre_stats() -> MaiaPreStats:
     """Both pre-blunder inputs None (out of scope, not scorable, or not computed in this mode)."""
     return MaiaPreStats(maia_best_prob=None, maia_pre_spread=None)
+
+
+class MaiaReplyStats(TypedDict):
+    """The Phase 259 best-reply probability of one game_flaws row (D-07)."""
+
+    maia_best_reply_prob: float | None
+
+
+def null_maia_reply_stats() -> MaiaReplyStats:
+    """The reply probability None (out of scope, not scorable, or not computed in this mode)."""
+    return MaiaReplyStats(maia_best_reply_prob=None)
 
 
 def _effective_moves(probs: Mapping[str, float]) -> float:

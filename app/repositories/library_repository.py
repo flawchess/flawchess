@@ -32,7 +32,12 @@ from app.repositories.game_flaws_repository import (
     _SEVERITY_INT,
     _TEMPO_INT,
 )
-from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
+from app.repositories.query_utils import (
+    apply_game_filters,
+    game_ids_any_predicate,
+    is_opponent_expr,
+    player_only_gate,
+)
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
 from app.services.facepalm_score import (
     FacepalmType,
@@ -50,6 +55,7 @@ from app.schemas.library import (
     TacticLinesResponse,
 )
 from app.services.best_move_candidates import best_move_tier_sql
+from app.services.canonical_slice_sql import RECENT_GAMES_PER_TC_CAP
 from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
@@ -1648,6 +1654,20 @@ async def fetch_flaw_trend_rows(
     return list(rows)
 
 
+class RecentWindowRow(NamedTuple):
+    """One game of the Library Stats recent window (258 D-03).
+
+    analyzed: full_evals_completed_at IS NOT NULL, the same gate as _analyzed_game_ids_subquery.
+    tactic_ready: analyzed AND blobs_completed_at IS NOT NULL, the tactic comparison basis.
+    """
+
+    game_id: int
+    tc: TimeControlBucket
+    played_at: datetime.datetime
+    analyzed: bool
+    tactic_ready: bool
+
+
 class FacepalmGameCounts(NamedTuple):
     """One game's own-blunder counts for the Flaws Timeline facepalm band (257 D-17, D-18)."""
 
@@ -1885,7 +1905,7 @@ async def query_filtered_games(
     return games, matched_count
 
 
-def _analyzed_game_ids_subquery(user_id: int) -> Subquery:
+def _analyzed_game_ids_subquery(user_id: int, *, game_ids: Sequence[int] | None = None) -> Subquery:
     """Indexed games-table lookup: game_ids where full_evals_completed_at IS NOT NULL.
 
     Uses games.full_evals_completed_at, not a per-ply coverage aggregate over
@@ -1897,12 +1917,18 @@ def _analyzed_game_ids_subquery(user_id: int) -> Subquery:
     games.full_evals_completed_at, and sets it only when the kernel itself is
     satisfied, so this is a single indexed games lookup (PK index, no aggregate) and
     the definitive source of truth.
+
+    game_ids restricts the subquery to a precomputed id set (258 D-06: the Library Stats
+    recent window). None keeps the lifetime behaviour for every other caller.
     """
-    return (
-        select(Game.id.label("game_id"))
-        .where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
-        .subquery("analyzed")
+    stmt = select(Game.id.label("game_id")).where(
+        Game.user_id == user_id, Game.full_evals_completed_at.isnot(None)
     )
+    if game_ids is not None:
+        # 258 D-06: restrict to the recent window through one bound int[] param, never
+        # IN (subquery) (game_ids_any_predicate documents the planner hang).
+        stmt = stmt.where(game_ids_any_predicate(Game.id, game_ids))
+    return stmt.subquery("analyzed")
 
 
 async def count_filtered_and_analyzed(
@@ -2071,6 +2097,105 @@ async def count_analyzed_by_tc(
     )
     rows = (await session.execute(stmt)).all()
     return {str(bucket): int(n) for bucket, n in rows if n > 0}
+
+
+async def fetch_recent_window_rows(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    window_start: datetime.datetime | None,
+    cap: int = RECENT_GAMES_PER_TC_CAP,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None = None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    color: str | None = None,
+    tactic_families: Sequence[str] | None = None,
+    tactic_filter_orientation: TacticOrientation = "either",
+) -> list[RecentWindowRow]:
+    """The Library Stats recent window: the newest `cap` games per time control (258 D-03).
+
+    ONE ranked statement over the endpoint's filtered base. Every sidebar filter, colour
+    included, is applied before the ranking (D-11), so with colour white the window is the
+    newest `cap` white games. The analyzed state is an OUTPUT column, never a predicate before
+    the ranking (D-05): thin analysis coverage gives a small analyzed count, never an older
+    sample. window_start is the lower played_at bound (None when an explicit date range
+    replaced the 36 months, D-04). User-scoped, read-only.
+
+    Deliberately not built on the benchmark ranked-window CTE builders: they hard-code rated
+    play and the +-100 equal footing, which would impose the rejected D-08 default.
+    """
+    base_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+        tactic_families=tactic_families,
+        tactic_orientation=tactic_filter_orientation,
+    ).subquery("filtered_window")
+    predicates = [
+        Game.user_id == user_id,
+        Game.id.in_(select(base_subq.c.id)),
+        # Same gates as count_analyzed_by_tc and the fetch anchors: a game without a TC cannot
+        # sit on the TC switch, and NULL/0 ply_count games are dropped by the aggregation.
+        Game.time_control_bucket.isnot(None),
+        Game.ply_count.isnot(None),
+        Game.ply_count > 0,
+        # PostgreSQL sorts DESC with NULLS FIRST: a NULL-dated game would take a cap slot.
+        Game.played_at.isnot(None),
+    ]
+    if window_start is not None:
+        predicates.append(Game.played_at >= window_start)
+    ranked = (
+        select(
+            Game.id.label("game_id"),
+            Game.time_control_bucket.label("tc"),
+            Game.played_at.label("played_at"),
+            Game.full_evals_completed_at.isnot(None).label("analyzed"),
+            and_(
+                Game.full_evals_completed_at.isnot(None), Game.blobs_completed_at.isnot(None)
+            ).label("tactic_ready"),
+            func.row_number()
+            .over(
+                partition_by=Game.time_control_bucket,
+                # The id breaks played_at ties deterministically at the cap boundary.
+                order_by=(Game.played_at.desc(), Game.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(*predicates)
+        .subquery("recent_window")
+    )
+    stmt = select(
+        ranked.c.game_id,
+        ranked.c.tc,
+        ranked.c.played_at,
+        ranked.c.analyzed,
+        ranked.c.tactic_ready,
+    ).where(ranked.c.rn <= cap)
+    rows = (await session.execute(stmt)).all()
+    return [
+        RecentWindowRow(
+            game_id=int(row.game_id),
+            tc=row.tc,
+            played_at=row.played_at,
+            analyzed=bool(row.analyzed),
+            tactic_ready=bool(row.tactic_ready),
+        )
+        for row in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -2456,10 +2581,10 @@ async def fetch_facepalm_comparison(
 
     The score and the type are evaluated once per blunder in the `facepalm_scored` subquery,
     fenced with .offset(0): without it PostgreSQL inlines the ~34 KB score expression into each
-    of the six FILTERs. The inner scan reads only the anchor's games, so a filtered request does
-    not score the user's other blunders. Games without a facepalm blunder join no row and give
-    zero counts (all-analyzed-games basis). The inner scan reads ix_game_flaws_blunder_facts
-    index-only, and the statement runs with JIT off (257 D-21).
+    of the six FILTERs. The subquery joins the anchor to its blunders, so a filtered request
+    does not score the user's other blunders. A game without a blunder keeps one NULL row and
+    gives zero counts (all-analyzed-games basis). The blunder lookup reads
+    ix_game_flaws_blunder_facts index-only, and the statement runs with JIT off (257 D-21).
     """
     await disable_jit_for_transaction(session)
     anchor_subq = _flaw_comparison_anchor(
@@ -2477,20 +2602,35 @@ async def fetch_facepalm_comparison(
         color=color,
     )
     score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    # Bug fix (258 D-18): this used to be `anchor LEFT JOIN facepalm_scored`, with the scored
+    # subquery restricted to the anchor's games through an IN list. On the recent window the
+    # planner estimates the anchor at a handful of rows (user_id = X AND id = ANY(:ids) are
+    # multiplied as independent selectivities), so it joined the two with a nested loop and a
+    # join filter over the materialized subquery: games x blunders comparisons, 1.7 s on dev
+    # and over 10 minutes for one prod account with a Recency period set. The anchor now
+    # drives a LEFT JOIN to game_flaws INSIDE the fenced subquery. That join is an index
+    # lookup per game on ix_game_flaws_blunder_facts whatever the row estimate, the anchor is
+    # scanned once, and no second join is left to go quadratic. A game without a blunder
+    # keeps one row with a NULL ply, which every COUNT below skips (zero counts).
     scored = (
         select(
-            GameFlaw.game_id.label("game_id"),
+            anchor_subq.c.game_id.label("game_id"),
+            anchor_subq.c.tc.label("tc"),
+            anchor_subq.c.user_moves.label("user_moves"),
+            anchor_subq.c.user_color.label("user_color"),
             GameFlaw.ply.label("ply"),
             score.label("s"),
             # Never labelled `t`: the anchor already exposes a `tc` column.
             facepalm_type_expr().label("ftype"),
         )
-        .where(
-            GameFlaw.user_id == user_id,
-            GameFlaw.severity == _SEVERITY_INT["blunder"],
-            # correlate(None): the IN list must not auto-correlate with the anchor in the
-            # outer FROM, or the inner scan would lose its restriction to the anchor's games.
-            GameFlaw.game_id.in_(select(anchor_subq.c.game_id).correlate(None)),
+        .select_from(anchor_subq)
+        .outerjoin(
+            GameFlaw,
+            and_(
+                GameFlaw.game_id == anchor_subq.c.game_id,
+                GameFlaw.user_id == user_id,
+                GameFlaw.severity == _SEVERITY_INT["blunder"],
+            ),
         )
         # Optimization fence: see the docstring (single evaluation of the score and the type).
         .offset(0)
@@ -2498,23 +2638,23 @@ async def fetch_facepalm_comparison(
     )
 
     def side_count(label: str, *, opponent: bool, facepalm_type: FacepalmType | None) -> Any:
-        side_pred = is_opponent_expr(scored.c.ply, anchor_subq.c.user_color)
+        side_pred = is_opponent_expr(scored.c.ply, scored.c.user_color)
         conditions = [side_pred if opponent else ~side_pred, scored.c.s >= FACEPALM_STATS_MIN]
         if facepalm_type is not None:
             conditions.append(scored.c.ftype == facepalm_type)
         return func.count(scored.c.ply).filter(*conditions).label(label)
 
     def coverage_count(label: str, *, opponent: bool, scored_only: bool) -> Any:
-        side_pred = is_opponent_expr(scored.c.ply, anchor_subq.c.user_color)
+        side_pred = is_opponent_expr(scored.c.ply, scored.c.user_color)
         # COUNT skips NULL: the score column counts the scored blunders, the ply column all.
         counted = scored.c.s if scored_only else scored.c.ply
         return func.count(counted).filter(side_pred if opponent else ~side_pred).label(label)
 
     stmt = (
         select(
-            anchor_subq.c.game_id,
-            anchor_subq.c.tc,
-            anchor_subq.c.user_moves,
+            scored.c.game_id,
+            scored.c.tc,
+            scored.c.user_moves,
             side_count("player_facepalm", opponent=False, facepalm_type=None),
             side_count("opp_facepalm", opponent=True, facepalm_type=None),
             side_count("player_facepalm_missed_win", opponent=False, facepalm_type="missed_win"),
@@ -2528,13 +2668,12 @@ async def fetch_facepalm_comparison(
             coverage_count("opp_blunders", opponent=True, scored_only=False),
             coverage_count("opp_blunders_scored", opponent=True, scored_only=True),
         )
-        .select_from(anchor_subq)
-        .outerjoin(scored, scored.c.game_id == anchor_subq.c.game_id)
+        .select_from(scored)
         .group_by(
-            anchor_subq.c.game_id,
-            anchor_subq.c.tc,
-            anchor_subq.c.user_moves,
-            anchor_subq.c.user_color,
+            scored.c.game_id,
+            scored.c.tc,
+            scored.c.user_moves,
+            scored.c.user_color,
         )
     )
     rows = (await session.execute(stmt)).all()

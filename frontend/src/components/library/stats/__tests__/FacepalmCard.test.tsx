@@ -128,7 +128,7 @@ describe('FacepalmCard', () => {
     renderCard();
     const text = openPopover(id);
     expect(text).toContain('You: 0.90 per 100 moves. Opponents: 0.50.');
-    expect(text).toContain('Based on your 1,841 analyzed rapid games in the current filters.');
+    expect(text).toContain('Based on your 1,841 analyzed rapid games in the recent sample.');
     expect(text).not.toContain('Fewer is better.');
   });
 

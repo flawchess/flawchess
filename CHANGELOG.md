@@ -26,6 +26,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Internal: each blunder now also stores the facepalm score's material inputs and how likely a player at the blunderer's level was to find the punishing reply, groundwork for the facepalm score refit (no visible change yet).
 - Activity dashboard: the Train sessions section is split into Personalized Puzzles and Blunder Check, and Blunder Check gets its own cards for sessions per day by outcome, sequences judged per day, score % over time and the daily mix of cleared, caught, missed and false-alarm sequences. The guest Train note is gone. (quick 261120-c1x)
 - Activity dashboard: a new Blunder Check card compares red herrings with blunder sequences, and own games with foreign games, as outcome shares over the selected range, so it is visible which kind is easier to get right.
 - Activity dashboard: a new Personalized Puzzles card compares own flaws, red herrings and sharp fillers as move-quality shares over the selected range, so it is visible which puzzle source is easier to get right.
@@ -50,6 +51,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train: the Blunder check tab is gone, it lives on the Today page now, and the drill still runs full screen and returns you to Today. After you finish one mode, the main button on the score screen continues with the other if it is still due.
 - Train: the weekly medal window now groups all your medals by week instead of showing one window per board.
 - Facepalm chips are now tinted by type on the Flaws tab, in the analysis move list and in the eval chart tooltip: teal for a missed win (the best move won material that was not taken), crimson for an allowed loss (the move gave away material). The chip's explanation names the type.
+- Library Stats: the Flaw Stats tiles, You vs. your opponents and Tactic motifs now describe how you play now. They use your most recent 1,000 games per time control from the last 36 months (or from the period you pick under Recency), and a line above the tiles says which games they are based on. The Flaws Timeline still shows all your games, and a time control without games in the last 36 months keeps its timeline with a note on how to include older games.
 
 ### Fixed
 

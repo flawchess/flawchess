@@ -25,6 +25,8 @@ class LineFixture:
     played_uci: str
     line: str
     expected_loss: tuple[int | None, ...]  # aligned with LINE_LOSS_DEPTHS
+    # 259 D-02: the same depths under the quiet-point rule (the spike's independent values)
+    expected_quiet_loss: tuple[int | None, ...]
     expected_mate_ply: int | None
     note: str
 
@@ -36,6 +38,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c1g5",
         line="b4c3 g5d2 c3d2 d1d2 e5e4 f3d4 e6e5 d4b5 a7a6 b5c3 e8g8 h2h4",
         expected_loss=(3, 0, 0, 0, 0),
+        expected_quiet_loss=(3, 0, 0, 0, 0),
         expected_mate_ply=None,
         note="fair position the refinements dropped: the opponent wins a knight at ply 1 and the blunderer recaptures by depth 3",
     ),
@@ -45,6 +48,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c4b5",
         line="a3b2 g2e4 b2b1q f1g2 b1d1 b6c6 d1e2 g2h3 h7h8 b5b6 f6f5 g4f5",
         expected_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 0, 0, 0, 0),
         expected_mate_ply=None,
         note="fair position the refinements dropped: the blunder captures a pawn and the count stays at zero",
     ),
@@ -54,6 +58,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="g4a4",
         line="c8d7 a4b3 g8g6 g1h1 d7e6 f2f4 d8d6 b3b7 a8d8 f4e5 f6e5 c2c4",
         expected_loss=(0, 3, 3, 2, 1),
+        expected_quiet_loss=(0, 3, 3, 2, 2),
         expected_mate_ply=None,
         note="unfair passer: the piece was already hanging before the blunder",
     ),
@@ -63,6 +68,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c7b8",
         line="e3c5 d7c6 d5c6 d8d6 c6b7 c8d8 b5d6 e7d6 c5f5 b8b7 f5f4 b7c7",
         expected_loss=(1, 1, 2, 4, 3),
+        expected_quiet_loss=(1, 1, 2, 4, 6),
         expected_mate_ply=None,
         note="fair position the refinements dropped: the loss grows with depth",
     ),
@@ -72,6 +78,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c4a4",
         line="d8d7 a1e1 h4e1 h1e1 e8d8 a4b4 b7b6 b4c4 h8e8 f4c7 d7c7 e1e8",
         expected_loss=(0, -3, -3, -3, -4),
+        expected_quiet_loss=(0, -3, -3, -3, -1),
         expected_mate_ply=None,
         note="unfair passer removed by the desperado rule (material given up by the blunderer's own line move)",
     ),
@@ -81,6 +88,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="f6e4",
         line="b3d5 d8e7 d5e4 d4d3 g1f3 f7f6 e2d1 d7d5 e4e3 e5c4 e3e7 f8e7",
         expected_loss=(-1, 2, 2, 2, 2),
+        expected_quiet_loss=(-1, 2, 2, 2, 2),
         expected_mate_ply=None,
         note="unfair passer: two-move pin wins the knight, judged too hard at 777",
     ),
@@ -90,6 +98,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="b7b2",
         line="g1g6 b2c2 c3c2 c5b4 f4f5 g8d8 g7g8q d8g8 g6g8 h6h5 c2d3 h5h4",
         expected_loss=(0, 0, 0, -9, -4),
+        expected_quiet_loss=(0, 0, 0, -4, -4),
         expected_mate_ply=None,
         note="unfair passer removed by the desperado rule (spite capture in a lost position)",
     ),
@@ -99,6 +108,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="e6e7",
         line="h7e7",
         expected_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 0, 0, 0, 0),
         expected_mate_ply=None,
         note="computation artifact: one-move stored line, settled by the static-exchange recapture credit",
     ),
@@ -108,6 +118,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c5d5",
         line="f2f1q e5c6 e7f6 c7e8 f6g5 a7a8q g4g3 a8d8 g5g4 d8d7 g4f3 d7f5",
         expected_loss=(-3, -3, -3, -3, -3),
+        expected_quiet_loss=(-3, -3, -3, -3, -3),
         expected_mate_ply=None,
         note="unfair passer removed: the opponent 'material' is a promotion in an endgame race",
     ),
@@ -117,6 +128,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="e2d2",
         line="g4f3 c3b5 d4b5 c4b5 c7c6 b5c6 b7c6 g2f3 d8h4 h1g1 g8e7 g1g4",
         expected_loss=(3, 0, -1, -1, -1),
+        expected_quiet_loss=(3, 0, -1, -1, -1),
         expected_mate_ply=None,
         note="fair position the refinements dropped: the opponent wins a knight at ply 1, regained by depth 5",
     ),
@@ -126,6 +138,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="e8g8",
         line="g4g7",
         expected_loss=(1, 1, 1, 1, 1),
+        expected_quiet_loss=(1, 1, 1, 1, 1),
         expected_mate_ply=1,
         note="1-ply mate line",
     ),
@@ -135,6 +148,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="f5c2",
         line="e2e7",
         expected_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 0, 0, 0, 0),
         expected_mate_ply=1,
         note="1-ply mate line, count 0 (mate dominates)",
     ),
@@ -144,6 +158,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c6d4",
         line="f3f7",
         expected_loss=(1, 1, 1, 1, 1),
+        expected_quiet_loss=(1, 1, 1, 1, 1),
         expected_mate_ply=1,
         note="1-ply mate line",
     ),
@@ -153,6 +168,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="b7b8q",
         line="f5h3",
         expected_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 0, 0, 0, 0),
         expected_mate_ply=1,
         note="1-ply mate line after a promotion blunder",
     ),
@@ -162,6 +178,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="g2h2",
         line="a6a8",
         expected_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 0, 0, 0, 0),
         expected_mate_ply=1,
         note="1-ply mate line, count 0",
     ),
@@ -171,6 +188,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="c1c2",
         line="d2d1",
         expected_loss=(-3, -3, -3, -3, -3),
+        expected_quiet_loss=(-3, -3, -3, -3, -3),
         expected_mate_ply=1,
         note="1-ply mate line, blunderer is up material at the mate",
     ),
@@ -180,6 +198,7 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         played_uci="e4e5",
         line="c6g2",
         expected_loss=(1, 1, 1, 1, 1),
+        expected_quiet_loss=(1, 1, 1, 1, 1),
         expected_mate_ply=1,
         note="1-ply mate line",
     ),
@@ -231,4 +250,45 @@ OWNER_MISS_FIXTURES: tuple[OwnerMissFixture, ...] = (
         expected_best_3=10,
         note="played Rxf5 wins a rook but the best line wins more: missed 5",
     ),
+)
+
+
+@dataclass(frozen=True)
+class MaterialInputsFixture:
+    """One position pinned end to end through the stored material inputs (Phase 259 D-13).
+
+    Per-depth tuples are aligned with LINE_LOSS_DEPTHS. `expected_quiet_best_material` is signed
+    (positive = the blunderer is up). Game id and ply only, no usernames.
+    """
+
+    game_id: int
+    ply: int
+    pre_fen: str
+    played_uci: str
+    refutation_line: str
+    best_line: str
+    expected_quiet_played_loss: tuple[int | None, ...]
+    expected_quiet_best_material: tuple[int | None, ...]
+    expected_loss: float
+    expected_missed: float
+    expected_shipped_missed: float
+    note: str
+
+
+# D-13: the owner's example. The best line is an even four-capture trade (Bxf4 Qxf4 Qxf4 Rxf4), cut
+# after the second capture by the shipped depth-3 walk so the best line read +3 and a missed gain
+# of 80/31 was scored; the quiet rule reads the trade to its end: 0.
+D13_FIXTURE = MaterialInputsFixture(
+    game_id=2883555,
+    ply=47,
+    pre_fen="2k3rr/ppq5/2pbp3/3p1p1p/5N2/3P3B/PPP2Q2/R4R1K b - - 3 24",
+    played_uci="c8d7",
+    refutation_line="f4e6 f5f4 e6c7 d7c7 f1g1 g8g4 a1f1 c7b8 f2d4 h8e8 f1e1 e8f8",
+    best_line="d6f4 f2f4 c7f4 f1f4 c8d7 h1h2 d7d6 a1e1 g8g5 f4f3 g5g6 d3d4",
+    expected_quiet_played_loss=(1, 7, 7, 7, 7),
+    expected_quiet_best_material=(0, 0, 0, 0, 0),
+    expected_loss=91 / 31,
+    expected_missed=0.0,
+    expected_shipped_missed=80 / 31,
+    note="best line is an even four-capture trade: no missed gain under the quiet rule",
 )

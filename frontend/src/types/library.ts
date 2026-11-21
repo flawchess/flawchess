@@ -407,20 +407,31 @@ export interface FacepalmBullet extends Omit<FlawBullet, 'tag'> {
   tag: FacepalmMetric;
 }
 
-/** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
+/**
+ * One time control's flaw comparison (mirrors backend FlawComparisonTc), computed on the
+ * recent window: the newest games_cap games of the TC within window_months (or within the
+ * selected period), taken from the games the sidebar filters leave.
+ */
 export interface FlawComparisonTc {
   tc: TimeControlBucket;
+  /** Analyzed games of this TC in the recent window (the gate basis). */
   analyzed_n: number;
-  /** All games of this TC in the current filters, analyzed or not (coverage denominator). */
+  /** All games of this TC in the recent window, analyzed or not (coverage denominator); 0 = quiet TC. */
   total_n: number;
   below_gate: boolean;
+  /** ISO date of the oldest game in the window; null when total_n is 0. */
+  sample_since: string | null;
+  /** True when the window hit the games cap (the basis line then says "most recent"). */
+  cap_reached: boolean;
+  /** Analyzed games in the unwindowed filtered set: why a quiet TC stays on the switch. */
+  history_analyzed_n: number;
   /** 12 bullets, also below the gate (the tile numbers stay visible). */
   bullets: FlawBullet[];
   /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
   tempo_phase_cells: TempoPhaseCell[];
 }
 
-/** One time control's facepalm rows (mirrors backend FacepalmComparisonTc). */
+/** One time control's facepalm rows (mirrors backend FacepalmComparisonTc), computed on the same recent window as the flaw comparison. */
 export interface FacepalmComparisonTc {
   tc: TimeControlBucket;
   /**
@@ -469,7 +480,7 @@ export interface TacticBullet {
   significant: boolean;        // 99% CI on delta excludes 0
 }
 
-/** One time control's tactic comparison (mirrors backend TacticComparisonTc). */
+/** One time control's tactic comparison (mirrors backend TacticComparisonTc); numbers come from the same recent window as the flaw comparison. */
 export interface TacticComparisonTc {
   tc: TimeControlBucket;
   analyzed_n: number;
@@ -494,16 +505,23 @@ export interface TacticComparisonResponse {
 /**
  * Response for GET /api/library/flaw-comparison (mirrors backend FlawComparisonResponse).
  *
- * tcs: one entry per time control with analyzed games in the current filters, in
- *      LIBRARY_TC_ORDER. The TC switch is client-side over this list.
+ * tcs: one entry per time control with analyzed games in the unwindowed filtered set, in
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list; the numbers inside
+ *      each entry are windowed.
  * analyzed_gate: minimum analyzed games per TC (constant = 20); exposed so the frontend
  *                can render "N of 20" without hardcoding.
  */
 export interface FlawComparisonResponse {
   tcs: FlawComparisonTc[];
   analyzed_gate: number;
-  /** All games (analyzed or not) under the current filters, across the allowed TCs. */
+  /** All games (analyzed or not) under the current filters, across the allowed TCs; not windowed. */
   total_n: number;
+  /** True when an explicit period (from/to date) replaced the default window bound. */
+  recency_filtered: boolean;
+  /** Default window length in months (backend RECENCY_WINDOW_MONTHS). */
+  window_months: number;
+  /** Per-TC games cap of the window (backend RECENT_GAMES_PER_TC_CAP). */
+  games_cap: number;
 }
 
 // ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────

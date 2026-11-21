@@ -294,6 +294,11 @@ class Game(Base):
     facepalm_pre_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # Phase 259 (D-07, D-11): checkpoint of the best-reply backfill pass
+    # (game_flaws.maia_best_reply_prob, blunders of both sides). Same lifecycle as above.
+    facepalm_reply_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     # Per-GAME rollup of a per-FLAW-PLY condition — unlike the four
     # completion columns above (naturally per-game), this one summarizes
     # `game_flaws.allowed_pv_lines`. The authoritative predicate is "no

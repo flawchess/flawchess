@@ -143,6 +143,21 @@ describe('TrendTooltipBody', () => {
 });
 
 describe('FlawTrendChart', () => {
+  it('captions the timeline as covering all games, with a series', () => {
+    render(<FlawTrendChart trend={TREND} windowSize={100} />);
+    expect(screen.getByTestId('flaw-trend-caption').textContent).toBe(
+      'All games in the current filters',
+    );
+  });
+
+  it('keeps the caption in the not-enough-games state', () => {
+    render(<FlawTrendChart trend={[]} windowSize={100} />);
+    expect(screen.getByText('Not enough games to show a trend')).not.toBeNull();
+    expect(screen.getByTestId('flaw-trend-caption').textContent).toBe(
+      'All games in the current filters',
+    );
+  });
+
   const TREND = [makeTrendPoint('2026-03-02'), makeTrendPoint('2026-03-09')];
 
   it('turns the Facepalm legend entry off and inert while Blunders is hidden', () => {

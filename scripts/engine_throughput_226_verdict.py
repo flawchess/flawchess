@@ -7,12 +7,10 @@ any CLI flag, environment variable, or config file. The design-input
 constants (section below) are now FROZEN (Plan 226-08, Task 2): each one was
 set from this module's own `design-inputs` subcommand output over the
 committed step-0 data, transcribed verbatim into
-`reports/engine-throughput-226/design-inputs.md` and pinned by
-`tests/scripts/test_engine_throughput_226_verdict.py::test_design_input_constants_match_committed_json`,
-which reads the same committed
-`reports/data/engine-throughput-226/step0/design-inputs.json` this module's
-constants were transcribed from — never chosen by eye. The only legitimate
-way to change a frozen constant is to edit this file, design-inputs.md and
+`reports/engine-throughput-226/design-inputs.md` from the same committed
+`reports/data/engine-throughput-226/step0/design-inputs.json` (the pin test
+that compared them was retired 2026-11-21 after the phase closed), never
+chosen by eye. The only legitimate way to change a frozen constant is to edit this file, design-inputs.md and
 the accept-rule doc together, before any gate arm runs.
 
 Reads the pinned per-run data layout under `reports/data/engine-throughput-226/`
@@ -151,8 +149,7 @@ EXIT_INCOMPLETE = 2
 # (tooling commit T = 27121e329 or later; fixture commit fc3086475), per the
 # formulas in step0-protocol.md section 7 and transcribed verbatim into
 # reports/engine-throughput-226/design-inputs.md. NEVER hand-chosen, and NEVER
-# reachable from a CLI flag, environment variable, or config file. Pinned by
-# tests/scripts/test_engine_throughput_226_verdict.py::test_design_input_constants_match_committed_json.
+# reachable from a CLI flag, environment variable, or config file.
 # `gates` still refuses to evaluate anything if any of these is `None` (D-10,
 # D-16) — the type stays `X | None` so a future hand-edit that clears one back
 # to `None` is caught by the same unset-constants gate, not by a type error.

@@ -25,6 +25,9 @@ import type {
 } from '@/types/library';
 
 export const ANALYZED_GATE = 20;
+/** Mirrors the backend window constants (RECENCY_WINDOW_MONTHS, RECENT_GAMES_PER_TC_CAP). */
+export const WINDOW_MONTHS = 36;
+export const GAMES_CAP = 1000;
 
 export const FLAW_DELTA_METRICS: readonly FlawDeltaMetric[] = [
   'blunder',
@@ -129,8 +132,14 @@ export function makeFacepalmComparison(tcs: readonly TimeControlBucket[]): Facep
 
 interface TcEntryOptions {
   analyzedN: number;
-  /** Coverage denominator; defaults to analyzedN (fully analyzed). */
+  /** Games in the recent window (coverage denominator); defaults to analyzedN (fully analyzed). */
   totalN?: number;
+  /** Oldest game in the window; defaults to a fixed date when the window has games, else null. */
+  sampleSince?: string | null;
+  /** True when the window hit the games cap; default false. */
+  capReached?: boolean;
+  /** Unwindowed analyzed games (why the TC is offered); defaults to analyzedN. */
+  historyAnalyzedN?: number;
   blunder?: Partial<FlawBullet>;
   mistake?: Partial<FlawBullet>;
   /** Per-metric overrides for any of the 12 metrics (applied after blunder / mistake). */
@@ -141,11 +150,15 @@ interface TcEntryOptions {
 
 /** One TC entry with all 12 bullets; blunder and mistake can be overridden per test. */
 export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): FlawComparisonTc {
+  const totalN = options.totalN ?? options.analyzedN;
   return {
     tc,
     analyzed_n: options.analyzedN,
-    total_n: options.totalN ?? options.analyzedN,
+    total_n: totalN,
     below_gate: options.analyzedN < ANALYZED_GATE,
+    sample_since: options.sampleSince !== undefined ? options.sampleSince : totalN > 0 ? '2025-03-14' : null,
+    cap_reached: options.capReached ?? false,
+    history_analyzed_n: options.historyAnalyzedN ?? options.analyzedN,
     bullets: FLAW_DELTA_METRICS.map((tag) => {
       const base = tag === 'blunder' ? options.blunder : tag === 'mistake' ? options.mistake : undefined;
       return makeBullet(tag, { ...base, ...options.overrides?.[tag] });
@@ -204,11 +217,18 @@ export const SKETCH_RAPID_ENTRY = makeTcEntry('rapid', {
   },
 });
 
-export function makeComparison(tcs: FlawComparisonTc[], totalN?: number): FlawComparisonResponse {
+export function makeComparison(
+  tcs: FlawComparisonTc[],
+  totalN?: number,
+  meta?: Partial<Pick<FlawComparisonResponse, 'recency_filtered' | 'window_months' | 'games_cap'>>,
+): FlawComparisonResponse {
   return {
     tcs,
     analyzed_gate: ANALYZED_GATE,
     total_n: totalN ?? tcs.reduce((sum, t) => sum + t.total_n, 0),
+    recency_filtered: meta?.recency_filtered ?? false,
+    window_months: meta?.window_months ?? WINDOW_MONTHS,
+    games_cap: meta?.games_cap ?? GAMES_CAP,
   };
 }
 

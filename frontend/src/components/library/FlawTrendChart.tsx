@@ -54,6 +54,8 @@ const LEGEND: { key: LegendKey; label: string; color: string }[] = [
 const DEFAULT_HIDDEN_KEYS: readonly LegendKey[] = ['mistake_rate', 'inaccuracy_rate'];
 
 const PCT_SCALE = 100;
+/** The timeline reads all games in the filters, not the recent sample of the snapshots (258 D-14). */
+const TIMELINE_CAPTION = 'All games in the current filters';
 const BLUNDER_STACK_ID = 'blunders';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -165,11 +167,14 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
       data-testid="flaw-trend-chart"
       aria-label="Flaws per 100 moves trend chart"
     >
-      <CardHeader size="compact" className="flex items-center gap-2">
+      <CardHeader size="compact" className="flex flex-wrap items-center gap-2">
         Flaws Timeline
         <InfoPopover ariaLabel="About facepalm blunders" testId="flaw-trend-facepalm-info">
           <p>{FACEPALM_TIMELINE_INFO}</p>
         </InfoPopover>
+        <span className="text-sm font-normal text-muted-foreground" data-testid="flaw-trend-caption">
+          {TIMELINE_CAPTION}
+        </span>
       </CardHeader>
       <CardBody>
         {/* Empty / insufficient-data state */}

@@ -69,7 +69,7 @@ _FAIL_RETRY_DAYS = 4
 _SR_SOURCE = 0
 _ACTIVE_STATUS = 0
 
-# Public so tests/test_migration_244_sr_ladder_due_dates.py runs this exact SQL.
+# Public so a test can run this exact SQL (its test was retired once the migration shipped).
 # A NULL floor (no matching solve) fails both comparisons in the UPDATE, so
 # never-attempted items are untouched structurally.
 PUSH_DUE_DATES_SQL = f"""
