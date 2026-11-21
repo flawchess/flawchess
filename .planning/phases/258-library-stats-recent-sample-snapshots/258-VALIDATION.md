@@ -48,23 +48,23 @@ creates or extends the file.
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 01-T1 | 258-01 | 1 | Clock (`dev_now_utc`), response window fields, D-04 flag, D-13 at-cap / under-cap line | — | N/A | router + component | `uv run pytest tests/test_library_router.py -k "FlawComparison" -x` and `npm --prefix frontend test -- src/components/library/stats/__tests__/LibraryStatsSections.test.tsx` | extended in 01-T1 | ⬜ pending |
-| 01-T2 | 258-01 | 1 | Seed migration (every comparison seed has `played_at`, flaw calls pass `now_utc`) | — | N/A | service | `uv run pytest tests/services/test_flaw_comparison.py tests/services/test_tactic_comparison_service.py tests/routers/test_library_tactic_comparison.py -x` | existing | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-03 (per-TC cap, `cap_reached`) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k cap -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-03 (real constant, 1001 → 1000) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k real_cap -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-03 (36-month bound, fixed `now_utc`) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k bound -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-03 (`months_before` matches PG clamping) | — | N/A | unit | `uv run pytest tests/services/test_library_window.py -k months_before -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-04 (explicit recency replaces the bound, cap stays) | — | N/A | repo + service | `uv run pytest tests/services/test_library_window.py -k recency -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-05 (cap counts unanalyzed games) | — | N/A | repo + summary | `uv run pytest tests/services/test_library_window.py -k cap_counts_unanalyzed -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-06 (`total_n`/`analyzed_n` equal the window summary) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k window_counts -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-10 (flaw gate applies to the windowed set) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k gate_on_window -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-11 (filter first, then cap) | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k filter_first -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | Tiebreak on equal `played_at` | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k tiebreak -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | NULL `played_at` / `ply_count` 0 / NULL TC never take a slot | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k excluded_rows -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-15 (quiet TC stays listed on the flaw payload) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k quiet_tc -x` | created in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | D-02 (timeline keeps full history) | — | N/A | service | `uv run pytest tests/services/test_library_service.py -k trend_full_history -x` | extended in 01-T3 | ⬜ pending |
-| 01-T3 | 258-01 | 1 | Two-user isolation of the window | T-258-01 | The window never includes another user's games | repo + service | `uv run pytest tests/services/test_library_window.py -k two_user -x` | created in 01-T3 | ⬜ pending |
-| 02-T1 | 258-02 | 2 | D-06 (facepalm rows = analyzed window ids = flaw rows), D-10 (facepalm low coverage on the window), D-15 (facepalm list rule) | T-258-05 | Facepalm rows read only the user's own window | service | `uv run pytest tests/services/test_flaw_comparison.py -k "same_game_set or window" -x` | extended in 02-T1 | ⬜ pending |
-| 02-T2 | 258-02 | 2 | D-06 (tactic rows = tactic-ready window ids), D-10 (tactic gate on the window), D-15 (quiet TC absent) | T-258-05 | Tactic rows read only the user's own window | service | `uv run pytest tests/services/test_tactic_comparison_service.py -k "tactic_window or gate_on_window or quiet_tc" -x` | extended in 02-T2 | ⬜ pending |
+| 01-T2 | 258-01 | 1 | Seed migration (every comparison seed has `played_at`, all 29 `get_flaw_comparison` test calls pass `now_utc`: 28 in `test_flaw_comparison.py`, 1 in `test_tactic_comparison_service.py`) | — | N/A | service | `uv run pytest tests/services/test_flaw_comparison.py tests/services/test_tactic_comparison_service.py tests/routers/test_library_tactic_comparison.py -x` | existing | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-03 (per-TC cap, `cap_reached`) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k cap -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-03 (real constant, 1001 → 1000) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k real_cap -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-03 (36-month bound, fixed `now_utc`) | — | N/A | repo integration | `uv run pytest tests/services/test_library_window.py -k bound -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-03 (`months_before` matches PG clamping) | — | N/A | unit | `uv run pytest tests/services/test_library_window.py -k months_before -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-04 (explicit recency replaces the bound, cap stays) | — | N/A | repo + service | `uv run pytest tests/services/test_library_window.py -k recency -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-05 (cap counts unanalyzed games) | — | N/A | repo + summary | `uv run pytest tests/services/test_library_window.py -k cap_counts_unanalyzed -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-06 (`total_n`/`analyzed_n` equal the window summary) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k window_counts -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-10 (flaw gate applies to the windowed set) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k gate_on_window -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-11 (filter first, then cap) | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k filter_first -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | Tiebreak on equal `played_at` | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k tiebreak -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | NULL `played_at` / `ply_count` 0 / NULL TC never take a slot | — | N/A | repo | `uv run pytest tests/services/test_library_window.py -k excluded_rows -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-15 (quiet TC stays listed on the flaw payload) | — | N/A | service | `uv run pytest tests/services/test_library_window.py -k quiet_tc -x` | created in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | D-02 (timeline keeps full history) | — | N/A | service | `uv run pytest tests/services/test_library_service.py -k trend_full_history -x` | extended in 02-T1 | ⬜ pending |
+| 02-T1 | 258-02 | 2 | Two-user isolation of the window | T-258-01 | The window never includes another user's games | repo + service | `uv run pytest tests/services/test_library_window.py -k two_user -x` | created in 02-T1 | ⬜ pending |
+| 02-T2 | 258-02 | 2 | D-06 (facepalm rows = analyzed window ids = flaw rows), D-10 (facepalm low coverage on the window), D-15 (facepalm list rule) | T-258-05 | Facepalm rows read only the user's own window | service | `uv run pytest tests/services/test_flaw_comparison.py -k "same_game_set or window" -x` | extended in 02-T2 | ⬜ pending |
+| 02-T3 | 258-02 | 2 | D-06 (tactic rows = tactic-ready window ids), D-10 (tactic gate on the window), D-15 (quiet TC absent) | T-258-05 | Tactic rows read only the user's own window | service | `uv run pytest tests/services/test_tactic_comparison_service.py -k "tactic_window or gate_on_window or quiet_tc" -x` | extended in 02-T3 | ⬜ pending |
 | 03-T1 | 258-03 | 2 | D-15/D-16/D-17 (quiet TC state), default TC when TCs are quiet | — | N/A | component + unit | `npm --prefix frontend test -- src/lib/__tests__/flawComparisonMeta.test.ts src/components/library/stats/__tests__/LibraryStatsSections.test.tsx src/hooks/__tests__/useLibraryStatsTc.test.ts` | meta test created in 03-T1 | ⬜ pending |
 | 03-T2 | 258-03 | 2 | D-12/D-13 (eight wording variants, suffix, shown once), popover "in the recent sample" | — | N/A | frontend unit + component | `npm --prefix frontend test -- src/lib/__tests__/flawComparisonMeta.test.ts src/components/library/stats/__tests__/LibraryStatsSections.test.tsx` | extended in 03-T2 | ⬜ pending |
 | 03-T3 | 258-03 | 2 | D-14 (timeline caption) | — | N/A | component | `npm --prefix frontend test -- src/components/library/__tests__/FlawTrendChart.test.tsx` | extended in 03-T3 | ⬜ pending |
@@ -78,11 +78,11 @@ creates or extends the file.
 
 ## Wave 0 Requirements
 
-- [ ] `tests/services/test_library_window.py` — window repository, `months_before` and `summarize_window` tests (258-01 Task 3)
+- [ ] `tests/services/test_library_window.py` — window repository, `months_before` and `summarize_window` tests (258-02 Task 1)
 - [ ] Seed helpers in `tests/services/test_flaw_comparison.py`, `tests/services/test_tactic_comparison_service.py`,
       `tests/routers/test_library_tactic_comparison.py` — default `played_at` relative to a fixed `_NOW`, flaw
-      calls with `now_utc=_NOW` (258-01 Task 2); facepalm and tactic calls with `now_utc=_NOW` and the
-      router clock pins (258-02 Tasks 1 and 2); `tests/test_library_router.py` `pin_library_now` (258-01 Task 1)
+      calls with `now_utc=_NOW`, the `test_tactic_comparison_service.py` cross-check call included (258-01 Task 2); facepalm and tactic calls with `now_utc=_NOW` and the
+      router clock pins (258-02 Tasks 2 and 3); `tests/test_library_router.py` `pin_library_now` (258-01 Task 1)
 - [ ] `frontend/src/components/library/stats/__tests__/flawStatsFixtures.ts` — the new window fields (258-01 Task 1)
 
 ---
