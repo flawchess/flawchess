@@ -733,18 +733,21 @@ seed ("Decided Shape", 2026-11-21).
 
 **Depends on**: Phase 257 (the facepalm comparison endpoint and the current Library Stats layout).
 **Requirements**: TBD
-**Plans:** 4 plans
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 258-01-PLAN.md — Tracer: the recent window (1000 per TC, 36 months or the chosen period) from SQL to the Flaw Stats basis line on /flaw-comparison, seed migration of the comparison tests (wave 1)
+- [x] 258-01-PLAN.md — Tracer: the recent window (1000 per TC, 36 months or the chosen period) from SQL to the Flaw Stats basis line on /flaw-comparison, seed migration of the comparison tests (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 258-02-PLAN.md — Backend: window and decision tests, then facepalm and tactic comparisons on the same window, JIT off from the window statement on (wave 2)
-- [ ] 258-03-PLAN.md — Frontend: quiet time control message with hidden snapshot sections, default TC, timeline caption, basis-line variants, popover wording, default-filter guards (wave 2)
+- [x] 258-02-PLAN.md — Backend: window and decision tests, then facepalm and tactic comparisons on the same window, JIT off from the window statement on (wave 2)
+- [x] 258-03-PLAN.md — Frontend: quiet time control message with hidden snapshot sections, default TC, timeline caption, basis-line variants, popover wording, default-filter guards (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 258-04-PLAN.md — Prod timing tool and window EXPLAIN (D-18 / D-19 handed to UAT), changelog, full pre-merge gate (wave 3)
+- [x] 258-04-PLAN.md — Prod timing tool and window EXPLAIN (D-18 / D-19 handed to UAT), changelog, full pre-merge gate (wave 3)
+
+**Gap closure** *(UAT G-258-3)*
+- [x] 258-05-PLAN.md — Quiet-TC message gets the basis line's " in the current filters" qualifier and the hint "Choose a longer period or a custom range under Recency" (wave 3)
 
 ### Phase 259: Facepalm Score Refit on First Principles (SEED-261121-tau)
 

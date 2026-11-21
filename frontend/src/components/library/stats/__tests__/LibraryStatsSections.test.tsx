@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
 import { popoverTargetFromTestId } from '@/lib/analytics';
 import type { FlawComparisonResponse, FlawStatsResponse } from '@/types/library';
 import {
@@ -98,11 +98,11 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function renderSections(isGuest = false): void {
+function renderSections(isGuest = false, filters: FilterState = DEFAULT_FILTERS): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <LibraryStatsSections filters={DEFAULT_FILTERS} isGuest={isGuest} />
+      <LibraryStatsSections filters={filters} isGuest={isGuest} />
     </QueryClientProvider>,
   );
 }
@@ -125,7 +125,9 @@ describe('Flaw Stats section (default selection)', () => {
     expect(
       screen.getByTestId('tc-switch-library-stats-rapid').getAttribute('aria-pressed'),
     ).toBe('true');
-    expect(text('flaw-stats-basis')).toBe('All 1,841 rapid games in the current filters are analyzed.');
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your 1,841 rapid games from the last 36 months, 1,841 analyzed.',
+    );
   });
 
   it('is the only TC switch on the page: no section carries its own', async () => {
@@ -163,6 +165,38 @@ describe('Flaw Stats section (default selection)', () => {
 
 });
 
+describe('basis line wording and placement', () => {
+  it('adds "in the current filters" when a sidebar filter other than recency is active', async () => {
+    renderSections(false, { ...DEFAULT_FILTERS, playedAs: 'white' });
+    await screen.findByTestId('flaw-tiles');
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your 1,841 rapid games from the last 36 months in the current filters, 1,841 analyzed.',
+    );
+  });
+
+  it('names the selected period, without "current filters", for a recency preset only', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([BLITZ_ENTRY, RAPID_ENTRY], undefined, { recency_filtered: true }),
+    );
+    renderSections(false, { ...DEFAULT_FILTERS, recency: '3months' });
+    await screen.findByTestId('flaw-tiles');
+    const basis = text('flaw-stats-basis');
+    expect(basis).toBe('Based on your 1,841 rapid games in the selected period, 1,841 analyzed.');
+    expect(basis).not.toContain('current filters');
+  });
+
+  it('renders the basis line exactly once, inside Flaw Stats only (D-12)', async () => {
+    await renderLoaded();
+    await screen.findByTestId('most-common-tactics');
+    expect(screen.getAllByTestId('flaw-stats-basis')).toHaveLength(1);
+    const basis = screen.getByTestId('flaw-stats-basis');
+    expect(screen.getByTestId('flaw-stats-section').contains(basis)).toBe(true);
+    expect(screen.getByTestId('vs-opponents-section').contains(basis)).toBe(false);
+    expect(screen.getByTestId('tactic-motifs-section').contains(basis)).toBe(false);
+    expect(screen.getByTestId('library-stats-tc-bar').contains(basis)).toBe(false);
+  });
+});
+
 describe('coverage basis line', () => {
   function isPulsing(): boolean {
     return screen.getByTestId('flaw-stats-coverage-icon').getAttribute('class')?.includes('animate-pulse') ?? false;
@@ -184,7 +218,9 @@ describe('coverage basis line', () => {
       makeComparison([BLITZ_ENTRY, makeTcEntry('rapid', { analyzedN: 1768, totalN: 1790 })]),
     );
     await renderLoaded();
-    expect(text('flaw-stats-basis')).toBe('1,768 of 1,790 rapid games analyzed in the current filters.');
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your 1,790 rapid games from the last 36 months, 1,768 analyzed.',
+    );
     expect(screen.getByTestId('flaw-stats-coverage-info')).not.toBeNull();
     expect(screen.queryByTestId('flaw-stats-coverage-hint')).toBeNull();
     expect(isTinted()).toBe(false);
@@ -192,12 +228,34 @@ describe('coverage basis line', () => {
     expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
   });
 
+  it('says "most recent" with the oldest game month once the window hit the cap', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([
+        makeTcEntry('blitz', {
+          analyzedN: 1000,
+          totalN: 1000,
+          capReached: true,
+          sampleSince: '2025-03-14',
+        }),
+      ]),
+    );
+    await renderLoaded();
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your most recent 1,000 blitz games (since Mar 2025), 1,000 analyzed.',
+    );
+    expect(screen.getByTestId('flaw-stats-coverage-icon')).not.toBeNull();
+    expect(screen.getByTestId('flaw-stats-coverage-info')).not.toBeNull();
+    expect(screen.queryByTestId('flaw-stats-coverage-hint')).toBeNull();
+  });
+
   it('tints, pulses and says the stats are still updating below the threshold', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([BLITZ_ENTRY, makeTcEntry('rapid', { analyzedN: 1242, totalN: 2701 })]),
     );
     await renderLoaded();
-    expect(text('flaw-stats-basis')).toBe('1,242 of 2,701 rapid games analyzed in the current filters.');
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your 2,701 rapid games from the last 36 months, 1,242 analyzed.',
+    );
     expect(text('flaw-stats-coverage-hint')).toBe(' Stats below update as analysis continues.');
     expect(isTinted()).toBe(true);
     expect(isPulsing()).toBe(true);
@@ -271,7 +329,9 @@ describe('TC switch', () => {
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('5.46'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 6.12');
-    expect(text('flaw-stats-basis')).toBe('All 1,000 blitz games in the current filters are analyzed.');
+    expect(text('flaw-stats-basis')).toBe(
+      'Based on your 1,000 blitz games from the last 36 months, 1,000 analyzed.',
+    );
     expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
@@ -607,5 +667,75 @@ describe('Tactic motifs section', () => {
     const rendered = `${text('tactic-motifs-section')}\n${text('gap-popover-tactic-fork-missed-tc-rapid-popover')}`;
     expect(rendered).not.toMatch(/more tactics|stopgap|mapped|zone/i);
     expect(screen.queryByTestId('tactic-grid-more-tactics')).toBeNull();
+  });
+});
+
+describe('quiet time control', () => {
+  const QUIET_BLITZ = makeTcEntry('blitz', { analyzedN: 0, totalN: 0, historyAnalyzedN: 300 });
+
+  beforeEach(() => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([QUIET_BLITZ, RAPID_ENTRY]));
+    // The tactic payload omits a TC with no tactic-ready window game.
+    mocks.getTacticComparison.mockResolvedValue(makeTacticComparison([RAPID_TACTIC_ENTRY]));
+    mocks.getFacepalmComparison.mockResolvedValue(makeFacepalmComparison(['rapid']));
+  });
+
+  it('keeps the quiet TC on the switch and defaults to the TC with recent games', async () => {
+    await renderLoaded();
+    expect(screen.getByTestId('tc-switch-library-stats-blitz')).not.toBeNull();
+    expect(
+      screen.getByTestId('tc-switch-library-stats-rapid').getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('shows the message and the timeline only, hiding tiles, basis line and both sections', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    const message = await screen.findByTestId('flaw-stats-no-recent');
+    const paragraphs = Array.from(message.querySelectorAll('p')).map((p) => p.textContent);
+    expect(paragraphs).toEqual([
+      'No blitz games in the last 36 months.',
+      'Choose a longer period or a custom range under Recency to include older games.',
+    ]);
+    expect(within(message).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
+    expect(screen.queryByTestId('flaw-tiles')).toBeNull();
+    expect(screen.queryByTestId('flaw-stats-basis')).toBeNull();
+    expect(screen.queryByTestId('vs-opponents-section')).toBeNull();
+    expect(screen.queryByTestId('tactic-motifs-section')).toBeNull();
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Flaw Stats',
+    ]);
+  });
+
+  it('adds "in the current filters" to the quiet message when a sidebar filter other than recency is active', async () => {
+    renderSections(false, { ...DEFAULT_FILTERS, playedAs: 'black' });
+    await screen.findByTestId('flaw-tiles');
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    const message = await screen.findByTestId('flaw-stats-no-recent');
+    const paragraphs = Array.from(message.querySelectorAll('p')).map((p) => p.textContent);
+    expect(paragraphs).toEqual([
+      'No blitz games in the last 36 months in the current filters.',
+      'Choose a longer period or a custom range under Recency to include older games.',
+    ]);
+  });
+
+  it('brings everything back when the TC with recent games is selected again', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await screen.findByTestId('flaw-stats-no-recent');
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-rapid'));
+    await waitFor(() => expect(screen.getByTestId('flaw-tiles')).not.toBeNull());
+    expect(screen.queryByTestId('flaw-stats-no-recent')).toBeNull();
+    expect(screen.getByTestId('flaw-stats-basis')).not.toBeNull();
+    expect(screen.getByTestId('vs-opponents-section')).not.toBeNull();
+    expect(screen.getByTestId('tactic-motifs-section')).not.toBeNull();
+  });
+
+  it('never changes the shared filter store: the message has no action', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await screen.findByTestId('flaw-stats-no-recent');
+    expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
   });
 });

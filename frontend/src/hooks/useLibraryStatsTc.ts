@@ -1,4 +1,5 @@
 import { createTcSelectionStore, pickMostPopulatedTc } from '@/hooks/tcSelectionStore';
+import { isQuietTc } from '@/lib/flawComparisonMeta';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import { useLibraryFlawComparison } from '@/hooks/useLibrary';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -17,15 +18,29 @@ export interface LibraryTcCount {
   tc: TimeControlBucket;
   analyzed_n: number;
   below_gate: boolean;
+  /** Games in the recent window; 0 marks a quiet TC. Absent on entries that are never quiet. */
+  total_n?: number;
+  /** Analyzed games outside the window too: ranks the TCs when every one is quiet. */
+  history_analyzed_n?: number;
 }
 
 /**
- * Default TC: the TC with the most analyzed games among TCs at or above the gate (any
- * TC when none is). Ties go to the faster TC. Null when no TC is offered.
+ * Default TC (258): never a quiet TC (no game in the recent window) while another TC has
+ * games in it. Among the non-quiet TCs, the one with the most analyzed games at or above
+ * the gate (any non-quiet TC when none is); ties go to the faster TC. When every TC is quiet,
+ * the one with the most history_analyzed_n. Null when no TC is offered.
  */
 export function pickDefaultLibraryTc(tcs: readonly LibraryTcCount[]): TimeControlBucket | null {
+  const active = tcs.filter((t) => !isQuietTc(t));
+  if (active.length === 0) {
+    return pickMostPopulatedTc(
+      tcs,
+      () => true,
+      (t) => t.history_analyzed_n ?? 0,
+    );
+  }
   return pickMostPopulatedTc(
-    tcs,
+    active,
     (t) => !t.below_gate,
     (t) => t.analyzed_n,
   );
@@ -38,6 +53,8 @@ export function pickDefaultLibraryTc(tcs: readonly LibraryTcCount[]): TimeContro
 export const useLibraryStatsTc = createTcSelectionStore<LibraryTcCount>({
   storageKey: LIBRARY_STATS_TC_STORAGE_KEY,
   pickDefault: pickDefaultLibraryTc,
+  // A pinned default that turned quiet is dropped unless every TC is quiet.
+  isPinStillValid: (pinned, tcs) => !isQuietTc(pinned) || tcs.every(isQuietTc),
 });
 
 const NO_TCS: readonly LibraryTcCount[] = [];

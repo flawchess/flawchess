@@ -18,6 +18,7 @@ rows, drop any phase tag (opening/middlegame/endgame), emit one chip per
 remaining tag type (game-level dedupe), in a deterministic order.
 """
 
+import calendar
 import datetime
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ from app.repositories import library_repository
 from app.repositories.library_repository import (
     FacepalmChipValue,
     FacepalmGameCounts,
+    RecentWindowRow,
     TacticOrientation,
     MIN_TACTIC_CHIP_CONFIDENCE,
     _TEMPO_INT_TO_TAG,
@@ -67,6 +69,7 @@ from app.schemas.library import (
     FlawTempoMetric,
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
+from app.services.canonical_slice_sql import RECENCY_WINDOW_MONTHS, RECENT_GAMES_PER_TC_CAP
 from app.services.flaw_delta_zones import (
     FLAW_DELTA_METRICS,
     FlawDeltaMetric,
@@ -1820,10 +1823,178 @@ def _facepalm_comparison_tc(tc: TimeControlBucket, rows: Sequence[Any]) -> Facep
     return FacepalmComparisonTc(tc=tc, bullets=_compute_facepalm_bullets(rows))
 
 
+# ---------------------------------------------------------------------------
+# Recent window (258): the snapshot charts describe the player's recent play
+# ---------------------------------------------------------------------------
+
+
+def months_before(moment: datetime.datetime, months: int) -> datetime.datetime:
+    """Calendar-month subtraction with month-end clamping, tzinfo kept.
+
+    The same arithmetic as PostgreSQL `ts - INTERVAL 'N months'` (Feb 29 minus 36 months is
+    Feb 28; Mar 31 minus 1 month is Feb 28/29). The project has no dateutil dependency.
+    """
+    total = moment.year * 12 + (moment.month - 1) - months
+    year, month0 = divmod(total, 12)
+    day = min(moment.day, calendar.monthrange(year, month0 + 1)[1])
+    return moment.replace(year=year, month=month0 + 1, day=day)
+
+
+def recent_window_start(
+    now_utc: datetime.datetime, from_date: datetime.date | None, to_date: datetime.date | None
+) -> datetime.datetime | None:
+    """Lower played_at bound of the recent window; None when an explicit date range replaces it.
+
+    258 D-04: any explicit date bound (a preset sends both, a custom range may send one)
+    replaces the 36 months; the per-TC games cap still applies.
+    """
+    if from_date is not None or to_date is not None:
+        return None
+    return months_before(now_utc, RECENCY_WINDOW_MONTHS)
+
+
+@dataclass(frozen=True)
+class TcWindowSummary:
+    """One time control's slice of the recent window (the numbers the basis line states)."""
+
+    total_n: int
+    analyzed_n: int
+    tactic_analyzed_n: int
+    sample_since: datetime.date | None
+    cap_reached: bool
+    analyzed_ids: tuple[int, ...]
+    tactic_ids: tuple[int, ...]
+
+
+def summarize_window(
+    rows: Sequence[RecentWindowRow], cap: int
+) -> dict[TimeControlBucket, TcWindowSummary]:
+    """Group the window rows by TC: counts, oldest game date, cap flag and the id sets.
+
+    Pure, so the basis line, the tiles and the cards (all fed from these ids) cannot drift.
+    """
+    by_tc: dict[TimeControlBucket, list[RecentWindowRow]] = {}
+    for row in rows:
+        by_tc.setdefault(row.tc, []).append(row)
+    summaries: dict[TimeControlBucket, TcWindowSummary] = {}
+    for tc, tc_rows in by_tc.items():
+        analyzed_ids = tuple(r.game_id for r in tc_rows if r.analyzed)
+        tactic_ids = tuple(r.game_id for r in tc_rows if r.tactic_ready)
+        summaries[tc] = TcWindowSummary(
+            total_n=len(tc_rows),
+            analyzed_n=len(analyzed_ids),
+            tactic_analyzed_n=len(tactic_ids),
+            sample_since=min(r.played_at for r in tc_rows).date(),
+            cap_reached=len(tc_rows) >= cap,
+            analyzed_ids=analyzed_ids,
+            tactic_ids=tactic_ids,
+        )
+    return summaries
+
+
+async def _fetch_recent_window(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    now_utc: datetime.datetime,
+    filter_kwargs: Mapping[str, Any],
+) -> dict[TimeControlBucket, TcWindowSummary]:
+    """The recent window of one request, summarized per TC.
+
+    Shared by the three comparison endpoints so they all use one window definition (258 D-06).
+    """
+    window_start = recent_window_start(
+        now_utc, filter_kwargs["from_date"], filter_kwargs["to_date"]
+    )
+    rows = await library_repository.fetch_recent_window_rows(
+        session, user_id, window_start=window_start, **filter_kwargs
+    )
+    return summarize_window(rows, RECENT_GAMES_PER_TC_CAP)
+
+
+@dataclass(frozen=True)
+class _FlawComparisonInputs:
+    """Everything get_flaw_comparison reads from the DB, before any pure computation."""
+
+    counts: dict[str, int]
+    total_n: int
+    window: dict[TimeControlBucket, TcWindowSummary]
+    rows: list[Any]
+
+
+async def _fetch_flaw_comparison_inputs(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    now_utc: datetime.datetime,
+    filter_kwargs: Mapping[str, Any],
+) -> _FlawComparisonInputs:
+    """The DB half of get_flaw_comparison. Sequential awaits: one AsyncSession, never gather."""
+    # Unwindowed analyzed-game counts per TC for the filtered set (passes flaw_severity).
+    # They decide which TCs are offered (258 D-15: a TC whose games are all older than the
+    # window stays on the switch) and give history_analyzed_n.
+    counts = await library_repository.count_analyzed_by_tc(
+        session, user_id=user_id, **filter_kwargs
+    )
+    # The page total over the same filtered set without the analyzed restriction. Computed
+    # before the empty check: a fresh import with nothing analyzed yet needs "0 of N analyzed"
+    # rather than reading as if the filters matched no games.
+    totals = await library_repository.count_analyzed_by_tc(
+        session, user_id=user_id, analyzed_only=False, **filter_kwargs
+    )
+    total_n = sum(totals.values())
+    if not counts:
+        return _FlawComparisonInputs(counts={}, total_n=total_n, window={}, rows=[])
+
+    window = await _fetch_recent_window(
+        session, user_id, now_utc=now_utc, filter_kwargs=filter_kwargs
+    )
+    analyzed_ids = [gid for summary in window.values() for gid in summary.analyzed_ids]
+    rows: list[Any] = []
+    if analyzed_ids:
+        # 258 D-06: aggregate exactly the analyzed games of the window.
+        analyzed_subq = library_repository._analyzed_game_ids_subquery(
+            user_id, game_ids=analyzed_ids
+        )
+        rows = await library_repository.fetch_flaw_comparison(
+            session, user_id, analyzed_subq, **filter_kwargs
+        )
+    return _FlawComparisonInputs(counts=counts, total_n=total_n, window=window, rows=rows)
+
+
+def _build_flaw_comparison_tcs(inputs: _FlawComparisonInputs) -> list[FlawComparisonTc]:
+    """One FlawComparisonTc per offered TC, the numbers taken from the recent window."""
+    rows_by_tc = _bucket_rows_by_tc(inputs.rows)
+    tcs: list[FlawComparisonTc] = []
+    for tc in LIBRARY_TC_ORDER:
+        if not inputs.counts.get(tc):
+            continue
+        summary = inputs.window.get(tc)
+        # A TC with analyzed games but none in the window is the quiet TC (258 D-15): it
+        # stays offered with zero window counts.
+        analyzed_n = summary.analyzed_n if summary else 0
+        tc_rows = rows_by_tc.get(tc, [])
+        tcs.append(
+            FlawComparisonTc(
+                tc=tc,
+                analyzed_n=analyzed_n,
+                total_n=summary.total_n if summary else 0,
+                below_gate=analyzed_n < FLAW_COMPARISON_GATE,
+                sample_since=summary.sample_since if summary else None,
+                cap_reached=summary.cap_reached if summary else False,
+                history_analyzed_n=inputs.counts[tc],
+                bullets=_compute_bullets(tc_rows, tc),
+                tempo_phase_cells=_compute_tempo_phase_cells(tc_rows, tc),
+            )
+        )
+    return tcs
+
+
 async def get_flaw_comparison(
     session: AsyncSession,
     user_id: int,
     *,
+    now_utc: datetime.datetime,
     time_control: Sequence[str] | None,
     platform: Sequence[str] | None,
     rated: bool | None,
@@ -1836,18 +2007,21 @@ async def get_flaw_comparison(
     color: str | None = None,
     include_pasted: bool = False,
 ) -> FlawComparisonResponse:
-    """Per-TC you-vs-opponent flaw comparison over the filtered analyzed set.
+    """Per-TC you-vs-opponent flaw comparison over the recent window of the filtered set.
 
-    Pipeline:
-    1. count_analyzed_by_tc: analyzed games per time control within the current
-       filters (the sidebar TC filter narrows the list). No analyzed games at
-       all → tcs=[].
-    2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (42 COUNT FILTER
-       columns plus the tc column); sequential awaits only, never gather on the session.
-    3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
-       zone bounds from the per-TC registry; also the 9 crossed tempo x phase
-       cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
-       for below-gate TCs, so tiles can show rates; below_gate is flagged.
+    Pipeline (258):
+    1. count_analyzed_by_tc, unwindowed: decides which TCs are offered (a TC with analyzed
+       games stays offered even when none of them is recent, D-15) and gives
+       history_analyzed_n. No analyzed games at all -> tcs=[].
+    2. fetch_recent_window_rows: the newest RECENT_GAMES_PER_TC_CAP games per TC within
+       RECENCY_WINDOW_MONTHS of now_utc (or within the selected period, D-04), ranked over
+       every filtered game, analyzed or not (D-05). summarize_window gives the per-TC counts
+       the basis line states; analyzed_n, total_n and below_gate are windowed (D-06, D-10).
+    3. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (42 COUNT FILTER columns plus
+       the tc column) over exactly the analyzed window ids; sequential awaits only.
+    4. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC, zone bounds
+       from the per-TC registry, plus the 9 crossed tempo x phase cells. Bullets are ALWAYS
+       computed, also for below-gate TCs, so tiles can show rates; below_gate is flagged.
     The three facepalm rows are served by get_facepalm_comparison on their own endpoint
     (257 D-21), so this response never waits on the facepalm score.
 
@@ -1873,53 +2047,17 @@ async def get_flaw_comparison(
             opponent_gap_max=opponent_gap_max,
             color=color,
         )
-
-        # Analyzed-game counts per TC for the SEVERITY-FILTERED set (passes
-        # flaw_severity), so analyzed_n matches the set the bullets aggregate over.
-        counts = await library_repository.count_analyzed_by_tc(
-            session,
-            user_id=user_id,
-            **_filter_kwargs,
+        inputs = await _fetch_flaw_comparison_inputs(
+            session, user_id, now_utc=now_utc, filter_kwargs=_filter_kwargs
         )
-        # Coverage denominator per TC: the same filtered set without the analyzed
-        # restriction. flaw_severity is None from the Stats tab, so unanalyzed games
-        # (which have no game_flaws rows) are not dropped by the severity EXISTS.
-        # Computed before the empty check: a fresh import with nothing analyzed yet
-        # used to return tcs=[] alone, so the page could not show "0 of N analyzed"
-        # and read as if the filters matched no games.
-        totals = await library_repository.count_analyzed_by_tc(
-            session,
-            user_id=user_id,
-            analyzed_only=False,
-            **_filter_kwargs,
+        return FlawComparisonResponse(
+            tcs=_build_flaw_comparison_tcs(inputs),
+            analyzed_gate=FLAW_COMPARISON_GATE,
+            total_n=inputs.total_n,
+            recency_filtered=from_date is not None or to_date is not None,
+            window_months=RECENCY_WINDOW_MONTHS,
+            games_cap=RECENT_GAMES_PER_TC_CAP,
         )
-        total_n = sum(totals.values())
-        if not counts:
-            return FlawComparisonResponse(
-                tcs=[], analyzed_gate=FLAW_COMPARISON_GATE, total_n=total_n
-            )
-
-        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
-        rows = await library_repository.fetch_flaw_comparison(
-            session,
-            user_id,
-            analyzed_subq,
-            **_filter_kwargs,
-        )
-        rows_by_tc = _bucket_rows_by_tc(rows)
-        tcs = [
-            FlawComparisonTc(
-                tc=tc,
-                analyzed_n=counts[tc],
-                total_n=totals[tc],
-                below_gate=counts[tc] < FLAW_COMPARISON_GATE,
-                bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
-                tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, []), tc),
-            )
-            for tc in LIBRARY_TC_ORDER
-            if counts.get(tc)
-        ]
-        return FlawComparisonResponse(tcs=tcs, analyzed_gate=FLAW_COMPARISON_GATE, total_n=total_n)
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_comparison", {"user_id": user_id})
@@ -1931,6 +2069,7 @@ async def get_facepalm_comparison(
     session: AsyncSession,
     user_id: int,
     *,
+    now_utc: datetime.datetime,
     time_control: Sequence[TimeControlBucket] | None,
     platform: Sequence[Platform] | None,
     rated: bool | None,
@@ -1945,13 +2084,18 @@ async def get_facepalm_comparison(
 ) -> FacepalmComparisonResponse:
     """Per-TC facepalm rows of "You vs. your opponents" (257 D-11 to D-13, own endpoint D-21).
 
-    fetch_facepalm_comparison reads the same anchor game set as get_flaw_comparison (same
-    filters, same platform resolution), so the facepalm rows pair with the flaw rows game for
-    game; _compute_facepalm_bullets turns each TC's rows into the three neutral rows, withheld
-    (low_coverage) when too few of either side's blunders are scored. A TC is
-    listed when the anchor has at least one game of it (the LEFT JOIN anchor yields a row per
-    game even without facepalm blunders), ordered bullet..classical. The analyzed-games gate
-    stays with /flaw-comparison: the card sits behind that section's gate.
+    258: computed on the same recent window as get_flaw_comparison (D-06). The window comes from
+    _fetch_recent_window with the same filters, and fetch_facepalm_comparison aggregates exactly
+    the analyzed games of that window, so the facepalm rows pair with the flaw rows game for
+    game. _compute_facepalm_bullets turns each TC's rows into the three neutral rows, withheld
+    (low_coverage) when too few of either side's blunders are scored (D-10, evaluated on the
+    window rows). A TC is listed when the window has at least one game of it, analyzed or not
+    (D-15): the TC switch reads the flaw list, so a TC it offers with recent games must never
+    wait on a missing facepalm entry. A TC with no window game is absent. Ordered
+    bullet..classical. The analyzed-games gate stays with /flaw-comparison.
+
+    JIT is switched off for the whole request transaction, the window statement included: it
+    shares the transaction with the ~34 KB facepalm expression (257 D-21).
 
     IDOR guard: user_id is from current_active_user, never a request param.
     """
@@ -1959,11 +2103,7 @@ async def get_facepalm_comparison(
         platform, include_pasted=include_pasted, surface="analytics"
     )
     try:
-        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
-        rows = await library_repository.fetch_facepalm_comparison(
-            session,
-            user_id,
-            analyzed_subq,
+        _filter_kwargs: dict[str, Any] = dict(
             time_control=time_control,
             platform=resolved_platforms,
             rated=rated,
@@ -1975,11 +2115,27 @@ async def get_facepalm_comparison(
             opponent_gap_max=opponent_gap_max,
             color=color,
         )
+        # 258 (research Pitfall 4): the window statement runs in the same transaction as the
+        # facepalm expression and can cross jit_above_cost on large accounts. SET LOCAL is
+        # idempotent, so the repository's own call stays.
+        await library_repository.disable_jit_for_transaction(session)
+        window = await _fetch_recent_window(
+            session, user_id, now_utc=now_utc, filter_kwargs=_filter_kwargs
+        )
+        analyzed_ids = [gid for summary in window.values() for gid in summary.analyzed_ids]
+        rows: list[Any] = []
+        if analyzed_ids:
+            rows = await library_repository.fetch_facepalm_comparison(
+                session,
+                user_id,
+                library_repository._analyzed_game_ids_subquery(user_id, game_ids=analyzed_ids),
+                **_filter_kwargs,
+            )
         rows_by_tc = _bucket_rows_by_tc(rows)
         tcs = [
-            _facepalm_comparison_tc(tc, rows_by_tc[tc])
+            _facepalm_comparison_tc(tc, rows_by_tc.get(tc, []))
             for tc in LIBRARY_TC_ORDER
-            if rows_by_tc.get(tc)
+            if tc in window
         ]
         return FacepalmComparisonResponse(tcs=tcs)
 
@@ -2098,6 +2254,7 @@ async def get_tactic_comparison(
     session: AsyncSession,
     user_id: int,
     *,
+    now_utc: datetime.datetime,
     time_control: Sequence[str] | None,
     platform: Sequence[str] | None,
     rated: bool | None,
@@ -2111,21 +2268,25 @@ async def get_tactic_comparison(
     tactic_families: Sequence[str] | None = None,
     include_pasted: bool = False,
 ) -> TacticComparisonResponse:
-    """Per-TC tactic motif you-vs-opponent comparison, per 100 games.
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games, on the recent window.
 
-    Returns one TacticComparisonTc per time control that the filters allow and that has
-    at least one analyzed game, ordered bullet..classical. Each carries all 19
+    Returns one TacticComparisonTc per time control that has at least one tactic-ready game
+    (analyzed and blobs done) in the recent window, ordered bullet..classical; a TC without
+    one is absent (258 D-15, the TC switch reads the flaw list). Each carries all 19
     families x missed/allowed in fixed FAMILY_TO_MOTIF_INTS order (missed before allowed),
     also when the TC is below the 20-game gate. No ranking, no top-N.
 
-    Pipeline:
-    1. count_analyzed_by_tc: analyzed games per TC under the current filters
-       (tactic_filter_orientation="either", so the denominator matches both fetches).
-       No analyzed games at all → tcs=[].
-    2. fetch_tactic_comparison called TWICE (once per orientation), sequential awaits
-       only, never gather on the session.
+    Pipeline (258):
+    1. _fetch_recent_window: the same window as /flaw-comparison (D-06), ranked on the same
+       filters with tactic_filter_orientation="either" so it matches both fetches. Its
+       tactic_analyzed_n is the analyzed-and-blobs-done count of the window, the same gate
+       as the fetch anchor (the section 5 calibration basis), so no separate count runs.
+       No tactic-ready window game at all -> tcs=[].
+    2. fetch_tactic_comparison called TWICE (once per orientation) over exactly the
+       tactic-ready window ids, sequential awaits only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_tactic_bullets: mean + Wald-z CI per family per
-       orientation per TC, zone bounds from the tactic registry.
+       orientation per TC, zone bounds from the tactic registry. below_gate reads the
+       windowed count (D-10).
 
     IDOR guard: user_id is from current_active_user, never a request param.
 
@@ -2156,18 +2317,15 @@ async def get_tactic_comparison(
             tactic_filter_orientation="either",
         )
 
-        counts = await library_repository.count_analyzed_by_tc(
-            session,
-            user_id=user_id,
-            # The tactic population is blob-done games only (the section 5
-            # calibration basis); the flaw comparison does not pass this.
-            require_tactic_blobs=True,
-            **_filter_kwargs,
+        window = await _fetch_recent_window(
+            session, user_id, now_utc=now_utc, filter_kwargs=_filter_kwargs
         )
-        if not counts:
+        tactic_ids = [gid for summary in window.values() for gid in summary.tactic_ids]
+        if not tactic_ids:
             return TacticComparisonResponse(tcs=[], analyzed_gate=TACTIC_COMPARISON_GATE)
 
-        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
+        # 258 D-06: aggregate exactly the tactic-ready games of the window.
+        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id, game_ids=tactic_ids)
         # Two fetches (one per orientation), each bucketed per TC in Python.
         missed_rows = await library_repository.fetch_tactic_comparison(
             session,
@@ -2191,15 +2349,15 @@ async def get_tactic_comparison(
         tcs = [
             TacticComparisonTc(
                 tc=tc,
-                analyzed_n=counts[tc],
-                below_gate=counts[tc] < TACTIC_COMPARISON_GATE,
+                analyzed_n=window[tc].tactic_analyzed_n,
+                below_gate=window[tc].tactic_analyzed_n < TACTIC_COMPARISON_GATE,
                 bullets=_interleave_tactic_bullets(
                     _compute_tactic_bullets(missed_by_tc.get(tc, []), "missed", tc),
                     _compute_tactic_bullets(allowed_by_tc.get(tc, []), "allowed", tc),
                 ),
             )
             for tc in LIBRARY_TC_ORDER
-            if counts.get(tc)
+            if tc in window and window[tc].tactic_analyzed_n > 0
         ]
         return TacticComparisonResponse(tcs=tcs, analyzed_gate=TACTIC_COMPARISON_GATE)
 

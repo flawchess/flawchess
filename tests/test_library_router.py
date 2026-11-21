@@ -21,15 +21,18 @@ import datetime
 import gzip
 import json
 import uuid
+from collections.abc import Callable, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import delete
 from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.dev_clock import dev_now_utc
 from app.main import app
 from app.schemas.library import LibraryFlawsResponse, LibraryGamesResponse
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
@@ -67,6 +70,24 @@ async def auth_headers() -> dict[str, str]:
         token = login_resp.json()["access_token"]
 
     return {"Authorization": f"Bearer {token}"}
+
+
+# 258: the flaw snapshot ranks games inside a window anchored on dev_now_utc, so the window
+# tests pin the clock instead of depending on the real date.
+_ROUTER_NOW = datetime.datetime(2026, 11, 21, 12, 0, tzinfo=datetime.timezone.utc)
+
+PinLibraryNow = Callable[[datetime.datetime], None]
+
+
+@pytest.fixture
+def pin_library_now() -> Iterator[PinLibraryNow]:
+    """Pin dev_now_utc for the test; the override is removed on teardown."""
+
+    def _pin(now: datetime.datetime) -> None:
+        app.dependency_overrides[dev_now_utc] = lambda: now
+
+    yield _pin
+    app.dependency_overrides.pop(dev_now_utc, None)
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +332,11 @@ class TestGetFlawComparison:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
-        """Authenticated request returns 200 with exactly the tcs/analyzed_gate/total_n keys."""
+    async def test_returns_per_tc_shape_with_auth(
+        self, auth_headers: dict[str, str], pin_library_now: PinLibraryNow
+    ) -> None:
+        """Authenticated request returns 200 with the tcs/gate/total_n keys and the window fields."""
+        pin_library_now(_ROUTER_NOW)
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -320,10 +344,106 @@ class TestGetFlawComparison:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body) == {"tcs", "analyzed_gate", "total_n"}
+        assert set(body) == {
+            "tcs",
+            "analyzed_gate",
+            "total_n",
+            "recency_filtered",
+            "window_months",
+            "games_cap",
+        }
         assert body["tcs"] == []  # a fresh user has no analyzed games
         assert isinstance(body["analyzed_gate"], int)
         assert body["total_n"] == 0  # ...and no games at all
+        assert body["recency_filtered"] is False
+        assert body["window_months"] == 36
+        assert body["games_cap"] == 1000
+
+    @pytest.mark.asyncio
+    async def test_window_follows_the_pinned_clock(
+        self, test_engine: Any, pin_library_now: PinLibraryNow
+    ) -> None:
+        """258 D-03: the 36-month window is anchored on dev_now_utc, so moving the clock moves games out."""
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        headers, user_id = await _register_and_login(
+            f"window_clock_{uuid.uuid4().hex[:8]}@example.com"
+        )
+        analyzed_at = _ROUTER_NOW
+        ages_in_days = [10, 400, 800, 1461]  # the last one is about four years old
+        game_ids = [
+            await _seed_game_committed(
+                session_maker,
+                user_id=user_id,
+                played_at=_ROUTER_NOW - datetime.timedelta(days=age),
+                full_evals_completed_at=analyzed_at,
+                ply_count=40,
+            )
+            for age in ages_in_days
+        ]
+        try:
+            pin_library_now(_ROUTER_NOW)
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/library/flaw-comparison", headers=headers)
+                assert resp.status_code == 200
+                body = resp.json()
+                assert body["total_n"] == 4  # the page total stays unwindowed
+                (blitz,) = body["tcs"]
+                assert blitz["tc"] == "blitz"
+                assert blitz["total_n"] == 3
+                assert blitz["analyzed_n"] == 3
+                assert blitz["history_analyzed_n"] == 4
+                assert blitz["cap_reached"] is False
+                oldest_in_window = (_ROUTER_NOW - datetime.timedelta(days=800)).date()
+                assert blitz["sample_since"] == oldest_in_window.isoformat()
+
+                # Two years later only the 10-day-old game is still inside the 36 months.
+                pin_library_now(_ROUTER_NOW + datetime.timedelta(days=730))
+                later = await client.get("/api/library/flaw-comparison", headers=headers)
+                (blitz_later,) = later.json()["tcs"]
+                assert blitz_later["total_n"] == 1
+                assert blitz_later["history_analyzed_n"] == 4
+        finally:
+            await _delete_committed_games(session_maker, game_ids)
+
+    @pytest.mark.asyncio
+    async def test_recency_filter_replaces_the_window_bound(
+        self, test_engine: Any, pin_library_now: PinLibraryNow
+    ) -> None:
+        """258 D-04: an explicit date bound replaces the 36 months; the response says so."""
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        headers, user_id = await _register_and_login(
+            f"window_recency_{uuid.uuid4().hex[:8]}@example.com"
+        )
+        game_ids = [
+            await _seed_game_committed(
+                session_maker,
+                user_id=user_id,
+                played_at=_ROUTER_NOW - datetime.timedelta(days=age),
+                full_evals_completed_at=_ROUTER_NOW,
+                ply_count=40,
+            )
+            for age in [10, 400, 800, 1461]
+        ]
+        try:
+            pin_library_now(_ROUTER_NOW)
+            five_years_back = (_ROUTER_NOW - datetime.timedelta(days=5 * 365)).date()
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/flaw-comparison",
+                    params={"from_date": five_years_back.isoformat()},
+                    headers=headers,
+                )
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["recency_filtered"] is True
+            (blitz,) = body["tcs"]
+            assert blitz["total_n"] == 4  # the four-year-old game is back in
+        finally:
+            await _delete_committed_games(session_maker, game_ids)
 
     @pytest.mark.asyncio
     async def test_returns_422_when_from_date_after_to_date(
@@ -451,6 +571,7 @@ async def _seed_game_committed(
     user_color: str = "white",
     platform: str = "lichess",
     full_evals_completed_at: datetime.datetime | None = None,
+    ply_count: int | None = None,
 ) -> int:
     """Insert and commit a Game row, returning its ID.
 
@@ -478,11 +599,25 @@ async def _seed_game_committed(
             is_computer_game=False,
             played_at=played_at,
             full_evals_completed_at=full_evals_completed_at,
+            ply_count=ply_count,
         )
         session.add(game)
         await session.commit()
         await session.refresh(game)
         return game.id
+
+
+async def _delete_committed_games(
+    session_maker: async_sessionmaker[AsyncSession], game_ids: list[int]
+) -> None:
+    """Delete committed seed games so analyzed ones do not leak into the global eval lotteries."""
+    from app.models.game import Game
+
+    if not game_ids:
+        return
+    async with session_maker() as session:
+        await session.execute(delete(Game).where(Game.id.in_(game_ids)))
+        await session.commit()
 
 
 async def _seed_flaw_committed(
@@ -2495,6 +2630,12 @@ class TestTacticComparisonDualOrientation:
     The payload is `tcs[]`, each TC carries 38 bullets (19 families x
     missed/allowed) in fixed family order, missed before allowed.
     """
+
+    @pytest.fixture(autouse=True)
+    def _pin_clock(self, pin_library_now: PinLibraryNow) -> None:
+        # 258: the seeds are dated January 2026, inside the window of this pinned clock, so
+        # the tests do not depend on the real date.
+        pin_library_now(_ROUTER_NOW)
 
     @pytest.mark.asyncio
     async def test_tactic_comparison_returns_200(

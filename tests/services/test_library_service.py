@@ -982,6 +982,53 @@ class TestFlawStats:
             assert pt.inaccuracy_rate == pytest.approx(40.0)  # 2 / 5 * 100
 
     @pytest.mark.asyncio
+    async def test_trend_full_history(self, db_session: object) -> None:
+        """258 D-02: the Flaws Timeline is not windowed, so games four years old still plot.
+
+        The recent window (36 months, 1000 games) only feeds the snapshot sections. This week is
+        four years before 2026-11-21, far outside that window.
+        """
+        import datetime as _dt
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_flaw_stats
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99961)
+
+        played = _dt.datetime(2022, 11, 23, 12, 0, tzinfo=_dt.timezone.utc)  # a Wednesday
+        for _ in range(MIN_GAMES_FOR_TIMELINE):
+            await _seed_db_game(
+                session,
+                user_id=99961,
+                user_color="white",
+                ply_count=10,
+                played_at=played,
+                white_blunders=1,
+                white_mistakes=0,
+                white_inaccuracies=0,
+            )
+
+        resp = await get_flaw_stats(
+            session,
+            user_id=99961,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        iso = played.isocalendar()
+        monday = _dt.date.fromisocalendar(iso.year, iso.week, 1).isoformat()
+        assert [series.tc for series in resp.trend_by_tc] == ["blitz"]
+        assert [pt.date for pt in resp.trend_by_tc[0].points] == [monday]
+
+    @pytest.mark.asyncio
     async def test_null_time_control_bucket_has_no_series(self, db_session: object) -> None:
         """Games with a NULL time_control_bucket cannot be placed on the switch."""
         import datetime as _dt

@@ -10,7 +10,7 @@ import { GapRow } from '../GapRow';
 afterEach(cleanup);
 
 const TRIGGER_ID = 'library-gap-blunder-tc-blitz';
-const BASIS = 'Based on your 1,000 analyzed blitz games in the current filters.';
+const BASIS = 'Based on your 1,000 analyzed blitz games in the recent sample.';
 
 /** Blitz blunder row: you 5.46, opponents 6.12, band -0.3 to 0.3 (symmetric). */
 function blunderCell(overrides: Partial<GapCell> = {}): GapCell {

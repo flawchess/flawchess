@@ -12,16 +12,32 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from collections.abc import Iterator
+
 import httpx
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.core.dev_clock import dev_now_utc
 from app.main import app
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 
 ENDPOINT = "/api/library/tactic-comparison"
+
+# 258: the snapshot window ranks by played_at and is anchored on dev_now_utc, so every seeded
+# game needs a date inside the window of the pinned clock (the pin_now fixture).
+_NOW = datetime.datetime(2026, 11, 21, 12, 0, tzinfo=datetime.timezone.utc)
+_SEED_PLAYED_AT = _NOW - datetime.timedelta(days=1)
+
+
+@pytest.fixture
+def pin_now() -> Iterator[None]:
+    """Pin dev_now_utc to _NOW for the test; the override is removed on teardown."""
+    app.dependency_overrides[dev_now_utc] = lambda: _NOW
+    yield
+    app.dependency_overrides.pop(dev_now_utc, None)
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +96,7 @@ async def _seed_games(
                     rated=True,
                     is_computer_game=False,
                     ply_count=40,
+                    played_at=_SEED_PLAYED_AT,
                     # Analyzed marker for _analyzed_game_ids_subquery (full-analysis lane).
                     full_evals_completed_at=(
                         datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
@@ -116,7 +133,7 @@ async def _delete_games(test_engine, game_ids: list[int]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_200_shape(test_engine) -> None:
+async def test_200_shape(test_engine, pin_now: None) -> None:
     """Authenticated request returns 200 with the per-TC response keys."""
     email = f"tac-cmp-router-shape-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -150,7 +167,7 @@ async def test_200_shape(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_analyzed_games_returns_empty_tcs(test_engine) -> None:
+async def test_no_analyzed_games_returns_empty_tcs(test_engine, pin_now: None) -> None:
     """A user without analyzed games gets tcs == [] (zero-analyzed TCs are omitted)."""
     email = f"tac-cmp-router-empty-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -192,7 +209,7 @@ async def test_422_date_guard() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tactic_families_filter(test_engine) -> None:
+async def test_tactic_families_filter(test_engine, pin_now: None) -> None:
     """tactic_families narrows the analyzed population to games with a matching tactic."""
     email = f"tac-cmp-router-fam-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)

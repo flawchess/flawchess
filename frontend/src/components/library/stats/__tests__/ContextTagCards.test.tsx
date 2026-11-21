@@ -103,7 +103,7 @@ describe('ContextTagCards popovers', () => {
     render(<ContextTagCards tcStats={SKETCH_RAPID_ENTRY} />);
     fireEvent.click(screen.getByTestId('gap-popover-squandered-tc-rapid'));
     const popover = text('gap-popover-squandered-tc-rapid-popover');
-    expect(popover).toContain('Based on your 1,841 analyzed rapid games in the current filters.');
+    expect(popover).toContain('Based on your 1,841 analyzed rapid games in the recent sample.');
     expect(popover).toContain('500 vs. 500 squandered wins');
     expect(popover).not.toMatch(/\bevents?\b/i);
   });

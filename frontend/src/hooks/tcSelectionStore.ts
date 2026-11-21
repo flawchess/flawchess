@@ -72,6 +72,11 @@ interface TcSelectionStoreOptions<T extends { tc: TimeControlBucket }> {
   storageKey: string;
   /** The default TC for a payload list; null for an empty list. */
   pickDefault: (tcs: readonly T[]) => TimeControlBucket | null;
+  /**
+   * False drops a pinned default that is still in the payload. Library uses it for a TC
+   * that became quiet under other filters; omitted, a pin holds while its TC is offered.
+   */
+  isPinStillValid?: (pinned: T, tcs: readonly T[]) => boolean;
 }
 
 /**
@@ -81,6 +86,7 @@ interface TcSelectionStoreOptions<T extends { tc: TimeControlBucket }> {
 export function createTcSelectionStore<T extends { tc: TimeControlBucket }>({
   storageKey,
   pickDefault,
+  isPinStillValid,
 }: TcSelectionStoreOptions<T>): (
   tcs: readonly T[],
 ) => readonly [TimeControlBucket | null, (tc: TimeControlBucket) => void] {
@@ -133,7 +139,13 @@ export function createTcSelectionStore<T extends { tc: TimeControlBucket }>({
     tcs: readonly T[],
   ): readonly [TimeControlBucket | null, (tc: TimeControlBucket) => void] {
     const stored = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-    const pinnedOffered = isOffered(pinnedDefaultTc, tcs);
+    // Bug fix (258): "offered" used to mean "has data". A quiet Library TC stays in the
+    // payload, so a default pinned under one filter set survived a return to cached filters
+    // where that TC has no recent game, and the tab opened on the quiet TC although another
+    // had a full snapshot. The tab can now reject such a pin.
+    const pinnedEntry = tcs.find((t) => t.tc === pinnedDefaultTc);
+    const pinnedOffered =
+      pinnedEntry !== undefined && (isPinStillValid?.(pinnedEntry, tcs) ?? true);
     const defaultTc = pinnedOffered ? pinnedDefaultTc : pickDefault(tcs);
     // Pin after render (module writes during render are impure). Every section pins the
     // same value, and a new default is pinned only once the old one left the payload.

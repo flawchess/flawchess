@@ -456,10 +456,11 @@ class FacepalmComparisonTc(BaseModel):
     """One time control's facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
 
     bullets: the three FACEPALM_METRICS rows (total, missed wins, allowed losses), neutral
-             (no band), on the same anchor game set as FlawComparisonTc. Empty when
-             low_coverage is True.
+             (no band), computed on the analyzed games of the same recent window as
+             FlawComparisonTc (258 D-06). Empty when low_coverage is True.
     low_coverage: True when too few of either side's blunders in this TC carry a facepalm
-                  score for the two rates to be comparable; the rows are then withheld.
+                  score for the two rates to be comparable (evaluated on the window rows,
+                  258 D-10); the rows are then withheld.
     """
 
     tc: TimeControlBucket
@@ -470,23 +471,34 @@ class FacepalmComparisonTc(BaseModel):
 class FacepalmComparisonResponse(BaseModel):
     """Response for GET /api/library/facepalm-comparison (257 D-21: split from /flaw-comparison).
 
-    tcs: one entry per time control with at least one game in the comparison's anchor set,
-         ordered bullet, blitz, rapid, classical. The analyzed-games gate is
-         FlawComparisonResponse.analyzed_gate; the card sits behind that section's gate.
+    tcs: one entry per time control with at least one game (analyzed or not) in the recent
+         window (258 D-15), ordered bullet, blitz, rapid, classical; a time control without a
+         window game is absent. A listed TC with no analyzed window game carries three
+         zero-event rows. The analyzed-games gate is FlawComparisonResponse.analyzed_gate; the
+         card sits behind that section's gate.
     """
 
     tcs: list[FacepalmComparisonTc]
 
 
 class FlawComparisonTc(BaseModel):
-    """One time control's you-vs-opponent flaw comparison.
+    """One time control's you-vs-opponent flaw comparison, computed on the recent window.
+
+    The window (258) is the newest RECENT_GAMES_PER_TC_CAP games of this TC within
+    RECENCY_WINDOW_MONTHS (or within the selected period), taken from the games the sidebar
+    filters leave.
 
     tc: the time control bucket these bullets were computed over.
-    analyzed_n: analyzed games of this TC after the current filter set.
-    total_n: all games of this TC after the current filter set, analyzed or not; the
-             coverage denominator of the Flaw Stats basis line (analyzed_n <= total_n).
+    analyzed_n: analyzed games of this TC in the recent window (the gate basis).
+    total_n: all games of this TC in the recent window, analyzed or not; the coverage
+             denominator of the Flaw Stats basis line (analyzed_n <= total_n). 0 means the TC
+             has no game in the window (the quiet TC; its bullets are zero-event placeholders).
     below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
                 populated so tiles can show rates.
+    sample_since: date of the oldest game in the window; None when total_n is 0.
+    cap_reached: True when the window hit the games cap (the basis line then says "most recent").
+    history_analyzed_n: analyzed games of this TC in the unwindowed filtered set; why a quiet
+                        TC stays offered on the switch (258 D-15).
     bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
     tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
                        middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
@@ -497,6 +509,9 @@ class FlawComparisonTc(BaseModel):
     analyzed_n: int
     total_n: int
     below_gate: bool
+    sample_since: datetime.date | None
+    cap_reached: bool
+    history_analyzed_n: int
     bullets: list[FlawBullet]
     tempo_phase_cells: list[TempoPhaseCell]
 
@@ -505,20 +520,29 @@ class FlawComparisonResponse(BaseModel):
     """Response for GET /api/library/flaw-comparison.
 
     tcs: one entry per time control that the sidebar time-control filter allows and
-         that has at least one analyzed game under the current filters, ordered
-         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an
-         empty list means no analyzed games at all. Below-gate TCs keep their bullets.
+         that has at least one analyzed game in the unwindowed filtered set, ordered
+         bullet, blitz, rapid, classical. The numbers inside each entry are windowed (see
+         FlawComparisonTc). Zero-analyzed TCs are omitted, so an empty list means no
+         analyzed games at all. Below-gate TCs keep their bullets.
          No request parameter selects a TC: the switch is client-side.
     analyzed_gate: minimum analyzed games per TC (library_service.FLAW_COMPARISON_GATE),
         exposed so the frontend can render "X of N" without hardcoding the gate.
     total_n: all games (analyzed or not) under the current filters, summed over the TCs
-        the sidebar filter allows. Lets the frontend tell "nothing analyzed yet" (tcs=[]
-        and total_n > 0, show the coverage line) apart from "no games in these filters".
+        the sidebar filter allows; NOT windowed. Lets the frontend tell "nothing analyzed yet"
+        (tcs=[] and total_n > 0, show the coverage line) apart from "no games in these filters".
+    recency_filtered: True when from_date or to_date is set, so an explicit period replaced the
+        default 36-month bound; names the bound in the basis line.
+    window_months: the default window length (RECENCY_WINDOW_MONTHS), so the frontend does not
+        mirror the constant.
+    games_cap: the per-TC games cap of the window (RECENT_GAMES_PER_TC_CAP).
     """
 
     tcs: list[FlawComparisonTc]
     analyzed_gate: int
     total_n: int
+    recency_filtered: bool
+    window_months: int
+    games_cap: int
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +589,8 @@ class TacticComparisonTc(BaseModel):
     """One time control's tactic comparison.
 
     tc: the time control bucket these bullets were computed over.
-    analyzed_n: analyzed games of this TC after the current filter set.
+    analyzed_n: tactic-ready games of this TC in the recent window (analyzed and tactic blobs
+        done, 258 D-06): the games the bullets aggregate over.
     below_gate: True when analyzed_n < TACTIC_COMPARISON_GATE; the bullets are still
                 populated so the UI can decide what to show.
     bullets: always 38 entries: every family in FAMILY_TO_MOTIF_INTS order, missed
@@ -582,9 +607,10 @@ class TacticComparisonResponse(BaseModel):
     """Response for GET /api/library/tactic-comparison.
 
     tcs: one entry per time control that the sidebar time-control filter allows and
-         that has at least one analyzed game under the current filters, ordered
-         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an empty
-         list means no analyzed games at all. Below-gate TCs keep their bullets.
+         that has at least one tactic-ready game in the recent window (258), ordered
+         bullet, blitz, rapid, classical. A TC without one (a quiet TC, D-15) is absent:
+         the TC switch reads the flaw list. An empty list means no tactic-ready window
+         game at all. Below-gate TCs keep their bullets.
          No request parameter selects a TC: the switch is client-side.
     Each TC carries all 19 families x 2 sides in fixed FAMILY_TO_MOTIF_INTS order,
     missed before allowed. There is no ranking or top-N selection.

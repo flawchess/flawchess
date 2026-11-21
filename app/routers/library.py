@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.repositories import library_repository
 from app.schemas.library import (
@@ -28,6 +29,8 @@ from app.services import library_service
 from app.users import current_active_user
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
 # The Games/Flaws filter offers only the mistake/blunder severity tiers
 # (inaccuracies are count-only, never a filter; game_flaws stores M+B only).
@@ -226,6 +229,7 @@ async def get_flaw_stats(
 async def get_flaw_comparison(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
     severity: list[SeverityFilter] | None = Query(default=None),
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
@@ -244,6 +248,11 @@ async def get_flaw_comparison(
     analyzed game, each with 12 bullets; below-gate TCs keep their bullets
     The TC switch is client-side: no TC request parameter exists.
 
+    The numbers are computed on the recent window (258): the newest 1000 games per time
+    control within 36 months, or within the selected period. No request parameter turns the
+    window off. The window is anchored on dev_now_utc because nothing persisted has to match
+    it (unlike the Endgames ranked sample).
+
     user_id is taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention).
     `include_pasted` is the Library-only opt-in that reveals
@@ -255,6 +264,7 @@ async def get_flaw_comparison(
     return await library_service.get_flaw_comparison(
         session,
         user_id=user.id,
+        now_utc=now_utc,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -273,6 +283,7 @@ async def get_flaw_comparison(
 async def get_facepalm_comparison(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
     severity: list[SeverityFilter] | None = Query(default=None),
     time_control: list[TimeControlBucket] | None = Query(default=None),
     platform: list[Platform] | None = Query(default=None),
@@ -287,15 +298,17 @@ async def get_facepalm_comparison(
 ) -> FacepalmComparisonResponse:
     """Return the per-TC facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
 
-    Same filters and game set as /flaw-comparison, on its own endpoint (257 D-21) so the
-    rest of the section never waits on the facepalm score. user_id is taken exclusively from
-    the authenticated user (IDOR prevention).
+    Same filters and the same recent window as /flaw-comparison (258: the newest 1000 games
+    per time control within 36 months, or within the selected period), on its own endpoint
+    (257 D-21) so the rest of the section never waits on the facepalm score. user_id is taken
+    exclusively from the authenticated user (IDOR prevention).
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await library_service.get_facepalm_comparison(
         session,
         user_id=user.id,
+        now_utc=now_utc,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -314,6 +327,7 @@ async def get_facepalm_comparison(
 async def get_tactic_comparison(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
     severity: list[SeverityFilter] | None = Query(default=None),
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
@@ -329,8 +343,11 @@ async def get_tactic_comparison(
 ) -> TacticComparisonResponse:
     """Per-TC tactic motif you-vs-opponent comparison, per 100 games.
 
+    Computed on the same recent window as /flaw-comparison (258: the newest 1000 games per
+    time control within 36 months, or within the selected period).
+
     Returns `tcs`, one entry per time control that the filters
-    allow and that has at least one analyzed game (bullet..classical order). Each TC carries
+    allow and that has at least one tactic-ready game in the window (bullet..classical order). Each TC carries
     38 bullets (19 families x missed/allowed) in fixed FAMILY_TO_MOTIF_INTS order, missed
     before allowed, also when the TC is below the analyzed-game gate. Rates and gaps are per
     100 games. No ranking or top-N. No query parameter selects a TC (the switch is client-side).
@@ -349,6 +366,7 @@ async def get_tactic_comparison(
     return await library_service.get_tactic_comparison(
         session,
         user_id=user.id,
+        now_utc=now_utc,
         time_control=time_control,
         platform=platform,
         rated=rated,

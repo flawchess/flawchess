@@ -22,7 +22,13 @@ import {
   useTacticComparison,
 } from '@/hooks/useLibrary';
 import { useLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
-import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
+import {
+  NO_RECENT_GAMES_HINT,
+  isQuietTc,
+  libraryFreshImportBasisText,
+  libraryNoRecentGamesText,
+  librarySampleBasisText,
+} from '@/lib/flawComparisonMeta';
 import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
@@ -31,7 +37,12 @@ import { TempoPhaseHeatmap } from './TempoPhaseHeatmap';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
 import { MostCommonTacticsCard } from './MostCommonTacticsCard';
-import type { FilterState } from '@/components/filters/FilterPanel';
+import {
+  DEFAULT_FILTERS,
+  LIBRARY_FILTER_DOT_FIELDS,
+  areFiltersEqual,
+  type FilterState,
+} from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
   FacepalmBullet,
@@ -40,6 +51,15 @@ import type {
   FlawStatsResponse,
   TacticComparisonTc,
 } from '@/types/library';
+
+/**
+ * Sidebar fields that put " in the current filters" into the basis line (258 D-13): the
+ * Library fields minus the two recency fields (the line names the period on its own) and
+ * `matchSide` (the Library never sends it).
+ */
+const BASIS_FILTER_FIELDS: ReadonlyArray<keyof FilterState> = LIBRARY_FILTER_DOT_FIELDS.filter(
+  (field) => field !== 'recency' && field !== 'customRange' && field !== 'matchSide',
+);
 
 const NO_TCS: readonly FlawComparisonTc[] = [];
 const NO_TACTIC_TCS: readonly TacticComparisonTc[] = [];
@@ -93,15 +113,15 @@ function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelinePro
 }
 
 /**
- * The basis line, merged with the coverage readout: "1,768 of 1,790 rapid games analyzed
- * in the current filters." It replaced the library-wide "N of M analyzed" badge, which
- * counted every TC while every number below it is for the selected TC only.
+ * The basis line, merged with the coverage readout: "Based on your 412 blitz games from the
+ * last 36 months, 300 analyzed." It states the recent window the snapshot numbers describe
+ * (258 D-12, D-13) and replaced the library-wide "N of M analyzed" badge. analyzedN / totalN
+ * (windowed) drive the updating tint and hint; `text` is the sentence.
  */
 interface CoverageBasisLineProps {
+  text: string;
   analyzedN: number;
   totalN: number;
-  /** null when nothing is analyzed yet: there is no TC on the switch to scope the line to. */
-  tc: TimeControlBucket | null;
   isGuest: boolean;
 }
 
@@ -110,7 +130,7 @@ function coverageHint(analyzedN: number, isGuest: boolean): string {
   return analyzedN === 0 ? COVERAGE_STARTING_HINT : COVERAGE_UPDATING_HINT;
 }
 
-function CoverageBasisLine({ analyzedN, totalN, tc, isGuest }: CoverageBasisLineProps) {
+function CoverageBasisLine({ text, analyzedN, totalN, isGuest }: CoverageBasisLineProps) {
   // Below the updating threshold the line takes the Quick Scan banner's amber tint and
   // says the numbers are still moving. Only signed-up users get background analysis, so
   // only they get the pulsing "working" icon and the "update as analysis continues" copy.
@@ -141,9 +161,7 @@ function CoverageBasisLine({ analyzedN, totalN, tc, isGuest }: CoverageBasisLine
           data-testid="flaw-stats-coverage-icon"
         />
         <p>
-          <span data-testid="flaw-stats-basis">
-            {libraryCoverageBasisText(analyzedN, totalN, tc)}
-          </span>
+          <span data-testid="flaw-stats-basis">{text}</span>
           {isUpdating && (
             <span data-testid="flaw-stats-coverage-hint">
               {' '}
@@ -174,7 +192,8 @@ interface LibraryStatsTcSwitchProps {
 /**
  * The Library Stats time-control switch, bound to the one remembered Library
  * TC store every section reads. The page pins it in a sticky bar, so it stays in reach
- * while scrolling. Offers the flaw-comparison TCs (the tactic TCs are a subset).
+ * while scrolling. Offers the flaw-comparison TCs (the tactic TCs are a subset), including a
+ * quiet TC (games but none in the recent window): it keeps its slot (258 D-15).
  */
 export function LibraryStatsTcSwitch({ filters, idPrefix }: LibraryStatsTcSwitchProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
@@ -215,7 +234,10 @@ function facepalmLowCoverageFor(
 
 /**
  * Flaw Stats: heading, coverage basis line, tiles, timeline. The Facepalm tile reads the same
- * facepalm query as the You vs. your opponents card (one cache entry, one request).
+ * facepalm query as the You vs. your opponents card (one cache entry, one request). For a quiet
+ * TC (no game in the recent window) the basis-line slot holds one message and the timeline, which
+ * covers all games, follows; no tiles (258 D-16). The facepalm payload omits a quiet TC, so the
+ * branch keys off the flaw list.
  */
 function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
@@ -225,6 +247,8 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
+  // Read by both the basis line and the quiet message so the two follow one filter rule.
+  const otherFiltersActive = !areFiltersEqual(filters, DEFAULT_FILTERS, BASIS_FILTER_FIELDS);
 
   const renderBody = () => {
     if (comparison.isError) return <LoadError resource="flaw statistics" />;
@@ -233,18 +257,53 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
       // Fresh import, nothing analyzed yet: there is no TC to show, but the user should
       // still see that analysis is under way rather than a bare "no analyzed games".
       return (
-        <CoverageBasisLine analyzedN={0} totalN={comparison.data.total_n} tc={null} isGuest={isGuest} />
+        <CoverageBasisLine
+          text={libraryFreshImportBasisText(comparison.data.total_n)}
+          analyzedN={0}
+          totalN={comparison.data.total_n}
+          isGuest={isGuest}
+        />
       );
     }
     if (!tcStats || selectedTc === null) {
       return <p className="text-sm text-muted-foreground">{COPY_NO_ANALYZED}</p>;
     }
+    if (isQuietTc(tcStats)) {
+      return (
+        <>
+          <div
+            data-testid="flaw-stats-no-recent"
+            className="space-y-1 text-sm text-muted-foreground"
+          >
+            <p>
+              {libraryNoRecentGamesText(tcStats.tc, comparison.data.window_months, otherFiltersActive)}
+            </p>
+            <p>{NO_RECENT_GAMES_HINT}</p>
+          </div>
+          <FlawTimeline
+            stats={stats.data}
+            isLoading={stats.isLoading}
+            isError={stats.isError}
+            selectedTc={selectedTc}
+          />
+        </>
+      );
+    }
     return (
       <>
         <CoverageBasisLine
+          text={librarySampleBasisText({
+            tc: tcStats.tc,
+            totalN: tcStats.total_n,
+            analyzedN: tcStats.analyzed_n,
+            capReached: tcStats.cap_reached,
+            sampleSince: tcStats.sample_since,
+            recencyFiltered: comparison.data.recency_filtered,
+            otherFiltersActive,
+            windowMonths: comparison.data.window_months,
+          })}
           analyzedN={tcStats.analyzed_n}
           totalN={tcStats.total_n}
-          tc={tcStats.tc}
           isGuest={isGuest}
         />
         <FlawTiles
@@ -293,7 +352,8 @@ function VsOpponentsSkeleton() {
  * It reads the same comparison query as Flaw Stats (one cache entry, no extra request) and the
  * same remembered TC store as the page's one switch. The facepalm rows come from their own
  * request (257 D-21), started here in parallel so the card never waits for the section.
- * Below the gate one slot replaces everything.
+ * Below the gate one slot replaces everything. A quiet TC (no game in the recent window) renders
+ * nothing, heading and intro included (258 D-16): Flaw Stats carries the explanation.
  */
 function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
@@ -301,6 +361,7 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
+  if (tcStats && isQuietTc(tcStats)) return null;
 
   const renderBody = () => {
     if (comparison.isError) return <LoadError resource="opponent comparison" />;
@@ -361,7 +422,8 @@ function TacticsSkeleton() {
  *
  * The TC comes from the flaw-comparison list, the one the page switch offers: the tactic
  * list can lack a TC (blob-pending games), and resolving against it would silently show a
- * different TC than the switch says.
+ * different TC than the switch says. For the same reason a quiet TC (absent from the tactic list)
+ * is looked up in the flaw list: it renders nothing, heading and intro included (258 D-16).
  */
 function TacticMotifsSection({ filters }: { filters: FilterState }) {
   const comparison = useTacticComparison(filters, DEFAULT_FLAW_FILTER);
@@ -373,6 +435,8 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
   const selectionTcs = flawComparison.isError ? tcs : (flawComparison.data?.tcs ?? NO_TCS);
   const [selectedTc] = useLibraryStatsTc(selectionTcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
+  const selectedFlawTc = flawComparison.data?.tcs.find((t) => t.tc === selectedTc);
+  if (selectedFlawTc && isQuietTc(selectedFlawTc)) return null;
 
   const renderBody = () => {
     if (comparison.isError) return <LoadError resource="tactic comparison" />;

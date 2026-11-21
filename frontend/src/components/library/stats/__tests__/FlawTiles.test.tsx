@@ -116,7 +116,7 @@ describe('FlawTiles', () => {
     fireEvent.click(screen.getByTestId('gap-popover-blunder-tc-blitz'));
     const popover = text('gap-popover-blunder-tc-blitz-popover');
     expect(popover).toContain('Fewer is better.');
-    expect(popover).toContain('Based on your 1,000 analyzed blitz games in the current filters.');
+    expect(popover).toContain('Based on your 1,000 analyzed blitz games in the recent sample.');
     expect(popover).toContain('1,916 vs. 1,982 blunders');
     expect(popover.toLowerCase()).not.toContain('event');
   });

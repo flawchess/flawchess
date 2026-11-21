@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 258
-current_phase_name: Library Stats Recent Sample for Snapshot Charts (SEED-261121-3ou)
-status: executing
-stopped_at: Phase 258 context gathered
-last_updated: "2026-11-21T11:51:00.231Z"
-last_activity: 2026-11-20
-last_activity_desc: Phase 251 complete, transitioned to Phase 252
-state_head: bce23770a766ecd4b5bc8e98de3dd29ba7866277
+current_phase: 259
+current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
+status: planning
+stopped_at: Phase 258 complete, ready to plan Phase 259
+last_updated: "2026-11-21T14:33:40.041Z"
+last_activity: 2026-11-21
+last_activity_desc: Phase 258 complete, transitioned to Phase 259
+state_head: 686073cc6297f44170bf5aee86ec88a5db7a8694
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 63
-  total_plans: 104
-  completed_plans: 97
+  total_plans: 105
+  completed_plans: 102
+  percent: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,12 +22,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 258 (Library Stats Recent Sample for Snapshot Charts (SEED-261121-3ou)) — READY TO EXECUTE
-Plan: 6
+Phase: 259 — Facepalm Score Refit on First Principles (SEED-261121-tau)
+Plan: Not started
 
-Status: Ready to execute
+Status: Ready to plan
 
-Last activity: 2026-11-20 - Completed quick task 261120-qzo: Sentry noise fixes (FLAWCHESS-9G hidden-tab watchdog, FLAWCHESS-DH extension rejection)
+Last activity: 2026-11-21 — Phase 258 complete, transitioned to Phase 259
 
 Open threads carried forward (not blockers):
 
@@ -53,6 +54,10 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-11-19 after Phase 251)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau)**, ready to plan. Phase 258 (Library Stats Recent Sample for Snapshot Charts, SEED-261121-3ou) complete 2026-11-21 on branch `gsd/phase-258-library-stats-recent-sample-snapshots`: verified 20/20, UAT 5/5 (test 3 resolved by gap plan 258-05), threats_open 0; Nyquist validation still draft (`/gsd-validate-phase 258`); not yet squash-merged to `main`.
+
+### Superseded: focus after Phase 251
+
 Current focus: **Phase 251 (Blunder-Check Schedule, Streak and Leaderboards, SEED-261108-dk0) complete 2026-11-19** on branch `gsd/phase-251-...`: verified 25/25, UAT 5/5 (browser launch walk), threats_open 0, Nyquist-compliant; not yet squash-merged to `main` (pre-merge gate + serial suite already green). Next on the roadmap: Phase 252 (Short Engine Line Repair Backfill).
 
 ### Superseded: focus after the v2.28/v2.29 close
@@ -965,6 +970,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 257]: 257-06: facepalm card is the trailing child of ContextTagCards; significance sentences describe the gap and drive no colour (owner confirms D-05 reading at UAT)
 - [Phase 257]: 257-06: GapCell.noVerdict is an opt-in flag so zoneless tactic cells keep their significance-based colouring
 - [Phase 257]: 257-07: changelog bullets avoid probability wording and banned verdict names; full pre-merge gate green on the phase branch
+- [Phase 258]: Window bound computed in Python from dev_now_utc (months_before); analyzed_n/total_n keep their names and become windowed; offered TCs come from the unwindowed analyzed set so a quiet TC stays on the switch
+- [Phase 258]: Facepalm lists every TC with a window game (analyzed or not); tactic drops its unwindowed blob-gated count and reads the window's tactic-ready ids; JIT off only on the facepalm path until plan 04's EXPLAIN
+- [Phase 258]: 258-03: quiet-TC message names the real Recency label '5 years' as plain text (no button); popover basis reads 'in the recent sample'; a remembered quiet TC stays selected
+- [Phase 258]: Plan 04: the D-18 timing script runs on dev (all PASS on default filters, windowed facepalm regressed on the --from-date path); prod D-18/D-19 measurement is handed to the orchestrator before the squash-merge
 
 ### Pending Todos
 
@@ -1222,9 +1231,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-21T10:50:48.214Z
-**Stopped at:** Phase 258 context gathered
-**Resume file:** .planning/phases/258-library-stats-recent-sample-snapshots/258-CONTEXT.md
+**Last session:** 2026-11-21T12:59:06.664Z
+**Stopped at:** Phase 258 complete, ready to plan Phase 259
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1513,6 +1522,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 257 P05 | 40 min | 1 tasks | 6 files |
 | Phase 257 P06 | 20 min | 2 tasks | 11 files |
 | Phase 257 P07 | 12 min | 2 tasks | 1 files |
+| Phase 258 P01 | 25 min | 2 tasks | 14 files |
+| Phase 258 P02 | 10 min | 3 tasks | 9 files |
+| Phase 258 P03 | 15min | 3 tasks | 14 files |
+| Phase 258 P04 | 25 min | 2 tasks | 3 files |
 
 ## Performance Metrics
 
