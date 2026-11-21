@@ -733,10 +733,18 @@ seed ("Decided Shape", 2026-11-21).
 
 **Depends on**: Phase 257 (the facepalm comparison endpoint and the current Library Stats layout).
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 258 to break down)
+**Wave 1**
+- [ ] 258-01-PLAN.md — Tracer: the recent window (1000 per TC, 36 months or the chosen period) from SQL to the Flaw Stats basis line on /flaw-comparison, seed migration of the comparison tests, window and decision tests (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 258-02-PLAN.md — Backend: facepalm and tactic comparisons on the same window, JIT off from the window statement on (wave 2)
+- [ ] 258-03-PLAN.md — Frontend: quiet time control message with hidden snapshot sections, default TC, timeline caption, basis-line variants, popover wording, default-filter guards (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 258-04-PLAN.md — Prod timing tool and window EXPLAIN (D-18 / D-19 handed to UAT), changelog, full pre-merge gate (wave 3)
 
 ## Backlog
 
