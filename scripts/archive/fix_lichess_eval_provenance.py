@@ -34,12 +34,14 @@ SUBCOMMANDS
 
     --execute against prod asks for confirmation (or pass --yes).
 
+Done on prod 2026-10-17 (SEED-202 item 1); archived 2026-11-21.
+
 Usage:
     bin/prod_db_tunnel.sh
-    uv run python scripts/fix_lichess_eval_provenance.py scan --db prod
-    uv run python scripts/fix_lichess_eval_provenance.py apply --db prod
-    uv run python scripts/fix_lichess_eval_provenance.py apply --db prod --execute
-    uv run python scripts/fix_lichess_eval_provenance.py restore --db prod --execute
+    uv run python scripts/archive/fix_lichess_eval_provenance.py scan --db prod
+    uv run python scripts/archive/fix_lichess_eval_provenance.py apply --db prod
+    uv run python scripts/archive/fix_lichess_eval_provenance.py apply --db prod --execute
+    uv run python scripts/archive/fix_lichess_eval_provenance.py restore --db prod --execute
 """
 
 from __future__ import annotations
@@ -57,7 +59,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Bootstrap project root so `app.*` imports resolve when running as a script.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Archived under scripts/archive/, so the repo root is two levels up.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.config import db_url_for_target  # noqa: E402
 

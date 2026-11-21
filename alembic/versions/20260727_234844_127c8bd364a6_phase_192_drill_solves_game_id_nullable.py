@@ -55,8 +55,8 @@ def downgrade() -> None:
     straight to `ALTER COLUMN game_id SET NOT NULL` and simply documented
     that it would fail once any NULL existed. That is not merely a
     theoretical one-way door — it broke the serial test suite outright. Any
-    later migration test that downgrades past this revision (e.g.
-    tests/test_migration_91_evals_completed_at.py) traverses this function,
+    later migration test that downgrades past this revision (e.g. the since-
+    retired tests/test_migration_91_evals_completed_at.py) traverses this function,
     and by then this phase's own tests have legitimately created NULL-
     `game_id` rows, so the ALTER raised
     `column "game_id" contains null values` and cascaded 16 failures.

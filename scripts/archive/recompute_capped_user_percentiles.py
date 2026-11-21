@@ -16,7 +16,7 @@ WHY THIS EXISTS (quick task 261031-sly)
 WHEN
     On prod, run it AFTER the deploy that ships the new cap: the pre-deploy app would
     overwrite rows on the old cap at the next import or eval drain. Re-running is safe
-    (upserts plus prune). Afterwards the script can move to scripts/archive/.
+    (upserts plus prune). Done on prod; archived 2026-11-21.
 
 SAFETY
     Stage A/B swallow every exception after ``sentry_sdk.capture_exception``. Sentry
@@ -28,12 +28,12 @@ SAFETY
     against prod asks for confirmation (or pass --yes).
 
 Usage:
-    uv run python scripts/recompute_capped_user_percentiles.py --db dev
-    uv run python scripts/recompute_capped_user_percentiles.py --db dev --execute
+    uv run python scripts/archive/recompute_capped_user_percentiles.py --db dev
+    uv run python scripts/archive/recompute_capped_user_percentiles.py --db dev --execute
 
     bin/prod_db_tunnel.sh
-    uv run python scripts/recompute_capped_user_percentiles.py --db prod
-    uv run python scripts/recompute_capped_user_percentiles.py --db prod --execute
+    uv run python scripts/archive/recompute_capped_user_percentiles.py --db prod
+    uv run python scripts/archive/recompute_capped_user_percentiles.py --db prod --execute
 """
 
 from __future__ import annotations
@@ -55,7 +55,8 @@ from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Bootstrap project root so `app.*` imports resolve when running as a script.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Archived under scripts/archive/, so the repo root is two levels up.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.core.config import db_url_for_target  # noqa: E402
 

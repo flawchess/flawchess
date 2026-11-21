@@ -5,10 +5,10 @@ current_phase: 259
 current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
 status: planning
 stopped_at: Phase 258 complete, ready to plan Phase 259
-last_updated: "2026-11-21T14:33:40.041Z"
+last_updated: "2026-11-21T15:46:20.821Z"
 last_activity: 2026-11-21
 last_activity_desc: Phase 258 complete, transitioned to Phase 259
-state_head: 686073cc6297f44170bf5aee86ec88a5db7a8694
+state_head: edc89e46c26e528b9151236f293c64191089b3f4
 progress:
   total_phases: 13
   completed_phases: 63
@@ -1179,6 +1179,7 @@ None active.
 | 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
 | 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
 | 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
+| 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
 
 ## Deferred Items
 
