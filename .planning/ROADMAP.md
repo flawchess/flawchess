@@ -778,7 +778,7 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 5/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+**Plans:** 6/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
 **Wave 1**
@@ -797,7 +797,7 @@ Plans:
 - [x] 259-05-PLAN.md — reply backfill mode, its stamp and the readiness status counts
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 259-06-PLAN.md — R1 release, prod line pass, reply pass launch; branch and checkout map
+- [x] 259-06-PLAN.md — R1 release, prod line pass, reply pass launch; branch and checkout map
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 259-07-PLAN.md — fixed-shape fit tool on the scalar inputs (D-01), fit tests trimmed
