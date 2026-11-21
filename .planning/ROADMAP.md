@@ -699,6 +699,45 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 257-07-PLAN.md — Changelog, D-06 / D-14 end-of-phase guards, full pre-merge gate, prod checks handed to UAT (wave 7)
 
+### Phase 258: Library Stats Recent Sample for Snapshot Charts (SEED-261121-3ou)
+
+**Goal**: Make the Library Stats snapshot charts describe how the player plays now, while the timelines keep
+the whole career. Today the page defaults to all time, so the "you vs your opponents" flaw, facepalm and tactic
+comparisons lump a career into one average and are graded against zones built on recent games. Decisions in the
+seed ("Decided Shape", 2026-11-21).
+
+- **Split by chart type, no filter-default changes.** The shared filter store keeps its defaults, so the Library
+  Games and Flaws tabs are untouched.
+- **Timelines keep full history.** Sidebar filters, including an explicit recency choice, still crop them.
+- **Snapshot charts always use a recent sample:** `/library/flaw-comparison`, `/library/facepalm-comparison` and
+  `/library/tactic-comparison` are computed on the most recent 1000 games per time control within the last 36
+  months (`RECENT_GAMES_PER_TC_CAP`, `RECENCY_WINDOW_MONTHS`), taken from the games the sidebar filters leave.
+- **An explicit recency filter replaces the 36-month bound;** the 1000-game cap stays.
+- **The cap counts all filtered games, then the analyzed subset is shown,** so the window matches Endgames and
+  stays time-defined.
+- **One shared windowed game set** for the counts and all three comparisons, so the basis line and the tiles
+  always agree.
+- **Basis line under the snapshot section header,** for example "Based on your most recent 1000 blitz games
+  (since Mar 2025), 640 analyzed". The API returns the window start and the sample sizes.
+- **No "Recent / All games" switch:** the lifetime snapshot is deliberately unreachable.
+- **No default opponent strength of ±100:** the flaw zones are already equal-footing calibrated and the user's
+  value stays unfiltered; the filter remains available.
+- **Performance check on a large account:** the ranked "recent 1000 per time control" subquery is a new query
+  shape on a page where the facepalm comparison was already split out for speed.
+- **Accepted:** the last timeline point (trailing 100 games) and the snapshot tile (up to 1000 games) show
+  different numbers.
+- **Open for discuss-phase:** whether the cap applies before or after the "played as" colour filter (same period
+  for both colours, or the most recent 1000 games of that colour).
+- **Out of scope:** restoring full-history timelines on Endgames Stats with the same split (a separate
+  decision); any change to the Endgames ranked sample.
+
+**Depends on**: Phase 257 (the facepalm comparison endpoint and the current Library Stats layout).
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 258 to break down)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

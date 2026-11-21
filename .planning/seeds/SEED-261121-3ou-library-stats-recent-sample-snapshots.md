@@ -1,6 +1,6 @@
 ---
 id: SEED-261121-3ou
-status: dormant
+status: active
 planted: 2026-11-21
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)
 trigger_when: when planning the next milestone or phase that touches Library Stats or the stats filter behaviour
@@ -11,6 +11,8 @@ scope: medium, one phase (backend sample window for three comparison endpoints, 
 
 Make the Library Stats snapshot charts describe how the player plays now, while the timelines keep
 showing the whole career.
+
+**Promoted 2026-11-21 to Phase 258** (`.planning/ROADMAP.md`, Active Phases).
 
 ## Why This Matters
 
