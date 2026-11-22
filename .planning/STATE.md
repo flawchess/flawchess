@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 259
 status: completed
 stopped_at: Phase 259 complete — all phases complete
-last_updated: "2026-11-22T13:59:21.664Z"
+last_updated: "2026-11-22T14:14:55.130Z"
 last_activity: 2026-11-22
 last_activity_desc: Phase 259 complete
-state_head: fa3462b81d0484dea1109c7f5601fb16f3976ff7
+state_head: 2f43ec19a16ee838da97f11015858dae4bda3c58
 progress:
   total_phases: 13
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-22 - Completed quick task 261122-kos: forced-mate eval row and mate-in-1 strip fixes
+Last activity: 2026-11-22 - Completed quick task 261122-l3u: drain keeps the second-best move of the opening flaw re-search
 
 Open threads carried forward (not blockers):
 
@@ -1197,6 +1197,7 @@ None active.
 | 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
 | 261122-jsf | Forcing-line gate: a mate tag survives a tie between two mating moves (prod game 1461616 ply 76) | 2026-11-22 | 4fe187674 | [261122-jsf-fix-mate-tie-rule-in-forcing-line-gate](./quick/261122-jsf-fix-mate-tie-rule-in-forcing-line-gate/) |
 | 261122-kos | Tactic tags: forced-mate flag reads the right eval row; mate in 1 survives the only-move strip | 2026-11-22 | fa3462b81 | [261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s](./quick/261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s/) |
+| 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
 
 ## Deferred Items
 
