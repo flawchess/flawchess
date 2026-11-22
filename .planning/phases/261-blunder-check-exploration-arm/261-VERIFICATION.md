@@ -1,7 +1,7 @@
 ---
 phase: 261-blunder-check-exploration-arm
 verified: 2026-11-22T17:45:00Z
-status: human_needed
+status: passed
 score: 12/12 decisions verified in code; 1 must-have (D-03 / D-04 in the running app) not observed
 covered_files:
   - ".planning/phases/261-blunder-check-exploration-arm/261-01-PLAN.md"
@@ -38,7 +38,7 @@ covered_files:
   - "frontend/src/types/blunderCheck.ts"
   - "reports/blunder-check/exploration-probe-explain-261.md"
   - "scripts/blunder_check/caught_rate.py"
-covered_digest: "v4:sha256:5ded429056c48ef35def70b35a81185d31ac3dd760390758fbe610f453d9496f"
+covered_digest: "v4:sha256:7508722d1ad0ef89d496e6576c6d985ea74e922e66baaca86b4a813f5873d62b"
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
@@ -60,8 +60,8 @@ human_verification:
 
 **Phase Goal:** Serve about 20% of blunder windows from a random draw with no facepalm-score cut, record what was served, and show the score after the answer.
 **Verified:** 2026-11-22
-**Status:** human_needed
-**Re-verification:** No, initial verification
+**Status:** passed (after UAT, see "Post-UAT amendment" below)
+**Re-verification:** No. The verifier ran once, on 2026-11-22 before UAT. The amendment below was written by the orchestrator after the owner's UAT change; the verifier was not re-run.
 
 ## Goal Achievement
 
@@ -78,9 +78,9 @@ The goal is achieved in code. The exploration arm draws about 20% of blunder slo
 | Seed | Runs indefinitely, no gate or stop rule | VERIFIED | No gate code; lowering is the constant. |
 | Seed | Score shown is the serve-time snapshot | VERIFIED | `_blunder_solution` builds feedback from `window.facepalm_*` columns only (`blunder_check_service.py:1163-1171`), never `game_flaws`. |
 | Seed | Type line: facepalm-type side only, floor 2 or mate, floor not applied to stored means, stored on the window, no new `game_flaws` column | VERIFIED | `type_line_facts` branches on `facepalm_type`; `window_case` not read; `TYPE_LINE_MIN_SWING = 2` applied only in `blunder_feedback` (read time); migration adds columns only to `blunder_check_windows`; tests `test_allowed_loss_never_reports_the_best_line_mate`, `test_missed_win_never_reports_the_played_line_mate`, `test_floor_is_a_read_time_constant` pass. |
-| D-01 | Score shown with the library `FacepalmChip` + popover, fed by the snapshot | VERIFIED (code) | `BlunderCheckSolution.tsx:253-258` renders `FacepalmChip score={copy.feedback.score}`; chip reuses `FacepalmBadgePopover`/`FacepalmExplanation`. Real rendering: human item 1. |
-| D-02 | Popover explains the score only, neutral about whose blunder | VERIFIED (copy caveat) | Neutral form passes no type (`FacepalmChip` neutral props), `FacepalmExplanation` hides the type line when `type` is absent, neutral grey tint (`FACEPALM_NEUTRAL_STYLE`), `facepalmScoreMeaning('neutral')` says "that level". Typed Flaws-card form unchanged ("your"). Copy nit IN-04 (dangling "that level") is advisory. |
-| D-03 | Second short paragraph after the verdict sentence, chip then type line then hard-to-catch, desktop card and phone strip | VERIFIED in jsdom, NOT in the running app | `SolutionVerdict` is the one renderer used for both the card (`:383`) and the strip (`:392`); tests assert DOM order after `blunder-check-solution-summary`. Browser check pending (human items 1 and 2). |
+| D-01 | Score shown with the library `FacepalmChip` + popover, fed by the snapshot | SUPERSEDED in UAT (was VERIFIED in code) | `BlunderCheckSolution.tsx:253-258` renders `FacepalmChip score={copy.feedback.score}`; chip reuses `FacepalmBadgePopover`/`FacepalmExplanation`. Real rendering: human item 1. |
+| D-02 | Popover explains the score only, neutral about whose blunder | SUPERSEDED in UAT (was VERIFIED, copy caveat) | Neutral form passes no type (`FacepalmChip` neutral props), `FacepalmExplanation` hides the type line when `type` is absent, neutral grey tint (`FACEPALM_NEUTRAL_STYLE`), `facepalmScoreMeaning('neutral')` says "that level". Typed Flaws-card form unchanged ("your"). Copy nit IN-04 (dangling "that level") is advisory. |
+| D-03 | Second short paragraph after the verdict sentence, chip then type line then hard-to-catch, desktop card and phone strip | AMENDED in UAT: no chip, lines only (was VERIFIED in jsdom) | `SolutionVerdict` is the one renderer used for both the card (`:383`) and the strip (`:392`); tests assert DOM order after `blunder-check-solution-summary`. Browser check pending (human items 1 and 2). |
 | D-04 | Every blunder window with a snapshot shows it, caught or missed, both arms; pre-phase windows show nothing | VERIFIED | `blunder_feedback` returns None only when `score is None`; both arms get the snapshot (`_selection_record` has no arm condition); `feedbackCopy` returns null for a null/absent `feedback`; tests cover `feedback: null`. |
 | D-05 | False alarm shows nothing new | VERIFIED | `FalseAlarmSolution` schema and service path unchanged (`window_solution` routes FALSE_ALARM to `_false_alarm_solution`); `falseAlarmCopy` returns `feedback: null`; test "never shows on a false alarm or a herring" passes. |
 | D-06 | Hard to catch = snapshotted score below 0.5, one named constant, tied to score not arm | VERIFIED | `HARD_TO_CATCH_SCORE_BELOW = 0.5`; `hard_to_catch=score < HARD_TO_CATCH_SCORE_BELOW`; parametrised boundary test passes. |
@@ -173,3 +173,38 @@ No gaps. All of D-01 to D-12, the seed decisions and the discretion defaults are
 
 _Verified: 2026-11-22_
 _Verifier: Claude (gsd-verifier)_
+
+## Post-UAT amendment (2026-11-22, orchestrator)
+
+Written after the verifier ran. It records what the owner changed in UAT, so the rows above that describe the
+Facepalm chip are history, not the shipped state. This is not a second verifier run.
+
+**Owner changes in UAT (261-UAT.md, "UAT feedback"):**
+
+- **D-01 and D-02 are superseded.** The Facepalm score chip and its neutral popover are no longer shown on the
+  blunder check solution. The neutral chip form, the `'neutral'` audience, `FACEPALM_NEUTRAL_STYLE` and the
+  `FACEPALM_NEUTRAL*` theme tokens were deleted. The phase goal's "show the score after the answer" is therefore
+  met differently: the serve-time snapshot now only decides the "???" badge and the hard-to-catch line, and the
+  number itself is not displayed.
+- **D-03 is amended.** The second paragraph is the type line and the hard-to-catch line only, and is absent
+  when a blunder has neither (`feedbackCopy` returns null for no lines).
+- **New, outside the D-01 to D-12 contract.** A facepalm blunder (snapshot score of 70% or more,
+  `isFacepalmBlunder`) is badged "???" on the board and the Game chip of the blunder check solution
+  (`lineModel` in `blunderCheckSolution.ts`, `markerForQuality` in `trainArrows.ts`, `TrainLineChips.tsx`). The
+  personalized-puzzle reveal does the same from a new boolean `game_move_facepalm` on `PuzzleRevealResponse`
+  (`_game_move_is_facepalm` in `train_repository.py`: the user's own blunder, library lambda, at or above
+  `FACEPALM_STATS_MIN`); the score stays server-side.
+- D-04 to D-12, the seed decisions and the discretion items are untouched by the change. `BlunderFeedback`
+  on the wire is unchanged (score, type_line, hard_to_catch).
+
+**Evidence for the change:** frontend lint, `tsc -b` build, 6764 vitest tests and knip pass; backend ruff, ty,
+the nesting-depth gate and the full suite (6952 passed, 8 skipped) pass. New tests:
+`test_reveal_game_move_facepalm_flag` (high score true, low score false, a mistake false), the "facepalm
+blunder badge" block in `blunderCheckSolution.test.ts`, the "???" cases in `BlunderCheckSolution.test.tsx`,
+`trainRevealLines.test.ts` and `trainArrows.test.ts`.
+
+**Human verification:** closed in 261-UAT.md, 6 of 6 passed. Tests 1, 2, 5 and 6 (the changed screens) were
+marked passed by the owner; the orchestrator did not observe them in a browser. Test 3 was observed before the
+change and is unaffected.
+
+**WR-01:** accepted as is by the owner (261-REVIEW-DISPOSITION.md). IN-04 is moot, its copy was removed.

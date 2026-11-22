@@ -867,7 +867,7 @@ decisions of 2026-11-21 and the evidence are in the seed.
 prod since 2026-11-22). Independent of Phase 260, which is being built in its own worktree at the same time; the
 two overlap only where both read the facepalm score.
 **Requirements**: none mapped; the contract is 261-CONTEXT.md D-01 to D-12 and the seed decisions
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
