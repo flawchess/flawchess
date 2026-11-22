@@ -1,6 +1,7 @@
 /** The gap-bar math, words and the significance gate. */
 
 import { describe, expect, it } from 'vitest';
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import {
   GAP_HEATMAP_NEUTRAL_FILL,
   GAP_HEATMAP_TINT_MAX_PERCENT,
@@ -23,6 +24,7 @@ import {
   gapVerdictColor,
   gapWords,
   isChanceGap,
+  withGapVerdict,
   type GapCell,
 } from '../gapBar';
 import { FACEPALM_HIGH_CUTOFF } from '../facepalm';
@@ -174,22 +176,6 @@ describe('effectiveVerdict', () => {
   });
 });
 
-describe('noVerdict cells (257 D-13)', () => {
-  it('stays neutral even when significant, while the same cell without the flag keeps its verdict', () => {
-    const zoneless = cell({ hasZone: false, delta: -0.66 });
-    expect(effectiveVerdict(zoneless)).toBe('better');
-    expect(effectiveVerdict({ ...zoneless, noVerdict: true })).toBeNull();
-    expect(effectiveVerdict({ ...cell({ hasZone: false, delta: 0.5 }), noVerdict: true })).toBeNull();
-  });
-
-  it('is never a chance gap and never tints a heatmap cell', () => {
-    const neutral = { ...cell({ hasZone: false, significant: false }), noVerdict: true };
-    expect(isChanceGap(neutral)).toBe(false);
-    const significant = { ...cell({ hasZone: false, delta: 1, youRate: 1, oppRate: 0 }), noVerdict: true };
-    expect(gapHeatmapFill(significant).tint).toBe('neutral');
-  });
-});
-
 describe('facepalm gap metadata', () => {
   it('lists the three rows, total first', () => {
     expect(FACEPALM_METRICS).toEqual(['facepalm', 'facepalm_missed_win', 'facepalm_allowed_loss']);
@@ -209,14 +195,16 @@ describe('facepalm gap metadata', () => {
     );
   });
 
-  it('turns a facepalm bullet into a noVerdict cell, and a missing bullet into null', () => {
+  it('turns a facepalm bullet into a banded cell with the standard verdict, and a missing bullet into null', () => {
     const rows = makeFacepalmRows({ facepalm_missed_win: { significant: true, delta: -0.5 } });
     const got = facepalmMetricCell(rows, 'facepalm_missed_win');
     expect(got).not.toBeNull();
-    expect(got?.noVerdict).toBe(true);
     expect(got?.delta).toBe(-0.5);
-    expect(got?.hasZone).toBe(false);
-    expect(got ? effectiveVerdict(got) : 'x').toBeNull();
+    expect(got?.hasZone).toBe(true);
+    expect(got ? effectiveVerdict(got) : 'x').toBe('better');
+    const chance = facepalmMetricCell(makeFacepalmRows({ facepalm: { delta: 0.5 } }), 'facepalm');
+    expect(chance ? effectiveVerdict(chance) : 'x').toBe('typical');
+    expect(chance ? isChanceGap(chance) : false).toBe(true);
     expect(facepalmMetricCell([makeFacepalmBullet('facepalm')], 'facepalm_allowed_loss')).toBeNull();
   });
 
@@ -224,6 +212,26 @@ describe('facepalm gap metadata', () => {
     expect(metricTestIdSegment('facepalm')).toBe('facepalm');
     expect(metricTestIdSegment('facepalm_missed_win')).toBe('facepalm-missed-win');
     expect(metricTestIdSegment('facepalm_allowed_loss')).toBe('facepalm-allowed-loss');
+  });
+});
+
+describe('withGapVerdict', () => {
+  const RANGE = 'Typical gap among FlawChess players: 0.30 fewer to 0.30 more.';
+
+  it('appends the chance sentence for an out-of-band gap that is not significant', () => {
+    expect(withGapVerdict(RANGE, cell({ significant: false }))).toBe(`${RANGE} ${COPY_CHANCE}`);
+  });
+
+  it.each([
+    ['better', { delta: -0.66 }, 'You are better than typical.'],
+    ['worse', { delta: 0.5 }, 'You are worse than typical.'],
+    ['typical', { delta: 0.1 }, 'You are typical.'],
+  ] as const)('appends the %s sentence for a verdict', (_name, overrides, sentence) => {
+    expect(withGapVerdict(RANGE, cell(overrides))).toBe(`${RANGE} ${sentence}`);
+  });
+
+  it('returns the bare range when the cell has no verdict', () => {
+    expect(withGapVerdict(RANGE, cell({ delta: null }))).toBe(RANGE);
   });
 });
 

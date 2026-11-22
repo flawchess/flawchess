@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
-/** The Facepalm blunders card: three neutral paired rows, locked copy, no verdict. */
+/** The Facepalm blunders card: three banded paired rows, locked copy, standard verdict colours. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
-import { GAUGE_NEUTRAL } from '@/lib/theme';
+import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { FacepalmBullet, FlawComparisonTc } from '@/types/library';
 import { FacepalmCard } from '../FacepalmCard';
 import { makeFacepalmRows, makeTcEntry } from './flawStatsFixtures';
 
 afterEach(cleanup);
 
-const NO_RANGE = 'There is no typical range for facepalm blunders yet.';
-const TOO_LARGE = 'The gap is too large to be chance.';
+const RANGE = 'Typical gap among FlawChess players: 0.30 fewer to 0.30 more.';
 const ROW_IDS = [
   'context-row-facepalm',
   'context-row-facepalm-missed-win',
@@ -73,14 +72,26 @@ describe('FacepalmCard', () => {
     expect(text).toContain('Facepalm blunders that gave away material or allowed checkmate');
   });
 
-  it('has no better / worse axis caption and no grey band in any row', () => {
+  it('draws the grey band in every row and the better / worse axis caption', () => {
     renderCard();
-    expect(screen.queryByTestId('context-card-facepalm-axis')).toBeNull();
-    ROW_IDS.forEach((id) => expect(screen.queryByTestId(`${id}-bar-band`)).toBeNull());
+    ROW_IDS.forEach((id) => expect(screen.getByTestId(`${id}-bar-band`)).not.toBeNull());
+    expect(screen.getByTestId('context-card-facepalm-axis').textContent).toBe('betterworse');
   });
 
-  it('renders a significant facepalm cell neutral: neutral dot, plain words', () => {
-    renderCard(makeFacepalmRows({ facepalm: { significant: true, delta: 0.4 } }));
+  it.each([
+    ['worse', 0.4, ZONE_DANGER],
+    ['better', -0.4, ZONE_SUCCESS],
+  ] as const)('colours a significant %s gap outside the band', (_name, delta, color) => {
+    renderCard(makeFacepalmRows({ facepalm: { significant: true, delta } }));
+    expect(screen.getByTestId('context-row-facepalm-bar-dot').style.backgroundColor).toBe(
+      normalized(color),
+    );
+    const words = screen.getByTestId('context-row-facepalm-bar-words');
+    expect(words.style.color).toBe(normalized(color));
+  });
+
+  it('keeps a not-significant out-of-band gap neutral: neutral dot, plain words', () => {
+    renderCard(makeFacepalmRows({ facepalm: { significant: false, delta: 0.4 } }));
     expect(screen.getByTestId('context-row-facepalm-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );
@@ -89,47 +100,54 @@ describe('FacepalmCard', () => {
     expect(words.className).toContain('text-foreground');
   });
 
-  it('says nothing about blindness, events, better / worse or probability', () => {
+  it('says nothing about blindness, events or probability in the closed card', () => {
     const text = renderCard();
     expect(text).not.toMatch(/blindness/i);
     expect(text).not.toMatch(/\bevents?\b/i);
-    expect(text).not.toMatch(/\b(better|worse)\b/i);
     expect(text).not.toMatch(/probab|likel/i);
   });
 
-  it('puts the no-range note and the too-large sentence in a significant total popover', () => {
+  it('puts the direction, the FlawChess-players range and the verdict in a significant total popover', () => {
     renderCard(makeFacepalmRows({ facepalm: { significant: true, delta: 0.4 } }));
     const text = openPopover('gap-popover-facepalm-tc-rapid');
-    expect(text).toContain(NO_RANGE);
-    expect(text).toContain(TOO_LARGE);
+    expect(text).toContain('Fewer is better.');
+    expect(text).toContain(`${RANGE} You are worse than typical.`);
     expect(text).not.toContain(COPY_CHANCE);
-    expect(text).not.toContain('Fewer is better.');
-    expect(text).not.toContain('Typical gap');
+    expect(text).not.toContain('players at your level');
+    expect(text).not.toMatch(/benchmark/i);
     expect(text).not.toMatch(/\bevents?\b/i);
   });
 
-  it('says the gap could be chance for a not-significant non-zero gap', () => {
+  it('says the gap could be chance for a not-significant out-of-band gap', () => {
     renderCard();
     const text = openPopover('gap-popover-facepalm-tc-rapid');
-    expect(text).toContain(NO_RANGE);
-    expect(text).toContain(COPY_CHANCE);
-    expect(text).not.toContain(TOO_LARGE);
+    expect(text).toContain(`${RANGE} ${COPY_CHANCE}`);
+    expect(text).not.toContain('You are worse than typical.');
   });
 
-  it('keeps a same gap free of both significance sentences', () => {
+  it('calls a same gap typical', () => {
     renderCard(makeFacepalmRows({ facepalm: { delta: 0, player_rate: 0.5, opp_rate: 0.5 } }));
     const text = openPopover('gap-popover-facepalm-tc-rapid');
-    expect(text).toContain(NO_RANGE);
+    expect(text).toContain(`${RANGE} You are typical.`);
     expect(text).not.toContain(COPY_CHANCE);
-    expect(text).not.toContain(TOO_LARGE);
   });
 
-  it.each(POPOVER_IDS)('opens the %s popover with both rates and the basis, never a direction', (id) => {
+  it('reads each type row from its own band, never comparing the types', () => {
+    renderCard(
+      makeFacepalmRows({ facepalm_missed_win: { zone_lo: -0.08, zone_hi: 0.08, delta: 0.05 } }),
+    );
+    const missed = openPopover('gap-popover-facepalm-missed-win-tc-rapid');
+    expect(missed).toContain('Typical gap among FlawChess players: 0.08 fewer to 0.08 more.');
+    expect(openPopover('gap-popover-facepalm-tc-rapid')).toContain(RANGE);
+    expect(missed).not.toMatch(/missed wins? (than|vs)|allowed losses? (than|vs)/i);
+  });
+
+  it.each(POPOVER_IDS)('opens the %s popover with the direction, both rates and the basis', (id) => {
     renderCard();
     const text = openPopover(id);
     expect(text).toContain('You: 0.90 per 100 moves. Opponents: 0.50.');
     expect(text).toContain('Based on your 1,841 analyzed rapid games in the recent sample.');
-    expect(text).not.toContain('Fewer is better.');
+    expect(text).toContain('Fewer is better.');
   });
 
   it('shows no popover trigger for a row without a gap', () => {

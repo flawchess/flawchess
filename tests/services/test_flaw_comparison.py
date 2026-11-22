@@ -49,6 +49,7 @@ from app.services.library_service import (
     summarize_window,
 )
 from app.services.facepalm_score import FacepalmType
+from app.services.facepalm_zones import facepalm_zone
 from app.services.score_confidence import VERDICT_CI_Z_99
 from tests.facepalm_seed import SEED_FACEPALM_MARGIN, facepalm_fact_columns
 
@@ -943,7 +944,8 @@ def test_tempo_phase_cell_field_parity() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 257 facepalm rows (D-12 paired per 100 user moves, D-13 no band, D-04 typed)
+# 257 facepalm rows (D-12 paired per 100 user moves, D-04 typed); banded per TC by the
+# provisional FACEPALM_ZONES registry (quick 261121-ha7)
 # ---------------------------------------------------------------------------
 
 _BLUNDER = 2
@@ -1109,11 +1111,15 @@ async def test_facepalm_cut_is_the_stats_min(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_facepalm_rows_have_no_zone_and_exist_below_the_gate(
+async def test_facepalm_rows_carry_the_tc_band_and_exist_below_the_gate(
     db_session: AsyncSession,
 ) -> None:
-    """D-13: three neutral rows per TC, in FACEPALM_METRICS order, also for a below-gate TC."""
-    from app.schemas.library import FACEPALM_METRICS
+    """Three banded rows per TC, in FACEPALM_METRICS order, also for a below-gate TC.
+
+    Each row carries its own TC's provisional band (quick 261121-ha7): blitz and rapid differ on
+    the missed-win row (0.09 vs 0.08), so a builder that ignores the TC fails the per-row check.
+    """
+    from app.services.facepalm_zones import FACEPALM_METRICS, facepalm_zone
 
     for bucket in ("blitz", "rapid"):
         game = await _seed_facepalm_game(db_session, time_control_bucket=bucket)
@@ -1132,8 +1138,13 @@ async def test_facepalm_rows_have_no_zone_and_exist_below_the_gate(
     for tc_entry in result.tcs:
         assert tuple(b.tag for b in tc_entry.bullets) == FACEPALM_METRICS
         for bullet in tc_entry.bullets:
-            assert bullet.has_zone is False
-            assert (bullet.zone_lo, bullet.zone_hi) == (0.0, 0.0)
+            band = facepalm_zone(bullet.tag, tc_entry.tc)
+            assert bullet.has_zone is True
+            assert (bullet.zone_lo, bullet.zone_hi) == (band.zone_lo, band.zone_hi)
+    blitz_total = _facepalm_bullet(result.tcs[0], "facepalm")
+    assert (blitz_total.zone_lo, blitz_total.zone_hi) == (-0.30, 0.30)
+    rapid_missed = _facepalm_bullet(result.tcs[1], "facepalm_missed_win")
+    assert (rapid_missed.zone_lo, rapid_missed.zone_hi) == (-0.08, 0.08)
 
 
 @pytest.mark.asyncio
@@ -1190,7 +1201,7 @@ async def test_facepalm_coverage_gate_is_inclusive_and_per_side(db_session: Asyn
 
 @pytest.mark.asyncio
 async def test_facepalm_zero_event_rows_are_neutral_placeholders(db_session: AsyncSession) -> None:
-    """No facepalm on either side: delta None, significant False, zones still 0."""
+    """No facepalm on either side: delta None, significant False, the TC band still served."""
     for _ in range(FLAW_COMPARISON_GATE):
         await _seed_facepalm_game(db_session)
 
@@ -1202,12 +1213,14 @@ async def test_facepalm_zero_event_rows_are_neutral_placeholders(db_session: Asy
         assert bullet.delta is None and bullet.player_rate is None and bullet.opp_rate is None
         assert bullet.significant is False
         assert (bullet.player_events, bullet.opp_events) == (0, 0)
-        assert bullet.has_zone is False
+        assert bullet.has_zone is True
+        band = facepalm_zone(bullet.tag, "blitz")
+        assert (bullet.zone_lo, bullet.zone_hi) == (band.zone_lo, band.zone_hi)
 
 
 @pytest.mark.asyncio
 async def test_facepalm_one_sided_total_is_significant(db_session: AsyncSession) -> None:
-    """D-13: the backend still reports significance, which the card may state but not colour."""
+    """Significance plus the TC band now drive the verdict colour (quick 261121-ha7)."""
     for _ in range(_SIGNIFICANCE_GAMES):
         game = await _seed_facepalm_game(db_session, user_color="white")
         await _seed_flaw(db_session, game=game, ply=2, severity=_BLUNDER, facts=_facts(0.8))
@@ -1221,7 +1234,8 @@ async def test_facepalm_one_sided_total_is_significant(db_session: AsyncSession)
     assert total.ci_low is not None and total.ci_low > 0.0
     assert total.p_value is not None
     assert total.significant is True
-    assert total.has_zone is False
+    assert total.has_zone is True
+    assert (total.zone_lo, total.zone_hi) == (-0.30, 0.30)
 
 
 @pytest.mark.asyncio
@@ -1260,12 +1274,12 @@ def test_facepalm_bullet_field_parity() -> None:
     from app.schemas.library import FacepalmBullet, FlawBullet
 
     assert set(FacepalmBullet.model_fields) == set(FlawBullet.model_fields)
-    assert FacepalmBullet.model_fields["has_zone"].default is False
+    assert FacepalmBullet.model_fields["has_zone"].default is True
 
 
 def test_facepalm_metrics_not_in_flaw_delta_metrics() -> None:
     """The facepalm rows stay out of the 12-metric zone registry and the benchmark generator."""
-    from app.schemas.library import FACEPALM_METRICS
+    from app.services.facepalm_zones import FACEPALM_METRICS
 
     assert len(FACEPALM_METRICS) == 3
     assert not set(FACEPALM_METRICS) & set(FLAW_DELTA_METRICS)

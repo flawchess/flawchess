@@ -398,10 +398,11 @@ export type FacepalmMetric = 'facepalm' | 'facepalm_missed_win' | 'facepalm_allo
 /**
  * One facepalm row of the flaw comparison (mirrors backend FacepalmBullet): the user's facepalm
  * blunders per 100 of their moves next to their opponents' in the same games, paired per game
- * like FlawBullet (player_rate - opp_rate === delta). 257 D-13: no benchmark band, so
- * has_zone is always false and zone_lo === zone_hi === 0; `significant` is the server's 99%
- * test, stated on the card but never a colour. 257 D-04: a type row pairs the user's count of
- * that type with the opponents' count of the same type only.
+ * like FlawBullet (player_rate - opp_rate === delta). has_zone is always true: the zone bounds
+ * are the provisional per-TC band of the backend's FACEPALM_ZONES registry (quick 261121-ha7),
+ * and `significant` (the server's 99% test) plus the band drive the verdict like FlawBullet.
+ * 257 D-04: a type row pairs the user's count of that type with the opponents' count of the
+ * same type only.
  */
 export interface FacepalmBullet extends Omit<FlawBullet, 'tag'> {
   tag: FacepalmMetric;
@@ -435,7 +436,7 @@ export interface FlawComparisonTc {
 export interface FacepalmComparisonTc {
   tc: TimeControlBucket;
   /**
-   * The 3 facepalm rows (total, missed wins, allowed losses), neutral; also below the gate.
+   * The 3 facepalm rows (total, missed wins, allowed losses), banded per TC; also below the gate.
    * Empty when low_coverage is true.
    */
   bullets: FacepalmBullet[];

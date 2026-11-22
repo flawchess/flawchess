@@ -3,23 +3,22 @@
  * a plain definition + "Fewer is better.", the You/Opponents rates with their unit, the
  * typical gap range in words with the verdict, the basis, then the counts, 99% CI and
  * p-value greyed below a separator. It says flaws, blunders or mistakes, never "events".
- * `omitDirection` drops "Fewer is better." and `rangeNote` replaces the range line with a
- * fixed first list item (257 D-16: the facepalm rows have no typical range and no direction).
+ * `rangeNote` replaces the range line with a caller-built first list item (the facepalm rows
+ * name FlawChess players rather than players at your level).
  * A zoneless cell has no range line; an out-of-band gap that is not
  * significant says it could be chance instead of a verdict. The benchmark basis
  * (including the blitz/bullet-reads-rapid stopgap) is deliberately silent here.
  */
 
 import { MetricInfoPopover } from '@/components/ui/metric-info-popover';
-import { COPY_CHANCE, formatPValue } from '@/components/endgames/stats/rankedMetrics';
+import { formatPValue } from '@/components/endgames/stats/rankedMetrics';
 import {
   GAP_SAME_WORD,
   effectiveVerdict,
   formatSignedGap,
-  isChanceGap,
   gapWords,
+  withGapVerdict,
   type GapCell,
-  type GapVerdict,
 } from '@/lib/gapBar';
 
 const FOOTER_SEPARATOR = ' · ';
@@ -31,12 +30,6 @@ const COPY_ZONELESS_SIGNIFICANT =
   'There is no typical range for this tactic, but the gap is too large to be chance.';
 
 export type GapUnit = 'per 100 moves' | 'per 100 games';
-
-const VERDICT_SENTENCE: Record<GapVerdict, string> = {
-  better: 'You are better than typical.',
-  typical: 'You are typical.',
-  worse: 'You are worse than typical.',
-};
 
 interface GapPopoverProps {
   /** `gap-popover-{metric-key}-tc-{tc}`: only metric keys and the TC segment, never free values. */
@@ -52,9 +45,7 @@ interface GapPopoverProps {
   cell: GapCell;
   /** Overrides the significance sentence of a zoneless significant cell (default names the tactic). */
   zonelessSignificantCopy?: string;
-  /** 257 D-16: leave out the "Fewer is better." sentence after the definition. */
-  omitDirection?: boolean;
-  /** 257 D-16: shown as the first list item instead of the typical-range line. */
+  /** Shown as the first list item instead of the typical-range line. */
   rangeNote?: string;
 }
 
@@ -72,9 +63,7 @@ function gapSentence(delta: number): string {
 function rangeLine(cell: GapCell, zonelessSignificantCopy: string): string | null {
   if (!cell.hasZone) return effectiveVerdict(cell) === null ? null : zonelessSignificantCopy;
   const range = `Typical gap for players at your level: ${gapWords(cell.zoneLo)} to ${gapWords(cell.zoneHi)}.`;
-  if (isChanceGap(cell)) return `${range} ${COPY_CHANCE}`;
-  const verdict = effectiveVerdict(cell);
-  return verdict === null ? range : `${range} ${VERDICT_SENTENCE[verdict]}`;
+  return withGapVerdict(range, cell);
 }
 
 /** Greyed statistics line: counts, gap 99% CI and p-value, each only when present. */
@@ -96,15 +85,13 @@ function GapPopoverBody({
   basis,
   cell,
   zonelessSignificantCopy = COPY_ZONELESS_SIGNIFICANT,
-  omitDirection = false,
   rangeNote,
 }: GapPopoverProps) {
   const range = rangeNote ?? rangeLine(cell, zonelessSignificantCopy);
   return (
     <div className="space-y-1.5">
       <p>
-        <strong>{label}:</strong> {definition.replace(/\.$/, '')}.
-        {omitDirection ? '' : ' Fewer is better.'}
+        <strong>{label}:</strong> {definition.replace(/\.$/, '')}. Fewer is better.
       </p>
       <p>
         <strong>

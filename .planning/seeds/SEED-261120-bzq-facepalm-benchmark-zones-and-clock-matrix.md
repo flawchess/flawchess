@@ -52,3 +52,13 @@ whether a rate is typical for their rating and time control. That needs benchmar
 - `reports/benchmark/benchmarks-latest.md`, the `benchmarks` skill
 - `app/services/facepalm_score.py`, `app/services/blunder_check_rules.py`
 - `app/services/maia_flaw_scoring.py`, `scripts/backfill_maia_flaws.py`
+
+## Update 2026-11-21: provisional prod bands shipped (quick 261121-ha7)
+
+Quick 261121-ha7 shipped provisional per-TC bands for the three facepalm rows (total, missed wins, allowed
+losses) in `app/services/facepalm_zones.py`. They are prod-derived with no Elo keying; the basis and evidence
+are in that module's docstring and in `.planning/quick/261121-ha7-preliminary-facepalm-iqr-bands-from-prod/`.
+
+Item 2 of the Scope now means replacing those bands with benchmark-DB zones per Elo x TC, under the same cut,
+lambda and type rule. The popover copy ("Typical gap among FlawChess players") should switch to the at-your-level
+wording once the zones are Elo-keyed.

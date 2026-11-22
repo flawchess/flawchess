@@ -45,7 +45,6 @@ from app.repositories.library_repository import (
 from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS, mover_is_white_at_ply
 from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
-    FACEPALM_METRICS,
     FacepalmBullet,
     FacepalmComparisonResponse,
     FacepalmComparisonTc,
@@ -70,6 +69,7 @@ from app.schemas.library import (
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
 from app.services.canonical_slice_sql import RECENCY_WINDOW_MONTHS, RECENT_GAMES_PER_TC_CAP
+from app.services.facepalm_zones import FACEPALM_METRICS, facepalm_zone
 from app.services.flaw_delta_zones import (
     FLAW_DELTA_METRICS,
     FlawDeltaMetric,
@@ -1743,12 +1743,16 @@ def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> li
     return cells
 
 
-def _build_facepalm_bullet(metric: FacepalmMetric, series: _PairedSeries) -> FacepalmBullet:
-    """Build one neutral FacepalmBullet; mirrors _build_tempo_phase_cell without a band (D-13).
+def _build_facepalm_bullet(
+    metric: FacepalmMetric, tc: TimeControlBucket, series: _PairedSeries
+) -> FacepalmBullet:
+    """Build one FacepalmBullet; mirrors _build_flaw_bullet with the provisional per-TC band.
 
-    zone_lo = zone_hi = 0.0 and has_zone False on both return paths. Significance is still
-    computed (the card may state it) but the frontend lets it drive no colour.
+    The band comes from FACEPALM_ZONES (quick 261121-ha7, prod-derived, replaced by
+    SEED-261120-bzq) and is set on both return paths with has_zone True. Significance is
+    unchanged; the frontend applies the standard verdict (significant AND outside the band).
     """
+    band = facepalm_zone(metric, tc)
     if series.player_total == 0 and series.opp_total == 0:
         # Zero-event row: no facepalm on either side, render a muted placeholder.
         return FacepalmBullet(
@@ -1761,9 +1765,9 @@ def _build_facepalm_bullet(metric: FacepalmMetric, series: _PairedSeries) -> Fac
             p_value=None,
             player_events=0,
             opp_events=0,
-            zone_lo=0.0,
-            zone_hi=0.0,
-            has_zone=False,
+            zone_lo=band.zone_lo,
+            zone_hi=band.zone_hi,
+            has_zone=True,
             significant=False,
         )
     mean, p_value, ci_low, ci_high, significant = _paired_gap_test(series.deltas)
@@ -1778,14 +1782,14 @@ def _build_facepalm_bullet(metric: FacepalmMetric, series: _PairedSeries) -> Fac
         p_value=p_value,
         player_events=series.player_total,
         opp_events=series.opp_total,
-        zone_lo=0.0,
-        zone_hi=0.0,
-        has_zone=False,
+        zone_lo=band.zone_lo,
+        zone_hi=band.zone_hi,
+        has_zone=True,
         significant=significant,
     )
 
 
-def _compute_facepalm_bullets(rows: Sequence[Any]) -> list[FacepalmBullet]:
+def _compute_facepalm_bullets(tc: TimeControlBucket, rows: Sequence[Any]) -> list[FacepalmBullet]:
     """The three facepalm rows of one TC in FACEPALM_METRICS order (257 D-12).
 
     Rows carry player_/opp_ facepalm, facepalm_missed_win and facepalm_allowed_loss counts;
@@ -1793,7 +1797,9 @@ def _compute_facepalm_bullets(rows: Sequence[Any]) -> list[FacepalmBullet]:
     and a type is only ever set against the same type of the opponents (D-04).
     """
     return [
-        _build_facepalm_bullet(metric, _paired_series(rows, f"player_{metric}", f"opp_{metric}"))
+        _build_facepalm_bullet(
+            metric, tc, _paired_series(rows, f"player_{metric}", f"opp_{metric}")
+        )
         for metric in FACEPALM_METRICS
     ]
 
@@ -1820,7 +1826,7 @@ def _facepalm_comparison_tc(tc: TimeControlBucket, rows: Sequence[Any]) -> Facep
     """One TC's facepalm entry: the three rows, or none when the scored coverage is too low."""
     if _facepalm_low_coverage(rows):
         return FacepalmComparisonTc(tc=tc, bullets=[], low_coverage=True)
-    return FacepalmComparisonTc(tc=tc, bullets=_compute_facepalm_bullets(rows))
+    return FacepalmComparisonTc(tc=tc, bullets=_compute_facepalm_bullets(tc, rows))
 
 
 # ---------------------------------------------------------------------------
@@ -2087,7 +2093,7 @@ async def get_facepalm_comparison(
     258: computed on the same recent window as get_flaw_comparison (D-06). The window comes from
     _fetch_recent_window with the same filters, and fetch_facepalm_comparison aggregates exactly
     the analyzed games of that window, so the facepalm rows pair with the flaw rows game for
-    game. _compute_facepalm_bullets turns each TC's rows into the three neutral rows, withheld
+    game. _compute_facepalm_bullets turns each TC's rows into the three banded rows, withheld
     (low_coverage) when too few of either side's blunders are scored (D-10, evaluated on the
     window rows). A TC is listed when the window has at least one game of it, analyzed or not
     (D-15): the TC switch reads the flaw list, so a TC it offers with recent games must never

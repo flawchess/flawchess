@@ -56,6 +56,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train: the weekly medal window now groups all your medals by week instead of showing one window per board.
 - Facepalm chips are now tinted by type on the Flaws tab, in the analysis move list and in the eval chart tooltip: teal for a missed win (the best move won material that was not taken), crimson for an allowed loss (the move gave away material). The chip's explanation names the type.
 - Library Stats: the Flaw Stats tiles, You vs. your opponents and Tactic motifs now describe how you play now. They use your most recent 1,000 games per time control from the last 36 months (or from the period you pick under Recency), and a line above the tiles says which games they are based on. The Flaws Timeline still shows all your games, and a time control without games in the last 36 months keeps its timeline with a note on how to include older games.
+- Library Stats: the Facepalm blunders tile and the rows of the Facepalm blunders card now show the typical gap among FlawChess players and turn green or red when you are clearly better or worse than typical. (quick 261121-ha7)
 
 ### Fixed
 

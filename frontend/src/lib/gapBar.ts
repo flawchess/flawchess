@@ -10,6 +10,7 @@
  * renders neutral like a typical one, and the popover says it could be chance.
  */
 
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import {
   GAP_HEATMAP_NEUTRAL_FILL,
   GAP_HEATMAP_TINT_MAX_PERCENT,
@@ -62,12 +63,6 @@ export interface GapCell {
   pValue: number | null;
   youEvents: number;
   oppEvents: number;
-  /**
-   * 257 D-13: a zoneless cell that stays neutral even when significant (no better / worse
-   * colour, no tint). The facepalm rows set it until benchmark zones exist; zoneless tactic
-   * cells leave it unset and keep judging on significance alone.
-   */
-  noVerdict?: boolean;
 }
 
 /**
@@ -117,7 +112,6 @@ function rawVerdict(cell: GapCell): GapVerdict | null {
  * when its 99% CI excludes 0, no verdict otherwise.
  */
 export function effectiveVerdict(cell: GapCell): GapVerdict | null {
-  if (cell.noVerdict) return null;
   // Defensive: all four shown tactic families have bands today, but a §5 refresh could drop one.
   if (!cell.hasZone && cell.delta !== null) {
     if (!cell.significant) return null;
@@ -132,6 +126,23 @@ export function effectiveVerdict(cell: GapCell): GapVerdict | null {
 export function isChanceGap(cell: GapCell): boolean {
   const raw = rawVerdict(cell);
   return raw !== null && raw !== 'typical' && !cell.significant;
+}
+
+const VERDICT_SENTENCE: Record<GapVerdict, string> = {
+  better: 'You are better than typical.',
+  typical: 'You are typical.',
+  worse: 'You are worse than typical.',
+};
+
+/**
+ * The popover range line plus its verdict: the could-be-chance sentence for an out-of-band gap
+ * that is not significant, else the better / typical / worse sentence, else the bare range
+ * (no verdict). Shared by the generic gap popover and the facepalm range note.
+ */
+export function withGapVerdict(range: string, cell: GapCell): string {
+  if (isChanceGap(cell)) return `${range} ${COPY_CHANCE}`;
+  const verdict = effectiveVerdict(cell);
+  return verdict === null ? range : `${range} ${VERDICT_SENTENCE[verdict]}`;
 }
 
 /**

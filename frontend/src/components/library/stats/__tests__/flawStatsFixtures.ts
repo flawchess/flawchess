@@ -95,7 +95,7 @@ const FACEPALM_METRICS: readonly FacepalmMetric[] = [
   'facepalm_allowed_loss',
 ];
 
-/** A neutral facepalm row (no band) with a small positive gap and event counts unless overridden. */
+/** A banded facepalm row (the rapid total's +-0.30 band) with a small positive gap unless overridden. */
 export function makeFacepalmBullet(
   tag: FacepalmMetric,
   overrides: Partial<FacepalmBullet> = {},
@@ -110,9 +110,9 @@ export function makeFacepalmBullet(
     p_value: 0.02,
     player_events: 60,
     opp_events: 35,
-    zone_lo: 0,
-    zone_hi: 0,
-    has_zone: false,
+    zone_lo: -0.3,
+    zone_hi: 0.3,
+    has_zone: true,
     significant: false,
     ...overrides,
   };
