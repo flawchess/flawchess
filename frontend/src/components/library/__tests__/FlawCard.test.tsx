@@ -485,7 +485,7 @@ describe('FlawCard', () => {
       expect(trigger.contains(badge)).toBe(true);
       fireEvent.click(trigger);
       const popover = screen.getByTestId(`${TRIGGER_TESTID}-popover`);
-      expect(popover.textContent).toContain(`Facepalm ${toFacepalmPct(BELOW_CUT_SCORE)}%`);
+      expect(popover.textContent).toContain(`Facepalm score ${toFacepalmPct(BELOW_CUT_SCORE)}%`);
       expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toContain(
         `${FACEPALM_HIGH_CUTOFF}% or more counts as a facepalm blunder.`,
       );
@@ -496,7 +496,7 @@ describe('FlawCard', () => {
       const trigger = screen.getAllByTestId(TRIGGER_TESTID)[0] as HTMLElement;
       fireEvent.click(trigger);
       const popover = screen.getByTestId(`${TRIGGER_TESTID}-popover`);
-      expect(popover.textContent).toContain(`Facepalm ${toFacepalmPct(ABOVE_CUT_SCORE)}%`);
+      expect(popover.textContent).toContain(`Facepalm score ${toFacepalmPct(ABOVE_CUT_SCORE)}%`);
       expect(popover.textContent).toContain(
         `Allowed loss: ${FACEPALM_TYPE_SENTENCE.allowed_loss}`,
       );
