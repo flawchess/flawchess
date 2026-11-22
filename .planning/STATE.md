@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 259
 status: completed
 stopped_at: Phase 259 complete — all phases complete
-last_updated: "2026-11-22T13:29:41.172Z"
+last_updated: "2026-11-22T13:59:21.664Z"
 last_activity: 2026-11-22
 last_activity_desc: Phase 259 complete
-state_head: d33fa024a15387a1aea7564a6b18e5cba7d0c187
+state_head: fa3462b81d0484dea1109c7f5601fb16f3976ff7
 progress:
   total_phases: 13
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-22 — Phase 259 complete
+Last activity: 2026-11-22 - Completed quick task 261122-kos: forced-mate eval row and mate-in-1 strip fixes
 
 Open threads carried forward (not blockers):
 
@@ -1196,6 +1196,7 @@ None active.
 | 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
 | 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
 | 261122-jsf | Forcing-line gate: a mate tag survives a tie between two mating moves (prod game 1461616 ply 76) | 2026-11-22 | 4fe187674 | [261122-jsf-fix-mate-tie-rule-in-forcing-line-gate](./quick/261122-jsf-fix-mate-tie-rule-in-forcing-line-gate/) |
+| 261122-kos | Tactic tags: forced-mate flag reads the right eval row; mate in 1 survives the only-move strip | 2026-11-22 | fa3462b81 | [261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s](./quick/261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s/) |
 
 ## Deferred Items
 
