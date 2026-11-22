@@ -7,8 +7,8 @@ stored refutation line (the played line) and, from Phase 254, the facts of the s
 line plus the two pre-blunder Maia inputs (the best move's probability and the reply spread
 of the position before the blunder, both from ONE pre-blunder policy call). Every value is
 computed with the app's own functions (``replay_flaw_boards``, ``pinned_elo_for_mover``,
-``reply_spread``, ``line_facts``, ``best_line_facts``), so the fit sees exactly what the
-go-forward hook and the backfill will store.
+``reply_spread``, ``quiet_line_facts``, ``quiet_best_line_facts``), so the fit sees exactly what
+the go-forward hook and the backfill will store.
 
 The table is committed under ``reports/blunder-check/`` and ``fit_facepalm.py`` re-runs from
 it alone (no cache, no DB, no Maia).
@@ -20,8 +20,11 @@ Usage (database access is read-only, see ``make_readonly_engine``)::
         --pv-cache temp/blunder-check \
         --extra 2099808:23 --out <features.tsv>
 
-Phase 259 appends QUIET_FEATURE_COLUMNS (reply probability, quiet and shipped loss / missed, raw
-lines); ``--skip-missing`` lists label rows whose game is gone instead of exiting 5.
+Phase 259 appends QUIET_FEATURE_COLUMNS (reply probability, loss / missed, raw lines);
+``--skip-missing`` lists label rows whose game is gone instead of exiting 5. The committed tables
+written before the drop release also carry the nine per-depth material slots of each line and the
+shipped rule's loss / missed pair as history (the shipped rule is gone, so this
+tool no longer writes them; the fit tool treats the shipped columns as optional).
 
 ``--labels`` may be given more than once (the rows of every file, in argument order, then the
 ``--extra`` rows). The best line always comes from the database (``game_positions.pv`` at the
@@ -63,15 +66,13 @@ from app.services import maia_engine  # noqa: E402
 from app.services.best_move_candidates import pinned_elo_for_mover  # noqa: E402
 from app.services.facepalm_inputs import (  # noqa: E402
     MaterialInputs,
-    facepalm_material_inputs,
     material_inputs_from_facts,
 )
 from app.services.facepalm_score import loss_feature  # noqa: E402
 from app.services.line_material import (  # noqa: E402
-    LINE_MATERIAL_DEPTHS,
     LineFacts,
-    best_line_facts,
-    line_facts,
+    quiet_best_line_facts,
+    quiet_line_facts,
 )
 from app.services.maia_flaw_scoring import replay_flaw_boards  # noqa: E402
 from app.services.maia_flaw_stats import reply_spread  # noqa: E402
@@ -83,10 +84,6 @@ from scripts.blunder_check.sample import make_readonly_engine  # noqa: E402
 # ---------------------------------------------------------------------------
 
 PvSource = Literal["cache", "cache_none", "db", "db_none"]
-
-# Signed material (positive = the blunderer is up) after N plies of the played line / best line.
-PLAYED_MAT_COLUMNS: tuple[str, ...] = tuple(f"played_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
-BEST_MAT_COLUMNS: tuple[str, ...] = tuple(f"best_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
 
 # The facts schema (Phase 254), the leading columns of the scalar table below.
 FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
@@ -100,9 +97,7 @@ FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
     "reply_spread",
     "best_prob",
     "pre_spread",
-    *PLAYED_MAT_COLUMNS,
     "line_mate_ply",
-    *BEST_MAT_COLUMNS,
     "best_mate_ply",
     "best_uci",
     "pv_source",
@@ -115,15 +110,13 @@ FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
 # scalar columns (`loss`, `missed`, `reply_prob` and the probabilities) by name. `reply_uci` /
 # `reply_prob` are Maia's probability of the first token of the stored refutation line, from the same
 # post-blunder policy call as `reply_spread`; `loss` / `missed` are the stored inputs under the quiet
-# rule (`facepalm_material_inputs`), `*_shipped` the same aggregation over the shipped rule's facts;
-# the last four are the raw inputs, so every material value is recomputable offline.
+# rule (`material_inputs_from_facts`); the last four are the raw inputs, so every material value is
+# recomputable offline.
 QUIET_FEATURE_COLUMNS: tuple[str, ...] = (
     "reply_uci",
     "reply_prob",
     "loss",
     "missed",
-    "loss_shipped",
-    "missed_shipped",
     "pre_fen",
     "played_uci",
     "played_line",
@@ -177,12 +170,11 @@ class FeatureRow:
     pv_plies: int
     best_pv_plies: int
     note: str
-    # Phase 259 (D-07, D-12): the reply probability, the quiet and the shipped material inputs, and
-    # the raw inputs they were computed from.
+    # Phase 259 (D-07, D-12): the reply probability, the stored material inputs, and the raw inputs
+    # they were computed from.
     reply_uci: str | None
     reply_prob: float | None
     quiet: MaterialInputs
-    shipped: MaterialInputs
     pre_fen: str
     played_uci: str
     played_line: str
@@ -267,7 +259,7 @@ def build_feature_row(
     refutation line from the position after it and `best_pv` the stored best line at the flaw
     ply (best move first). The reply spread comes from `policy_fn` on the post-blunder board at
     `pinned_elo`; the best-move probability and the pre-blunder spread from ONE `policy_fn`
-    call on the pre-board; the line facts from the app's `line_facts` / `best_line_facts`.
+    call on the pre-board; the line facts from the app's `quiet_line_facts` / `quiet_best_line_facts`.
     """
     best_uci = best_uci_of(best_pv, best_move)
     best_prob, pre_spread, pre_note = _pre_inputs(pre_board, best_uci, pinned_elo, policy_fn)
@@ -277,12 +269,12 @@ def build_feature_row(
         post_board.push_uci(played_uci)
     except ValueError:
         spread, reply_prob, note = None, None, NOTE_ILLEGAL_PLAYED
-        facts = line_facts(pre_board, played_uci, None)
+        facts = quiet_line_facts(pre_board, played_uci, None)
     else:
         spread, reply_prob, note = _spread_for(post_board, pinned_elo, policy_fn, reply_uci)
-        facts = line_facts(pre_board, played_uci, pv)
+        facts = quiet_line_facts(pre_board, played_uci, pv)
     best_line = best_pv or best_move or ""
-    best_facts = best_line_facts(pre_board, best_line)
+    best_facts = quiet_best_line_facts(pre_board, best_line)
     return FeatureRow(
         label_row=label_row,
         pinned_elo=pinned_elo,
@@ -299,10 +291,8 @@ def build_feature_row(
         note=_join_notes(note, pre_note),
         reply_uci=reply_uci,
         reply_prob=reply_prob,
-        # The stored inputs come only from the writer function; the shipped pair is the same
-        # aggregation over the old rule's facts, the D-09 baseline.
-        quiet=facepalm_material_inputs(pre_board, played_uci, pv, best_line),
-        shipped=material_inputs_from_facts(facts, best_facts),
+        # The stored inputs: the writer's aggregation over the quiet facts computed above.
+        quiet=material_inputs_from_facts(facts, best_facts),
         pre_fen=pre_board.fen(),
         played_uci=played_uci,
         played_line=pv or "",
@@ -333,9 +323,7 @@ def feature_cells(row: FeatureRow) -> list[str]:
         row.reply_spread,
         row.best_prob,
         row.pre_spread,
-        *row.facts.material_array(),
         row.facts.mate_ply,
-        *row.best_facts.material_array(),
         row.best_facts.opponent_mate_ply,
         row.best_uci,
         row.pv_source,
@@ -346,8 +334,6 @@ def feature_cells(row: FeatureRow) -> list[str]:
         row.reply_prob,
         row.quiet.loss,
         row.quiet.missed,
-        row.shipped.loss,
-        row.shipped.missed,
         row.pre_fen,
         row.played_uci,
         row.played_line,

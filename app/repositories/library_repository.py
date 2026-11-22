@@ -1677,13 +1677,16 @@ class FacepalmGameCounts(NamedTuple):
 
 
 async def disable_jit_for_transaction(session: AsyncSession) -> None:
-    """Turn PostgreSQL JIT off for the rest of the current transaction (257 D-21).
+    """Turn PostgreSQL JIT off for the rest of the current transaction (257 D-21, 259 D-18).
 
-    The facepalm score is one ~34 KB expression. Above jit_optimize_above_cost PostgreSQL spends
-    seconds compiling it on every call (prod: 4.0 s of an 11 s comparison on the largest
-    account; dev: 2.2 to 3.5 s of compile for a 2x faster evaluation), and JIT without the
-    optimizer gives no speedup. SET LOCAL ends with the transaction, so it never leaks into
-    other requests through the pool; call it right before the facepalm statements.
+    Kept after the 259 D-18 re-measure (reports/blunder-check/facepalm-jit-259.md). Phase 257's
+    ~34 KB facepalm expression cost seconds of compile (prod: 4.0 s of an 11 s comparison on the
+    largest account); the scalar expression is far smaller, but JIT still buys nothing. On prod
+    user 95 the comparison statement took 287.2 ms warm median with JIT on against 253.1 ms off
+    (ratio 1.13, about 69 ms of JIT time) and the counts statement 195.6 ms against 188.4 ms
+    (ratio 1.04), so the comparison misses the 1.05 bar and the readers keep turning JIT off.
+    SET LOCAL ends with the transaction, so it never leaks into other requests through the pool;
+    call it right before the facepalm statements.
     """
     await session.execute(text("SET LOCAL jit = off"))
 
@@ -1712,7 +1715,7 @@ async def fetch_facepalm_counts(
     counted (`player_only_gate`). The result feeds the Flaws Timeline facepalm band only: it is
     aggregate counts, not a filter or a drill selection (D-06). User-scoped on both tables
     (IDOR), and the game set comes from `_filtered_games_base`, the one place the filters are
-    composed. Reads ix_game_flaws_blunder_facts index-only and runs with JIT off (D-21).
+    composed. Reads ix_game_flaws_facepalm_inputs index-only and runs with JIT off (D-21).
     """
     await disable_jit_for_transaction(session)
     base_filtered_subq = _filtered_games_base(
@@ -2584,7 +2587,7 @@ async def fetch_facepalm_comparison(
     of the six FILTERs. The subquery joins the anchor to its blunders, so a filtered request
     does not score the user's other blunders. A game without a blunder keeps one NULL row and
     gives zero counts (all-analyzed-games basis). The blunder lookup reads
-    ix_game_flaws_blunder_facts index-only, and the statement runs with JIT off (257 D-21).
+    ix_game_flaws_facepalm_inputs index-only, and the statement runs with JIT off (257 D-21).
     """
     await disable_jit_for_transaction(session)
     anchor_subq = _flaw_comparison_anchor(
@@ -2609,7 +2612,7 @@ async def fetch_facepalm_comparison(
     # join filter over the materialized subquery: games x blunders comparisons, 1.7 s on dev
     # and over 10 minutes for one prod account with a Recency period set. The anchor now
     # drives a LEFT JOIN to game_flaws INSIDE the fenced subquery. That join is an index
-    # lookup per game on ix_game_flaws_blunder_facts whatever the row estimate, the anchor is
+    # lookup per game on ix_game_flaws_facepalm_inputs whatever the row estimate, the anchor is
     # scanned once, and no second join is left to go quadratic. A game without a blunder
     # keeps one row with a NULL ply, which every COUNT below skips (zero counts).
     scored = (

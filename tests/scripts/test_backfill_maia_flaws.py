@@ -39,7 +39,8 @@ from app.repositories.game_flaws_repository import (
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.best_move_candidates import pinned_elo_for_mover
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA, FACEPALM_SCORE_MIN
-from app.services.line_material import LineFacts, best_line_facts, line_facts
+from app.services.facepalm_inputs import facepalm_material_inputs
+from app.services.line_material import quiet_best_line_facts, quiet_line_facts
 from app.services.maia_flaw_stats import pre_blunder_spread, reply_spread
 from scripts import backfill_maia_flaws as backfill
 from tests.facepalm_seed import facepalm_fact_columns
@@ -53,6 +54,9 @@ _FLAW_PLIES: tuple[int, ...] = (2, 5, 8)
 _RUN_STAMP = "20261108T000000Z"
 # Distinct, non-NULL stand-in for an already-written base value (spread mode must not touch it).
 _SEEDED_BASE: dict[str, float | int] = {"maia_played_prob": 0.11}
+
+# The stored scalars are REAL (float32): compare them with a relative tolerance.
+_REAL_REL_TOL = 1e-6
 
 MakeGame = Callable[..., Awaitable[int]]
 
@@ -623,11 +627,11 @@ async def test_spread_mode_scores_and_stamps_base_stamped_game(
     assert report.games_stamped == 1
     values = await _facepalm_values(session_factory, game_id)
     pre = _boards_by_ply(_PGN)[2]
-    expected = _fact_columns(line_facts(pre[0], pre[1], _LINE_AFTER_PLY_2))
+    expected = _fact_columns(pre[0], pre[1], _LINE_AFTER_PLY_2)
     assert any(v is not None for v in expected.values()), "the fixture line must settle a depth"
     # Ply 2 (user blunder with a stored line): spread, line facts and score.
     assert values[2]["maia_reply_spread"] is not None
-    assert {c: values[2][c] for c in expected} == expected
+    assert {c: values[2][c] for c in expected} == pytest.approx(expected, rel=_REAL_REL_TOL)
     # Ply 8 (user blunder, no stored line after the last ply): spread only.
     assert values[8]["maia_reply_spread"] is not None
     assert all(values[8][c] is None for c in expected)
@@ -799,7 +803,7 @@ async def test_spread_status_counts(
     async with session_factory() as session:
         await session.execute(
             update(GameFlaw)
-            .where(GameFlaw.user_id == _TEST_USER_ID, GameFlaw.played_line_material.is_not(None))
+            .where(GameFlaw.user_id == _TEST_USER_ID, GameFlaw.material_loss.is_not(None))
             .values(
                 **facepalm_fact_columns(
                     FACEPALM_SCORE_MIN + _ABOVE_THE_BAR, lam=FACEPALM_DRILL_LAMBDA
@@ -836,9 +840,9 @@ _CUTOFF = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
 _BEFORE_CUTOFF = _CUTOFF - timedelta(days=1)
 _AFTER_CUTOFF = _CUTOFF + timedelta(days=1)
 _STORED_SPREAD = 3.5
-# The ply-2 line cut to four plies: still legal (a prefix of the game's continuation), but it
-# settles fewer depths than the full line.
-_SHORT_LINE_AFTER_PLY_2 = " ".join(_LINE_AFTER_PLY_2.split(" ")[:4])
+# The ply-2 line cut to two plies: still legal (a prefix of the game's continuation), but too short
+# for the quiet walk to settle a loss, unlike the full line.
+_SHORT_LINE_AFTER_PLY_2 = " ".join(_LINE_AFTER_PLY_2.split(" ")[:2])
 
 
 async def _set_game(maker: async_sessionmaker[AsyncSession], game_id: int, **values: Any) -> None:
@@ -897,19 +901,18 @@ async def _spread_stamped_game(
     return game_id
 
 
-def _fact_columns(facts: LineFacts) -> dict[str, Any]:
-    """The stored fact columns of a played line (254 D-09): the signed array (None when every slot
-    is unsettled, the stored shape) and the played line's mate ply."""
-    material = facts.material_array()
+def _fact_columns(pre: chess.Board, played: str, line: str | None) -> dict[str, Any]:
+    """The stored fact columns of a played line alone (259 D-05): its mate ply under the quiet rule
+    and the decaying-mean loss from the one write-time function (the loss needs no best line)."""
     return {
-        "played_line_material": None if all(v is None for v in material) else material,
-        "line_mate_ply": facts.mate_ply,
+        "line_mate_ply": quiet_line_facts(pre, played, line).mate_ply,
+        "material_loss": facepalm_material_inputs(pre, played, line, None).loss,
     }
 
 
 def _expected_line_columns(line: str) -> dict[str, Any]:
     pre, played = _boards_by_ply(_PGN)[2]
-    return _fact_columns(line_facts(pre, played, line))
+    return _fact_columns(pre, played, line)
 
 
 @pytest.mark.asyncio
@@ -980,7 +983,8 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
     values; the new line's facts and score replace the old, the spread and base stay untouched."""
     game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
     old_facts = _expected_line_columns(_LINE_AFTER_PLY_2)
-    await _set_flaw(session_factory, game_id, 2, **old_facts)
+    # The scalar pair is written together (CHECK); the game has no stored best line, so missed is 0.0.
+    await _set_flaw(session_factory, game_id, 2, **old_facts, material_missed=0.0)
     # A repair shortened the stored line after the last pass.
     await _set_line(session_factory, game_id, 3, _SHORT_LINE_AFTER_PLY_2)
     new_facts = _expected_line_columns(_SHORT_LINE_AFTER_PLY_2)
@@ -992,9 +996,9 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
     assert report.games_stamped == 1
     assert report.cutoff == _CUTOFF.isoformat()
     row = (await _facepalm_values(session_factory, game_id))[2]
-    assert {c: row[c] for c in new_facts} == new_facts
+    assert {c: row[c] for c in new_facts} == pytest.approx(new_facts, rel=_REAL_REL_TOL)
     assert row["maia_reply_spread"] == _STORED_SPREAD
-    assert row["played_line_material"] != old_facts["played_line_material"]
+    assert row["material_loss"] != old_facts["material_loss"]
     assert await _flaw_values(session_factory, game_id) == base_before
     _, line_stamp = await _facepalm_stamps(session_factory, game_id)
     assert line_stamp >= _CUTOFF
@@ -1010,21 +1014,22 @@ async def test_line_mode_recomputes_rows_that_already_hold_values(
 _OPPONENT_PLY = 5
 _LINE_AFTER_PLY_5 = " ".join(_boards_by_ply(_PGN)[ply][1] for ply in range(6, 9))
 _OPPONENT_LINE_KEYS = (
-    "played_line_material",
     "line_mate_ply",
-    "best_line_material",
     "best_line_mate_ply",
+    "material_loss",
+    "material_missed",
 )
 
 
 def _expected_opponent_line_columns(line: str) -> dict[str, Any]:
     """The four line facts the module's own derivation yields for the opponent's ply 5 (no best line)."""
     pre, played = _boards_by_ply(_PGN)[_OPPONENT_PLY]
-    best_material = best_line_facts(pre, None).material_array()
+    scalars = facepalm_material_inputs(pre, played, line, None)
     return {
-        **_fact_columns(line_facts(pre, played, line)),
-        "best_line_material": None if all(v is None for v in best_material) else best_material,
-        "best_line_mate_ply": best_line_facts(pre, None).opponent_mate_ply,
+        "line_mate_ply": quiet_line_facts(pre, played, line).mate_ply,
+        "best_line_mate_ply": quiet_best_line_facts(pre, None).opponent_mate_ply,
+        "material_loss": scalars.loss,
+        "material_missed": scalars.missed,
     }
 
 
@@ -1138,8 +1143,8 @@ async def test_line_mode_blunder_without_a_line_gets_one_later(
 
     row = (await _facepalm_values(session_factory, game_id))[2]
     expected = _expected_line_columns(_LINE_AFTER_PLY_2)
-    assert {c: row[c] for c in expected} == expected
-    assert row["played_line_material"] is not None
+    assert {c: row[c] for c in expected} == pytest.approx(expected, rel=_REAL_REL_TOL)
+    assert row["material_loss"] is not None
 
 
 @pytest.mark.asyncio
@@ -1301,15 +1306,14 @@ async def test_line_status_counts(
         "user_blunders_with_score",
         "user_blunders_qualifying",
         "opponent_blunders_total",
-        "opponent_blunders_with_line_facts",
+        "opponent_blunders_with_material_inputs",
         "opponent_blunders_with_score",
         "user_blunders_with_material_inputs",
-        "opponent_blunders_with_material_inputs",
     ]
     # Two games with one opponent blunder (ply 5) each; the run (limit=1) covered one game, so one
-    # opponent blunder holds line facts. Its score is NULL here: the fixture row has no Maia values.
+    # opponent blunder holds stored material inputs. Its score is NULL here: the fixture row has no Maia values.
     assert counts["opponent_blunders_total"] == 2
-    assert counts["opponent_blunders_with_line_facts"] == 1
+    assert counts["opponent_blunders_with_material_inputs"] == 1
     assert counts["opponent_blunders_with_score"] == 0
     test_url = test_engine.url.render_as_string(hide_password=False)
     monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
@@ -1328,7 +1332,8 @@ _BEST_PV_AT_PLY_2 = "g1f3"
 # Distinct stand-ins for values the pre pass must never touch.
 _SEEDED_FACEPALM: dict[str, Any] = {
     "maia_reply_spread": 3.5,
-    "played_line_material": [-3, None, -3, None, -3, None, -3, None, -3],
+    "material_loss": 3.5,
+    "material_missed": 0.5,
 }
 
 
@@ -1581,29 +1586,28 @@ def test_cli_accepts_pre_mode_and_rejects_cutoff_with_it() -> None:
 # ---------------------------------------------------------------------------
 
 # Best lines at the ply-2 decision position (1. e4 e5, white to move). The first is the game's own
-# continuation; the second trades a bishop for a pawn, so it settles different material.
+# continuation; the second is the scholar's mate, so it settles a mate ply and a different missed gain.
 _BEST_LINE_AT_PLY_2 = " ".join(_boards_by_ply(_PGN)[ply][1] for ply in range(2, 9))
-_OTHER_BEST_LINE_AT_PLY_2 = "f1c4 g8f6 c4f7 e8f7"
+_OTHER_BEST_LINE_AT_PLY_2 = "d1h5 b8c6 f1c4 g8f6 h5f7"
 # Stand-ins for already written Maia values the line and spread passes must leave alone.
 _SEEDED_PRE: dict[str, float] = {"maia_best_prob": 0.375, "maia_pre_spread": 4.25}
 _NEW_FACT_COLUMNS: tuple[str, ...] = (
-    "played_line_material",
-    "best_line_material",
+    "material_loss",
+    "material_missed",
     "line_mate_ply",
     "best_line_mate_ply",
 )
 
 
 def _expected_new_facts(best_line: str) -> dict[str, Any]:
-    """The four Phase 254 fact columns of the ply-2 blunder, from the module's own fact functions."""
+    """The four fact columns of the ply-2 blunder, from the module's own fact functions."""
     pre, played = _boards_by_ply(_PGN)[2]
-    played_facts = line_facts(pre, played, _LINE_AFTER_PLY_2)
-    best_facts = best_line_facts(pre, best_line)
+    scalars = facepalm_material_inputs(pre, played, _LINE_AFTER_PLY_2, best_line)
     return {
-        "played_line_material": played_facts.material_array(),
-        "best_line_material": best_facts.material_array(),
-        "line_mate_ply": played_facts.mate_ply,
-        "best_line_mate_ply": best_facts.opponent_mate_ply,
+        "material_loss": scalars.loss,
+        "material_missed": scalars.missed,
+        "line_mate_ply": quiet_line_facts(pre, played, _LINE_AFTER_PLY_2).mate_ply,
+        "best_line_mate_ply": quiet_best_line_facts(pre, best_line).opponent_mate_ply,
     }
 
 
@@ -1651,8 +1655,8 @@ async def _maia_values(maker: async_sessionmaker[AsyncSession], game_id: int) ->
 async def test_line_mode_writes_both_arrays_both_mate_plies_and_no_maia_value(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
 ) -> None:
-    """D-09: the line pass writes played_line_material, best_line_material, line_mate_ply and
-    best_line_mate_ply (and no legacy column) from the stored lines (pv at ply + 1 and at ply),
+    """D-09 / 259 D-05: the line pass writes material_loss, material_missed, line_mate_ply and
+    best_line_mate_ply (and no legacy column, no array) from the stored lines (pv at ply + 1 and at ply),
     and no Maia value: the base value, the spread and the two pre keys keep their seeded values."""
     game_id = await _fact_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
     maia_before = await _maia_values(session_factory, game_id)
@@ -1662,10 +1666,10 @@ async def test_line_mode_writes_both_arrays_both_mate_plies_and_no_maia_value(
     assert report.games_stamped == 1
     row = (await _facepalm_values(session_factory, game_id))[2]
     expected = _expected_new_facts(_BEST_LINE_AT_PLY_2)
-    assert expected["best_line_material"] is not None, "the best line must settle a depth"
-    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == expected
+    assert expected["material_missed"] is not None, "the best line must settle a depth"
+    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == pytest.approx(expected, rel=_REAL_REL_TOL)
     played = _expected_line_columns(_LINE_AFTER_PLY_2)
-    assert {c: row[c] for c in played} == played
+    assert {c: row[c] for c in played} == pytest.approx(played, rel=_REAL_REL_TOL)
     # No Maia value is written by the line pass.
     assert await _maia_values(session_factory, game_id) == maia_before
     assert maia_before["maia_best_prob"] == _SEEDED_PRE["maia_best_prob"]
@@ -1681,15 +1685,14 @@ async def test_line_mode_picks_up_a_changed_best_line_with_a_new_cutoff(
     game_id = await _fact_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
     await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
     first = (await _facepalm_values(session_factory, game_id))[2]
-    assert (
-        first["best_line_material"]
-        == _expected_new_facts(_BEST_LINE_AT_PLY_2)["best_line_material"]
+    assert first["material_missed"] == pytest.approx(
+        _expected_new_facts(_BEST_LINE_AT_PLY_2)["material_missed"], rel=_REAL_REL_TOL
     )
     # A repair rewrote the best line at the flaw ply.
     await _set_line(session_factory, game_id, 2, _OTHER_BEST_LINE_AT_PLY_2)
     new_facts = _expected_new_facts(_OTHER_BEST_LINE_AT_PLY_2)
-    assert new_facts["best_line_material"] != first["best_line_material"], (
-        "the two best lines must settle different material"
+    assert new_facts["best_line_mate_ply"] != first["best_line_mate_ply"], (
+        "the second best line mates, the first does not"
     )
 
     same_cutoff = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
@@ -1699,14 +1702,14 @@ async def test_line_mode_picks_up_a_changed_best_line_with_a_new_cutoff(
 
     assert rerun.games_stamped == 1
     row = (await _facepalm_values(session_factory, game_id))[2]
-    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == new_facts
+    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == pytest.approx(new_facts, rel=_REAL_REL_TOL)
 
 
 @pytest.mark.asyncio
-async def test_spread_mode_writes_the_arrays_but_leaves_the_pre_keys_untouched(
+async def test_spread_mode_writes_the_facts_but_leaves_the_pre_keys_untouched(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
 ) -> None:
-    """D-08 / D-09: the spread pass writes the reply spread, both line arrays and both mate plies,
+    """D-08 / D-09: the spread pass writes the reply spread, the two scalars and both mate plies,
     but never maia_best_prob, maia_pre_spread or the pre stamp."""
     game_id = await make_game(
         base_stamped=True, seed_base=True, pv={2: _BEST_LINE_AT_PLY_2, 3: _LINE_AFTER_PLY_2}
@@ -1719,7 +1722,9 @@ async def test_spread_mode_writes_the_arrays_but_leaves_the_pre_keys_untouched(
     assert report.games_stamped == 1
     row = (await _facepalm_values(session_factory, game_id))[2]
     assert row["maia_reply_spread"] is not None
-    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == _expected_new_facts(_BEST_LINE_AT_PLY_2)
+    assert {c: row[c] for c in _NEW_FACT_COLUMNS} == pytest.approx(
+        _expected_new_facts(_BEST_LINE_AT_PLY_2), rel=_REAL_REL_TOL
+    )
     maia_after = await _maia_values(session_factory, game_id)
     assert maia_after["maia_best_prob"] == _SEEDED_PRE["maia_best_prob"]
     assert maia_after["maia_pre_spread"] == _SEEDED_PRE["maia_pre_spread"]
@@ -2239,6 +2244,5 @@ async def test_line_status_prints_material_input_counts(
     monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
     await backfill._print_status("dev", _TEST_USER_ID, "line", _CUTOFF)
     line = capsys.readouterr().out.strip().splitlines()[-1]
-    assert line.endswith(
-        "user_blunders_with_material_inputs=1 opponent_blunders_with_material_inputs=1"
-    )
+    assert "user_blunders_with_material_inputs=1" in line
+    assert "opponent_blunders_with_material_inputs=1" in line

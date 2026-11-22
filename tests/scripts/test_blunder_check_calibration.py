@@ -306,10 +306,8 @@ class TestTracer:
         assert blunder.case == "pure_miss"
         assert blunder.is_miss
         assert blunder.maia_played_prob == pytest.approx(USER_ROW_INPUTS["maia_played_prob"])
-        # The seeded row stores the five scalar inputs only: no spread and no arrays.
+        # The seeded row stores the five scalar inputs only: no spread.
         assert blunder.maia_reply_spread is None
-        assert blunder.played_material is None
-        assert blunder.best_material is None
         assert blunder.line_mate_ply is None
         assert blunder.best_mate_ply is None
         assert blunder.material_loss == pytest.approx(USER_ROW_INPUTS["material_loss"])
@@ -519,8 +517,8 @@ def _blunder(
     seeded one or DEFAULT_REPLY_PROB (a losing row reads the reply, a no-loss row the best move;
     pass None to keep one unknown). `material_loss` / `material_missed` default to what the stored
     depth-3 line gives (`played_3`, `best_3` and the mate plies), so a default blunder loses three
-    points; pass them to set the material type directly. The record's arrays and spread are kept
-    for the report sections that still read them.
+    points; pass them to set the material type directly. `played_3` and `best_3` only seed those two
+    scalars (the record holds no per-depth material any more, 259 D-05).
     """
     facts: dict[str, Any] = {
         "played_prob": DEFAULT_PLAYED_PROB,
@@ -578,8 +576,6 @@ def _blunder(
         es_ref=0.5,
         maia_played_prob=facts["played_prob"],
         maia_reply_spread=facts["spread"],
-        played_material=facts["played_material"],
-        best_material=_line_of(best_3),
         line_mate_ply=mate_ply,
         best_mate_ply=best_mate_ply,
         maia_best_prob=facts["best_prob"],
@@ -714,7 +710,8 @@ class TestBlunderRecordFacts:
         assert null_reason(_blunder(played_prob=None)) == "other"
 
     def test_loses_material_sign_flip(self) -> None:
-        # played_3 is signed (positive = the blunderer is up): a loss is -played_3 >= FAIR_LOSS_MIN.
+        # The seeded depth-3 material is signed (positive = the blunderer is up): a loss of
+        # FAIR_LOSS_MIN points gives a stored loss of at least FAIR_LOSS_MIN.
         assert _loses_material(_blunder(played_3=-FAIR_LOSS_MIN))
         assert not _loses_material(_blunder(played_3=0))
         assert not _loses_material(_blunder(played_3=FAIR_LOSS_MIN))
@@ -1109,10 +1106,11 @@ class TestCacheRoundTrip:
         restored = read_cache(path)
         assert restored.blunders == collection.blunders
 
-    @pytest.mark.parametrize("old_version", [3, 4])
+    @pytest.mark.parametrize("old_version", [3, 4, 5])
     def test_an_older_cache_is_refused(self, tmp_path: Path, old_version: int) -> None:
-        # T-256-04 / T-259-19: a version 3 cache holds depth-3 material only and a version 4
-        # cache lacks the Phase 259 stored scalars; both must be re-sampled.
+        # T-256-04 / T-259-19: a version 3 cache holds depth-3 material only, a version 4 cache
+        # lacks the Phase 259 stored scalars and a version 5 cache still carries the 9-slot
+        # arrays; all must be re-sampled.
         path = tmp_path / "cache.json"
         write_cache(Collection(blunders=[_blunder()]), path)
         raw = json.loads(path.read_text())
@@ -1141,11 +1139,9 @@ class TestCacheRoundTrip:
         assert "facepalm_score" not in stored
         restored = read_cache(path).blunders[0]
         assert restored == blunder
-        assert (restored.played_3, restored.best_3, restored.best_mate_ply) == (-2, 3, 2)
-        # Phase 256 (CACHE_VERSION 4): both full arrays come back as tuples.
-        assert restored.played_material == lone_depth_line(-2)
-        assert restored.best_material == lone_depth_line(3)
-        assert stored["played_material"] == list(lone_depth_line(-2))
+        assert restored.best_mate_ply == 2
+        # CACHE_VERSION 6: the cache holds no 9-slot array.
+        assert "played_material" not in stored and "best_material" not in stored
         assert (restored.maia_best_prob, restored.maia_pre_spread) == (0.41, 5.5)
         # Phase 259 (CACHE_VERSION 5): the stored scalars come back as they were written.
         assert (restored.material_loss, restored.material_missed) == (2.25, 0.75)
@@ -1813,7 +1809,7 @@ class TestRecommendedConstants:
         top = scored[-1]
         assert rows["0.80"][3] == f"{top.maia_played_prob:.3f}"
         assert rows["0.80"][4] == f"{top.maia_reply_spread:.2f}"
-        punished = top.played_3 is not None and -top.played_3 >= FAIR_LOSS_MIN
+        punished = top.material_loss is not None and top.material_loss >= FAIR_LOSS_MIN
         # The seeded losing blunder stores its solved reply probability, which is the median.
         assert top.maia_best_reply_prob is not None
         assert rows["0.80"][5] == f"{top.maia_best_reply_prob:.3f}"

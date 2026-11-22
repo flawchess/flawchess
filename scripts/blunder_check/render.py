@@ -935,10 +935,10 @@ def _median_cell(values: Sequence[float], digits: int = 3) -> str:
 
 
 def _loses_material(b: BlunderRecord) -> bool:
-    """The punishment is clear: mate within LINE_DEPTH plies or at least FAIR_LOSS_MIN points down."""
+    """The punishment is clear: mate within LINE_DEPTH plies or a stored loss of at least FAIR_LOSS_MIN."""
     mated = b.line_mate_ply is not None and b.line_mate_ply <= LINE_DEPTH
-    # played_3 is the signed material (positive = the blunderer is up), so a loss is its negation.
-    return mated or (b.played_3 is not None and -b.played_3 >= FAIR_LOSS_MIN)
+    # material_loss is the stored decaying-mean loss under the quiet rule (259 D-05).
+    return mated or (b.material_loss is not None and b.material_loss >= FAIR_LOSS_MIN)
 
 
 def _proxy_row(

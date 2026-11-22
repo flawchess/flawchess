@@ -13,8 +13,8 @@ Pipeline for one game, with no AsyncSession open during inference:
    scorable flaw (the base value ``maia_played_prob``, via ``compute_maia_flaw_stats``) plus one
    per scorable blunder of EITHER side (the post-blunder position at the blunderer's own pinned
    Elo, which yields the Phase 250 reply spread; opponent blunders were added by SEED-261114-iuv
-   Part A). The line facts (``line_facts`` on the stored line at ply + 1, ``best_line_facts`` on
-   the best line at the flaw ply, Phase 254 D-09) are derived for blunders of EITHER side with the
+   Part A). The line facts (``quiet_line_facts`` on the stored line at ply + 1, ``quiet_best_line_facts``
+   on the best line at the flaw ply, Phase 254 D-09, quiet rule 259) are derived for blunders of EITHER side with the
    same derivation (SEED-261114-iuv Part A step 4), so opponent blunders get a facepalm score in
    ``facepalm_expr`` too; every reader that selects or displays the score gates on the game
    owner's side (``player_only_gate``). No score is stored (254
@@ -40,7 +40,7 @@ Phase 250 adds two backfill-only modes (D-08, D-18): spread mode (user-side blun
 post-blunder inference per blunder; writes the facepalm keys from the STORED
 ``maia_played_prob``) and line mode (blunders of BOTH sides since SEED-261114-iuv Part A step 4; no
 Maia at all; recomputes the line keys from the stored lines). The facepalm keys are the five fact columns of ``FACEPALM_COLUMNS`` (reply spread, the
-played line's mate ply, both signed material arrays and the best line's mate ply); the stored score
+played line's mate ply, the best line's mate ply and the two stored material scalars); the stored score
 and the five legacy line-loss columns are no longer written (254 D-02, D-19), the score lives only
 in the query-time expression.
 
@@ -103,13 +103,9 @@ from app.services import maia_engine
 from app.services.best_move_candidates import pinned_elo_for_mover
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
 from app.services.eval_apply import _FullPlyEvalTarget, _game_write_lock_key
-from app.services.facepalm_inputs import facepalm_material_inputs
+from app.services.facepalm_inputs import material_inputs_from_facts
 from app.services.facepalm_score import FacepalmFacts, facepalm_score
-from app.services.line_material import (
-    LineFacts,
-    best_line_facts,
-    line_facts,
-)
+from app.services.line_material import quiet_best_line_facts, quiet_line_facts
 from app.services.maia_engine import full_policy
 from app.services.maia_flaw_stats import (
     FacepalmStats,
@@ -526,39 +522,29 @@ def best_move_uci(best_pv: str | None, best_move: str | None) -> str | None:
     return best_move or None
 
 
-def _material_or_none(facts: LineFacts) -> list[int | None] | None:
-    """The signed 9-slot material array of a line, None when every slot is unsettled."""
-    material = facts.material_array()
-    return None if all(slot is None for slot in material) else material
-
-
 def _facepalm_values(
     board: chess.Board,
     played_uci: str,
     flaw: FlawMaiaInput,
     spread: float | None,
 ) -> FacepalmStats:
-    """The facepalm columns of one blunder of either side (250 D-05, 254 D-09).
+    """The facepalm columns of one blunder of either side (250 D-05, 259 D-05).
 
-    Line facts come from the pre-blunder board and the stored lines alone (no rating, no
-    inference), so they are set whenever a line is usable: the played line (`line_facts` on the
-    stored line at ply + 1) and the best line (`best_line_facts` on the pv at the flaw ply, else
-    the stored best move alone). Only facts are returned: no stored score and no legacy
-    `line_loss_*` values (254 D-02, D-19); the score is the query-time expression's job.
+    The quiet facts come from the pre-blunder board and the stored lines alone (no rating, no
+    inference), so they are set whenever a line is usable: the played line (`quiet_line_facts` on
+    the stored line at ply + 1) and the best line (`quiet_best_line_facts` on the pv at the flaw
+    ply, else the stored best move alone). The mate plies are read off those facts and the stored
+    scalars come from them via `material_inputs_from_facts`. Only facts are returned: no stored
+    score and no legacy `line_loss_*` values (254 D-02, D-19); the score is the query-time
+    expression's job.
     """
-    facts = line_facts(board, played_uci, flaw.refutation_pv)
-    best = best_line_facts(board, flaw.best_pv or flaw.best_move)
-    # 259 D-05: the stored scalars come from the one write-time function, next to the arrays,
-    # which stay exactly as computed today (D-11: the live score still reads the arrays).
-    inputs = facepalm_material_inputs(
-        board, played_uci, flaw.refutation_pv, flaw.best_pv or flaw.best_move
-    )
+    quiet = quiet_line_facts(board, played_uci, flaw.refutation_pv)
+    quiet_best = quiet_best_line_facts(board, flaw.best_pv or flaw.best_move)
+    inputs = material_inputs_from_facts(quiet, quiet_best)
     return FacepalmStats(
         maia_reply_spread=spread,
-        line_mate_ply=facts.mate_ply,
-        played_line_material=_material_or_none(facts),
-        best_line_material=_material_or_none(best),
-        best_line_mate_ply=best.opponent_mate_ply,
+        line_mate_ply=quiet.mate_ply,
+        best_line_mate_ply=quiet_best.opponent_mate_ply,
         material_loss=inputs.loss,
         material_missed=inputs.missed,
     )
@@ -951,8 +937,8 @@ FULL_ROW_COLUMNS: tuple[str, ...] = (
 )
 
 # The keys a line-mode row carries: the facepalm columns minus the reply spread, which line mode
-# reads but never writes (the spread needs Maia). They include the 254 material arrays and the
-# best line's mate ply, recomputed from the stored lines.
+# reads but never writes (the spread needs Maia). They include the two mate plies and the
+# stored material scalars, recomputed from the stored lines.
 LINE_ROW_COLUMNS: tuple[str, ...] = tuple(c for c in FACEPALM_COLUMNS if c != "maia_reply_spread")
 
 

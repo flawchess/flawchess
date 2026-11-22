@@ -31,9 +31,8 @@ from typing import Any
 
 import chess
 import pytest
-from sqlalchemy import ColumnElement, Float, SmallInteger, column, select, text, values
+from sqlalchemy import ColumnElement, Float, SmallInteger, column, select, values
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.game_flaw import GameFlaw
@@ -516,53 +515,6 @@ async def test_type_expr_matches_python_twin_over_stored_facts(
         assert types[flaw.ply] == facepalm_type(_facts_of_flaw(flaw)), flaw.ply
         seen.add(types[flaw.ply])
     assert seen == {None, "missed_win", "allowed_loss"}
-
-
-# ---------------------------------------------------------------------------
-# The stored-array shape CHECKs (they exist until the arrays are removed, D-09)
-# ---------------------------------------------------------------------------
-
-_NINE_SLOTS = "{0,0,0,0,0,0,0,0,0}"
-_BAD_ARRAY_LITERALS = {
-    "empty": "'{}'::smallint[]",
-    "three_slots": "'{1,2,3}'::smallint[]",
-    "offset_lower_bound": f"'[0:8]={_NINE_SLOTS}'::smallint[]",
-    "two_dimensional": "'{{1,2,3},{4,5,6},{7,8,9}}'::smallint[]",
-}
-_GOOD_ARRAY_LITERALS = {
-    "null": "NULL::smallint[]",
-    "nine_slots": f"'{_NINE_SLOTS}'::smallint[]",
-    "null_even_slots": "'{0,NULL,1,NULL,1,NULL,1,NULL,1}'::smallint[]",
-}
-_SHAPE_COLUMNS = ("played_line_material", "best_line_material")
-
-
-async def _set_array(session: AsyncSession, game_id: int, column_name: str, literal: str) -> None:
-    # column_name and literal come from the constants above, never from input.
-    await session.execute(
-        text(f"UPDATE game_flaws SET {column_name} = {literal} WHERE game_id = :g AND ply = 0"),
-        {"g": game_id},
-    )
-
-
-@pytest.mark.parametrize("column_name", _SHAPE_COLUMNS)
-@pytest.mark.parametrize("shape", list(_BAD_ARRAY_LITERALS))
-async def test_shape_check_rejects_malformed_arrays(
-    db_session: AsyncSession, column_name: str, shape: str
-) -> None:
-    game_id = await _seed_stored_facts(db_session, _STORED_FACT_ROWS[:1])
-    with pytest.raises(IntegrityError, match=f"ck_game_flaws_{column_name}_shape"):
-        async with db_session.begin_nested():
-            await _set_array(db_session, game_id, column_name, _BAD_ARRAY_LITERALS[shape])
-
-
-@pytest.mark.parametrize("column_name", _SHAPE_COLUMNS)
-@pytest.mark.parametrize("shape", list(_GOOD_ARRAY_LITERALS))
-async def test_shape_check_accepts_null_and_nine_slot_arrays(
-    db_session: AsyncSession, column_name: str, shape: str
-) -> None:
-    game_id = await _seed_stored_facts(db_session, _STORED_FACT_ROWS[:1])
-    await _set_array(db_session, game_id, column_name, _GOOD_ARRAY_LITERALS[shape])
 
 
 # ---------------------------------------------------------------------------
