@@ -866,11 +866,24 @@ decisions of 2026-11-21 and the evidence are in the seed.
 **Depends on**: Phase 259 (the refit score, the stored inputs and the 0.70 cut; switch and drop releases live on
 prod since 2026-11-22). Independent of Phase 260, which is being built in its own worktree at the same time; the
 two overlap only where both read the facepalm score.
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: none mapped; the contract is 261-CONTEXT.md D-01 to D-12 and the seed decisions
+**Plans:** 7 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 261 to break down)
+**Wave 1**
+- [ ] 261-01-PLAN.md — serve-time record: migration, snapshot columns, type-line facts and the feedback decision (D-04, D-06, D-08, D-09, D-12)
+- [ ] 261-02-PLAN.md — neutral Facepalm chip for the drill (D-01, D-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 261-03-PLAN.md — exploration draw: 20% coin flip, no-cut scored probe, pool provenance, arm kept on rewrites (D-10, D-11)
+- [ ] 261-04-PLAN.md — feedback paragraph in the blunder solution, desktop card and phone strip (D-01 to D-05, D-07, D-09)
+- [ ] 261-05-PLAN.md — calibration script with the served-share verdict
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 261-06-PLAN.md — feedback on the solution wire, HTTP end to end, counts as normal, no pre-answer leak (D-04 to D-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 261-07-PLAN.md — release gate: changelog, full and serial suites, D-10 prod EXPLAIN and browser check (orchestrator checkpoints)
 
 ## Backlog
 
