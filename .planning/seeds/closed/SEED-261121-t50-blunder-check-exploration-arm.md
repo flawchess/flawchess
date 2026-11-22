@@ -1,6 +1,9 @@
 ---
 id: SEED-261121-t50
-status: active
+status: closed
+closed: 2026-11-22
+closed_reason: implemented as Phase 261 (20% exploration draw without the score cut, serve-time snapshot on blunder_check_windows, avatar feedback, calibration script); merged to main 2026-11-22, not yet released
+promoted_to: Phase 261 (2026-11-22)
 planted: 2026-11-21
 planted_during: Phase 259 execution (facepalm first-principles refit), /gsd-explore session with the owner
 trigger_when: after the Phase 259 switch release is live on prod and the prod backfill of loss, missed and the best-reply probability is complete (rows without them are unscored)

@@ -48,7 +48,7 @@ whether a rate is typical for their rating and time control. That needs benchmar
 
 ## Breadcrumbs
 
-- `.planning/seeds/SEED-261114-iuv-facepalm-rate-library-stats.md` (decisions, measurements, history)
+- `.planning/seeds/closed/SEED-261114-iuv-facepalm-rate-library-stats.md` (decisions, measurements, history)
 - `reports/benchmark/benchmarks-latest.md`, the `benchmarks` skill
 - `app/services/facepalm_score.py`, `app/services/blunder_check_rules.py`
 - `app/services/maia_flaw_scoring.py`, `scripts/backfill_maia_flaws.py`

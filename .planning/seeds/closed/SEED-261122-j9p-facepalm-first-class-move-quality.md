@@ -1,6 +1,9 @@
 ---
 id: SEED-261122-j9p
-status: active
+status: closed
+closed: 2026-11-22
+closed_reason: implemented as Phase 260 (8th Facepalm row in MoveStats, dark red eval-chart dot, Facepalm/Blunder/Mistake Flaws tags, range filter removed); merged to main 2026-11-22, not yet released
+promoted_to: Phase 260 (2026-11-22)
 planted: 2026-11-22
 planted_during: /gsd-explore session during Phase 259 (facepalm first-principles refit)
 trigger_when: after Phase 259 (facepalm first-principles refit) is merged to main, when planning the next Library/UI polish work
