@@ -1251,7 +1251,7 @@ export function EvalChart({
             }, ${hoverDriven ? '-50%' : '0'})`,
           }}
         >
-          <ChartTooltipBox className="bg-background/85 text-sm whitespace-nowrap">
+          <ChartTooltipBox className="bg-background/70 backdrop-blur-[2px] text-sm whitespace-nowrap">
             <div className="flex items-center gap-1 text-muted-foreground">
               <span>{moveLabel}</span>
               <span>&middot;</span>
