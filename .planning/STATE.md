@@ -51,8 +51,12 @@ Open threads carried forward (not blockers):
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-11-19 after Phase 251)
+See: .planning/PROJECT.md (updated 2026-11-22 after Phase 259)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau) complete 2026-11-22**, all three releases live on prod (#497 R1 dual-write, #498 switch, #499 array drop; server `59e1edcb`, schema `f3a7b9c1e259`): verified 18/18 decisions, threats_open 0, Nyquist-compliant, code review 0 critical / 3 warnings (2 fixed, WR-03 dead-code cleanup and IN-01 stale docstrings open). Owner cuts: `FACEPALM_SCORE_MIN` 0.70, `FACEPALM_STATS_MIN` 0.70. No phase is queued on this roadmap; follow-ups live as seeds (SEED-261122-s0j promotions as material, SEED-261122-j9p facepalm as a move quality, SEED-261121-t50).
+
+### Superseded: focus before Phase 259
+
 Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau)**, ready to plan. Phase 258 (Library Stats Recent Sample for Snapshot Charts, SEED-261121-3ou) complete 2026-11-21 on branch `gsd/phase-258-library-stats-recent-sample-snapshots`: verified 20/20, UAT 5/5 (test 3 resolved by gap plan 258-05), threats_open 0; Nyquist validation still draft (`/gsd-validate-phase 258`); not yet squash-merged to `main`.
 
 ### Superseded: focus after Phase 251
