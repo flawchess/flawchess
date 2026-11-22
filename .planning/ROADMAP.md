@@ -826,6 +826,51 @@ Plans:
 **Wave 15** *(blocked on Wave 14 completion)*
 - [x] 259-15-PLAN.md — human-gated drop release (D-06)
 
+### Phase 261: Blunder-Check Exploration Arm (SEED-261121-t50)
+
+**Goal**: Serve about 20% of blunder windows from a random draw with no facepalm-score cut, record what was
+served, and show the score after the answer. The drill only serves blunders at or above `FACEPALM_SCORE_MIN`
+(0.70 since Phase 259), so user answers can never validate or refit the score below the cut. The random arm is a
+plain sample of what the drill would serve with no cut, usable for any future score without weights. Owner
+decisions of 2026-11-21 and the evidence are in the seed.
+
+- **Exploration draw:** one coin flip per blunder slot (share in one named constant, 20%), own and foreign slots
+  alike. The draw is the existing game-first probe without the score cut, on scored rows only; among several
+  eligible blunders of the picked game it chooses at random, never by score. The main arm keeps the 0.70 cut;
+  this phase does not change it.
+- **Serve-time record on `blunder_check_windows`:** the arm, the sampling probability and a snapshot of the
+  score and its inputs (`loss`, `missed`, `maia_played_prob`, `maia_best_prob`, the best-reply probability). The
+  score is a query-time expression that changes with every refit, and a deleted foreign game leaves the window
+  with a NULL `game_id`.
+- **Counts as normal:** exploration windows give points, streaks, medals and leaderboard score like any other
+  window, with no marker the user can see.
+- **Avatar feedback in the solution view:** the snapshotted facepalm score, a type line ("The blunder allows a
+  material loss / checkmate", "The blunder misses a material win / checkmate") and a "hard to catch" line when
+  the snapshotted score is below 50% (a named constant). The type line needs a real material swing of at least 2
+  points or a mate in the engine line, walked at serve time with Phase 259's quiet-point rule and stored on the
+  window. Shown only when the blunder was caught or missed, never for an unreached blunder (249 D-10). Copy
+  stays neutral about whose blunder it is.
+- **Calibration script** under `scripts/blunder_check/`: caught rate by score band with intervals, split by arm
+  and `is_own`. The analysis itself runs later, on demand; a refit on answers is not part of this phase.
+- **First step in discuss-phase:** re-measure on the Phase 259 score. Every number under the seed's Evidence is
+  from the old score: pool sizes per user, the caught-rate table and the natural score distribution.
+- **Open for discuss and planning:** acceptance criteria (e.g. the served exploration share against the 20%
+  target), the prod cost of the probe without the cut and its fit with `ix_game_flaws_facepalm_inputs` (259
+  D-17), the served-once rule using up a user's low-score own blunders, and whether the best move's engine line
+  is still stored after the Phase 259 drop release (the type line needs it).
+- **Out of scope:** the one-tap "unfair" flag (deferred by the owner), review gates or a stop rule for the arm
+  (declined by the owner), a fit on user answers, any change to the herring share, the window length or the
+  timing.
+
+**Depends on**: Phase 259 (the refit score, the stored inputs and the 0.70 cut; switch and drop releases live on
+prod since 2026-11-22). Independent of Phase 260, which is being built in its own worktree at the same time; the
+two overlap only where both read the facepalm score.
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 261 to break down)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
