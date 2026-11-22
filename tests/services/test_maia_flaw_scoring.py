@@ -49,7 +49,7 @@ from app.services.facepalm_score import (
     facepalm_score,
     facepalm_type_expr,
 )
-from app.services.line_material import LineFacts, best_line_facts, line_facts
+from app.services.line_material import quiet_best_line_facts, quiet_line_facts
 from app.services.maia_flaw_scoring import (
     best_move_uci,
     ScoringMode,
@@ -280,13 +280,13 @@ async def _facepalm_rows(
     return {f.ply: {c: getattr(f, c) for c in FACEPALM_COLUMNS} for f in flaws}
 
 
-def _fact_columns(facts: LineFacts) -> dict[str, Any]:
-    """The stored fact columns of a played line (254 D-09): the signed array (None when every slot
-    is unsettled, the stored shape) and the played line's mate ply."""
-    material = facts.material_array()
+def _fact_columns(pre: chess.Board, played: str, stored_line: str | None) -> dict[str, Any]:
+    """The stored fact columns of a played line alone (259 D-05): its mate ply and the decaying-mean
+    loss under the quiet rule, computed from the quiet facts (the mate ply) and the one write-time
+    function (the loss, which needs no best line)."""
     return {
-        "played_line_material": None if all(v is None for v in material) else material,
-        "line_mate_ply": facts.mate_ply,
+        "line_mate_ply": quiet_line_facts(pre, played, stored_line).mate_ply,
+        "material_loss": facepalm_material_inputs(pre, played, stored_line, None).loss,
     }
 
 
@@ -401,8 +401,7 @@ async def test_facepalm_tracer_user_blunder_scored_and_three_stamps(
     pre, played = _replayed(_SCOTCH_PGN)[ply]
     post = pre.copy()
     post.push_uci(played)
-    facts = line_facts(pre, played, pv)
-    columns = _fact_columns(facts)
+    columns = _fact_columns(pre, played, pv)
     assert any(v is not None for v in columns.values()), "the fixture line must settle a depth"
 
     row = (await _facepalm_rows(session_factory, game_id))[ply]
@@ -436,8 +435,9 @@ async def test_rows_carry_facts_only(
     full = rows["full"]
     for key in (*FACEPALM_COLUMNS, *FACEPALM_PRE_COLUMNS, "maia_played_prob"):
         assert key in full, key
-    assert full["played_line_material"] is not None
-    assert full["best_line_material"] is not None
+    assert full["material_loss"] is not None
+    assert full["material_missed"] is not None
+    assert full["best_line_mate_ply"] is None or isinstance(full["best_line_mate_ply"], int)
     assert full["maia_best_prob"] is not None
     assert full["maia_pre_spread"] is not None
 
@@ -486,7 +486,7 @@ async def test_hook_full_mode_still_stamps(
     assert len(stamps) == 5
     assert all(stamp is not None for stamp in stamps.values())
     row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
-    assert row.played_line_material is not None
+    assert row.material_loss is not None
 
 
 # Calls for _PGN, white user, flaws (2, 5, 8): three base calls plus a post-blunder call for each
@@ -660,8 +660,8 @@ def test_target_boards_are_never_mutated() -> None:
     )
     score = score_game(inputs, boards)
     assert score.rows[0]["maia_reply_spread"] is not None, "ply 2 must have been scored"
-    assert score.rows[0]["line_mate_ply"] is not None or any(
-        v is not None for v in score.rows[0]["played_line_material"] or []
+    assert (
+        score.rows[0]["line_mate_ply"] is not None or score.rows[0]["material_loss"] is not None
     ), "the line walk must have run on ply 2"
     after = {ply: (b.fen(), list(b.move_stack)) for ply, (b, _) in boards.items()}
     assert after == before
@@ -768,14 +768,11 @@ def _expected_line_facts(
 ) -> dict[str, Any]:
     """The four line facts the module's own derivation yields for one blunder (NULLs without lines)."""
     pre, played = _replayed(pgn)[ply]
-    played_facts = line_facts(pre, played, stored_line)
-    best_facts = best_line_facts(pre, best_line)
-    best_material = best_facts.material_array()
+    best_facts = quiet_best_line_facts(pre, best_line)
     # 259 D-05: the scalars come from the one write-time function on the same board and lines.
     scalars = facepalm_material_inputs(pre, played, stored_line, best_line)
     return {
-        **_fact_columns(played_facts),
-        "best_line_material": None if all(v is None for v in best_material) else best_material,
+        "line_mate_ply": quiet_line_facts(pre, played, stored_line).mate_ply,
         "best_line_mate_ply": best_facts.opponent_mate_ply,
         "material_loss": scalars.loss,
         "material_missed": scalars.missed,
@@ -796,9 +793,6 @@ def _assert_opponent_blunder_facts(
 _STALE_FACEPALM: dict[str, Any] = {
     "maia_reply_spread": 4.5,
     "line_mate_ply": 3,
-    # Phase 254 D-09 fact columns (nine slots each, the stored shape).
-    "played_line_material": [1, 0, -1, 2, -2, 3, 0, 1, -1],
-    "best_line_material": [0, 1, 2, 3, 2, 1, 0, 1, 2],
     "best_line_mate_ply": 2,
     # Phase 259 D-05 scalars (exact binary fractions, so the REAL columns round-trip equal).
     "material_loss": 1.5,
@@ -843,10 +837,10 @@ async def test_facepalm_scope_mistake_rows_null_blunders_of_both_sides_scored(
     assert rows[2] == _ALL_NULL_FACEPALM, "user mistake"
     _assert_opponent_blunder_facts(rows[5], 5, lines)
     assert rows[5]["maia_reply_spread"] != _STALE_FACEPALM["maia_reply_spread"]
-    assert rows[5]["played_line_material"] != _STALE_FACEPALM["played_line_material"]
+    assert rows[5]["material_loss"] != _STALE_FACEPALM["material_loss"]
     pre, played = _replayed(_PGN)[4]
     assert rows[4]["maia_reply_spread"] is not None
-    for column, value in _fact_columns(line_facts(pre, played, lines[5])).items():
+    for column, value in _fact_columns(pre, played, lines[5]).items():
         assert rows[4][column] == value, column
 
 
@@ -858,7 +852,7 @@ async def test_facepalm_no_rating_keeps_line_facts_only(
     assert await _score(session_factory, game_id)
     row = (await _facepalm_rows(session_factory, game_id))[_SCOTCH_FLAW_PLY]
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
-    expected = _fact_columns(line_facts(pre, played, pv))
+    expected = _fact_columns(pre, played, pv)
     assert any(v is not None for v in expected.values())
     assert {c: row[c] for c in expected} == expected
     assert row["maia_reply_spread"] is None
@@ -873,7 +867,7 @@ async def test_facepalm_missing_line_leaves_score_null(
     assert await _score(session_factory, game_id)
     row = (await _facepalm_rows(session_factory, game_id))[_SCOTCH_FLAW_PLY]
     assert row["maia_reply_spread"] is not None
-    assert row["played_line_material"] is None
+    assert row["material_loss"] is None
     assert row["line_mate_ply"] is None
 
 
@@ -996,8 +990,7 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
     assert [fen for fen, _elo in calls] == [post.fen()]
     spread = reply_spread(fake_full_policy(post.fen(), 0.0))
     assert row["maia_reply_spread"] == pytest.approx(spread)
-    facts = line_facts(pre, played, pv)
-    for column, value in _fact_columns(facts).items():
+    for column, value in _fact_columns(pre, played, pv).items():
         assert row[column] == value, column
     _assert_no_dropped_keys(row)
     expected = facepalm_score(
@@ -1022,7 +1015,7 @@ def _expected_score_without_spread(pre: chess.Board, played: str, pv: str | None
     A row that loses no material reads the best-move probability, not the reply (259 D-08); this
     line loses nothing, so a NULL reply probability does not unscore it.
     """
-    facts = line_facts(pre, played, pv)
+    facts = quiet_line_facts(pre, played, pv)
     assert (facts.loss_at(3) or 0) <= 0, "the fixture line must not lose material"
     score = facepalm_score(
         FacepalmFacts(
@@ -1069,7 +1062,7 @@ async def test_spread_mode_no_rating_keeps_line_facts_and_skips_inference(
     # The facts still score in memory without a spread (the line loses no material).
     assert _expected_score_without_spread(pre, played, pv) is not None
     assert score.scores_set == 1
-    assert row["played_line_material"] is not None
+    assert row["material_loss"] is not None
     assert score.reasons["no_rating"] == 1
 
 
@@ -1121,8 +1114,7 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
         assert "maia_reply_spread" not in each
         _assert_no_dropped_keys(each)
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
-    facts = line_facts(pre, played, pv)
-    for column, value in _fact_columns(facts).items():
+    for column, value in _fact_columns(pre, played, pv).items():
         assert row[column] == value, column
     # The opponent row carries the same derivation over its own stored line.
     # (game_positions.pv at the opponent's own ply is the user's stored line, hence the best line.)
@@ -1164,7 +1156,7 @@ async def test_line_mode_blunder_without_stored_spread_gets_facts_but_no_score(
     score = score_game(await _inputs(session_factory, game_id), None, "line")
     row = score.rows[0]
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
-    assert row["played_line_material"] == line_facts(pre, played, pv).material_array()
+    assert row["material_loss"] == facepalm_material_inputs(pre, played, pv, None).loss
     assert _expected_score_without_spread(pre, played, pv) is not None
     assert score.scores_set == 1
 
@@ -2049,35 +2041,72 @@ async def _flaw_row_full(
         ).scalar_one()
 
 
-async def test_full_mode_writes_both_line_arrays(
+async def test_full_mode_writes_the_quiet_facts_and_no_array(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """D-09: the hook stores both signed 9-slot arrays and both mate plies."""
+    """259 D-05: the hook stores both mate plies and the two scalars from the quiet facts; the row
+    carries no 9-slot array key."""
     game_id, pv = await _best_line_user_blunder(make_game)
     assert await _score(session_factory, game_id)
     pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
-    played_facts = line_facts(pre, played, pv)
-    best_facts = best_line_facts(pre, _SCOTCH_BEST_PV)
+    played_facts = quiet_line_facts(pre, played, pv)
+    best_facts = quiet_best_line_facts(pre, _SCOTCH_BEST_PV)
     assert any(v is not None for v in best_facts.material_array()), "the best line must settle"
+    expected = facepalm_material_inputs(pre, played, pv, _SCOTCH_BEST_PV)
     row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
-    assert row.played_line_material == played_facts.material_array()
-    assert row.best_line_material == best_facts.material_array()
-    assert len(row.played_line_material or []) == 9
-    assert len(row.best_line_material or []) == 9
+    assert row.material_loss == pytest.approx(expected.loss, rel=_REAL_RELATIVE_TOLERANCE)
+    assert row.material_missed == pytest.approx(expected.missed, rel=_REAL_RELATIVE_TOLERANCE)
     assert row.line_mate_ply == played_facts.mate_ply
     assert row.best_line_mate_ply == best_facts.opponent_mate_ply
+
+
+# The dropped 9-slot material arrays all ended in this suffix; no row key or column may again.
+_ARRAY_NAME_SUFFIX = "_line_material"
+
+
+async def test_writers_store_no_material_array(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """259 D-05 tracer: one seeded game scored in full mode and then rewritten by the line pass
+    carries no array key in any row, stores no array value, and keeps the mate plies and the scalars
+    of the quiet facts (the same step replay the plan 04 tracer pinned)."""
+    game_id, pv = await _best_line_user_blunder(make_game)
+    inputs = await _inputs(session_factory, game_id)
+    for mode in ("full", "line", "spread"):
+        for row in score_game(inputs, None, mode).rows:
+            assert not any(key.endswith(_ARRAY_NAME_SUFFIX) for key in row), mode
+    assert not any(name.endswith(_ARRAY_NAME_SUFFIX) for name in GameFlaw.__table__.columns.keys())
+    pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    quiet = quiet_line_facts(pre, played, pv)
+    quiet_best = quiet_best_line_facts(pre, _SCOTCH_BEST_PV)
+    expected = facepalm_material_inputs(pre, played, pv, _SCOTCH_BEST_PV)
+    assert expected.loss is not None, "the fixture lines must settle the stored loss"
+
+    assert await _score(session_factory, game_id)
+    outcomes = await _write_line_scores(
+        session_factory,
+        game_id,
+        require_unstamped=False,
+        line_cutoff=datetime(2026, 11, 10, tzinfo=timezone.utc),
+    )
+    assert outcomes == {game_id: "stamped"}
+
+    row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
+    assert row.line_mate_ply == quiet.mate_ply
+    assert row.best_line_mate_ply == quiet_best.opponent_mate_ply
+    assert row.material_loss == pytest.approx(expected.loss, rel=_REAL_RELATIVE_TOLERANCE)
+    assert row.material_missed == pytest.approx(expected.missed, rel=_REAL_RELATIVE_TOLERANCE)
 
 
 async def test_full_mode_without_best_line_keeps_best_facts_null(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """No best pv and no best_move: the best arrays and mate ply stay NULL, the row is still scored."""
+    """No best pv and no best_move: the best mate ply stays NULL, the row is still scored."""
     game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
     assert await _score(session_factory, game_id)
     row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
-    assert row.best_line_material is None
     assert row.best_line_mate_ply is None
-    assert row.played_line_material is not None
+    assert row.material_loss is not None
 
 
 @pytest.mark.parametrize("changed", ["pv", "best_move"])
@@ -2103,8 +2132,8 @@ async def test_fingerprint_includes_best_line(
         await session.commit()
     assert outcomes == {game_id: "fingerprint_changed"}
     row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
-    assert row.best_line_material is None
-    assert row.played_line_material is None
+    assert row.best_line_mate_ply is None
+    assert row.material_loss is None
     assert all(stamp is None for stamp in (await _stamps(session_factory, game_id)).values())
 
 
@@ -2182,7 +2211,7 @@ async def test_pre_inputs_reuse_the_flaw_policy_call(
 async def test_best_move_missing_keeps_loss_only_score(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
-    """No pv and no best_move at the flaw ply: best prob and best arrays NULL, reason counted, the
+    """No pv and no best_move at the flaw ply: best prob and best mate ply NULL, reason counted, the
     pre spread is still stored. The Scotch blunder loses no material, so under best_prob_for_misses
     the row is unscored without a best-move probability (254 WR-01 / 256 D-04)."""
     game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
@@ -2191,7 +2220,6 @@ async def test_best_move_missing_keeps_loss_only_score(
     row = score.rows[0]
     assert row["maia_best_prob"] is None
     assert row["maia_pre_spread"] is not None
-    assert row["best_line_material"] is None
     assert row["best_line_mate_ply"] is None
     assert score.scores_set == 0
 
@@ -2260,7 +2288,7 @@ async def test_spread_and_line_rows_never_carry_pre_inputs(
         row = score_game(inputs, None, mode).rows[0]
         assert "maia_best_prob" not in row, mode
         assert "maia_pre_spread" not in row, mode
-        assert row["best_line_material"] is not None, mode
+        assert row["material_missed"] is not None, mode
 
 
 # ---------------------------------------------------------------------------
@@ -2315,7 +2343,7 @@ async def test_full_mode_opponent_blunder_gets_three_maia_columns_and_line_facts
     )
     assert any(v is not None for v in expected.values()), "the fixture lines must settle a fact"
     assert {column: getattr(row, column) for column in _LINE_FACT_COLUMNS} == expected
-    assert row.played_line_material != _STALE_FACEPALM["played_line_material"]
+    assert row.material_loss != _STALE_FACEPALM["material_loss"]
     assert all(stamp is not None for stamp in (await _stamps(session_factory, game_id)).values())
 
 
@@ -2333,7 +2361,7 @@ async def test_full_mode_writes_material_inputs_and_reply_prob_for_both_sides(
     line and a best line, are scored and written through the hook. Both rows carry the stored
     scalars (equal to `facepalm_material_inputs` on the same board and lines) and the best-reply
     probability (the fake policy's value of the first refutation token on the post-blunder board),
-    next to the unchanged arrays."""
+    and no array key."""
     refutations = {
         _TRACER_USER_PLY + 1: _mainline_line(_PGN, _TRACER_USER_PLY, 6),
         _OPPONENT_PLY + 1: _mainline_line(_PGN, _OPPONENT_PLY, 3),
@@ -2357,13 +2385,6 @@ async def test_full_mode_writes_material_inputs_and_reply_prob_for_both_sides(
         reply_policy = fake_full_policy(post.fen(), 0.0)
         assert row.maia_best_reply_prob == pytest.approx(
             reply_policy[refutation.split(" ")[0]], rel=_REAL_RELATIVE_TOLERANCE
-        )
-        # The arrays are exactly what the live score reads today (D-11).
-        assert row.played_line_material == line_facts(pre, played, refutation).material_array() or (
-            row.played_line_material is None
-        )
-        assert row.best_line_material == best_line_facts(pre, best).material_array() or (
-            row.best_line_material is None
         )
 
 
@@ -2496,9 +2517,8 @@ async def test_facepalm_expr_scores_opponent_row_and_gated_reader_still_omits_it
     await _seed_stale_facepalm(session_factory, game_id, _OPPONENT_PLY)
     assert await _score(session_factory, game_id)
     row = await _flaw_row_full(session_factory, game_id, _OPPONENT_PLY)
-    # The fixture line must settle the depth-3 slot, or the row stays unscored by construction.
-    assert row.played_line_material is not None
-    assert row.played_line_material[2] is not None, "the line must settle the depth-3 slot first"
+    # The fixture line must settle the stored loss, or the row stays unscored by construction.
+    assert row.material_loss is not None, "the line must settle the stored loss"
 
     async def _expr_by_ply(lam: float) -> dict[int, float | None]:
         async with session_factory() as session:
@@ -2771,13 +2791,8 @@ def test_score_expressions_read_the_scalar_columns_only() -> None:
     for expression in (facepalm_expr(FACEPALM_DRILL_LAMBDA), facepalm_type_expr()):
         compiled = str(expression.compile(dialect=postgresql.dialect())).lower()
         assert "material_loss" in compiled
-        for column in (
-            "played_line_material",
-            "best_line_material",
-            "line_mate_ply",
-            "maia_reply_spread",
-            "maia_pre_spread",
-        ):
+        assert _ARRAY_NAME_SUFFIX not in compiled
+        for column in ("line_mate_ply", "maia_reply_spread", "maia_pre_spread"):
             assert column not in compiled, column
 
 

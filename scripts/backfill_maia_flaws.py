@@ -104,7 +104,7 @@ Usage:
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode line --cutoff <deploy time UTC> --workers 4 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode line --cutoff <same cutoff>
     (line pass over opponent blunders too: the cutoff must be at or after the deploy of this change;
-     --status --mode line then also prints opponent_blunders_total / _with_line_facts / _with_score)
+     --status --mode line then also prints opponent_blunders_total / _with_material_inputs / _with_score)
     PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode pre --workers 8 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode pre
     (pre mode, 254 D-20: 8 shards, one connection each; the stamp is the checkpoint, re-run to resume)
@@ -1161,11 +1161,11 @@ async def _fetch_opponent_status(session: AsyncSession, user_id: int | None) -> 
 
 async def _fetch_opponent_line_counts(session: AsyncSession, user_id: int | None) -> dict[str, int]:
     """Line pass progress on the opponent side: operator counts of opponent blunders in total, with
-    line facts and with a drill score (SEED-261114-iuv Part A step 4). Never user-facing."""
+    stored material inputs and with a drill score (SEED-261114-iuv Part A step 4). Never user-facing."""
     score = facepalm_expr(FACEPALM_DRILL_LAMBDA)
     value_filters: dict[str, Sequence[ColumnElement[bool]]] = {
         "opponent_blunders_total": (),
-        "opponent_blunders_with_line_facts": [GameFlaw.played_line_material.is_not(None)],
+        "opponent_blunders_with_material_inputs": [GameFlaw.material_loss.is_not(None)],
         "opponent_blunders_with_score": [score.is_not(None)],
     }
     return {

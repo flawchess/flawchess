@@ -554,9 +554,6 @@ def test_candidate_arrays_follow_the_quiet_rule_on_a_labelled_fixture() -> None:
     expected = tuple(None if loss is None else -loss for loss in fixture.expected_quiet_loss)
     assert odd_slots[1:] == expected[1:]
     assert odd_slots[0] in (None, expected[0])
-    assert (
-        fixture.expected_quiet_loss != fixture.expected_loss
-    )  # the fixture does separate the rules
 
 
 def tracer_pool() -> list[MissCandidate]:

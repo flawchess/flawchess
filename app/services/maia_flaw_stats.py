@@ -45,15 +45,12 @@ def null_maia_stats() -> MaiaFlawStats:
 
 class FacepalmStats(TypedDict):
     """The facepalm FACT columns of one game_flaws row (no stored score, 254 D-02): the reply
-    spread, the played line's mate ply, the signed material arrays and the best line's mate ply
-    (D-09). The score is computed at query time from these facts and the pre-blunder inputs."""
+    spread, the two mate plies and the two stored material scalars (259 D-05). The score is
+    computed at query time from these facts and the pre-blunder inputs."""
 
     maia_reply_spread: float | None
     line_mate_ply: int | None
-    # Phase 254 D-09: signed 9-slot material of the played / best line (None when every slot is
-    # None) and the ply after which the best line mates the opponent (0 = the best move mates).
-    played_line_material: list[int | None] | None
-    best_line_material: list[int | None] | None
+    # The ply after which the best line mates the opponent (0 = the best move mates).
     best_line_mate_ply: int | None
     # Phase 259 D-05: the stored decaying-mean loss and missed gain under the quiet rule
     # (facepalm_material_inputs); both None together.
@@ -70,8 +67,6 @@ def null_facepalm_stats() -> FacepalmStats:
     return FacepalmStats(
         maia_reply_spread=None,
         line_mate_ply=None,
-        played_line_material=None,
-        best_line_material=None,
         best_line_mate_ply=None,
         material_loss=None,
         material_missed=None,

@@ -6,14 +6,9 @@ import chess
 import pytest
 
 from app.services.blunder_check_rules import FACEPALM_MISSED_MATE, MATE_LOSS
-from app.services.facepalm_inputs import (
-    facepalm_material_inputs,
-    material_inputs_from_facts,
-)
+from app.services.facepalm_inputs import facepalm_material_inputs
 from app.services.line_material import (
     LINE_LOSS_DEPTHS,
-    best_line_facts,
-    line_facts,
     quiet_best_line_facts,
     quiet_line_facts,
 )
@@ -41,16 +36,6 @@ def test_d13_missed_gain_is_zero_under_the_quiet_rule() -> None:
         D13_FIXTURE.expected_quiet_best_material
     )
     assert board.fen() == D13_FIXTURE.pre_fen  # never mutated
-
-
-def test_d13_shipped_rule_reads_a_missed_gain() -> None:
-    """What D-13 fixes: the shipped walk cuts the best line mid-trade (the arrays stay live)."""
-    board = _d13_board()
-    inputs = material_inputs_from_facts(
-        line_facts(board, D13_FIXTURE.played_uci, D13_FIXTURE.refutation_line),
-        best_line_facts(board, D13_FIXTURE.best_line),
-    )
-    assert inputs.missed == pytest.approx(D13_FIXTURE.expected_shipped_missed)
 
 
 def _board_after(moves: str) -> chess.Board:

@@ -778,7 +778,7 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 12/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+**Plans:** 14/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
 **Wave 1**
@@ -818,10 +818,10 @@ Plans:
 - [x] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure
 
 **Wave 13** *(blocked on Wave 12 completion)*
-- [ ] 259-13-PLAN.md — drop code: facts-only writers, scripts off the arrays, shipped rule deleted
+- [x] 259-13-PLAN.md — drop code: facts-only writers, scripts off the arrays, shipped rule deleted
 
 **Wave 14** *(blocked on Wave 13 completion)*
-- [ ] 259-14-PLAN.md — drop migration, model cleanup, D-18 code outcome
+- [x] 259-14-PLAN.md — drop migration, model cleanup, D-18 code outcome
 
 **Wave 15** *(blocked on Wave 14 completion)*
 - [ ] 259-15-PLAN.md — human-gated drop release (D-06)

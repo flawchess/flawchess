@@ -1,37 +1,38 @@
-"""line_material.py - pure material count along a stored refutation line (Phase 250 D-02, D-05).
+"""line_material.py - pure material count along a stored line, the quiet-point rule (Phase 259 D-02).
 
-Given the position before a blunder, the blunder move and the stored engine line that
-punishes it (``game_positions.pv`` at flaw ply + 1, space-separated UCI starting with the
-opponent's reply), count the material the blunderer is down after following the line for
-1 / 3 / 5 / 7 / 9 plies, and find the ply at which the blunderer is mated, if ever.
+Given the position before a blunder, the blunder move and the stored engine line that punishes it
+(``game_positions.pv`` at flaw ply + 1, space-separated UCI starting with the opponent's reply),
+count the material the blunderer is down at the odd depths 1 / 3 / 5 / 7 / 9 of that line, and find
+the ply at which the blunderer is mated, if ever. ``quiet_best_line_facts`` runs the same walk for
+the BEST line (the best move is the first move, the rest of ``game_positions.pv`` at the flaw ply
+is its line) and finds the ply at which the opponent is mated.
 
-Semantics follow the exploratory reference (``capture_loss`` in
-``temp/blunder-check/refine.py``, gitignored) that the owner's label study was run with:
+Counting rules, the semantics the owner's label study was run with:
 
 - piece values 1 / 3 / 3 / 5 / 9, only captures count, promotions are not material;
-- the blunder move's own capture counts in the blunderer's favour (the baseline is the
-  position before the blunder);
-- the blunderer's recapture at depth + 1 is included, an opponent capture at depth + 1 is not;
-- an opponent capture of a piece that the blunderer's previous line move placed on that
-  square without capturing is ignored (engine desperado or spite check in a lost position);
-- a line that ends on an opponent capture before depth + 1 gets a static-exchange recapture
-  credit (the best recapture on that square, least valuable attacker first).
+- the first move's own capture counts in the mover's favour (the baseline is the position before
+  the blunder);
+- an opponent capture of a piece that the blunderer's previous line move placed on that square
+  without capturing is ignored (engine desperado or spite check in a lost position);
+- each odd depth is read at the first quiet point at or after it: the walk takes ``depth`` plies,
+  then keeps going while the next line move is a capture, so an equal exchange of any length nets
+  to zero instead of being cut mid-trade; a stored line that ends inside an exchange is settled by
+  a static exchange on the last capture's square.
 
-D-05 NULL rule: a depth the stored line does not reach is None ("line too short to tell"),
-not 0, unless the blunderer is mated within the walked line or the recapture credit settled
-the short line. A missing, empty, malformed or illegal line gives all-None facts and never
-raises. The caller's board is never mutated.
+NULL rule: a depth the stored line does not reach is None ("line too short to tell"), not 0,
+unless the blunderer or the opponent is mated within the walked line or the static exchange settled
+the short line. A missing, empty, malformed or illegal line gives all-None facts and never raises.
+The caller's board is never mutated.
 
-Phase 254 (D-09): the same counting rules also run for the BEST line (``best_line_facts``: the
-best move is the first move, the rest of ``game_positions.pv`` at the flaw ply is its line).
-Facts expose a 9-slot signed array indexed by depth (``material_array``, slot N = depth N);
-even depths are mid-exchange values (see ``LINE_MATERIAL_SLOTS``). Material is signed, positive =
-the blunderer is up (``material_at(depth) == -loss_at(depth)``). Ply convention: the first move
-(the blunder, or the best move) is ply 0, so line ply N is the Nth token of the stored line. A mate of either side inside the walked line settles
-the depth; ``opponent_mate_ply`` is the ply after which the opponent is mated (a best move that
-mates itself has ply 0, mate-in-2 has ply 2).
+Facts expose a 9-slot signed array indexed by depth (``material_array``, slot N = depth N; only the
+odd slots are filled). Material is signed, positive = the blunderer is up
+(``material_at(depth) == -loss_at(depth)``). Ply convention: the first move (the blunder, or the
+best move) is ply 0, so line ply N is the Nth token of the stored line. ``opponent_mate_ply`` is the
+ply after which the opponent is mated (a best move that mates itself has ply 0, mate-in-2 has
+ply 2).
 
-No I/O. The score that consumes these facts lives in ``app/services/facepalm_score.py``.
+No I/O. The stored scalars computed from these facts live in ``app/services/facepalm_inputs.py``
+and the score in ``app/services/facepalm_score.py``.
 """
 
 from __future__ import annotations
@@ -46,10 +47,7 @@ import chess
 LINE_LOSS_DEPTHS: tuple[int, ...] = (1, 3, 5, 7, 9)
 
 # Slots of the signed material arrays (D-09, D-17): slot N (1-based) = net material at depth N.
-# Even depths are mid-exchange values: `_net_loss` takes only a blunderer capture at depth + 1,
-# which at an even depth is an opponent ply, so the opponent's reply to the blunderer's last move
-# is not counted yet (optimistic for the blunderer). Computed with the same counting rule, not
-# "fixed", because nothing in the D-05 score reads them (research Pitfall 14).
+# Only the odd depths are filled by the quiet rule; the even slots stay None.
 LINE_MATERIAL_SLOTS: int = 9
 LINE_MATERIAL_DEPTHS: tuple[int, ...] = tuple(range(1, LINE_MATERIAL_SLOTS + 1))
 
@@ -74,9 +72,6 @@ _SEE_VALUES: Mapping[chess.PieceType, int] = {**PIECE_VALUES, chess.KING: _SEE_K
 # Separator of the stored line; matches game_positions.pv (space-joined UCI), kept local so this
 # module stays free of the scorer's imports.
 _PV_SEPARATOR: str = " "
-
-# One ply beyond the deepest stored depth is read (the blunderer's recapture at depth + 1).
-_MAX_WALK_PLIES: int = max(LINE_MATERIAL_DEPTHS) + 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,19 +184,6 @@ def _replay_line(
     return steps, board
 
 
-def _recapture_credit(steps: list[_Step], end_board: chess.Board) -> int | None:
-    """Static-exchange credit for a line that ended on an opponent capture, else None.
-
-    Only a line shorter than every walk limit can need it; a mated blunderer gets none.
-    """
-    if not steps or len(steps) >= _MAX_WALK_PLIES:
-        return None
-    last = steps[-1]
-    if not (last.opponent_move and last.victim_value and not last.blunderer_mated):
-        return None
-    return _best_recapture(end_board, last.to_square)
-
-
 def _count_step(loss: int, quiet_square: int | None, step: _Step) -> tuple[int, int | None]:
     """Fold one line step into the running loss (the 250 D-02 counting rule, shared by both walks).
 
@@ -216,35 +198,6 @@ def _count_step(loss: int, quiet_square: int | None, step: _Step) -> tuple[int, 
         return loss, None
     loss -= step.victim_value
     return loss, (step.to_square if step.victim_value == 0 else None)
-
-
-def _net_loss(first_victim: int, steps: list[_Step], depth: int) -> int:
-    """Net material the blunderer is down over the first `depth` plies plus a depth + 1 recapture."""
-    loss = -first_victim
-    quiet_square: int | None = None  # where the blunderer's last move landed without capturing
-    for index, step in enumerate(steps[: depth + 1], start=1):
-        if index == depth + 1 and (step.opponent_move or step.victim_value == 0):
-            break  # only a blunderer capture is taken at depth + 1
-        loss, quiet_square = _count_step(loss, quiet_square, step)
-    return loss
-
-
-def _loss_at_depth(
-    first_victim: int, steps: list[_Step], depth: int, credit: int | None
-) -> int | None:
-    """Net loss at `depth`, or None when the stored line is too short to settle it (D-05)."""
-    walked = min(len(steps), depth + 1)
-    if walked == 0:
-        return None
-    loss = _net_loss(first_victim, steps, depth)
-    if credit is not None and len(steps) <= depth:
-        return loss - credit  # the line ended on an opponent capture inside the walk: settled
-    # A mate of EITHER side inside the walked line settles the depth (D-09: a best line may end
-    # in the opponent's mate, which is not "line too short to tell").
-    mated = any(step.blunderer_mated or step.opponent_mated for step in steps[:depth])
-    if walked >= depth or mated:
-        return loss
-    return None
 
 
 def _mate_ply(steps: list[_Step]) -> int | None:
@@ -263,78 +216,11 @@ def _opponent_mate_ply(steps: list[_Step]) -> int | None:
     return None
 
 
-def _facts_after_first_move(
-    pre_board: chess.Board, first: chess.Move, rest: list[str]
-) -> LineFacts:
-    """Shared counting for the played line and the best line (the 250 D-02 rules exist once).
-
-    `first` is the blunderer's first move (the blunder, or the best move), already known to be
-    legal on `pre_board`; `rest` the UCI tokens of the line that follows it. A first move that
-    mates settles every depth at its capture value with opponent_mate_ply 0 (Pitfall 2).
-    """
-    board = pre_board.copy(stack=False)
-    blunderer = board.turn
-    first_victim = _victim_value(board, first)
-    board.push(first)
-    if board.is_checkmate():
-        return LineFacts(
-            loss_by_depth=dict.fromkeys(LINE_MATERIAL_DEPTHS, -first_victim),
-            mate_ply=None,
-            opponent_mate_ply=0,
-        )
-    steps, end_board = _replay_line(board, rest, blunderer)
-    if not steps:
-        return null_line_facts()
-    credit = _recapture_credit(steps, end_board)
-    return LineFacts(
-        loss_by_depth={
-            depth: _loss_at_depth(first_victim, steps, depth, credit)
-            for depth in LINE_MATERIAL_DEPTHS
-        },
-        mate_ply=_mate_ply(steps),
-        opponent_mate_ply=_opponent_mate_ply(steps),
-    )
-
-
-def line_facts(pre_board: chess.Board, played_uci: str, pv: str | None) -> LineFacts:
-    """Line material facts for one blunder (no I/O, `pre_board` is never mutated).
-
-    `pre_board` is the position before the blunder (blunderer to move), `played_uci` the
-    blunder and `pv` the stored line from the position after it. A missing line, a
-    malformed or illegal played move or first token gives all-None facts.
-    """
-    if not pv:
-        return null_line_facts()
-    played = _parse_move(played_uci)
-    if played is None or played not in pre_board.legal_moves:
-        return null_line_facts()
-    return _facts_after_first_move(pre_board, played, pv.split(_PV_SEPARATOR))
-
-
-def best_line_facts(pre_board: chess.Board, best_pv: str | None) -> LineFacts:
-    """Line material facts for the best line (D-09; no I/O, `pre_board` is never mutated).
-
-    `best_pv` is `game_positions.pv` at the flaw ply: the best move first, then its line. The
-    same counting rules as `line_facts` apply with the best move as the first move. A missing,
-    empty, malformed or illegal best line gives all-None facts and never raises; a best move
-    that mates settles every depth with opponent_mate_ply 0, while a non-mating one-token line
-    is "too short to tell" (None).
-    """
-    if not best_pv:
-        return null_line_facts()
-    tokens = best_pv.split(_PV_SEPARATOR)
-    best = _parse_move(tokens[0])
-    if best is None or best not in pre_board.legal_moves:
-        return null_line_facts()
-    return _facts_after_first_move(pre_board, best, tokens[1:])
-
-
-# --- Phase 259 D-02: the quiet-point rule -------------------------------------------------------
+# --- The quiet-point walk (Phase 259 D-02) -----------------------------------------------------
 # Each odd depth is read at the first quiet point at or after it: the walk takes `depth` plies,
 # then keeps going while the next line move is a capture (on any square), so an equal exchange of
 # any length nets to zero instead of being cut mid-trade. A stored line that ends inside an
-# exchange is settled by a static exchange on the last capture's square. The live arrays
-# (`line_facts` / `best_line_facts`) keep the old rule until the switch release (D-11).
+# exchange is settled by a static exchange on the last capture's square.
 
 
 def _quiet_walk_end(steps: Sequence[_Step], depth: int) -> int:
@@ -377,7 +263,7 @@ def _quiet_loss(
 def _quiet_facts_after_first_move(
     pre_board: chess.Board, first: chess.Move, rest: list[str]
 ) -> LineFacts:
-    """The quiet-rule counterpart of `_facts_after_first_move` (odd depths only, even depths None)."""
+    """Shared counting for the played line and the best line (odd depths only, even depths None)."""
     board = pre_board.copy(stack=False)
     blunderer = board.turn
     first_victim = _victim_value(board, first)
@@ -406,7 +292,9 @@ def _quiet_facts_after_first_move(
 def quiet_line_facts(pre_board: chess.Board, played_uci: str, pv: str | None) -> LineFacts:
     """Quiet-point line facts for one blunder (D-02; no I/O, `pre_board` is never mutated).
 
-    Same inputs and guards as `line_facts`. Only the odd depths are filled.
+    `pre_board` is the position before the blunder (blunderer to move), `played_uci` the blunder and
+    `pv` the stored line from the position after it. A missing line, a malformed or illegal played
+    move or first token gives all-None facts. Only the odd depths are filled.
     """
     if not pv:
         return null_line_facts()
@@ -419,7 +307,10 @@ def quiet_line_facts(pre_board: chess.Board, played_uci: str, pv: str | None) ->
 def quiet_best_line_facts(pre_board: chess.Board, best_pv: str | None) -> LineFacts:
     """Quiet-point line facts for the best line (D-02; no I/O, `pre_board` is never mutated).
 
-    Same inputs and guards as `best_line_facts`: `best_pv` is the best move first, then its line.
+    `best_pv` is `game_positions.pv` at the flaw ply: the best move first, then its line. A missing,
+    empty, malformed or illegal best line gives all-None facts and never raises; a best move that
+    mates settles every depth with opponent_mate_ply 0, while a non-mating one-token line is "too
+    short to tell" (None).
     """
     if not best_pv:
         return null_line_facts()

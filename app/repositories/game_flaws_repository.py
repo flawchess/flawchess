@@ -178,22 +178,20 @@ FLAW_BLOB_AND_TACTIC_COLUMNS: tuple[str, ...] = (
 # preserves them by omission (D-09).
 MAIA_FLAW_COLUMNS: tuple[str, ...] = ("maia_played_prob",)
 
-# The facepalm fact columns: the reply spread, the played line's mate ply and the three Phase 254
-# fact columns (D-09: the signed material arrays of the played and the best line and the best
-# line's mate ply). The stored score and the five legacy line-loss columns are no longer written
-# (254 D-02, D-19); the score is computed at query time. Its OWN tuple, deliberately NOT part of
-# MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit these
-# keys: the diff/upsert in _classify_and_fill_oracle preserves them by omission (D-05, T-254-06).
+# The facepalm fact columns: the reply spread, the played line's mate ply, the best line's mate ply
+# and the two stored material scalars (the decaying-mean loss and missed gain under the quiet
+# rule, 259 D-05). The 9-slot material arrays are no longer written (259 D-05). The stored score
+# and the five legacy line-loss columns are not written either (254 D-02, D-19); the score is
+# computed at query time. Its OWN tuple, deliberately NOT part of MAIA_FLAW_COLUMNS or
+# FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit these keys: the diff/upsert
+# in _classify_and_fill_oracle preserves them by omission (D-05, T-254-06). Line mode writes them
+# without Maia.
 FACEPALM_COLUMNS: tuple[str, ...] = (
     "maia_reply_spread",
     "line_mate_ply",
-    "played_line_material",
-    "best_line_material",
-    "best_line_mate_ply",
-    # Phase 259 D-05: the stored decaying-mean loss and missed gain (facepalm_material_inputs).
-    # Line mode writes them without Maia, so they belong here.
     "material_loss",
     "material_missed",
+    "best_line_mate_ply",
 )
 
 # Phase 254 D-08: the two pre-blunder Maia inputs (the best move's probability and the effective

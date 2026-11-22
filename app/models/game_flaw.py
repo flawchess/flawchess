@@ -13,18 +13,10 @@ is the one denormalized display column that cannot be recovered without PGN repl
 from typing import Any, Optional
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, SmallInteger, String, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, REAL
+from sqlalchemy.dialects.postgresql import JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-
-
-def _material_array_shape(column: str) -> str:
-    """CHECK predicate: NULL, or a one-dimensional 9-slot array starting at index 1 (D-09, D-17)."""
-    return (
-        f"{column} IS NULL OR (cardinality({column}) = 9 "
-        f"AND array_lower({column}, 1) = 1 AND array_ndims({column}) = 1)"
-    )
 
 
 class GameFlaw(Base):
@@ -34,36 +26,15 @@ class GameFlaw(Base):
         # Covers: filter by user_id + severity (set-membership) for Games-tab EXISTS
         # and Flaws-tab SELECT queries without a full table scan per user.
         Index("ix_game_flaws_user_severity", "user_id", "severity"),
-        # Phase 257 D-21: covering partial index for the facepalm aggregates (Flaws Timeline
-        # band, "Facepalm blunders" comparison). It carries every column facepalm_expr and
-        # facepalm_type_expr read, so scoring a user's blunders is an index-only scan instead of
-        # a heap fetch of each wide row. Keep the INCLUDE list in step with
-        # facepalm_score._game_flaw_columns (a new score input not listed here silently brings
-        # the heap fetches back). Severity 2 = blunder (_SEVERITY_INT).
-        Index(
-            "ix_game_flaws_blunder_facts",
-            "user_id",
-            "game_id",
-            postgresql_include=[
-                "ply",
-                "maia_played_prob",
-                "maia_reply_spread",
-                "played_line_material",
-                "line_mate_ply",
-                "best_line_material",
-                "best_line_mate_ply",
-                "maia_best_prob",
-                "maia_pre_spread",
-            ],
-            postgresql_where=text("severity = 2"),
-        ),
-        # Phase 259 D-17: the covering partial index for the scalar score inputs. Same role as
-        # ix_game_flaws_blunder_facts, over the columns facepalm_expr and facepalm_type_expr read
-        # after the scalar switch. Keep the INCLUDE list in step with
+        # Phase 257 D-21 / Phase 259 D-17: covering partial index for the facepalm aggregates
+        # (Flaws Timeline band, "Facepalm blunders" comparison). It carries every column
+        # facepalm_expr and facepalm_type_expr read, so scoring a user's blunders is an index-only
+        # scan instead of a heap fetch of each wide row. Keep the INCLUDE list in step with
         # facepalm_score._game_flaw_columns (a new score input not listed here silently brings the
-        # heap fetches back). A new name is mandatory: autogenerate ignores INCLUDE / WHERE changes.
-        # The old index stays until the drop plan so a rollback of the switch keeps a usable index.
-        # Prod builds it with CREATE INDEX CONCURRENTLY (scripts/build_facepalm_inputs_index.py).
+        # heap fetches back). Severity 2 = blunder (_SEVERITY_INT). It replaced the Phase 257
+        # index that carried the 9-slot material arrays (dropped in the same release as the
+        # arrays). Prod builds it with CREATE INDEX CONCURRENTLY
+        # (scripts/build_facepalm_inputs_index.py).
         Index(
             "ix_game_flaws_facepalm_inputs",
             "user_id",
@@ -77,18 +48,6 @@ class GameFlaw(Base):
                 "maia_best_reply_prob",
             ],
             postgresql_where=text("severity = 2"),
-        ),
-        # Phase 254 array shape checks, NOT VALID so the migration skips the table scan
-        # (metadata matches alembic/versions/..._a7d2c9e1b254_phase_254_facepalm_facts.py).
-        CheckConstraint(
-            _material_array_shape("played_line_material"),
-            name="ck_game_flaws_played_line_material_shape",
-            postgresql_not_valid=True,
-        ),
-        CheckConstraint(
-            _material_array_shape("best_line_material"),
-            name="ck_game_flaws_best_line_material_shape",
-            postgresql_not_valid=True,
         ),
         # Phase 259 D-05 scalar checks, NOT VALID so the migration skips the table scan
         # (metadata matches alembic/versions/..._d1e5f7a9c259_phase_259_facepalm_scalars.py).
@@ -192,8 +151,7 @@ class GameFlaw(Base):
     # scores). Written only by app/services/maia_flaw_scoring.py, never by
     # flaw_record_to_row, so a diff/upsert preserves them by omission. The Phase 250 stored
     # score and the five line-loss snapshot columns were dropped in Phase 254 (D-02, D-19):
-    # the score is computed at query time by facepalm_expr and the played_line_material array
-    # below replaces the snapshots.
+    # the score is computed at query time by facepalm_expr from the stored scalars below.
     #   maia_reply_spread = 2 ** entropy (bits) of the full Maia policy one ply after the
     #                       blunder (opponent to move), at the blunderer's (the mover's) pinned Elo.
     #   line_mate_ply     = first line ply after which the blunderer is mated; NULL = no mate.
@@ -205,24 +163,13 @@ class GameFlaw(Base):
     # facepalm_expr), so a refit or a new lambda never rewrites rows. Written only by
     # app/services/maia_flaw_scoring.py, never by flaw_record_to_row, so a diff/upsert
     # preserves them by omission.
-    #   played_line_material = signed material after N plies of the played (refutation) line,
-    #                          slot N = depth N (9 slots, one-based); positive = the blunderer
-    #                          is up. Even slots are mid-exchange snapshots and may be NULL.
-    #   best_line_material   = the same along the engine's best line from the decision
-    #                          position; NULL = the best line is unknown (D-18).
     #   best_line_mate_ply   = ply at which the best line mates the opponent, the best move
     #                          counting as ply 0; NULL = no mate in the stored best line.
     #   maia_best_prob       = Maia's probability for the best move at the blunderer's Elo.
     #   maia_pre_spread      = effective number of replies (2 ** entropy) of the position
     #                          before the blunder.
-    # The two array columns carry NOT VALID shape CHECKs (NULL or one-dimensional, 9 slots,
-    # lower bound 1), added NOT VALID so the migration stays instant.
-    played_line_material: Mapped[Optional[list[int | None]]] = mapped_column(
-        ARRAY(SmallInteger), nullable=True
-    )
-    best_line_material: Mapped[Optional[list[int | None]]] = mapped_column(
-        ARRAY(SmallInteger), nullable=True
-    )
+    # The two 9-slot material arrays of Phase 254 (and their shape CHECKs) were dropped in
+    # Phase 259 (D-05, D-06): material_loss / material_missed below replace them.
     best_line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     maia_best_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
     maia_pre_spread: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)

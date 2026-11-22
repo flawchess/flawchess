@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 259
 current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
 status: executing
-stopped_at: Completed 259-10-PLAN.md
-last_updated: "2026-11-22T12:13:31.187Z"
+stopped_at: Completed 259-14-PLAN.md
+last_updated: "2026-11-22T12:44:23.780Z"
 last_activity: 2026-11-21
 last_activity_desc: Phase 259 execution started
-state_head: 3fb40e94a562ab15e69c4821e080ab258fb5153d
+state_head: d9aad47e9061b793c8c4d44f7da0791b9ce5d141
 progress:
   total_phases: 13
   completed_phases: 63
   total_plans: 120
-  completed_plans: 114
+  completed_plans: 116
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,7 +22,7 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 ## Current Position
 
 Phase: 259 (Facepalm Score Refit on First Principles (SEED-261121-tau)) — EXECUTING
-Plan: 13 of 15
+Plan: 15 of 15
 
 Status: Ready to execute
 
@@ -981,6 +981,9 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 259]: 259-08: _facepalm_facts keeps the old-line twin arguments for plan 09 to swap; reply probability shown as a proxy-table column; spot check score line drops reply spread and played material 3
 - [Phase 259]: 259-09: facepalm twin switched to the five stored scalars; constants fitted on the plan 03 table and proven with --check-constants (exit 0); covering-index coverage test is a strict xfail until plan 10
 - [Phase 259]: 259-10: ix_game_flaws_facepalm_inputs built from the compiled ORM index (CIC IF NOT EXISTS); operator script verifies indisvalid and exact pg_get_indexdef; old index stays until plan 14
+- [Phase 259]: 259-13: blunder-check cache version 6; render._loses_material reads material_loss; opponent line status counts material inputs
+- [Phase 259]: D-18 JIT outcome keep: disable_jit_for_transaction stays, docstring cites reports/blunder-check/facepalm-jit-259.md (comparison ratio 1.13 > 1.05)
+- [Phase 259]: Drop migration f3a7b9c1e259 applied on dev only; prod stays at e2f6a8b0d259 until plan 15's owner decision
 
 ### Pending Todos
 
@@ -1239,8 +1242,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-21T20:42:00.233Z
-**Stopped at:** Completed 259-10-PLAN.md
+**Last session:** 2026-11-22T12:44:21.676Z
+**Stopped at:** Completed 259-14-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1542,6 +1545,8 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 259 P08 | 8 min | 2 tasks | 8 files |
 | Phase 259 P09 | 36 min | 3 tasks | 17 files |
 | Phase 259 P10 | 25 min | 2 tasks | 10 files |
+| Phase 259 P13 | 12 min | 3 tasks | 19 files |
+| Phase 259 P14 | 15 min | 2 tasks | 6 files |
 
 ## Performance Metrics
 

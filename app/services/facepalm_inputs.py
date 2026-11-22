@@ -67,7 +67,7 @@ def facepalm_material_inputs(
 
     `pre_board` is the position before the blunder, `refutation_pv` the stored line at ply + 1 and
     `best_pv` the stored line at the flaw ply (callers pass `best_pv or best_move`, the
-    `best_line_facts` convention). `pre_board` is never mutated.
+    `quiet_best_line_facts` convention). `pre_board` is never mutated.
     """
     return material_inputs_from_facts(
         quiet_line_facts(pre_board, played_uci, refutation_pv),
