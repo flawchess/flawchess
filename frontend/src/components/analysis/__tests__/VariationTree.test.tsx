@@ -562,7 +562,7 @@ describe('VariationTree', () => {
     // A tap on the icon opens the popover and does not navigate to the move.
     fireEvent.click(trigger);
     expect(onNodeClick).not.toHaveBeenCalled();
-    expect(screen.getByText(`Facepalm ${toFacepalmPct(belowCutScore)}%`)).toBeTruthy();
+    expect(screen.getByText(`Facepalm score ${toFacepalmPct(belowCutScore)}%`)).toBeTruthy();
     expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
       `???${FACEPALM_HIGH_CUTOFF}% or more counts as a facepalm blunder.`,
     );

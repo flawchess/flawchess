@@ -231,10 +231,13 @@ describe('FlawTooltipVerdict (260-G1: one verdict line, colour on icons only)', 
     };
   }
 
-  it('states a user facepalm blunder and its score on one neutral line with the ??? icon', () => {
+  it('states a user facepalm blunder with the ??? icon and its score on a separate line', () => {
     render(<FlawTooltipVerdict marker={verdictMarker({ facepalm_score: ABOVE_CUT })} />);
     const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
-    expect(verdict.querySelector('span')?.textContent).toBe(`You \u00b7 Facepalm ${toFacepalmPct(ABOVE_CUT)}%`);
+    expect(verdict.querySelector('span')?.textContent).toBe('You \u00b7 Facepalm');
+    expect(screen.getByTestId('eval-chart-tooltip-facepalm-score').textContent).toBe(
+      `Facepalm score ${toFacepalmPct(ABOVE_CUT)}%`,
+    );
     expect(verdict.getAttribute('style')).toBeNull();
     expect(verdict.className).toContain('text-foreground');
     // The ??? icon replaces the dot glyph: exactly one svg, and it carries the ??? text.
@@ -248,15 +251,16 @@ describe('FlawTooltipVerdict (260-G1: one verdict line, colour on icons only)', 
       <FlawTooltipVerdict marker={verdictMarker({ is_user: false, facepalm_score: ABOVE_CUT })} />,
     );
     const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
-    expect(verdict.querySelector('span')?.textContent).toBe(
-      `Opponent \u00b7 Facepalm ${toFacepalmPct(ABOVE_CUT)}%`,
-    );
+    expect(verdict.querySelector('span')?.textContent).toBe('Opponent \u00b7 Facepalm');
   });
 
   it('shows the ?? icon and the score for a blunder below the cut', () => {
     render(<FlawTooltipVerdict marker={verdictMarker({ facepalm_score: BELOW_CUT })} />);
     const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
-    expect(verdict.querySelector('span')?.textContent).toBe(`You \u00b7 Blunder ${toFacepalmPct(BELOW_CUT)}%`);
+    expect(verdict.querySelector('span')?.textContent).toBe('You \u00b7 Blunder');
+    expect(screen.getByTestId('eval-chart-tooltip-facepalm-score').textContent).toBe(
+      `Facepalm score ${toFacepalmPct(BELOW_CUT)}%`,
+    );
     const icons = verdict.querySelectorAll('svg');
     expect(icons).toHaveLength(1);
     expect(icons[0]?.textContent).toBe('??');
@@ -267,6 +271,7 @@ describe('FlawTooltipVerdict (260-G1: one verdict line, colour on icons only)', 
     const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
     expect(verdict.textContent).toBe('??You \u00b7 Blunder');
     expect(verdict.querySelector('svg')?.textContent).toBe('??');
+    expect(screen.queryByTestId('eval-chart-tooltip-facepalm-score')).toBeNull();
   });
 
   it('keeps the dot glyph and no percent for an opponent mistake with a high score', () => {
@@ -277,6 +282,7 @@ describe('FlawTooltipVerdict (260-G1: one verdict line, colour on icons only)', 
     );
     const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
     expect(verdict.textContent).toBe('Opponent \u00b7 Mistake');
+    expect(screen.queryByTestId('eval-chart-tooltip-facepalm-score')).toBeNull();
     // The opponent dot glyph is a hollow square.
     expect(verdict.querySelector('rect')).not.toBeNull();
   });

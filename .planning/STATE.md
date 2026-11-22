@@ -5,10 +5,10 @@ current_phase: 261
 current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
 status: completed
 stopped_at: Phase 260 complete — all phases complete
-last_updated: "2026-11-22T21:27:29.585Z"
+last_updated: "2026-11-22T22:08:44.469Z"
 last_activity: 2026-11-22
 last_activity_desc: Phase 260 complete
-state_head: ba22c4e5979a28b147b817b25ae41b33487f22ae
+state_head: b9fc7daab5eba4dcb049eee1cde14bf82bd25661
 progress:
   total_phases: 15
   completed_phases: 63
@@ -1202,6 +1202,7 @@ None active.
 | 261122-jsf | Forcing-line gate: a mate tag survives a tie between two mating moves (prod game 1461616 ply 76) | 2026-11-22 | 4fe187674 | [261122-jsf-fix-mate-tie-rule-in-forcing-line-gate](./quick/261122-jsf-fix-mate-tie-rule-in-forcing-line-gate/) |
 | 261122-kos | Tactic tags: forced-mate flag reads the right eval row; mate in 1 survives the only-move strip | 2026-11-22 | fa3462b81 | [261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s](./quick/261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s/) |
 | 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
+| 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
 
 ## Deferred Items
 

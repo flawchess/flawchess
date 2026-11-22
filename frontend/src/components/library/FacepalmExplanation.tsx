@@ -32,7 +32,7 @@ export function FacepalmExplanation({ score, type, audience = 'self' }: Facepalm
     <>
       <p className="flex items-center gap-1 font-bold">
         <Gauge className="h-3 w-3 shrink-0" aria-hidden="true" />
-        Facepalm {toFacepalmPct(score)}%
+        Facepalm score {toFacepalmPct(score)}%
       </p>
       {/* 257 D-22: ties the non-standard "???" badge to the 70% cut, on every surface showing the score. */}
       <p className="flex items-center gap-1" data-testid="facepalm-explanation-blunder">

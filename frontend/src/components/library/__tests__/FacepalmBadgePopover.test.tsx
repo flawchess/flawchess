@@ -70,7 +70,7 @@ function focusEl(el: HTMLElement): void {
 
 describe('FacepalmBadgePopover content and name', () => {
   it('names the trigger with Facepalm, the percent and the type', () => {
-    expect(trigger().getAttribute('aria-label')).toBe('Facepalm 94%, allowed loss');
+    expect(trigger().getAttribute('aria-label')).toBe('Facepalm blunder, facepalm score 94%, allowed loss');
   });
 
   it('names a below-cut trigger a blunder, not a facepalm', () => {

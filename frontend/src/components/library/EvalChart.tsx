@@ -545,9 +545,9 @@ function MarkerGlyph({ isUser, color }: { isUser: boolean; color: string }): Rea
 }
 
 /**
- * Verdict row of the eval-chart tooltip, one line: "{You | Opponent} · {Label}" plus the facepalm
- * score of a scored blunder, e.g. "You · Facepalm 95%" or "Opponent · Blunder 12%" (260-G1). The
- * icon carries the colour (the "???" icon for a facepalm, the "??" icon for any other blunder, the
+ * Verdict rows of the eval-chart tooltip: "{You | Opponent} · {Label}", then, for a scored blunder,
+ * the facepalm score on its own indented line, e.g. "You · Facepalm" / "Facepalm score 95%" (260-G1).
+ * The icon carries the colour (the "???" icon for a facepalm, the "??" icon for any other blunder, the
  * flaw dot for a mistake or inaccuracy); the label is neutral text. Exported for the unit test.
  */
 export function FlawTooltipVerdict({ marker }: { marker: FlawMarker }): React.ReactElement {
@@ -556,8 +556,8 @@ export function FlawTooltipVerdict({ marker }: { marker: FlawMarker }): React.Re
   const label = isFacepalm
     ? 'Facepalm'
     : marker.severity.charAt(0).toUpperCase() + marker.severity.slice(1);
-  const scoreText =
-    isBlunder && marker.facepalm_score != null ? ` ${toFacepalmPct(marker.facepalm_score)}%` : '';
+  const scorePct =
+    isBlunder && marker.facepalm_score != null ? toFacepalmPct(marker.facepalm_score) : null;
   let icon: React.ReactElement;
   if (isFacepalm) {
     icon = <FacepalmBlunderIcon className={TOOLTIP_ICON_CLASS} aria-hidden="true" />;
@@ -567,13 +567,22 @@ export function FlawTooltipVerdict({ marker }: { marker: FlawMarker }): React.Re
     icon = <MarkerGlyph isUser={marker.is_user} color={flawMarkerColor(marker)} />;
   }
   return (
-    <div className="flex items-center gap-1.5 text-foreground" data-testid="eval-chart-tooltip-verdict">
-      {icon}
-      <span>
-        {marker.is_user ? 'You' : 'Opponent'} &middot; {label}
-        {scoreText}
-      </span>
-    </div>
+    <>
+      <div className="flex items-center gap-1.5 text-foreground" data-testid="eval-chart-tooltip-verdict">
+        {icon}
+        <span>
+          {marker.is_user ? 'You' : 'Opponent'} &middot; {label}
+        </span>
+      </div>
+      {scorePct != null && (
+        <div
+          className={`${TOOLTIP_TEXT_INDENT_CLASS} text-foreground`}
+          data-testid="eval-chart-tooltip-facepalm-score"
+        >
+          Facepalm score {scorePct}%
+        </div>
+      )}
+    </>
   );
 }
 

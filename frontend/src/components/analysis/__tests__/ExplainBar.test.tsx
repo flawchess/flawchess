@@ -135,9 +135,9 @@ describe('ExplainBar explain state', () => {
       tactics: [{ orientation: 'missed', text: 'missed checkmate in 7' }],
     });
     const headline = screen.getByTestId('analysis-explain-headline');
-    expect(headline.textContent).toBe(`Qf6+???: Facepalm ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`);
+    expect(headline.textContent).toBe(`Qf6+???: Facepalm score ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`);
     const score = screen.getByTestId('analysis-explain-facepalm');
-    expect(score.textContent).toBe(`Facepalm ${FACEPALM_PCT}%`);
+    expect(score.textContent).toBe(`Facepalm score ${FACEPALM_PCT}%`);
     expect(score.getAttribute('style')).toBeNull();
     const tactic = screen.getByTestId('analysis-explain-tactics').querySelector<HTMLElement>('[data-orientation="missed"]');
     expect(tactic?.style.color).not.toBe('');
@@ -145,7 +145,7 @@ describe('ExplainBar explain state', () => {
 
   it('a facepalm without tactics shows the score only', () => {
     renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: FACEPALM_PCT });
-    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(`Qf6+???: Facepalm ${FACEPALM_PCT}%`);
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(`Qf6+???: Facepalm score ${FACEPALM_PCT}%`);
     expect(screen.queryByTestId('analysis-explain-tactics')).toBeNull();
   });
 
@@ -214,7 +214,7 @@ describe('ExplainBar got-it state', () => {
       },
     });
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
-      `Qf6+???: Facepalm ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`,
+      `Qf6+???: Facepalm score ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`,
     );
   });
 

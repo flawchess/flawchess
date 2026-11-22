@@ -34,7 +34,7 @@ describe('facepalmScoreLabel', () => {
   it('names a facepalm blunder "Facepalm N%, type"', () => {
     const score = (FACEPALM_HIGH_CUTOFF + 10) / PCT_SCALE;
     expect(facepalmScoreLabel(score, 'allowed_loss')).toBe(
-      `Facepalm ${toFacepalmPct(score)}%, allowed loss`,
+      `Facepalm blunder, facepalm score ${toFacepalmPct(score)}%, allowed loss`,
     );
   });
 
