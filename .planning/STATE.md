@@ -5,10 +5,10 @@ current_phase: 259
 current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
 status: verifying
 stopped_at: Completed 259-14-PLAN.md
-last_updated: "2026-11-22T13:15:10.257Z"
+last_updated: "2026-11-22T13:22:28.776Z"
 last_activity: 2026-11-21
 last_activity_desc: Phase 259 execution started
-state_head: de39c02f47de25f9193d790a2227363a1586bf7b
+state_head: 1c681585cb82385e19dc3669abbc60a93cf6366f
 progress:
   total_phases: 13
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: 15 of 15
 
 Status: Phase complete — ready for verification
 
-Last activity: 2026-11-21 — Phase 259 execution started
+Last activity: 2026-11-22 - Completed quick task 261122-jsf: mate tag survives a tie between two mating moves
 
 Open threads carried forward (not blockers):
 
@@ -1190,6 +1190,7 @@ None active.
 | 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
 | 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
 | 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
+| 261122-jsf | Forcing-line gate: a mate tag survives a tie between two mating moves (prod game 1461616 ply 76) | 2026-11-22 | 1c681585c | [261122-jsf-fix-mate-tie-rule-in-forcing-line-gate](./quick/261122-jsf-fix-mate-tie-rule-in-forcing-line-gate/) |
 
 ## Deferred Items
 
