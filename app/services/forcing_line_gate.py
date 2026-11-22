@@ -605,6 +605,13 @@ def apply_forcing_line_filter(
 
     # Every solver node through the firing depth must be forced.
     relevant = _solver_nodes_through_firing_depth(stripped, firing_depth)
+    if not relevant and forced_mate:
+        # Bug fix: a forced mate whose only solver node has no stored second move
+        # (a mate in 1 with a missing second-best eval, e.g. Qxf7# in prod game
+        # 1459222 ply 15) was stripped as a "trailing only-move", leaving nothing to
+        # check, and the mate tag was rejected. A forced mate is exempt from the
+        # one-mover discard, so it is checked on the unstripped line instead.
+        relevant = _solver_nodes_through_firing_depth(truncated, firing_depth)
     if not relevant:
         return False
     mate_motif = is_mate_motif(motif_int)

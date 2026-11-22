@@ -58,6 +58,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Tactic tags: a blunder that allows (or misses) a forced checkmate no longer loses its checkmate tag when two moves mate equally fast somewhere along the line. Existing games pick the tag up after the next re-tagging run. (quick 261122-jsf)
+- Tactic tags: long forced checkmates (about seven moves or more) are now tagged as checkmate reliably. Before, the tag depended on what the opponent happened to play next, and a missed long mate was usually not tagged at all. A mate in one is also no longer left untagged in some opening positions. Existing games pick the tags up after the next re-tagging run. (quick 261122-kos)
 - Endgames: the Stats tab no longer takes up to two minutes to load for some accounts. The endgame statistics now load in about a second for every account. (quick 261120-li5)
 - Blunder check: continuing a session on a second device no longer ends in an error on the first one. The device that fell behind now jumps to the sequence that is actually next, or returns to the Today page if the session was finished elsewhere. (quick 261120-j5f)
 - Activity dashboard: Train sessions whose window has passed now show as Abandoned instead of still open, and opening the Train page without starting a session no longer counts as one. (quick 261120-c1x)

@@ -568,7 +568,14 @@ def _detect_tactic_for_flaw(
         # inverted the sign and silently dropped real Black forced mates. Convert to the
         # mover's POV via _pov_mate/_solver_color_for before comparing, exactly like every
         # other mate-sign site in this file.
-        _pos_missed = positions[n] if 0 <= n < len(positions) else None
+        # Bug fix (off by one): this read positions[n], the eval AFTER the flaw move
+        # (positions[N] holds the eval after move N, see _run_all_moves_pass). The
+        # missed line starts from the board BEFORE the flaw move, whose eval is
+        # positions[n - 1]. After a blunder that throws the mate away the later row is
+        # no longer a mate, so a mate line capped before the mating move never got its
+        # MATE tag. Measured on one account's complete mate lines: the old row matched
+        # the line's mate distance in 0 of 761 cases, positions[n - 1] in 756.
+        _pos_missed = positions[n - 1] if 1 <= n <= len(positions) else None
         _pov_mate_missed = (
             _pov_mate(_pos_missed, _solver_color_for(n, "missed")) if _pos_missed else None
         )
@@ -606,7 +613,15 @@ def _detect_tactic_for_flaw(
         # so a raw `> 0` test only holds when the refuter is White; convert to the
         # refuter's POV (== _solver_color_for(n, "allowed") == board_after_flaw.turn)
         # before comparing.
-        _pos_allowed = positions[n + 1] if n + 1 < len(positions) else None
+        # Bug fix (off by one): this read positions[n + 1], the eval after the
+        # refuter's REPLY. The refutation line starts from the board after the flaw
+        # move, whose eval is positions[n] (positions[N] holds the eval after move N,
+        # the same row _firing_floor_fallback_eval reads for "allowed"). With the later
+        # row the flag was only true when the opponent actually kept the mate, and false
+        # on the last move of a game. Measured on one account's complete mate lines: the
+        # old row matched the line's mate distance in 54 of 1986 cases, positions[n] in
+        # 1982.
+        _pos_allowed = positions[n] if 0 <= n < len(positions) else None
         _pov_mate_allowed = (
             _pov_mate(_pos_allowed, _solver_color_for(n, "allowed")) if _pos_allowed else None
         )

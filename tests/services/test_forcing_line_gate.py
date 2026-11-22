@@ -715,6 +715,42 @@ class TestForcedMateExemptions:
             apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=808, firing_depth=0) is True
         )
 
+    def test_mate_in_1_without_stored_second_move_credited(self) -> None:
+        """A mate in 1 whose second-best eval is missing is still credited.
+
+        Regression (prod game 1459222 ply 15, Qxf7#): the blob's only solver node had
+        no second move stored, so the trailing only-move strip removed it and the gate
+        rejected the tag with nothing left to check.
+        """
+        line: list[PvNode] = [
+            PvNode(b=None, bm=1, s=None, sm=None, su=""),  # S0 mate-in-1, second missing
+            PvNode(b=None, bm=0, s=None, sm=None, su=""),  # mate delivered
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=150,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.MATE),
+            )
+            is True
+        )
+
+    def test_non_mate_all_only_moves_still_rejected(self) -> None:
+        """Control: without a forced mate an all-only-move line is still discarded."""
+        line: list[PvNode] = [_only_move_node(b=500), _cp_node(b=0, s=-100)]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is False
+        )
+
     def test_mate_exempt_from_already_winning(self) -> None:
         """A forced mate is credited even when pre-flaw eval is far above the already-winning floor."""
         line: list[PvNode] = [
