@@ -12,6 +12,7 @@
 import { Chess } from 'chess.js';
 import type { Move } from 'chess.js';
 
+import { isFacepalmBlunder } from '@/lib/facepalm';
 import type { SoundEvent } from '@/lib/sounds';
 import { buildTrainRevealOverlay } from '@/lib/trainArrows';
 import type {
@@ -24,6 +25,7 @@ import type { ChipGroup, GameMoveLineState, RoleKey } from '@/lib/trainRevealLin
 import type {
   BetterMoveTier,
   BlunderSolution,
+  BlunderTypeLine,
   FalseAlarmSolution,
   HerringSolution,
   LinesSolution,
@@ -59,6 +61,8 @@ function alsoGoodMoves(solution: BlunderSolution): TrainFineMove[] {
 interface SolutionMove {
   uci: string;
   quality: TrainMoveQuality;
+  /** The game's blunder is a facepalm blunder: "???" on the board and the Game chip. */
+  facepalm?: boolean;
 }
 
 /** The better move the user found, with its quality (the key itself is the best move). */
@@ -94,7 +98,12 @@ function lineModel(solution: LinesSolution): SolutionLineModel {
   return {
     bestUci: solution.key_uci,
     your: betterMoveOverlay(solution),
-    game: { uci: solution.blunder_uci, quality: 'blunder' },
+    game: {
+      uci: solution.blunder_uci,
+      quality: 'blunder',
+      // The serve-time score snapshot; a solution cached before Phase 261 has no feedback at all.
+      facepalm: isFacepalmBlunder(solution.feedback?.score),
+    },
     alsoGood: alsoGoodMoves(solution),
   };
 }
@@ -138,10 +147,14 @@ export function solutionLineUcis(solution: LinesSolution): string[] {
   );
 }
 
-function chipQuality(roles: readonly RoleKey[], model: SolutionLineModel): TrainMoveQuality {
-  if (roles.includes('best')) return 'best';
-  if (roles.includes('your') && model.your !== null) return model.your.quality;
-  return model.game.quality;
+/** The quality (and facepalm flag) of a chip's first move: best, else the user's move, else the game's. */
+function chipQuality(
+  roles: readonly RoleKey[],
+  model: SolutionLineModel,
+): Pick<SolutionMove, 'quality' | 'facepalm'> {
+  if (roles.includes('best')) return { quality: 'best' };
+  if (roles.includes('your') && model.your !== null) return { quality: model.your.quality };
+  return { quality: model.game.quality, facepalm: model.game.facepalm };
 }
 
 /** The chips row of a solution, in the canonical Your, Best, Game order. */
@@ -167,7 +180,7 @@ export function buildSolutionChips(
       label: roles.map((merged) => ROLE_SHORT_LABELS[merged]).join(' = '),
       line: state?.status === 'ready' ? state.line : null,
       pending: state?.status === 'ready' ? null : state?.status === 'error' ? 'failed' : 'loading',
-      quality: chipQuality(roles, model),
+      ...chipQuality(roles, model),
     });
   }
   return chips;
@@ -182,10 +195,20 @@ export interface SolutionPointsPart {
 /** A piece of the verdict sentence: plain text or a point badge. */
 export type SolutionCopyPart = string | SolutionPointsPart;
 
+/** The avatar feedback paragraph: its lines in order (never empty). */
+export interface SolutionFeedback {
+  lines: string[];
+}
+
 /** The verdict card's heading and its sentence, in reading order. */
 export interface SolutionCopy {
   heading: string;
   parts: SolutionCopyPart[];
+  /**
+   * The second paragraph (Phase 261 D-03); null for false alarms, herrings, pre-phase windows
+   * and a blunder with neither a type line nor the hard-to-catch line.
+   */
+  feedback: SolutionFeedback | null;
 }
 
 /** The window's total: the sum of the verdict's point badges (the phone strip's pill). */
@@ -205,6 +228,32 @@ const BETTER_MOVE_PHRASE: Record<TrainMoveQuality, string> = {
 /** The points the "Good" calls before the window's last move kept, as a closing sentence. */
 function earlierCallsParts(points: number): SolutionCopyPart[] {
   return points > 0 ? [' Your earlier calls earned ', { name: 'earlier', points }, '.'] : [];
+}
+
+/** What the blunder allowed or missed (Phase 261 D-09), as one sentence. */
+const TYPE_LINE_COPY: Record<BlunderTypeLine, string> = {
+  allowed_material: 'The blunder allows a material loss.',
+  allowed_mate: 'The blunder allows checkmate.',
+  missed_material: 'The blunder misses a material win.',
+  missed_mate: 'The blunder misses checkmate.',
+};
+
+/** The fairness line for a subtle blunder (D-07), by whether the user called it. */
+const HARD_TO_CATCH_COPY: Record<'caught' | 'missed', string> = {
+  caught: 'Well spotted, this one was hard to catch.',
+  missed: 'This one was hard to catch.',
+};
+
+/** The feedback paragraph of a blunder solution: type line, then the hard-to-catch line. */
+function feedbackCopy(solution: BlunderSolution): SolutionFeedback | null {
+  // A solution cached in sessionStorage before the release has no `feedback` field at all.
+  const feedback = solution.feedback ?? null;
+  if (feedback === null) return null;
+  const lines: string[] = [];
+  if (feedback.type_line !== null) lines.push(TYPE_LINE_COPY[feedback.type_line]);
+  if (feedback.hard_to_catch) lines.push(HARD_TO_CATCH_COPY[solution.outcome]);
+  // The score is no longer shown as a chip (Phase 261 UAT): it only picks the "???" badge.
+  return lines.length > 0 ? { lines } : null;
 }
 
 /**
@@ -235,7 +284,11 @@ function blunderCopy(solution: BlunderSolution): SolutionCopy {
       better.quality === 'best' ? '.' : `.${bestText}`,
     );
   }
-  return { heading, parts: [...parts, ...earlierCallsParts(solution.safe_points)] };
+  return {
+    heading,
+    parts: [...parts, ...earlierCallsParts(solution.safe_points)],
+    feedback: feedbackCopy(solution),
+  };
 }
 
 /** A false alarm scores nothing for the call and keeps the "Good" calls before it. */
@@ -249,6 +302,8 @@ function falseAlarmCopy(solution: FalseAlarmSolution): SolutionCopy {
       '.',
       ...earlierCallsParts(solution.window_points),
     ],
+    // D-05: a false alarm never reveals the blunder the user did not reach (249 D-10).
+    feedback: null,
   };
 }
 
@@ -260,6 +315,7 @@ function herringCopy(solution: HerringSolution): SolutionCopy {
       { name: 'call', points: solution.window_points },
       '.',
     ],
+    feedback: null,
   };
 }
 

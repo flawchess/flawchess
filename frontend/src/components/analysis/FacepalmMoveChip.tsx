@@ -43,7 +43,7 @@ function FacepalmPopover({
     <span className={className} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
       <InfoPopover ariaLabel={ariaLabel} testId={testId} triggerContent={trigger}>
         <div className="space-y-1">
-          <FacepalmExplanation score={score} type={type} byOpponent={byOpponent} />
+          <FacepalmExplanation score={score} type={type} audience={byOpponent ? 'opponent' : 'self'} />
         </div>
       </InfoPopover>
     </span>

@@ -443,11 +443,12 @@ export function buildTrainStepMarkers(
   lastMoveUci: string,
   quality: TrainMoveQuality | null,
   isFirstMove: boolean,
+  facepalm = false,
 ): SquareMarker[] {
   if (!isFirstMove || quality === null) return [];
   const squares = squaresFromUci(lastMoveUci);
   if (squares === null) return [];
-  return [markerForQuality(squares.endSquare, quality)];
+  return [markerForQuality(squares.endSquare, quality, facepalm)];
 }
 
 /** One quality-annotated move for the overlay builder. `quality: null` (game
@@ -455,6 +456,8 @@ export function buildTrainStepMarkers(
 export interface TrainOverlayMove {
   uci: string;
   quality: TrainMoveQuality | null;
+  /** A blunder that is a facepalm blunder: its badge is "???" instead of "??". */
+  facepalm?: boolean;
 }
 
 export interface TrainRevealOverlay {
@@ -525,9 +528,11 @@ export function trainQualityMarker(square: string, quality: TrainMoveQuality): S
 
 /** The SquareMarker corner badge for a quality — the same glyph set the
  * analysis board uses (green star / thumbs-up / severity NAG glyphs). */
-function markerForQuality(square: string, quality: TrainMoveQuality): SquareMarker {
+function markerForQuality(square: string, quality: TrainMoveQuality, facepalm = false): SquareMarker {
   if (quality === 'best') return { square, best: true };
   if (quality === 'good') return { square, good: true };
+  // Only a blunder has a facepalm badge ("???"), the same rule as the library and analysis boards.
+  if (quality === 'blunder' && facepalm) return { square, severity: quality, facepalm: true };
   return { square, severity: quality };
 }
 
@@ -566,13 +571,13 @@ export function buildTrainRevealOverlay(
   const markedSquares = new Set<string>();
   const markerOwners: Record<string, string> = {};
 
-  function pushMarker(uci: string, quality: TrainMoveQuality | null): void {
+  function pushMarker(uci: string, quality: TrainMoveQuality | null, facepalm = false): void {
     if (quality === null) return;
     const squares = squaresFromUci(uci);
     if (squares === null || markedSquares.has(squares.endSquare)) return;
     markedSquares.add(squares.endSquare);
     markerOwners[squares.endSquare] = uci;
-    markers.push(markerForQuality(squares.endSquare, quality));
+    markers.push(markerForQuality(squares.endSquare, quality, facepalm));
   }
 
   // The alternatives actually drawable as green arrows: every fine move that
@@ -587,14 +592,14 @@ export function buildTrainRevealOverlay(
 
   // Badge precedence pass first (played > best > fine > game), independent of
   // arrow draw order.
-  if (playedMove !== null) pushMarker(playedMove.uci, playedMove.quality);
+  if (playedMove !== null) pushMarker(playedMove.uci, playedMove.quality, playedMove.facepalm);
   if (bestMoveUci !== null) pushMarker(bestMoveUci, 'best');
   // "Also fine" alternatives keep the good badge even at inaccuracy quality,
   // matching their always-green arrow below.
   for (const fine of alternatives) {
     pushMarker(fine.uci, fine.quality === 'inaccuracy' ? 'good' : fine.quality);
   }
-  if (gameMove !== null) pushMarker(gameMove.uci, gameMove.quality);
+  if (gameMove !== null) pushMarker(gameMove.uci, gameMove.quality, gameMove.facepalm);
 
   // Played-move arrow, colored by its quality — unless it IS the best move,
   // in which case the blue best arrow below is the single arrow for both.

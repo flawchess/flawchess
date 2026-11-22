@@ -17,6 +17,15 @@ Python judgements on the classifier's own pass. Queries per start are bounded by
 MAX_FOREIGN_BATCHES, the two nearest-first picks and MAX_SHAPE_REDRAWS (redraws reuse loaded
 batches).
 
+Phase 261 (exploration arm): each blunder slot carries an arm. A main slot keeps the 0.70 facepalm
+cut (FACEPALM_SCORE_MIN); an exploration slot is a plain random draw over scored blunders with no
+cut. The composer judges every game without the cut and applies it per slot at option time
+(`assign_windows(min_score=...)`). Batches remember which probe loaded them: a "cut" batch holds
+only games with a blunder at or above the cut, so an exploration slot never fills from one, and
+`_fill_from_pool` gives exploration slots their own pass first and the cut pass only the main-arm
+slots. The scored probe excludes only ids a non-cut probe loaded, so cut-loaded games stay in the
+exploration frame. The arm survives every plan rewrite (`dataclasses.replace`).
+
 All awaits on the one AsyncSession are sequential (CLAUDE.md: never gather on a session).
 """
 
@@ -28,20 +37,22 @@ import statistics
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
-from dataclasses import dataclass, field
-from typing import Final, cast
+from dataclasses import dataclass, field, replace
+from typing import Final, Literal, cast
 
 import chess
 import chess.pgn
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.blunder_check import WindowCase
+from app.models.blunder_check import WindowArm, WindowCase
 from app.models.game_position import GamePosition
 from app.repositories import blunder_check_repository as repo
 from app.repositories.blunder_check_repository import (
     CandidateGame,
+    BlunderFlawRow,
     EloSourceRow,
     NewWindow,
+    WindowSelectionRecord,
 )
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.services.best_move_candidates import pinned_elo_for_mover
@@ -54,16 +65,21 @@ from app.services.blunder_check_candidates import (
     lead_in_start,
     points_possible,
 )
+from app.services.blunder_check_feedback import TypeLineFacts, type_line_facts
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
+    FACEPALM_SCORE_MIN,
     FOREIGN_RATING_BAND,
+    SlotArm,
     SlotOrigin,
     SlotPlan,
     WindowShape,
+    arm_probability,
     draw_blunder_shape,
     draw_herring_shape,
     draw_slot_plan,
 )
+from app.services.facepalm_score import FacepalmType, facepalm_type_of
 from app.services.normalization import is_correspondence_time_control
 from app.services.train_scheduler import BlunderCheckLevel
 
@@ -285,6 +301,11 @@ def _is_legal_uci(board: chess.Board, uci: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+# Which probe picked a game (Phase 261): "plain" (no blunder requirement, herring slots), "cut"
+# (a blunder at or above the 0.70 cut exists) or "scored" (any scored blunder exists).
+Probe = Literal["plain", "cut", "scored"]
+
+
 @dataclass(frozen=True)
 class _Batch:
     """One judged game with what is needed to build its window row."""
@@ -294,6 +315,10 @@ class _Batch:
     candidates: GameCandidates
     is_own: bool
     mover_elo: float | None
+    # Phase 261: the probe that loaded the game; an exploration slot never draws from a "cut" batch.
+    probe: Probe = "plain"
+    # Phase 261: the game's loaded blunder rows by ply, the source of the window's score snapshot.
+    flaws_by_ply: Mapping[int, BlunderFlawRow] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -309,24 +334,47 @@ class _Reach:
 
 @dataclass
 class _Pool:
-    """Loaded batches of one origin (own or foreign) plus every id already picked."""
+    """Loaded batches of one origin (own or foreign) plus the probe of every id already picked."""
 
     batches: dict[int, _Batch] = field(default_factory=dict)
-    seen_ids: list[int] = field(default_factory=list)
+    # The probe of each picked id's latest load (also the ids the judge dropped).
+    loaded_by: dict[int, Probe] = field(default_factory=dict)
 
-    def candidates(self, reach: _Reach | None = None) -> list[GameCandidates]:
-        """The judged games, limited to those within `reach` of a level when one is given."""
+    def candidates(
+        self, reach: _Reach | None = None, *, for_exploration: bool = False
+    ) -> list[GameCandidates]:
+        """The judged games, limited to those within `reach` of a level when one is given.
+
+        `for_exploration` skips batches the cut probe loaded: such a batch holds only games with a
+        blunder at or above 0.70, so drawing an exploration slot from it would make the sample
+        depend on the current score.
+        """
         return [
             batch.candidates
             for batch in self.batches.values()
-            if reach is None or reach.covers(batch.mover_elo)
+            if (reach is None or reach.covers(batch.mover_elo))
+            and not (for_exploration and batch.probe == "cut")
         ]
+
+    def exclude_ids(self, probe: Probe) -> list[int]:
+        """Ids the next pick of `probe` must skip.
+
+        The scored probe skips only ids a non-cut probe loaded: a cut batch is a draw conditioned
+        on the score, so excluding its games would drop high scores from the exploration frame
+        whenever a cut probe ran first (the foreign-to-own refill path). The cut and plain probes
+        skip every loaded id.
+        """
+        if probe == "scored":
+            return [game_id for game_id, by in self.loaded_by.items() if by != "cut"]
+        return list(self.loaded_by)
 
 
 @dataclass(frozen=True)
 class _Filled:
     pick: WindowPick
     batch: _Batch
+    # Phase 261: the arm of the slot this pick fills (every window is main until the exploration arm).
+    arm: SlotArm = "main"
 
 
 async def _load_batch(
@@ -335,9 +383,12 @@ async def _load_batch(
     user_id: int,
     game_ids: Sequence[int],
     is_own: bool,
+    probe: Probe,
     cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> list[_Batch]:
     """Load and judge games (sequential awaits on the one session).
+
+    Games are judged without the score cut (Phase 261): the cut is applied per slot at option time.
 
     A foreign game without a pinned Elo is dropped: its distance to the user's level is unknown.
     Every other foreign game is kept whatever its Elo; the band and the nearest-first fallback
@@ -368,9 +419,13 @@ async def _load_batch(
             key_plies=key_plies,
             served_blunder_plies=served.served_blunder_plies.get(game.game_id, set()),
             served_ply_ranges=served.judged_ranges.get(game.game_id, []),
+            min_score=None,
         )
         if candidates is not None:
-            batches.append(_Batch(game, game_positions, candidates, is_own, elo))
+            flaws_by_ply = {f.ply: f for f in game_flaws}
+            batches.append(
+                _Batch(game, game_positions, candidates, is_own, elo, probe, flaws_by_ply)
+            )
     return batches
 
 
@@ -381,14 +436,20 @@ async def _load_into_pool(
     user_id: int,
     game_ids: Sequence[int],
     is_own: bool,
+    probe: Probe,
     cooled_pairs: Sequence[tuple[int, int]] = (),
 ) -> None:
-    pool.seen_ids.extend(game_ids)
+    for game_id in game_ids:
+        pool.loaded_by[game_id] = probe
+    # A cut-loaded game the scored probe returns is loaded again like any other id (re-judging is
+    # idempotent); its entry is replaced by one with probe "scored", which makes it available to
+    # exploration because the scored probe drew it, not because of its score.
     for batch in await _load_batch(
         session,
         user_id=user_id,
         game_ids=game_ids,
         is_own=is_own,
+        probe=probe,
         cooled_pairs=cooled_pairs,
     ):
         pool.batches[batch.game.game_id] = batch
@@ -400,7 +461,7 @@ async def _load_into_pool(
 
 
 def _fill_from_pool(
-    empty: Mapping[int, WindowShape],
+    empty: Mapping[int, SlotPlan],
     pool: _Pool,
     filled: dict[int, _Filled],
     *,
@@ -410,31 +471,72 @@ def _fill_from_pool(
     """Fill what the pool can for the still-empty slots; one window per game across the session.
 
     `reach` limits a foreign pool to the games close enough to the user's level.
+
+    Phase 261: this is the only place a slot is filled. The exploration slots go first, over the
+    batches no cut probe loaded and with no score cut; the main-arm slots (main blunders and every
+    herring) follow with the 0.70 cut. An exploration slot the first pass leaves empty is never in
+    the main pass: it stays empty for a later scored round, a shape redraw or the arm-preserving
+    own-to-foreign conversion, and is never filled through the cut or from a cut batch (the sample
+    would then depend on the current score).
     """
     used = {item.pick.game_id for item in filled.values()}
-    for pick in assign_windows(empty, pool.candidates(reach), rng=rng, used_game_ids=used):
-        filled[pick.slot] = _Filled(pick, pool.batches[pick.game_id])
+    exploration = {slot: plan.shape for slot, plan in empty.items() if plan.arm == "exploration"}
+    main = {slot: plan.shape for slot, plan in empty.items() if plan.arm == "main"}
+    passes: tuple[tuple[dict[int, WindowShape], list[GameCandidates], float | None], ...] = (
+        (exploration, pool.candidates(reach, for_exploration=True), None),
+        (main, pool.candidates(reach), FACEPALM_SCORE_MIN),
+    )
+    for slots, games, min_score in passes:
+        if not slots:
+            continue
+        for pick in assign_windows(slots, games, rng=rng, used_game_ids=used, min_score=min_score):
+            used.add(pick.game_id)
+            filled[pick.slot] = _Filled(pick, pool.batches[pick.game_id], arm=empty[pick.slot].arm)
 
 
-def _empty_shapes(
+def _empty_plans(
     plans: Mapping[int, SlotPlan], filled: Mapping[int, _Filled], origin: SlotOrigin
-) -> dict[int, WindowShape]:
-    """Shapes of the still-empty slots of one origin."""
+) -> dict[int, SlotPlan]:
+    """The plans (origin, shape and arm) of the still-empty slots of one origin."""
     return {
-        slot: plan.shape
-        for slot, plan in plans.items()
-        if plan.origin == origin and slot not in filled
+        slot: plan for slot, plan in plans.items() if plan.origin == origin and slot not in filled
     }
 
 
-def _wants_blunder(shape: WindowShape) -> bool:
-    return shape.blunder_position is not None
+def _wants_blunder(plan: SlotPlan) -> bool:
+    return plan.shape.blunder_position is not None
 
 
-# Picks one batch of candidate game ids: (session, require_facepalm, exclude_ids) -> ids.
-_PickFn = Callable[[AsyncSession, bool, Sequence[int]], Awaitable[list[int]]]
-# The nearest-first pick: (session, require_facepalm, exclude_ids, sample_percent) -> ids.
-_NearestPickFn = Callable[[AsyncSession, bool, Sequence[int], float], Awaitable[list[int]]]
+def _next_probe(empty: Mapping[int, SlotPlan], exhausted: AbstractSet[Probe]) -> Probe | None:
+    """The probe the next pick uses, None when no probe can still help.
+
+    An empty exploration blunder slot wants the scored probe, an empty main blunder slot the cut
+    probe, an empty herring slot a plain pick.
+    """
+    exploration = any(_wants_blunder(p) and p.arm == "exploration" for p in empty.values())
+    if exploration and "scored" not in exhausted:
+        return "scored"
+    main = any(_wants_blunder(p) and p.arm == "main" for p in empty.values())
+    if main and "cut" not in exhausted:
+        return "cut"
+    if any(not _wants_blunder(p) for p in empty.values()):
+        return "plain"
+    return None
+
+
+def _probe_args(probe: Probe) -> tuple[bool, float | None]:
+    """(require_facepalm, min_score) a pick passes the repository for `probe`."""
+    if probe == "plain":
+        return False, FACEPALM_SCORE_MIN
+    if probe == "cut":
+        return True, FACEPALM_SCORE_MIN
+    return True, None
+
+
+# Picks one batch of candidate game ids: (session, probe, exclude_ids) -> ids.
+_PickFn = Callable[[AsyncSession, Probe, Sequence[int]], Awaitable[list[int]]]
+# The nearest-first pick: (session, probe, exclude_ids, sample_percent) -> ids.
+_NearestPickFn = Callable[[AsyncSession, Probe, Sequence[int], float], Awaitable[list[int]]]
 
 
 @dataclass(frozen=True)
@@ -453,9 +555,8 @@ class _Source:
 
 
 def _own_source(user_id: int, cooled_pairs: Sequence[tuple[int, int]] = ()) -> _Source:
-    async def pick(
-        session: AsyncSession, require_facepalm: bool, exclude_ids: Sequence[int]
-    ) -> list[int]:
+    async def pick(session: AsyncSession, probe: Probe, exclude_ids: Sequence[int]) -> list[int]:
+        require_facepalm, min_score = _probe_args(probe)
         return await repo.pick_own_game_ids(
             session,
             user_id=user_id,
@@ -463,6 +564,7 @@ def _own_source(user_id: int, cooled_pairs: Sequence[tuple[int, int]] = ()) -> _
             exclude_ids=exclude_ids,
             require_facepalm=require_facepalm,
             cooled_pairs=cooled_pairs,
+            min_score=min_score,
         )
 
     return _Source("own", MAX_OWN_BATCHES, None, pick, cooled_pairs)
@@ -483,9 +585,8 @@ async def _foreign_source(
     )
     raw_margin = FOREIGN_RATING_BAND + FOREIGN_RAW_PREFILTER_MARGIN
 
-    async def pick(
-        session: AsyncSession, require_facepalm: bool, exclude_ids: Sequence[int]
-    ) -> list[int]:
+    async def pick(session: AsyncSession, probe: Probe, exclude_ids: Sequence[int]) -> list[int]:
+        require_facepalm, min_score = _probe_args(probe)
         return await repo.pick_foreign_game_ids(
             session,
             user_id=user_id,
@@ -495,14 +596,16 @@ async def _foreign_source(
             exclude_ids=exclude_ids,
             sample_percent=FOREIGN_SAMPLE_PERCENT,
             require_facepalm=require_facepalm,
+            min_score=min_score,
         )
 
     async def pick_nearest(
         session: AsyncSession,
-        require_facepalm: bool,
+        probe: Probe,
         exclude_ids: Sequence[int],
         sample_percent: float,
     ) -> list[int]:
+        require_facepalm, min_score = _probe_args(probe)
         return await repo.pick_nearest_foreign_game_ids(
             session,
             user_id=user_id,
@@ -512,6 +615,7 @@ async def _foreign_source(
             exclude_ids=exclude_ids,
             sample_percent=sample_percent,
             require_facepalm=require_facepalm,
+            min_score=min_score,
         )
 
     return _Source(
@@ -535,23 +639,21 @@ async def _fill_from_source(
 ) -> None:
     """Load batches from one origin until its slots are full or the rounds run out.
 
-    A round asks for games holding an unserved qualifying blunder while a blunder slot is still
-    empty (`require_facepalm`); once such a pick comes back empty the origin has no blunder supply
-    left and later rounds only serve the herring slots with plain picks.
+    `_next_probe` picks the probe of each round: scored while an exploration blunder slot is
+    empty, cut while a main blunder slot is, plain for herrings only. An empty scored pick means
+    the origin has no scored supply left, which also exhausts the cut probe (the cut set is a
+    subset of the scored set); an empty cut pick exhausts the cut probe; an empty plain pick stops.
     """
-    blunders_exhausted = False
+    exhausted: set[Probe] = set()
     for _ in range(source.max_rounds):
-        empty = _empty_shapes(plans, filled, source.origin)
-        want_blunder = any(_wants_blunder(shape) for shape in empty.values())
-        want_herring = any(not _wants_blunder(shape) for shape in empty.values())
-        require_facepalm = want_blunder and not blunders_exhausted
-        if not (require_facepalm or want_herring):
+        probe = _next_probe(_empty_plans(plans, filled, source.origin), exhausted)
+        if probe is None:
             return
-        ids = await source.pick(session, require_facepalm, pool.seen_ids)
+        ids = await source.pick(session, probe, pool.exclude_ids(probe))
         if not ids:
-            if not require_facepalm:
+            if probe == "plain":
                 return
-            blunders_exhausted = True
+            exhausted.update(("scored", "cut") if probe == "scored" else ("cut",))
             continue
         await _load_into_pool(
             session,
@@ -559,16 +661,19 @@ async def _fill_from_source(
             user_id=user_id,
             game_ids=ids,
             is_own=source.origin == "own",
+            probe=probe,
             cooled_pairs=source.cooled_pairs,
         )
         _fill_from_pool(
-            _empty_shapes(plans, filled, source.origin), pool, filled, rng=rng, reach=source.band
+            _empty_plans(plans, filled, source.origin), pool, filled, rng=rng, reach=source.band
         )
 
 
 def _redraw_shape(shape: WindowShape, rng: random.Random) -> WindowShape:
     """A fresh shape of the same kind (blunder stays a blunder, herring stays a herring)."""
-    return draw_blunder_shape(rng) if _wants_blunder(shape) else draw_herring_shape(rng)
+    return (
+        draw_blunder_shape(rng) if shape.blunder_position is not None else draw_herring_shape(rng)
+    )
 
 
 def _redraw_and_refill(
@@ -582,12 +687,14 @@ def _redraw_and_refill(
 ) -> None:
     """Redraw only the empty slots of one origin and retry its pool without new queries."""
     for _ in range(MAX_SHAPE_REDRAWS):
-        empty = _empty_shapes(plans, filled, origin)
+        empty = _empty_plans(plans, filled, origin)
         if not empty:
             return
-        for slot, shape in empty.items():
-            plans[slot] = SlotPlan(origin, _redraw_shape(shape, rng))
-        _fill_from_pool(_empty_shapes(plans, filled, origin), pool, filled, rng=rng, reach=reach)
+        for slot, plan in empty.items():
+            # replace() keeps origin and arm: a freshly built plan would reset the arm to main and
+            # shrink the served exploration share (Phase 261).
+            plans[slot] = replace(plan, shape=_redraw_shape(plan.shape, rng))
+        _fill_from_pool(_empty_plans(plans, filled, origin), pool, filled, rng=rng, reach=reach)
 
 
 async def _load_nearest_foreign(
@@ -609,13 +716,15 @@ async def _load_nearest_foreign(
     if source.pick_nearest is None:
         return
     for sample_percent in (FOREIGN_SAMPLE_PERCENT, FOREIGN_WIDE_SAMPLE_PERCENT):
-        empty = _empty_shapes(plans, filled, "foreign")
-        if not empty:
+        empty = _empty_plans(plans, filled, "foreign")
+        probe = _next_probe(empty, frozenset())
+        if probe is None:
             return
-        require_facepalm = any(_wants_blunder(shape) for shape in empty.values())
-        ids = await source.pick_nearest(session, require_facepalm, pool.seen_ids, sample_percent)
+        ids = await source.pick_nearest(session, probe, pool.exclude_ids(probe), sample_percent)
         if ids:
-            await _load_into_pool(session, pool, user_id=user_id, game_ids=ids, is_own=False)
+            await _load_into_pool(
+                session, pool, user_id=user_id, game_ids=ids, is_own=False, probe=probe
+            )
             # In-band games the nearest pick happened to find still come first.
             _fill_from_pool(empty, pool, filled, rng=rng, reach=source.band)
             _redraw_and_refill(plans, "foreign", pool, filled, rng=rng, reach=source.band)
@@ -645,9 +754,9 @@ def _fill_nearest_first(
         default=0.0,
     )
     reach = band
-    while reach.max_distance < farthest and _empty_shapes(plans, filled, "foreign"):
+    while reach.max_distance < farthest and _empty_plans(plans, filled, "foreign"):
         reach = _Reach(band.level, reach.max_distance + band.max_distance)
-        _fill_from_pool(_empty_shapes(plans, filled, "foreign"), pool, filled, rng=rng, reach=reach)
+        _fill_from_pool(_empty_plans(plans, filled, "foreign"), pool, filled, rng=rng, reach=reach)
         _redraw_and_refill(plans, "foreign", pool, filled, rng=rng, reach=reach)
 
 
@@ -673,7 +782,7 @@ async def _fill_foreign_slots(
         session, user_id=user_id, source=source, plans=plans, pool=pool, filled=filled, rng=rng
     )
     _redraw_and_refill(plans, "foreign", pool, filled, rng=rng, reach=source.band)
-    if source.band is None or not _empty_shapes(plans, filled, "foreign"):
+    if source.band is None or not _empty_plans(plans, filled, "foreign"):
         return
     await _load_nearest_foreign(
         session, user_id=user_id, source=source, plans=plans, pool=pool, filled=filled, rng=rng
@@ -692,10 +801,11 @@ async def _refill_from_own(
     rng: random.Random,
 ) -> None:
     """Last resort: foreign slots no foreign game could fill go to the user's own games."""
-    for slot, shape in _empty_shapes(plans, filled, "foreign").items():
-        plans[slot] = SlotPlan("own", shape)
+    for slot, plan in _empty_plans(plans, filled, "foreign").items():
+        # replace() keeps the arm: an exploration slot stays exploration on the own games.
+        plans[slot] = replace(plan, origin="own")
     # The own games already loaded first: `_fill_from_source` only fills after a new batch.
-    _fill_from_pool(_empty_shapes(plans, filled, "own"), pool, filled, rng=rng)
+    _fill_from_pool(_empty_plans(plans, filled, "own"), pool, filled, rng=rng)
     await _fill_from_source(
         session, user_id=user_id, source=source, plans=plans, pool=pool, filled=filled, rng=rng
     )
@@ -706,8 +816,9 @@ def _convert_empty_own_to_foreign(
     plans: dict[int, SlotPlan], filled: Mapping[int, _Filled]
 ) -> None:
     """250 D-15 / D-16: own slots own supply could not fill become foreign slots, herrings included."""
-    for slot in _empty_shapes(plans, filled, "own"):
-        plans[slot] = SlotPlan("foreign", plans[slot].shape)
+    for slot, plan in _empty_plans(plans, filled, "own").items():
+        # replace() keeps the arm: an exploration slot stays exploration as a foreign slot.
+        plans[slot] = replace(plan, origin="foreign")
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +835,71 @@ def _refutation_uci(positions: Sequence[GamePosition], blunder_ply: int) -> str 
     if row.best_move:
         return row.best_move
     return row.pv.split(_PV_SEPARATOR)[0] if row.pv else None
+
+
+def _board_before_ply(pgn: str, ply: int) -> tuple[chess.Board, chess.Move] | None:
+    """The board before `ply` and the move played there; None for a bad PGN or a short mainline."""
+    parsed = _mainline(pgn)
+    if parsed is None:
+        return None
+    board, moves = parsed
+    if ply >= len(moves):
+        return None
+    for move in moves[:ply]:
+        board.push(move)
+    return board, moves[ply]
+
+
+def _type_line_facts_for(
+    batch: _Batch, blunder_ply: int, facepalm_type: FacepalmType
+) -> TypeLineFacts:
+    """Type-line facts of the blunder at `blunder_ply` from the stored lines (Phase 261, D-08, D-09).
+
+    The refutation line is the pv at ply + 1, the best line the pv at the flaw ply, else its
+    best_move (the write-time hook's convention). No usable replay gives no facts.
+    """
+    replay = _board_before_ply(batch.game.pgn, blunder_ply)
+    if replay is None or blunder_ply >= len(batch.positions):
+        return TypeLineFacts(None, False)
+    board, played = replay
+    positions = batch.positions
+    refutation_pv = positions[blunder_ply + 1].pv if blunder_ply + 1 < len(positions) else None
+    best_line = positions[blunder_ply].pv or positions[blunder_ply].best_move
+    return type_line_facts(board, played.uci(), refutation_pv, best_line, facepalm_type)
+
+
+def _selection_record(item: _Filled, blunder_ply: int) -> WindowSelectionRecord | None:
+    """The serve-time record of a blunder window: arm, probability, score snapshot, type line.
+
+    None when the flaw row or one of the inputs a drill-lambda score needs is missing. That is
+    unreachable for loader rows (a score needs them), so the window is served without a record
+    instead of failing the whole session start.
+    """
+    row = item.batch.flaws_by_ply.get(blunder_ply)
+    if (
+        row is None
+        or row.facepalm_score is None
+        or row.maia_played_prob is None
+        or row.material_loss is None
+        or row.material_missed is None
+    ):
+        return None
+    facepalm_type = facepalm_type_of(row.material_loss, row.material_missed)
+    if facepalm_type is None:
+        return None
+    facts = _type_line_facts_for(item.batch, blunder_ply, facepalm_type)
+    return WindowSelectionRecord(
+        arm=WindowArm.EXPLORATION if item.arm == "exploration" else WindowArm.MAIN,
+        arm_probability=arm_probability(item.arm),
+        facepalm_score=row.facepalm_score,
+        played_prob=row.maia_played_prob,
+        loss=row.material_loss,
+        missed=row.material_missed,
+        best_prob=row.maia_best_prob,
+        reply_prob=row.maia_best_reply_prob,
+        type_swing=facts.swing,
+        type_mate=facts.mate,
+    )
 
 
 def _new_window(position: int, item: _Filled) -> NewWindow | None:
@@ -751,6 +927,7 @@ def _new_window(position: int, item: _Filled) -> NewWindow | None:
         if blunder_ply is None
         else _refutation_uci(batch.positions, blunder_ply),
         points_possible=points_possible(pick.shape),
+        selection=None if blunder_ply is None else _selection_record(item, blunder_ply),
     )
 
 
@@ -782,7 +959,7 @@ async def compose_windows(
     )
     _redraw_and_refill(plans, "own", own, filled, rng=rng)
     _convert_empty_own_to_foreign(plans, filled)
-    if _empty_shapes(plans, filled, "foreign"):
+    if _empty_plans(plans, filled, "foreign"):
         await _fill_foreign_slots(
             session,
             user_id=user_id,
@@ -791,7 +968,7 @@ async def compose_windows(
             filled=filled,
             rng=rng,
         )
-    if _empty_shapes(plans, filled, "foreign"):
+    if _empty_plans(plans, filled, "foreign"):
         await _refill_from_own(
             session,
             user_id=user_id,

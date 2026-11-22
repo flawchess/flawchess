@@ -15,7 +15,13 @@
  * the react-query key are unchanged. Cloned in spirit from tacticDepth.ts.
  */
 
-import { TAC_ALLOWED, TAC_ALLOWED_BG, TAC_ALLOWED_BORDER, TAC_MISSED, TAC_MISSED_BG } from '@/lib/theme';
+import {
+  TAC_ALLOWED,
+  TAC_ALLOWED_BG,
+  TAC_ALLOWED_BORDER,
+  TAC_MISSED,
+  TAC_MISSED_BG,
+} from '@/lib/theme';
 import type { FacepalmType } from '@/types/library';
 
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
@@ -53,13 +59,21 @@ export const FACEPALM_LOW_COVERAGE_NOTE =
   'Not enough blunders in these games have a facepalm score yet to compare you with your opponents.';
 export const FACEPALM_TIMELINE_INFO = `The darker band shows facepalm blunders: ${FACEPALM_DEFINITION} (facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more). ${FACEPALM_TRAINING}`;
 
+/** Whose blunder the score is explained for; picks the level word. */
+export type FacepalmAudience = 'self' | 'opponent';
+
+const FACEPALM_AUDIENCE_LEVEL: Record<FacepalmAudience, string> = {
+  self: 'your',
+  opponent: 'their',
+};
+
 /**
  * What the facepalm score means, in one sentence. Shared by the score popover
  * (FacepalmExplanation) and the Facepalm Score filter info, so the two never drift.
- * `byOpponent` switches "your level" to "their level" for the opponent's blunders.
+ * `audience` picks the level word: 'self' (your blunder) or 'opponent' (their blunder).
  */
-export function facepalmScoreMeaning(byOpponent = false): string {
-  const level = byOpponent ? 'their' : 'your';
+export function facepalmScoreMeaning(audience: FacepalmAudience = 'self'): string {
+  const level = FACEPALM_AUDIENCE_LEVEL[audience];
   return `A high facepalm score tells you the blunder should have been easy to see for a player at ${level} level, a low one that it was probably hard to see.`;
 }
 

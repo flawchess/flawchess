@@ -7,7 +7,12 @@ import {
   solutionLineUcis,
 } from '@/lib/blunderCheckSolution';
 import type { TrainEngineLine } from '@/hooks/useTrainGradingEngine';
-import type { BlunderSolution, FalseAlarmSolution } from '@/types/blunderCheck';
+import type {
+  BlunderFeedback,
+  BlunderSolution,
+  FalseAlarmSolution,
+  HerringSolution,
+} from '@/types/blunderCheck';
 
 /** 1. e4 e5 played, white to move: d4 is the key, Nf3 the played blunder. */
 const FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
@@ -34,6 +39,7 @@ function solution(overrides: Partial<BlunderSolution> = {}): BlunderSolution {
     safe_points: 0,
     blunder_points: 3,
     better_move_points: 2,
+    feedback: null,
     ...overrides,
   };
 }
@@ -120,6 +126,47 @@ describe('buildSolutionChips', () => {
     expect(best).toMatchObject({ pending: null, line: LINE });
     // No state yet for the blunder: its search has not started.
     expect(game).toMatchObject({ pending: 'loading', line: null });
+  });
+});
+
+describe('facepalm blunder badge (Phase 261 UAT)', () => {
+  const scored = (score: number): BlunderSolution =>
+    solution({ feedback: { score, type_line: null, hard_to_catch: false } });
+  const gameMarker = (s: BlunderSolution) =>
+    buildSolutionOverlay(s).markers.find((marker) => marker.square === 'f3');
+  const gameChip = (s: BlunderSolution) =>
+    buildSolutionChips(s, {}).find((chip) => chip.key === 'game');
+
+  it('marks the game move "???" on the board and the Game chip from 70% up', () => {
+    expect(gameMarker(scored(0.7))).toEqual({ square: 'f3', severity: 'blunder', facepalm: true });
+    expect(gameChip(scored(0.7))).toMatchObject({ quality: 'blunder', facepalm: true });
+  });
+
+  it('keeps the plain "??" below 70% and for a window with no feedback', () => {
+    expect(gameMarker(scored(0.699))).toEqual({ square: 'f3', severity: 'blunder' });
+    expect(gameChip(scored(0.699))?.facepalm).toBe(false);
+    expect(gameMarker(solution({ feedback: null }))).toEqual({ square: 'f3', severity: 'blunder' });
+    const legacy: Partial<BlunderSolution> = solution();
+    delete legacy.feedback;
+    expect(gameChip(legacy as BlunderSolution)?.facepalm).toBe(false);
+  });
+
+  it("never flags the Best chip or the user's own better move", () => {
+    const caught: BlunderSolution = {
+      ...scored(0.95),
+      better_move_uci: OTHER_BETTER,
+      better_move_tier: 'wrong',
+    };
+    for (const chip of buildSolutionChips(caught, {}).filter((c) => c.key !== 'game')) {
+      expect(chip.facepalm).toBeUndefined();
+    }
+    expect(buildSolutionOverlay(caught).markers).toEqual(
+      expect.arrayContaining([
+        { square: 'd4', best: true },
+        { square: 'c3', severity: 'mistake' },
+        { square: 'f3', severity: 'blunder', facepalm: true },
+      ]),
+    );
   });
 });
 
@@ -268,5 +315,95 @@ describe('solutionCopy', () => {
       }),
     );
     expect(copy).toBe('Nf3 was a blunder. You missed it +0. Best was d4.');
+  });
+});
+
+describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
+  function feedbackOf(overrides: Partial<BlunderFeedback>): BlunderFeedback {
+    return { score: 0.5, type_line: null, hard_to_catch: false, ...overrides };
+  }
+
+  it.each<[BlunderFeedback['type_line'] & string, string]>([
+    ['allowed_material', 'The blunder allows a material loss.'],
+    ['allowed_mate', 'The blunder allows checkmate.'],
+    ['missed_material', 'The blunder misses a material win.'],
+    ['missed_mate', 'The blunder misses checkmate.'],
+  ])('type line %s reads "%s"', (typeLine, sentence) => {
+    const copy = solutionCopy(solution({ feedback: feedbackOf({ type_line: typeLine }) }));
+    expect(copy.feedback?.lines).toEqual([sentence]);
+  });
+
+  it('a null type line with no hard-to-catch line gives no paragraph at all', () => {
+    const copy = solutionCopy(solution({ feedback: feedbackOf({ type_line: null }) }));
+    expect(copy.feedback).toBeNull();
+  });
+
+  it('the hard-to-catch line differs after a catch and after a miss, and is absent when false', () => {
+    const hard = feedbackOf({ hard_to_catch: true });
+    expect(solutionCopy(solution({ outcome: 'caught', feedback: hard })).feedback?.lines).toEqual([
+      'Well spotted, this one was hard to catch.',
+    ]);
+    expect(solutionCopy(solution({ outcome: 'missed', feedback: hard })).feedback?.lines).toEqual([
+      'This one was hard to catch.',
+    ]);
+    expect(
+      solutionCopy(solution({ feedback: feedbackOf({ type_line: 'allowed_mate' }) })).feedback?.lines,
+    ).toEqual(['The blunder allows checkmate.']);
+  });
+
+  it('puts the type line before the hard-to-catch line and carries no score (UAT: chip dropped)', () => {
+    const copy = solutionCopy(
+      solution({
+        outcome: 'missed',
+        feedback: { score: 0.437, type_line: 'missed_mate', hard_to_catch: true },
+      }),
+    );
+    expect(copy.feedback).toEqual({
+      lines: ['The blunder misses checkmate.', 'This one was hard to catch.'],
+    });
+  });
+
+  it('gives no feedback for a null feedback or a cached solution with no feedback field', () => {
+    expect(solutionCopy(solution({ feedback: null })).feedback).toBeNull();
+    // A solution cached in sessionStorage before the release has no such key at all.
+    const legacy: Partial<BlunderSolution> = solution();
+    delete legacy.feedback;
+    expect(solutionCopy(legacy as BlunderSolution).feedback).toBeNull();
+  });
+
+  it('does not change the verdict sentence', () => {
+    const plain = solutionCopy(solution({ feedback: null })).parts;
+    const withFeedback = solutionCopy(
+      solution({ feedback: { score: 0.9, type_line: 'allowed_mate', hard_to_catch: true } }),
+    ).parts;
+    expect(withFeedback).toEqual(plain);
+  });
+
+  it('a false alarm and a herring carry no feedback (D-05)', () => {
+    const falseAlarm: FalseAlarmSolution = {
+      kind: 'false_alarm',
+      outcome: 'false_alarm',
+      is_own: true,
+      game_id: 1,
+      analysis_ply: 2,
+      flagged_uci: BLUNDER,
+      fen: FEN,
+      key_uci: KEY,
+      game_info: null,
+      window_points: 0,
+    };
+    const herring: HerringSolution = {
+      kind: 'herring',
+      outcome: 'cleared',
+      is_own: true,
+      game_id: 1,
+      analysis_ply: 2,
+      fen: FEN,
+      sequence_ucis: [],
+      game_info: null,
+      window_points: 3,
+    };
+    expect(solutionCopy(falseAlarm).feedback).toBeNull();
+    expect(solutionCopy(herring).feedback).toBeNull();
   });
 });

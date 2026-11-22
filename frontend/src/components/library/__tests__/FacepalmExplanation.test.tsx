@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * FacepalmExplanation: the one shared explanation copy (D-23). Pins the floored
- * heading percent and the "your" / "their" switch for an opponent's blunder.
+ * heading percent and the "your" / "their" switch.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -18,7 +18,7 @@ describe('FacepalmExplanation', () => {
   });
 
   it('speaks of their level for an opponent blunder', () => {
-    const { container } = render(<FacepalmExplanation score={0.4} type="missed_win" byOpponent />);
+    const { container } = render(<FacepalmExplanation score={0.4} type="missed_win" audience="opponent" />);
     expect(container.textContent).toContain('Facepalm 40%');
     expect(container.textContent).toContain('a player at their level');
     expect(container.textContent).not.toContain('your level');
@@ -39,7 +39,7 @@ describe('FacepalmExplanation', () => {
   });
 
   it('keeps the type line for an opponent blunder', () => {
-    const { getByTestId } = render(<FacepalmExplanation score={0.8} type="missed_win" byOpponent />);
+    const { getByTestId } = render(<FacepalmExplanation score={0.8} type="missed_win" audience="opponent" />);
     expect(getByTestId('facepalm-explanation-type').textContent).toContain('Missed win:');
   });
 

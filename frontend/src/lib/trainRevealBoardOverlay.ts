@@ -45,7 +45,7 @@ export function resolveOffRootOverlay(
   liveLines: readonly PvLine[],
   liveArrowCount: number,
   tree: RevealOverlayTree,
-  chips: readonly Pick<ChipGroup, 'key' | 'quality'>[],
+  chips: readonly Pick<ChipGroup, 'key' | 'quality' | 'facepalm'>[],
 ): RevealBoardOverlay {
   const preview = tree.preview;
   const previewNext =
@@ -66,10 +66,14 @@ export function resolveOffRootOverlay(
     };
   }
   // A chip's first move carries its chip's quality.
-  const quality = chips.find((chip) => chip.key === chipMove.line)?.quality ?? null;
+  const chip = chips.find((candidate) => candidate.key === chipMove.line);
+  const quality = chip?.quality ?? null;
   return {
     arrows: engine.arrows,
-    markers: mergeEngineBadges(buildTrainStepMarkers(chipMove.uci, quality, true), engine.badges),
+    markers: mergeEngineBadges(
+      buildTrainStepMarkers(chipMove.uci, quality, true, chip?.facepalm === true),
+      engine.badges,
+    ),
     lastMove: tree.lastMove,
     lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
   };

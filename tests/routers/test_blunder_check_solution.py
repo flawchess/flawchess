@@ -24,9 +24,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.dev_clock import dev_now_utc
 from app.main import app
+from app.models.blunder_check import WindowArm
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
-from app.repositories.blunder_check_repository import insert_session
+from app.repositories.blunder_check_repository import WindowSelectionRecord, insert_session
 from tests.blunder_check_seed import delete_blunder_check_sessions, delete_games, register_user
 from tests.routers.test_blunder_check_drill import (
     _BASE,
@@ -183,6 +184,7 @@ _BLUNDER_KEYS = {
     "safe_points",
     "blunder_points",
     "better_move_points",
+    "feedback",
 }
 _HERRING_KEYS = {
     "kind",
@@ -695,3 +697,126 @@ async def test_solution_missed_window_carries_the_graded_alternatives(test_engin
     assert resp.status_code == 200, resp.text
     # The graded set lists the key too; the runner-up is the alternative the solution badges.
     assert {"uci": runner_up, "tier": "good"} in resp.json()["server_graded_moves"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 261 feedback: the serve-time snapshot on the solution (D-04, D-05, D-06)
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_PLAYED_PROB = 0.05
+_FEEDBACK_KEYS = {"score", "type_line", "hard_to_catch"}
+
+
+def _record(
+    *, score: float, loss: float, missed: float, type_swing: int | None, type_mate: bool
+) -> WindowSelectionRecord:
+    return WindowSelectionRecord(
+        arm=WindowArm.MAIN,
+        arm_probability=0.8,
+        facepalm_score=score,
+        played_prob=_SNAPSHOT_PLAYED_PROB,
+        loss=loss,
+        missed=missed,
+        best_prob=None,
+        reply_prob=None,
+        type_swing=type_swing,
+        type_mate=type_mate,
+    )
+
+
+@asynccontextmanager
+async def _snapshot_setup(test_engine, specs: list[_Spec], record: WindowSelectionRecord | None):
+    """Own windows like `_setup`, each carrying `record` as its serve-time snapshot."""
+    user_id, token = await register_user("bc-feedback", beta=True, test_engine=test_engine)
+    windows = [
+        replace(await _new_window(test_engine, user_id, position, spec), selection=record)
+        for position, spec in enumerate(specs)
+    ]
+    session_id: int | None = None
+    try:
+        maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with maker() as session:
+            async with session.begin():
+                session_id = await insert_session(
+                    session,
+                    user_id=user_id,
+                    windows=windows,
+                    now_utc=_T0,
+                    session_date=_T0.date(),
+                    expires_on=_T0.date() + datetime.timedelta(days=1),
+                )
+        assert session_id is not None
+        yield _Setup(user_id, token, session_id, [w.game_id for w in windows])
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, [w.game_id for w in windows])
+
+
+@pytest.mark.asyncio
+async def test_solution_legacy_window_has_null_feedback(test_engine, clock) -> None:
+    """A window served before the phase has no snapshot: the feedback is null, never absent."""
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _caught_at_one(s)
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert "feedback" in data and data["feedback"] is None
+
+
+@pytest.mark.asyncio
+async def test_solution_missed_and_caught_carry_the_snapshot_feedback(test_engine, clock) -> None:
+    record = _record(score=0.95, loss=3.0, missed=0.0, type_swing=3, type_mate=False)
+    async with _snapshot_setup(test_engine, [_BLUNDER_AT_ONE, _BLUNDER_AT_ONE], record) as s:
+        await _started(s, 0)
+        await _ok(s, 1, "blunder", position=0)  # caught
+        await _started(s, 1)
+        await _ok(s, 1, "safe", position=1)  # missed
+        caught = (await _solution(s.token, s.session_id, 0)).json()
+        missed = (await _solution(s.token, s.session_id, 1)).json()
+    assert (caught["outcome"], missed["outcome"]) == ("caught", "missed")
+    for data in (caught, missed):
+        feedback = data["feedback"]
+        assert set(feedback) == _FEEDBACK_KEYS
+        assert feedback["score"] == pytest.approx(0.95, abs=1e-6)
+        assert feedback["type_line"] == "allowed_material"
+        assert feedback["hard_to_catch"] is False
+
+
+@pytest.mark.asyncio
+async def test_solution_feedback_mate_and_hard_to_catch(test_engine, clock) -> None:
+    record = _record(score=0.42, loss=0.0, missed=5.0, type_swing=None, type_mate=True)
+    async with _snapshot_setup(test_engine, [_BLUNDER_AT_ONE], record) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert data["feedback"]["type_line"] == "missed_mate"
+    assert data["feedback"]["hard_to_catch"] is True
+    assert data["feedback"]["score"] == pytest.approx(0.42, abs=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_solution_false_alarm_of_a_low_score_window_has_no_feedback(
+    test_engine, clock
+) -> None:
+    """D-05: the unreached low-score blunder stays withheld, no feedback key at all."""
+    record = _record(score=0.3, loss=0.0, missed=5.0, type_swing=None, type_mate=True)
+    async with _snapshot_setup(test_engine, [_BLUNDER_AT_THREE], record) as s:
+        await _started(s)
+        alarm = await _ok(s, 1, "blunder")  # the first judged move is fine: a false alarm
+        assert alarm["outcome"] == "false_alarm"
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert set(data) == _FALSE_ALARM_KEYS
+    assert not _all_keys(data) & {"feedback", "type_line", "hard_to_catch", "facepalm_score"}
+
+
+@pytest.mark.asyncio
+async def test_solution_feedback_survives_the_game_delete(test_engine, clock) -> None:
+    record = _record(score=0.42, loss=3.0, missed=0.0, type_swing=3, type_mate=False)
+    async with _snapshot_setup(test_engine, [_BLUNDER_AT_ONE], record) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        before = (await _solution(s.token, s.session_id, 0)).json()
+        await delete_games(test_engine, s.game_ids)
+        after = (await _solution(s.token, s.session_id, 0)).json()
+    assert before["game_id"] is not None and after["game_id"] is None
+    assert after["feedback"] == before["feedback"]
+    assert after["feedback"]["type_line"] == "allowed_material"
+    assert after["feedback"]["hard_to_catch"] is True

@@ -74,6 +74,7 @@ vi.mock('@/components/board/ChessBoard', () => ({
       best?: boolean;
       good?: boolean;
       severity?: string;
+      facepalm?: boolean;
       opacity?: number;
     }[];
     flipped?: boolean;
@@ -82,8 +83,14 @@ vi.mock('@/components/board/ChessBoard', () => ({
     const lit = (item: { opacity?: number }): boolean => (item.opacity ?? 1) >= 0.5;
     const uciOf = (a: { startSquare: string; endSquare: string }): string =>
       `${a.startSquare}${a.endSquare}`;
-    const badgeOf = (m: { square: string; best?: boolean; good?: boolean; severity?: string }) =>
-      `${m.square}:${m.best ? 'best' : m.good ? 'good' : (m.severity ?? '')}`;
+    const badgeOf = (m: {
+      square: string;
+      best?: boolean;
+      good?: boolean;
+      severity?: string;
+      facepalm?: boolean;
+    }) =>
+      `${m.square}:${m.best ? 'best' : m.good ? 'good' : m.facepalm ? 'facepalm' : (m.severity ?? '')}`;
     const drawn = arrows ?? [];
     const badges = squareMarkers ?? [];
     return (
@@ -127,6 +134,7 @@ function blunderSolution(overrides: Partial<BlunderSolution> = {}): BlunderSolut
     safe_points: 0,
     blunder_points: 3,
     better_move_points: 2,
+    feedback: null,
     ...overrides,
   };
 }
@@ -431,6 +439,115 @@ describe('verdict strip below desktop (Phase 251 UAT)', () => {
     renderSolution(blunderSolution(), scriptedEngine());
     expect(screen.getByTestId('train-verdict-card')).not.toBeNull();
     expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+  });
+});
+
+describe('avatar feedback paragraph (Phase 261 D-03)', () => {
+  it('follows the verdict sentence with the type and hard-to-catch lines, and no Facepalm chip', () => {
+    renderSolution(
+      blunderSolution({
+        outcome: 'missed',
+        better_move_uci: null,
+        better_move_tier: null,
+        better_move_points: null,
+        feedback: { score: 0.437, type_line: 'allowed_material', hard_to_catch: true },
+      }),
+      scriptedEngine(),
+    );
+
+    const summary = screen.getByTestId('blunder-check-solution-summary');
+    const feedback = screen.getByTestId('blunder-check-solution-feedback');
+    expect(summary.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // UAT: the score chip is gone; the paragraph is the two lines only.
+    expect(screen.queryByTestId('blunder-check-facepalm-badge')).toBeNull();
+    expect(feedback.textContent).toBe('The blunder allows a material loss. This one was hard to catch.');
+  });
+
+  it('shows on the phone and tablet strip after unfolding, below the summary', () => {
+    viewport.desktop = false;
+    renderSolution(
+      blunderSolution({ feedback: { score: 0.8, type_line: 'missed_mate', hard_to_catch: false } }),
+      scriptedEngine(),
+    );
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('train-verdict-strip'));
+    const summary = screen.getByTestId('blunder-check-solution-summary');
+    const feedback = screen.getByTestId('blunder-check-solution-feedback');
+    expect(summary.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(feedback.textContent).toContain('The blunder misses checkmate.');
+  });
+
+  it('shows for a caught blunder too, with the well-spotted line (D-04)', () => {
+    renderSolution(
+      blunderSolution({
+        outcome: 'caught',
+        feedback: { score: 0.2, type_line: null, hard_to_catch: true },
+      }),
+      scriptedEngine(),
+    );
+    expect(screen.getByTestId('blunder-check-solution-feedback').textContent).toContain(
+      'Well spotted, this one was hard to catch.',
+    );
+  });
+
+  it('shows nothing for a blunder solution with no feedback (a pre-phase window)', () => {
+    renderSolution(blunderSolution({ feedback: null }), scriptedEngine());
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    expect(screen.queryByTestId('blunder-check-facepalm-badge')).toBeNull();
+  });
+
+  it('never shows on a false alarm or a herring (D-05)', () => {
+    renderSolution(falseAlarmSolution(), scriptedEngine());
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    cleanup();
+    renderSolution(herringSolution(), scriptedEngine());
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+  });
+
+  it('shows no paragraph for a blunder with neither line', () => {
+    renderSolution(
+      blunderSolution({ feedback: { score: 0.6, type_line: null, hard_to_catch: false } }),
+      scriptedEngine(),
+    );
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+  });
+
+  it('draws "???" on the board and the Game chip for a facepalm blunder (score >= 70%)', () => {
+    renderSolution(
+      blunderSolution({
+        outcome: 'missed',
+        better_move_uci: null,
+        better_move_tier: null,
+        better_move_points: null,
+        feedback: { score: 0.96, type_line: 'missed_material', hard_to_catch: false },
+      }),
+      scriptedEngine(),
+    );
+    const square = BLUNDER.slice(2, 4);
+    expect(screen.getByTestId('board-mock').getAttribute('data-markers')?.split(',')).toContain(
+      `${square}:facepalm`,
+    );
+    const quality = screen.getByTestId('train-chip-game-quality');
+    expect(quality.getAttribute('data-quality')).toBe('blunder');
+    expect(quality.getAttribute('data-facepalm')).toBe('true');
+  });
+
+  it('keeps "??" for a blunder scoring below 70%', () => {
+    renderSolution(
+      blunderSolution({
+        outcome: 'missed',
+        better_move_uci: null,
+        better_move_tier: null,
+        better_move_points: null,
+        feedback: { score: 0.69, type_line: 'missed_material', hard_to_catch: false },
+      }),
+      scriptedEngine(),
+    );
+    expect(screen.getByTestId('board-mock').getAttribute('data-markers')?.split(',')).toContain(
+      `${BLUNDER.slice(2, 4)}:blunder`,
+    );
+    expect(screen.getByTestId('train-chip-game-quality').getAttribute('data-facepalm')).toBeNull();
   });
 });
 

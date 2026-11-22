@@ -11,6 +11,7 @@ import {
   FACEPALM_HIGH_CUTOFF,
   FACEPALM_TYPE_LABEL,
   FACEPALM_TYPE_SENTENCE,
+  type FacepalmAudience,
   facepalmScoreMeaning,
   isFacepalmBlunder,
   toFacepalmPct,
@@ -20,13 +21,13 @@ import type { FacepalmType } from '@/types/library';
 interface FacepalmExplanationProps {
   /** Raw 0..1 facepalm score. */
   score: number;
-  /** Facepalm type of the blunder; named in the first line. */
+  /** Facepalm type of the blunder; named in its own line. */
   type: FacepalmType;
-  /** True when the opponent (not the user) played the blunder: switches "your" to "their". */
-  byOpponent?: boolean;
+  /** Whose blunder it is: switches "your" to "their". Default 'self'. */
+  audience?: FacepalmAudience;
 }
 
-export function FacepalmExplanation({ score, type, byOpponent = false }: FacepalmExplanationProps) {
+export function FacepalmExplanation({ score, type, audience = 'self' }: FacepalmExplanationProps) {
   return (
     <>
       <p className="flex items-center gap-1 font-bold">
@@ -43,7 +44,7 @@ export function FacepalmExplanation({ score, type, byOpponent = false }: Facepal
       <p data-testid="facepalm-explanation-type">
         <span className="font-bold">{FACEPALM_TYPE_LABEL[type]}</span>: {FACEPALM_TYPE_SENTENCE[type]}
       </p>
-      <p>{facepalmScoreMeaning(byOpponent)}</p>
+      <p>{facepalmScoreMeaning(audience)}</p>
     </>
   );
 }

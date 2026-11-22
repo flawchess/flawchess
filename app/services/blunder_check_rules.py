@@ -62,6 +62,15 @@ MAX_BLUNDER_POSITION: int = 5
 # and 11 unfair at 0.70 (118 / 25 at 0.50), and the prod drill pool stays about 33% of user
 # blunders (median 414 usable windows per user).
 FACEPALM_SCORE_MIN: float = 0.7
+# Phase 261 seed type-line floor: the drill's type line ("allows a material loss" / "misses a material
+# win") shows only for a material swing of at least this many points (piece values 1 / 3 / 3 / 5 / 9),
+# so a lost pawn gets no line and a lost exchange does. Applied at read time only, never to the stored
+# decaying means (game_flaws.material_loss / material_missed).
+TYPE_LINE_MIN_SWING: int = 2
+# Phase 261 D-06: the "hard to catch" line shows when the snapshotted score is below this, in Phase 259
+# score units. Tied to the score, never to the arm. Re-checked on 2026-11-22: the caught rate drops
+# clearly only below 0.5.
+HARD_TO_CATCH_SCORE_BELOW: float = 0.5
 # 257 D-01: the library stats cut, the label meaning of a facepalm blunder (253 D-23: "should
 # score above 70%"). Separate from the drill's FACEPALM_SCORE_MIN on purpose. It equals the
 # Facepalm filter's High preset bound (70 / 100.0 in library_repository), so a stats row counts
@@ -138,6 +147,10 @@ BLUNDER_MIN_OPENING_PLY: int = HERRING_MIN_OPENING_PLY
 HERRING_SHARE: float = 1 / 3
 OWN_BLUNDER_SHARE: float = 1 / 3
 FOREIGN_BLUNDER_SHARE: float = 1 - HERRING_SHARE - OWN_BLUNDER_SHARE
+# Phase 261 (seed decision 2): the share of blunder slots drawn by the exploration arm, i.e. without
+# the facepalm score cut, own and foreign slots alike. The arm runs indefinitely: lowering or
+# stopping it is a change of this constant.
+EXPLORATION_SHARE: float = 0.2
 # 250 D-16: a herring's origin is own with the same own / foreign ratio as blunders, so recognising
 # one's own game gives nothing away.
 HERRING_OWN_SHARE: float = OWN_BLUNDER_SHARE / (OWN_BLUNDER_SHARE + FOREIGN_BLUNDER_SHARE)
@@ -155,6 +168,8 @@ BETTER_MOVE_POINTS: int = MOVE_TIER_POINTS["good"]
 
 MissCase = Literal["allowed", "pure_miss", "mixed", "unclassified"]
 SlotOrigin = Literal["own", "foreign"]
+# Phase 261: which arm filled a blunder slot, the main arm (score cut) or the exploration arm (no cut).
+SlotArm = Literal["main", "exploration"]
 
 _FIRST_POSITION: Final[int] = 1
 
@@ -179,6 +194,8 @@ class SlotPlan:
 
     origin: SlotOrigin
     shape: WindowShape
+    # Phase 261: a default, so a two-argument construction stays a main-arm slot.
+    arm: SlotArm = "main"
 
 
 @dataclass(frozen=True)
@@ -323,16 +340,31 @@ def draw_blunder_shape(rng: random.Random) -> WindowShape:
     return WindowShape(length, position)
 
 
+def arm_probability(arm: SlotArm) -> float:
+    """P(arm) among blunder slots at serve time (Phase 261): the value stored with a window."""
+    return EXPLORATION_SHARE if arm == "exploration" else 1 - EXPLORATION_SHARE
+
+
+def draw_slot_arm(rng: random.Random) -> SlotArm:
+    """The arm of one blunder slot (Phase 261): one coin flip, exploration with probability
+    EXPLORATION_SHARE, else main. Drawn per window, never per user."""
+    return "exploration" if rng.random() < EXPLORATION_SHARE else "main"
+
+
 def draw_slot_plan(rng: random.Random) -> SlotPlan:
     """Draw one slot independently (250 D-12, D-16): one uniform picks herring / own blunder /
-    foreign blunder at the D-12 shares; a herring then draws its origin at HERRING_OWN_SHARE."""
+    foreign blunder at the D-12 shares; a herring then draws its origin at HERRING_OWN_SHARE.
+
+    Phase 261: a blunder slot then flips one coin for its arm (`draw_slot_arm`), own and foreign
+    alike, after its shape. A herring keeps the default main arm and never flips.
+    """
     roll = rng.random()
     if roll < HERRING_SHARE:
         origin: SlotOrigin = "own" if rng.random() < HERRING_OWN_SHARE else "foreign"
         return SlotPlan(origin, draw_herring_shape(rng))
-    if roll < HERRING_SHARE + OWN_BLUNDER_SHARE:
-        return SlotPlan("own", draw_blunder_shape(rng))
-    return SlotPlan("foreign", draw_blunder_shape(rng))
+    blunder_origin: SlotOrigin = "own" if roll < HERRING_SHARE + OWN_BLUNDER_SHARE else "foreign"
+    shape = draw_blunder_shape(rng)
+    return SlotPlan(blunder_origin, shape, draw_slot_arm(rng))
 
 
 # ---------------------------------------------------------------------------

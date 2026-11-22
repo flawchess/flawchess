@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Blunder check: after a caught or missed blunder, the solution now shows a short line when the engine line shows the blunder gave away material or checkmate, or missed a material win or checkmate, and a note when the blunder was hard to catch.
+- Train: a facepalm blunder (a facepalm score of 70% or more) is marked "???" instead of "??" on the board and on the Game line, on the blunder check solution and on the personalized-puzzle solution.
 - Navigation: new accounts are guided through FlawChess one feature at a time by a single red dot: Import, Train, Bots, Openings with its Played as and Filters controls and its Stats tab, Endgames, and Library Stats. The dot sits on the menu item first and moves onto the tab or button once you are in that section. A feature you leave alone for three active days is skipped, and your progress follows you across devices.
 - Blunder check for everyone, guests included: short sequences from real games ask, before each move is played, whether it is a good move or a blunder, with a 12-second timer, a points pot you lose on a missed blunder, a better-move follow-up when you catch one, and a solution screen with the engine lines. Start it from the Train Today page. Guests play on other players' games.
 - Blunder check leaderboards: weekly Points and Score % boards with medals, behind a Puzzles / Blunder check switch on the Train leaderboard. The card remembers the side you looked at last, and the blunder check score screen links straight to its boards.

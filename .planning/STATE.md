@@ -3,12 +3,12 @@ gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 261
 current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
-status: completed
+status: executing
 stopped_at: Phase 261 context gathered
-last_updated: "2026-11-22T15:21:14.561Z"
+last_updated: "2026-11-22T15:27:08.759Z"
 last_activity: 2026-11-22
-last_activity_desc: Phase 259 complete
-state_head: 3e028579736a19e311788e3ae223c26f746e3819
+last_activity_desc: Phase 261 execution started
+state_head: b9ebe962a4065cb8b7151f20c60220ac91d553c8
 progress:
   total_phases: 14
   completed_phases: 63
@@ -21,14 +21,16 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 261 (Blunder-Check Exploration Arm (SEED-261121-t50)) — READY TO EXECUTE
-Plan: Not started
+Phase: 261 (Blunder-Check Exploration Arm (SEED-261121-t50)) — EXECUTING
+Plan: 1 of 7
 
-Status: All phases complete
+Status: Executing Phase 261
 
-Last activity: 2026-11-22 - Completed quick task 261122-l3u: drain keeps the second-best move of the opening flaw re-search
+Last activity: 2026-11-22 — Phase 261 execution started
 
 Open threads carried forward (not blockers):
+
+- Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
 
 - Phase 251 follow-ups: review WR-04 (Start within 600 ms of a settings edit drops the pending save), IN-02 (level options duplicated in three components), IN-03 (stale medal-cap comment); launch-notice copy says "Change the amount on the card" though the size lives in the settings row; owner should know assumption A8 (~3.6% sparse-weekday users who split modes across days can lose that day) and W-06 (puzzles on with no material still needs a warm-up session for the streak); low-urgency `drill_sessions (user_id, session_date)` index; `complete_session` could take `user_id` as defense in depth.
 

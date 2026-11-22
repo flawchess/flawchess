@@ -124,7 +124,7 @@ describe('formatFacepalmSummary', () => {
 describe('facepalmScoreMeaning', () => {
   it('names the level of whoever played the blunder', () => {
     expect(facepalmScoreMeaning()).toContain('a player at your level');
-    expect(facepalmScoreMeaning(true)).toContain('a player at their level');
+    expect(facepalmScoreMeaning('opponent')).toContain('a player at their level');
   });
 });
 

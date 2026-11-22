@@ -576,6 +576,7 @@ const BLUNDER_SOLUTION: BlunderSolution = {
   safe_points: 0,
   blunder_points: 3,
   better_move_points: 2,
+  feedback: null,
 };
 const TWO_WINDOW_SESSION: BlunderCheckSessionResponse = {
   session_id: 7,

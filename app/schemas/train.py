@@ -688,6 +688,10 @@ class PuzzleRevealResponse(BaseModel):
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: Literal["sr_item", "red_herring", "sharp_filler"]
     has_tactic_lines: bool
+    # The in-game move is a facepalm blunder (facepalm score >= 70%): the reveal badges it
+    # "???" instead of "??". A boolean on purpose, the score itself stays server-side. Always
+    # False for a herring or a sharp filler.
+    game_move_facepalm: bool = False
     # The sharp filler's motif label. None for every
     # SR_ITEM/RED_HERRING row.
     motif: str | None

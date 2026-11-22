@@ -62,6 +62,8 @@ from app.schemas.train import (
     SolveRecheck,
 )
 from app.services.best_move_candidates import mover_color_for_ply
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
+from app.services.facepalm_score import facepalm_expr
 from app.services.flaws_service import classify_severity
 from app.services.sharp_filler import (
     SHARP_SET_BY_ID,
@@ -4542,10 +4544,36 @@ class RevealedPuzzle:
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: Literal["sr_item", "red_herring", "sharp_filler"]
     has_tactic_lines: bool
+    # The game move is a facepalm blunder: the reveal badges it "???" instead of "??".
+    game_move_facepalm: bool
     # The sharp filler's motif label, read straight from the committed data
     # file's precomputed `motif` column. None for every SR_ITEM/RED_HERRING
     # row — there is no motif taxonomy for those today.
     motif: str | None
+
+
+async def _game_move_is_facepalm(
+    session: AsyncSession, *, user_id: int, game_id: int, ply: int
+) -> bool:
+    """True when the user's own blunder at `ply` is a facepalm blunder (the "???" badge).
+
+    The same cut as the library: a blunder whose query-time
+    `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` reaches FACEPALM_STATS_MIN. A mistake, an unscored
+    row (NULL score) and a missing row are all False. Only the boolean leaves the server, and
+    only behind the reveal's post-attempt gate.
+    """
+    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+    value = (
+        await session.execute(
+            select(score).where(
+                GameFlaw.user_id == user_id,
+                GameFlaw.game_id == game_id,
+                GameFlaw.ply == ply,
+                GameFlaw.severity == _SEVERITY_INT["blunder"],
+            )
+        )
+    ).scalar_one_or_none()
+    return value is not None and float(value) >= FACEPALM_STATS_MIN
 
 
 async def reveal_for_puzzle(
@@ -4675,6 +4703,9 @@ async def reveal_for_puzzle(
             played_in_game_move_uci = None  # never raise on an unparseable move_san
 
     motif: str | None = None
+    # Only a personalized puzzle replays a flaw of the user's own; a herring's game move is
+    # good and a sharp filler has no game.
+    game_move_facepalm = False
     if solve.source == DrillSource.RED_HERRING:
         puzzle_type: Literal["sharp", "soft", "herring"] = "herring"
         has_tactic_lines = False
@@ -4708,6 +4739,9 @@ async def reveal_for_puzzle(
         has_tactic_lines = flaw_row is not None and (
             flaw_row.missed_tactic_motif is not None or flaw_row.allowed_tactic_motif is not None
         )
+        game_move_facepalm = await _game_move_is_facepalm(
+            session, user_id=user_id, game_id=game.id, ply=solve.ply
+        )
 
     return RevealedPuzzle(
         game_id=solve.game_id,
@@ -4720,6 +4754,7 @@ async def reveal_for_puzzle(
         # would fail silently (no exception) for the third source.
         source=_wire_source(solve.source),
         has_tactic_lines=has_tactic_lines,
+        game_move_facepalm=game_move_facepalm,
         motif=motif,
     )
 

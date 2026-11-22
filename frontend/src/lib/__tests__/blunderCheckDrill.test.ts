@@ -683,6 +683,7 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     safe_points: 0,
     blunder_points: 3,
     better_move_points: 2,
+    feedback: null,
   };
 
   /** A window answered "blunder" and graded, at the end of the answer feedback. */

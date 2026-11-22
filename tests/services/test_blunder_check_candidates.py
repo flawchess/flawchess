@@ -121,7 +121,11 @@ def _blunders(result: GameCandidates | None) -> tuple[BlunderCandidate, ...]:
 
 
 def _candidate(
-    game_id: int, ply: int = 8, max_position: int = 3, case: BlunderCase = "allowed"
+    game_id: int,
+    ply: int = 8,
+    max_position: int = 3,
+    case: BlunderCase = "allowed",
+    facepalm_score: float = 0.95,
 ) -> BlunderCandidate:
     preceding = tuple(range(ply - 2 * (MAX_BLUNDER_POSITION - 1), ply, 2))
     return BlunderCandidate(
@@ -130,6 +134,7 @@ def _candidate(
         case=case,
         max_position=max_position,
         preceding_plies=preceding,
+        facepalm_score=facepalm_score,
     )
 
 
@@ -356,6 +361,18 @@ class TestJudgeGameGuards:
 
 
 class TestAssignWindows:
+    def test_assign_windows_cut_applies_per_call(self) -> None:
+        # Phase 261: the 0.70 cut is applied at option time, so one candidate is an option for an
+        # exploration slot (min_score None) and not for a main slot (the default cut).
+        below = _game(1, (_candidate(1, facepalm_score=FACEPALM_SCORE_MIN - 0.3),))
+        slots = {0: WindowShape(3, 1)}
+        main = assign_windows(slots, [below], rng=random.Random(1), used_game_ids=set())
+        exploration = assign_windows(
+            slots, [below], rng=random.Random(1), used_game_ids=set(), min_score=None
+        )
+        assert main == []
+        assert [p.game_id for p in exploration] == [1]
+
     def test_assign_blunder_slot_only_takes_candidates_that_reach_the_drawn_position(self) -> None:
         low = _game(1, (_candidate(1, max_position=2),))
         high = _game(2, (_candidate(2, max_position=4),))

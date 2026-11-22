@@ -249,6 +249,13 @@ function SolutionVerdict({ copy, avatar, showHeading = true }: SolutionVerdictPr
           ),
         )}
       </p>
+      {copy.feedback !== null && (
+        // Phase 261 D-03: the type and hard-to-catch lines. The Facepalm score chip was dropped
+        // in UAT: a facepalm blunder shows as "???" on the board and the Game chip instead.
+        <p className="mt-2" data-testid="blunder-check-solution-feedback">
+          {copy.feedback.lines.join(' ')}
+        </p>
+      )}
     </div>
   );
 }

@@ -18,7 +18,9 @@ from app.services.blunder_check_rules import (
     BETTER_MOVE_POINTS,
     BLUNDER_CHECK_SESSION_WINDOWS,
     BLUNDER_POINTS,
+    EXPLORATION_SHARE,
     ES_BAND_HIGH,
+    FACEPALM_SCORE_MIN,
     ES_BAND_LOW,
     FOREIGN_BLUNDER_SHARE,
     FOREIGN_RATING_BAND,
@@ -161,6 +163,9 @@ class TestSlotShares:
         assert FOREIGN_BLUNDER_SHARE == pytest.approx(1 / 3)
         assert HERRING_OWN_SHARE == pytest.approx(0.5)
         assert FOREIGN_RATING_BAND == 150
+        assert EXPLORATION_SHARE == 0.2
+        # Phase 261 leaves the main arm's cut alone.
+        assert FACEPALM_SCORE_MIN == 0.7
 
     def test_kind_and_origin_shares_match_d12_and_d16(self) -> None:
         rng = random.Random(PLAN_SEED)
@@ -175,6 +180,17 @@ class TestSlotShares:
         )
         own_herrings = sum(1 for p in herrings if p.origin == "own")
         assert own_herrings / len(herrings) == pytest.approx(HERRING_OWN_SHARE, abs=SHARE_TOLERANCE)
+
+    def test_exploration_share_per_blunder_origin(self) -> None:
+        # Phase 261: one coin per blunder slot, own and foreign alike; herrings never explore.
+        rng = random.Random(PLAN_SEED)
+        plans = [draw_slot_plan(rng) for _ in range(DRAWS)]
+        for origin in ("own", "foreign"):
+            blunders = [p for p in plans if p.shape.blunder_position and p.origin == origin]
+            share = sum(1 for p in blunders if p.arm == "exploration") / len(blunders)
+            assert share == pytest.approx(EXPLORATION_SHARE, abs=SHARE_TOLERANCE)
+        herrings = [p for p in plans if p.shape.blunder_position is None]
+        assert all(p.arm == "main" for p in herrings)
 
     def test_length_is_uniform_for_both_kinds(self) -> None:
         rng = random.Random(PLAN_SEED)

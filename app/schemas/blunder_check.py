@@ -166,6 +166,7 @@ class SessionResultResponse(BaseModel):
 MoveTierWire = Literal["good", "inaccuracy", "wrong"]
 TimeControlBucketWire = Literal["bullet", "blitz", "rapid", "classical"]
 WindowCaseWire = Literal["allowed", "pure_miss", "mixed"]
+BlunderTypeLineWire = Literal["allowed_material", "allowed_mate", "missed_material", "missed_mate"]
 
 
 class BetterMoveRequest(BaseModel):
@@ -196,6 +197,15 @@ class GameInfo(BaseModel):
     mover_rating: int | None
 
 
+class BlunderFeedback(BaseModel):
+    """Phase 261 avatar feedback: the serve-time facepalm score snapshot, the type line and the
+    hard-to-catch flag. Only sent once the window has ended, and never on a false alarm (D-05)."""
+
+    score: float
+    type_line: BlunderTypeLineWire | None
+    hard_to_catch: bool
+
+
 class BlunderSolution(BaseModel):
     """Solution of a caught or missed blunder window (D-14)."""
 
@@ -217,6 +227,8 @@ class BlunderSolution(BaseModel):
     safe_points: int
     blunder_points: int
     better_move_points: int | None
+    # None for a window served before Phase 261 (no snapshot).
+    feedback: BlunderFeedback | None
 
 
 class HerringSolution(BaseModel):

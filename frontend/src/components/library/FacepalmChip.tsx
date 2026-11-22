@@ -3,8 +3,8 @@
  * next to the Blunder badge (UAT 253: split out of the badge). It is the Facepalm
  * popover trigger. Colored and sized like the context TagChip (text-xs, the same requested
  * deviation from the text-sm floor), so it reads as a tag, not a second severity badge.
- * 257 D-08 / D-09: tinted by the facepalm type (teal missed win, crimson allowed loss); every
- * scored blunder has a type, so there is no neutral variant. The popover names the type (D-10).
+ * 257 D-08 / D-09: the typed form is tinted by the facepalm type (teal missed win, crimson allowed
+ * loss) and the popover names the type (D-10).
  */
 
 import { Gauge } from 'lucide-react';

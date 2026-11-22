@@ -72,6 +72,8 @@ export interface ChipGroup {
   /** Quality of the chip's first move: 'best' whenever the best move is in the
    * chip, else the played move's own quality, else the game move's. */
   quality: TrainMoveQuality | null;
+  /** The chip's blunder is a facepalm blunder: its icon and board badge are "???" (blunder check). */
+  facepalm?: boolean;
 }
 
 export interface BuildChipGroupsInput {
@@ -83,6 +85,8 @@ export interface BuildChipGroupsInput {
   gameMoveLine: GameMoveLineState;
   playedMoveQuality: TrainMoveQuality | null;
   gameMoveQuality: TrainMoveQuality | null;
+  /** The game move is a facepalm blunder (the reveal response's flag). */
+  gameMoveFacepalm?: boolean;
 }
 
 /** UCI ("e2e4"/"e7e8q") -> SAN via chess.js from `fen`, or null on a null/
@@ -169,6 +173,7 @@ export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
     gameMoveUci,
     playedMoveQuality,
     gameMoveQuality,
+    gameMoveFacepalm = false,
   } = input;
   const uciByRole: Partial<Record<RoleKey, string>> = {};
   // On the instant path the verdict lands before the phone grade, so
@@ -208,6 +213,8 @@ export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
       line,
       pending: resolveChipPending(roles, line, input),
       quality,
+      // "???" for the game's facepalm blunder, also when the user replayed that same move.
+      facepalm: gameMoveFacepalm && roles.includes('game') && quality === 'blunder',
     });
   }
   return chips;

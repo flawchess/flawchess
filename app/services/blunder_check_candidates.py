@@ -16,6 +16,12 @@ The quality gates on a blunder are the stored facepalm score (250 D-01, overturn
 early-ply floor and the undecided-position rule: no played-probability cap and no
 capture/check/mate rule. A blunder that was served in any window is never composed again (250
 D-17).
+
+Phase 261: the score cut is a parameter (``min_score``), not a fixed gate. The composer judges
+every game without the cut (every scored blunder becomes a candidate carrying its
+``facepalm_score``) and applies the cut per slot at option time: ``FACEPALM_SCORE_MIN`` for a main
+slot, none for an exploration slot (a plain random draw over scored blunders). A NULL score never
+qualifies either way. The default keeps the 0.70 cut for every other caller.
 """
 
 from __future__ import annotations
@@ -90,6 +96,8 @@ class BlunderCandidate:
     max_position: int
     # The up to MAX_BLUNDER_POSITION - 1 user plies immediately before the blunder, in game order.
     preceding_plies: tuple[int, ...]
+    # Phase 261: the stored drill-lambda score, so a slot can apply its own cut at option time.
+    facepalm_score: float
 
 
 @dataclass(frozen=True)
@@ -172,11 +180,13 @@ def _blunder_candidate(
     flaw: FlawLike,
     key_plies: AbstractSet[int],
     served_blunder_plies: AbstractSet[int],
+    *,
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> BlunderCandidate | None:
     """A stored blunder becomes a candidate only if it is the user's, not served before (250 D-17),
     still a blunder when recomputed (consistency guard, T-249-01), from an undecided position
-    (`blunder_position_undecided`), scored at or above FACEPALM_SCORE_MIN (250 D-01) and fits
-    window position 1+ (D-04, D-05).
+    (`blunder_position_undecided`), scored (at or above `min_score` when one is given, 250 D-01,
+    Phase 261) and fits window position 1+ (D-04, D-05).
     """
     if flaw.severity != _BLUNDER_SEVERITY_INT:
         return None
@@ -198,9 +208,12 @@ def _blunder_candidate(
     case = miss_case(flaw.is_miss, es_ref, es_played)
     if case == "unclassified":
         return None
-    # 250 D-01: one score gate for every case. The loader already filters in SQL; re-checked here
-    # so the pure judge stays correct for any caller (a NULL score never qualifies).
-    if flaw.facepalm_score is None or flaw.facepalm_score < FACEPALM_SCORE_MIN:
+    # 250 D-01: one score gate for every case. A NULL score never qualifies; with `min_score` None
+    # (the composer's judging pass, Phase 261) every scored blunder is a candidate and the cut is
+    # applied per slot at option time.
+    if flaw.facepalm_score is None:
+        return None
+    if min_score is not None and flaw.facepalm_score < min_score:
         return None
     preceding = [j for j in game.judgements if j.ply < flaw.ply][-_PRECEDING_KEPT:]
     max_position = min(max_fit_position(preceding, es_before), _floor_position_cap(game, preceding))
@@ -212,6 +225,7 @@ def _blunder_candidate(
         case=case,
         max_position=max_position,
         preceding_plies=tuple(j.ply for j in preceding),
+        facepalm_score=flaw.facepalm_score,
     )
 
 
@@ -252,8 +266,13 @@ def judge_game(
     key_plies: AbstractSet[int],
     served_blunder_plies: AbstractSet[int],
     served_ply_ranges: Sequence[tuple[int, int]],
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> GameCandidates | None:
-    """Judge one game into blunder candidates and herring runs; None for gapped positions."""
+    """Judge one game into blunder candidates and herring runs; None for gapped positions.
+
+    `min_score` is the score cut a blunder must clear to be a candidate (default: the main arm's
+    FACEPALM_SCORE_MIN); None keeps every scored blunder (the composer, Phase 261).
+    """
     if not _is_contiguous(positions):
         return None
     all_moves = _run_all_moves_pass(list(positions))
@@ -266,7 +285,7 @@ def judge_game(
         phases=[p.phase for p in positions],
     )
     candidates = (
-        _blunder_candidate(game, flaw, key_plies, served_blunder_plies)
+        _blunder_candidate(game, flaw, key_plies, served_blunder_plies, min_score=min_score)
         for flaw in sorted(flaws, key=lambda f: f.ply)
     )
     return GameCandidates(
@@ -298,9 +317,13 @@ def _ordered_slots(slots: Mapping[int, WindowShape]) -> list[tuple[int, WindowSh
 
 
 def _blunder_options(
-    slot: int, shape: WindowShape, games: Sequence[GameCandidates]
+    slot: int,
+    shape: WindowShape,
+    games: Sequence[GameCandidates],
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> list[WindowPick]:
-    """Candidates whose maximum position reaches the drawn one (D-03)."""
+    """Candidates whose maximum position reaches the drawn one (D-03) and whose score clears
+    `min_score` (Phase 261; None keeps every scored candidate)."""
     position = shape.blunder_position or _FIRST_POSITION
     return [
         WindowPick(
@@ -314,6 +337,7 @@ def _blunder_options(
         for game in games
         for candidate in game.blunders
         if candidate.max_position >= position
+        and (min_score is None or candidate.facepalm_score >= min_score)
     ]
 
 
@@ -344,17 +368,20 @@ def assign_windows(
     *,
     rng: random.Random,
     used_game_ids: AbstractSet[int],
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> list[WindowPick]:
     """Fill the drawn slots rarest first, at most one window per game; unfillable slots are absent.
 
-    Options are sorted before the choice so a seeded rng reproduces the result.
+    Options are sorted before the choice so a seeded rng reproduces the result. `min_score` is the
+    cut the blunder options must clear (Phase 261): the main cut by default, None for an
+    exploration slot. The choice among options is `rng.choice`, never by score.
     """
     taken = set(used_game_ids)
     picks: list[WindowPick] = []
     for slot, shape in _ordered_slots(slots):
         eligible = [game for game in games if game.game_id not in taken]
         if shape.blunder_position is not None:
-            options = _blunder_options(slot, shape, eligible)
+            options = _blunder_options(slot, shape, eligible, min_score)
         else:
             options = _herring_options(slot, shape, eligible)
         if not options:
