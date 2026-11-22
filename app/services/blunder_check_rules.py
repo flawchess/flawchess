@@ -102,13 +102,9 @@ FACEPALM_LOSS_FLOOR: int | None = 0
 FACEPALM_MISSED_FLOOR: int | None = 0
 FACEPALM_MISSED_CAP: int = 5
 FACEPALM_MISSED_MATE: int = 5
-# Which stored depths the loss and the missed gain read (256 D-06): "depth_3" reads depth 3 only;
-# "decaying_mean" is the weighted mean over the odd depths 1, 3, 5, 7, 9; "first_stable" is the first
-# odd-depth value that the next odd depth confirms, discounted by MATERIAL_DECAY_RATIO to the power
-# of its onset index. The write-time aggregation's parameter type (the stored input is fixed).
-MaterialInput = Literal["depth_3", "decaying_mean", "first_stable"]
-# Weight ratio between consecutive odd depths of the aggregate material inputs, fixed by the owner
-# in SEED-261115-agg, not fitted.
+# Weight ratio between consecutive odd depths of the stored material inputs: the loss and the missed
+# gain are the decaying mean over the odd depths 1, 3, 5, 7, 9 (259 D-03). Fixed by the owner in
+# SEED-261115-agg, not fitted.
 MATERIAL_DECAY_RATIO: float = 0.5
 # 254 D-03 / D-04 loss-aversion knob: lambda multiplies the missed term only (0 = the loss-only
 # score). Two constants so the consumers can diverge: the blunder-check drill selection (D-03,

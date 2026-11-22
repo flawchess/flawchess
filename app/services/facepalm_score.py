@@ -48,9 +48,9 @@ update the other; ``tests/services/test_facepalm_score.py`` pins them together. 
 model is ``FACEPALM_MODEL``, built from the FACEPALM_* constants in ``blunder_check_rules``;
 tests and the fit script pass an explicit model. Pure, no I/O.
 
-The write-time half of this module (``loss_feature``, ``missed_feature``, ``material_loss``,
-``material_missed``) turns a stored line into the two stored material numbers; the score itself
-never calls it. ``facepalm_inputs`` is its caller.
+The write-time half of this module (``material_loss``, ``material_missed``) turns the played and
+best lines into the two stored material numbers (the decaying mean over the odd depths); the
+score itself never calls it. ``facepalm_inputs`` is its caller.
 """
 
 from __future__ import annotations
@@ -73,12 +73,10 @@ from app.services.blunder_check_rules import (
     FACEPALM_PLAYED_COEF,
     FACEPALM_REPLY_PROB_COEF,
     LINE_DEPTH,
-    LOSS_CAP,
     MATE_LOSS,
     PLAYED_PROB_OFFSET,
-    MaterialInput,
 )
-from app.services.facepalm_material import aggregate, gain_by_depth, loss_by_depth
+from app.services.facepalm_material import decaying_mean, gain_by_depth, loss_by_depth
 from app.services.line_material import material_at_depth
 
 __all__ = [
@@ -88,7 +86,6 @@ __all__ = [
     "FacepalmFacts",
     "FacepalmModel",
     "FacepalmType",
-    "MaterialInput",
     "facepalm_expr",
     "facepalm_score",
     "facepalm_score_sql",
@@ -97,10 +94,8 @@ __all__ = [
     "facepalm_type_from_sql",
     "facepalm_type_of",
     "facepalm_type_sql",
-    "loss_feature",
     "material_loss",
     "material_missed",
-    "missed_feature",
 ]
 
 # 257 D-02: the type of a scored blunder. The strings travel through the library payloads and the
@@ -153,74 +148,24 @@ class FacepalmColumns(NamedTuple):
     reply_prob: Any
 
 
-def loss_feature(
-    loss_3: int | None, mate_ply: int | None, *, loss_floor: int | None
-) -> float | None:
-    """The loss input of the score, or None when the line is too short to tell.
-
-    A mate within LINE_DEPTH plies counts MATE_LOSS. Otherwise the depth-3 net loss capped at
-    LOSS_CAP, raised to `loss_floor` when the model has one; None when `loss_3` is None.
-    """
-    if mate_ply is not None and mate_ply <= LINE_DEPTH:
-        return float(MATE_LOSS)
-    if loss_3 is None:
-        return None
-    capped = min(loss_3, LOSS_CAP)
-    if loss_floor is not None:
-        capped = max(capped, loss_floor)
-    return float(capped)
-
-
-def missed_feature(
-    played_3: int | None,
-    best_3: int | None,
-    best_mate_ply: int | None,
-    *,
-    missed_floor: int | None,
-    missed_cap: int,
-    missed_mate: int,
-) -> float:
-    """The missed input of the score (254 D-05): the gain the blunderer left on the table.
-
-    `best_3 - max(0, played_3)`, i.e. the swing minus the loss. A best line that mates within
-    LINE_DEPTH plies counts `missed_mate`. An unknown best line (or played line) contributes 0
-    (D-18), so the row keeps its loss-only score. Raised to `missed_floor` when it is not None
-    (the raw value is negative when the best line is behind at depth 3), then capped.
-    """
-    if best_mate_ply is not None and best_mate_ply <= LINE_DEPTH:
-        return float(missed_mate)
-    if best_3 is None or played_3 is None:
-        return 0.0
-    raw = best_3 - max(0, played_3)
-    if missed_floor is not None:
-        raw = max(raw, missed_floor)
-    return float(min(raw, missed_cap))
-
-
 def material_loss(
     played_material: Sequence[int | None] | None,
     mate_ply: int | None,
     *,
-    material_input: MaterialInput,
     loss_floor: int | None,
 ) -> float | None:
-    """The loss input of the score under `material_input`, or None when the row is unscored.
+    """The stored loss input: the decaying mean of the per-depth loss, or None when unscored.
 
-    Coverage gate shared by every input (256 D-03): a mate within LINE_DEPTH plies gives
-    MATE_LOSS (the short-circuit, so a mate at ply 3 is never averaged down), an unknown depth-3
-    slot gives None. Then "depth_3" is `loss_feature` and an aggregate input ("decaying_mean",
-    "first_stable") aggregates the per-depth loss.
+    Coverage gate (256 D-03): a mate within LINE_DEPTH plies gives MATE_LOSS (the short-circuit,
+    so a mate at ply 3 is never averaged down), an unknown depth-3 slot gives None. Otherwise the
+    decaying mean over the odd depths 1, 3, 5, 7, 9 (259 D-03).
     """
     if mate_ply is not None and mate_ply <= LINE_DEPTH:
         return float(MATE_LOSS)
     played_3 = material_at_depth(played_material, LINE_DEPTH)
     if played_3 is None:
         return None
-    if material_input == "depth_3":
-        return loss_feature(-played_3, mate_ply, loss_floor=loss_floor)
-    return aggregate(
-        material_input, loss_by_depth(played_material, mate_ply, loss_floor=loss_floor)
-    )
+    return decaying_mean(loss_by_depth(played_material, mate_ply, loss_floor=loss_floor))
 
 
 def material_missed(
@@ -228,34 +173,22 @@ def material_missed(
     best_material: Sequence[int | None] | None,
     best_mate_ply: int | None,
     *,
-    material_input: MaterialInput,
     missed_floor: int | None,
     missed_cap: int,
     missed_mate: int,
 ) -> float:
-    """The missed input of the score under `material_input` (never None).
+    """The stored missed input: the decaying mean of the per-depth gain (never None).
 
     A best-line mate within LINE_DEPTH plies gives `missed_mate`; an unknown played depth-3 slot
-    gives 0.0 for every input (so all inputs treat the same rows the same way). Then "depth_3" is
-    `missed_feature` and an aggregate input aggregates the per-depth gain, 0.0 when no depth is
-    known (D-18: an unknown best line contributes nothing).
+    gives 0.0. Otherwise the decaying mean over the odd depths, 0.0 when no depth is known
+    (D-18: an unknown best line contributes nothing).
     """
     if best_mate_ply is not None and best_mate_ply <= LINE_DEPTH:
         return float(missed_mate)
     played_3 = material_at_depth(played_material, LINE_DEPTH)
     if played_3 is None:
         return 0.0
-    if material_input == "depth_3":
-        return missed_feature(
-            played_3,
-            material_at_depth(best_material, LINE_DEPTH),
-            best_mate_ply,
-            missed_floor=missed_floor,
-            missed_cap=missed_cap,
-            missed_mate=missed_mate,
-        )
-    settled = aggregate(
-        material_input,
+    settled = decaying_mean(
         gain_by_depth(
             played_material,
             best_material,
@@ -263,7 +196,7 @@ def material_missed(
             missed_floor=missed_floor,
             missed_cap=missed_cap,
             missed_mate=missed_mate,
-        ),
+        )
     )
     return 0.0 if settled is None else settled
 

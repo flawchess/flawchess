@@ -189,9 +189,10 @@ def section_how_to_read(collection: Collection, params: ReportParams) -> str:
             "without usable ES.",
             "- **Facepalm score (250 D-01, 254 D-01):** a ranking of how careless a blunder is at "
             "the mover's level, fitted on the owner's labels. The report reads the stored FACTS "
-            "of each blunder (the played move's Maia probability, the opponent's reply spread, "
-            "the depth-3 material of the played and best lines, both mate plies, the best "
-            "move's probability and the pre-blunder spread) and scores them with the Python "
+            "of each blunder (the played move's Maia probability, the stored material loss and "
+            "missed gain, each the decaying mean over the odd depths of the quiet-point "
+            "walk, and the opponent's reply probability on a losing row or the best move's "
+            "probability otherwise) and scores them with the Python "
             f"twin at the drill lambda ({FACEPALM_DRILL_LAMBDA}) and the constants and model of "
             "this checkout, never the stored score column, so a candidate refit is judged here "
             "before it ships. It is not a probability and not a share of peers; a blunder "

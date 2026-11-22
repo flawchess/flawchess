@@ -290,7 +290,7 @@ class MissCandidate:
     best_prob: float
     pre_spread: float
     material: MaterialType
-    # Signed 9-slot material arrays of the played and the best line (LineFacts.material_array);
+    # Signed 9-slot material lists of the played and the best line (LineFacts.material_array);
     # empty when not recorded (the set-7 test helpers).
     played_material: tuple[int | None, ...] = ()
     best_material: tuple[int | None, ...] = ()

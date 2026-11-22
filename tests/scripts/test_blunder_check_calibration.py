@@ -463,10 +463,8 @@ DEFAULT_REPLY_PROB = 0.9
 def _line_material_loss(
     played_material: tuple[int | None, ...] | None, mate_ply: int | None
 ) -> float | None:
-    """The loss a stored depth-3 line gives (the write-time rule's depth-3 reading)."""
-    return material_loss(
-        played_material, mate_ply, material_input="depth_3", loss_floor=FACEPALM_LOSS_FLOOR
-    )
+    """The loss the write-time rule gives a line (a lone depth-3 line: the depth-3 loss itself)."""
+    return material_loss(played_material, mate_ply, loss_floor=FACEPALM_LOSS_FLOOR)
 
 
 def _line_material_missed(
@@ -474,12 +472,11 @@ def _line_material_missed(
     best_material: tuple[int | None, ...] | None,
     best_mate_ply: int | None,
 ) -> float:
-    """The missed gain a stored depth-3 line pair gives."""
+    """The missed gain the write-time rule gives a line pair (lone depth-3 lines: the depth-3 gain)."""
     return material_missed(
         played_material,
         best_material,
         best_mate_ply,
-        material_input="depth_3",
         missed_floor=FACEPALM_MISSED_FLOOR,
         missed_cap=FACEPALM_MISSED_CAP,
         missed_mate=FACEPALM_MISSED_MATE,
