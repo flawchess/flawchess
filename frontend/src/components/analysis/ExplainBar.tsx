@@ -8,7 +8,7 @@
  *   - Punish: the refutation of the mistake (the ALLOWED line).
  * One row: the headline (move, severity badge, the facepalm score when the move is a facepalm and
  * the tactics as colored text, e.g. "c3 [blunder badge]: missed discovered-attack in 2" or
- * "Qf6+ [facepalm badge]: Facepalm 76% · missed checkmate in 7", up to two lines) then both buttons. Inside a
+ * "Qf6+ [facepalm badge]: Facepalm score 76% · missed checkmate in 7", up to two lines) then both buttons. Inside a
  * line the headline stays and the buttons become a line stepper then Got it (the other
  * line's button is hidden there).
  * Clickable tactic chips live in the move list only.
@@ -215,7 +215,7 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
       {(isFacepalm || hasTactics) && ' '}
       {isFacepalm && (
         <span data-testid="analysis-explain-facepalm" className="whitespace-nowrap text-foreground">
-          Facepalm {headline.facepalmPct}%
+          Facepalm score {headline.facepalmPct}%
         </span>
       )}
       {isFacepalm && hasTactics && HEADLINE_SCORE_SEPARATOR}
