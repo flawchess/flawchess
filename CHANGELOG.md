@@ -28,6 +28,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Facepalm score: the chips, the Explain bar and the facepalm explanation now read "Facepalm score x%", and the Library eval chart tooltip shows it on its own line.
 - Internal: removed the old per-depth material columns of the facepalm score; the score reads the stored material inputs.
 - Facepalm score: refitted on how a player reads the lines. An even trade in the engine's line no longer counts as a missed win, and how likely a player at your level was to see the punishing reply now enters the score. Facepalm chips, the Facepalm tag, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
 - Internal: each blunder now also stores the facepalm score's material inputs and how likely a player at the blunderer's level was to find the punishing reply, groundwork for the facepalm score refit (no visible change yet).
