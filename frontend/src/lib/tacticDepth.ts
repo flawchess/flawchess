@@ -98,9 +98,8 @@ export interface TacticDepthValue {
 // inside the backend filter (and the on-screen display), so the preset domain
 // must remain the shared stored-unit scale to avoid double-counting the shift.
 //
-// The bands are disjoint and inclusive, mirroring the Facepalm filter's
-// All / Low / Mid / High: displayed 1-based they read All 1-12, Low 1-2,
-// Mid 3-6, High 7-12.
+// The bands are disjoint and inclusive: displayed 1-based they read All 1-12,
+// Low 1-2, Mid 3-6, High 7-12.
 
 /** Upper edge of the Low preset (0-based depth; displays as 2). */
 const DEPTH_LOW_MAX = 1;

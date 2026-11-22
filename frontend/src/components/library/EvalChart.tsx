@@ -28,20 +28,23 @@
  * Mouse-leave reverts activePly to the slider value; at rest the slider defaults to
  * the last eval'd ply. The tooltip is self-positioned at the active datapoint's x
  * (flipping sides at the chart's midpoint): vertically centered on the chart while
- * hover-driven, bottom-aligned just above the thumb while slider-driven. Semi-
- * transparent so the chart stays readable beneath it; shown only while interacting
+ * hover-driven, bottom-aligned just above the thumb while slider-driven. Near-opaque
+ * (260-G1) so text stays legible over the chart marks beneath; shown only while interacting
  * (hover or slider focus on desktop; slider touch until an outside tap on mobile).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Cpu, Gauge } from 'lucide-react';
+import { Clock, Cpu } from 'lucide-react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { bestMoveDotSpec } from '@/lib/bestMoveDot';
-import { FACEPALM_TYPE_LABEL, FACEPALM_TYPE_STYLE, toFacepalmPct } from '@/lib/facepalm';
+import { FACEPALM_TYPE_LABEL, toFacepalmPct } from '@/lib/facepalm';
+import { BlunderIcon, FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
+import { flawMarkerColor } from '@/lib/flawDotColor';
+import { flawMoveCategory } from '@/lib/moveStatsCounts';
 import { isUserPly } from '@/lib/plyOwnership';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
@@ -58,20 +61,13 @@ import {
   EVAL_CHART_LINE,
   EVAL_CHART_PHASE_LABEL,
   EVAL_MARKER_FILTER_OUTLINE,
-  GREAT_ACCENT,
-  MAIA_ACCENT,
-  SEV_BLUNDER,
-  SEV_INACCURACY,
-  SEV_MISTAKE,
   TAC_ALLOWED,
   TAC_MISSED,
 } from '@/lib/theme';
 import { isRareMoveTier } from '@/types/library';
 import type {
   EvalPoint,
-  FacepalmType,
   FlawMarker,
-  FlawSeverity,
   FlawTag,
   PhaseTransitions,
 } from '@/types/library';
@@ -220,8 +216,17 @@ const SQUARE_HALF_SIDE_FACTOR = 0.85;
 /** White-outline stroke width for filter-matched flaw markers. */
 const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
 
-/** Inline glyph size (px) for MarkerGlyph in the tooltip flaw detail. */
-const GLYPH_BOX = 12;
+/** Drawn box (viewBox units) of the MarkerGlyph dot; FLAW_DOT_RADIUS is sized against it. */
+const GLYPH_VIEWBOX = 12;
+
+/** Rendered size (px) of MarkerGlyph, equal to the 14px of the other tooltip icons (h-3.5). */
+const GLYPH_RENDER_PX = 14;
+
+/** Shared 14px class of every icon in the eval chart tooltip. */
+const TOOLTIP_ICON_CLASS = 'h-3.5 w-3.5 shrink-0';
+
+/** Indent (icon width 14px + gap 6px) that aligns a sub-line under the text of an icon row. */
+const TOOLTIP_TEXT_INDENT_CLASS = 'pl-5';
 
 /** Active-ply dot radius — well under FLAW_DOT_RADIUS so flaw markers stay dominant. */
 const ACTIVE_DOT_RADIUS = 2;
@@ -283,13 +288,6 @@ function useIsCoarsePointer(): boolean {
     };
   }, []);
   return isCoarse;
-}
-
-/** Map FlawSeverity to its theme color constant. No inline literals. */
-function severityColor(sev: FlawSeverity): string {
-  if (sev === 'blunder') return SEV_BLUNDER;
-  if (sev === 'mistake') return SEV_MISTAKE;
-  return SEV_INACCURACY;
 }
 
 /**
@@ -441,7 +439,7 @@ function buildDotRenderer(
     if (marker.severity === 'inaccuracy' && !matched) {
       return <g key={`nodot-${payload.ply}`} />;
     }
-    const color = severityColor(marker.severity);
+    const color = flawMarkerColor(marker);
     // All matched dots enlarge for emphasis — including revealed inaccuracies, so
     // hovering the Inaccuracies badge shows them at the same size as highlighted
     // mistake/blunder dots.
@@ -530,46 +528,132 @@ function formatClock(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/**
- * Facepalm line of the eval-chart tooltip. 257 D-08 / D-10: tinted by the type (teal missed win,
- * crimson allowed loss) and the type is named in text, since the tooltip has no popover.
- * Exported for the unit test.
- */
-export function FacepalmTooltipLine({
-  score,
-  type,
-}: {
-  score: number;
-  type: FacepalmType;
-}): React.ReactElement {
-  return (
-    <div
-      className="flex items-center gap-1.5"
-      style={{ color: FACEPALM_TYPE_STYLE[type].color }}
-      data-testid="eval-chart-tooltip-facepalm"
-    >
-      {/* Icon inherits the line colour via currentColor. */}
-      <Gauge className="h-3 w-3 shrink-0" aria-hidden="true" />
-      <span>
-        Facepalm {toFacepalmPct(score)}% &middot; {FACEPALM_TYPE_LABEL[type].toLowerCase()}
-      </span>
-    </div>
-  );
-}
-
-/** Inline glyph matching the chart's flaw dot, for the tooltip flaw detail. */
+/** Inline glyph matching the chart's flaw dot, for the tooltip verdict of a mistake or inaccuracy. */
 function MarkerGlyph({ isUser, color }: { isUser: boolean; color: string }): React.ReactElement {
-  const c = GLYPH_BOX / 2;
+  const c = GLYPH_VIEWBOX / 2;
   return (
     <svg
-      width={GLYPH_BOX}
-      height={GLYPH_BOX}
-      viewBox={`0 0 ${GLYPH_BOX} ${GLYPH_BOX}`}
+      width={GLYPH_RENDER_PX}
+      height={GLYPH_RENDER_PX}
+      viewBox={`0 0 ${GLYPH_VIEWBOX} ${GLYPH_VIEWBOX}`}
       className="shrink-0"
       aria-hidden="true"
     >
       {flawDotElement(isUser, color, c, c, FLAW_DOT_RADIUS, 'glyph')}
     </svg>
+  );
+}
+
+/**
+ * Verdict row of the eval-chart tooltip, one line: "{You | Opponent} · {Label}" plus the facepalm
+ * score of a scored blunder, e.g. "You · Facepalm 95%" or "Opponent · Blunder 12%" (260-G1). The
+ * icon carries the colour (the "???" icon for a facepalm, the "??" icon for any other blunder, the
+ * flaw dot for a mistake or inaccuracy); the label is neutral text. Exported for the unit test.
+ */
+export function FlawTooltipVerdict({ marker }: { marker: FlawMarker }): React.ReactElement {
+  const isFacepalm = flawMoveCategory(marker) === 'facepalm';
+  const isBlunder = marker.severity === 'blunder';
+  const label = isFacepalm
+    ? 'Facepalm'
+    : marker.severity.charAt(0).toUpperCase() + marker.severity.slice(1);
+  const scoreText =
+    isBlunder && marker.facepalm_score != null ? ` ${toFacepalmPct(marker.facepalm_score)}%` : '';
+  let icon: React.ReactElement;
+  if (isFacepalm) {
+    icon = <FacepalmBlunderIcon className={TOOLTIP_ICON_CLASS} aria-hidden="true" />;
+  } else if (isBlunder) {
+    icon = <BlunderIcon className={TOOLTIP_ICON_CLASS} aria-hidden="true" />;
+  } else {
+    icon = <MarkerGlyph isUser={marker.is_user} color={flawMarkerColor(marker)} />;
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-foreground" data-testid="eval-chart-tooltip-verdict">
+      {icon}
+      <span>
+        {marker.is_user ? 'You' : 'Opponent'} &middot; {label}
+        {scoreText}
+      </span>
+    </div>
+  );
+}
+
+/** One family-mapped tactic row of the tooltip detail. */
+interface TooltipTactic {
+  orientation: 'missed' | 'allowed';
+  motif: string;
+  family: TacticFamily;
+  depth: number | null;
+}
+
+/**
+ * Flaw detail of the eval-chart tooltip: the verdict line, then the tactic rows and tag rows. Colour
+ * is on the icons only (orientation colour on a tactic icon, the tag colour on a tag icon); every
+ * label is neutral text (260-G1). A scored blunder without a tactic row names its facepalm type in
+ * words ("allowed loss" / "missed win"), since nothing else says it; with a tactic row the
+ * "missed:" / "allowed:" prefix already does. Exported for the unit test.
+ */
+export function FlawTooltipDetail({
+  marker,
+  tactics,
+  tags,
+}: {
+  marker: FlawMarker;
+  tactics: TooltipTactic[];
+  tags: FlawTag[];
+}): React.ReactElement {
+  const showType =
+    tactics.length === 0 &&
+    marker.severity === 'blunder' &&
+    marker.facepalm_score != null &&
+    marker.facepalm_type != null;
+  return (
+    <>
+      <FlawTooltipVerdict marker={marker} />
+      {showType && marker.facepalm_type != null && (
+        <div
+          className={`${TOOLTIP_TEXT_INDENT_CLASS} text-foreground`}
+          data-testid="eval-chart-tooltip-facepalm-type"
+        >
+          {FACEPALM_TYPE_LABEL[marker.facepalm_type].toLowerCase()}
+        </div>
+      )}
+      {(tactics.length > 0 || tags.length > 0) && (
+        <ul className="flex flex-col gap-0.5 text-muted-foreground">
+          {/* Tactic motifs listed first, each prefixed with its missed/allowed orientation to
+              match the dual-orientation chips. */}
+          {tactics.map(({ orientation, motif, family, depth }) => {
+            const TacticIcon = TACTIC_FAMILY_ICON[family];
+            // Orientation colour (missed = teal, allowed = crimson) sits on the icon only.
+            const orientationColor = orientation === 'allowed' ? TAC_ALLOWED : TAC_MISSED;
+            return (
+              <li key={`${orientation}-${motif}`} className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-1.5 text-foreground">
+                  <TacticIcon className={TOOLTIP_ICON_CLASS} style={{ color: orientationColor }} />
+                  {orientation}: {tacticMotifLabel(motif)}
+                </span>
+                {/* Depth on its own line, indented to align under the motif text. */}
+                {depth != null && (
+                  <span className={TOOLTIP_TEXT_INDENT_CLASS}>
+                    {/* anchored=false: the eval-chart tooltip is a navigable surface, so the
+                        allowed +1 offset is dropped (allowed reads on the same scale as missed). */}
+                    depth {toDisplayDepthForOrientation(depth, orientation, false)}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+          {tags.map((t) => {
+            const TagIcon = TAG_ICONS[t];
+            return (
+              <li key={t} className="flex items-center gap-1.5">
+                <TagIcon className={TOOLTIP_ICON_CLASS} style={{ color: getTagColor(t) }} />
+                {t}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -910,19 +994,9 @@ export function EvalChart({
   // Tactic motifs for the active marker — listed first in the tooltip,
   // above the flaw tags. Family-mapped only. Both orientations are listed
   // with a "missed:"/"allowed:" prefix. Missed is always listed before Allowed.
-  const tooltipTactics: {
-    orientation: 'missed' | 'allowed';
-    motif: string;
-    family: TacticFamily;
-    depth: number | null;
-  }[] = (() => {
+  const tooltipTactics: TooltipTactic[] = (() => {
     if (activeMarker == null) return [];
-    const out: {
-      orientation: 'missed' | 'allowed';
-      motif: string;
-      family: TacticFamily;
-      depth: number | null;
-    }[] = [];
+    const out: TooltipTactic[] = [];
     const add = (
       raw: string | null,
       orientation: 'missed' | 'allowed',
@@ -1154,7 +1228,7 @@ export function EvalChart({
 
       {/* Floating tooltip — self-positioned at the active datapoint's x (centered
           while hovering, bottom-aligned while slider-driven), flipping sides at the
-          midpoint. Semi-transparent so the eval bar stays readable beneath it;
+          midpoint. Near-opaque (260-G1) so text stays legible over the chart marks beneath it;
           pointer-events-none so it never steals the chart's hover. Shown only while
           interacting (hover / slider focus). */}
       {tooltipVisible && (
@@ -1168,18 +1242,18 @@ export function EvalChart({
             }, ${hoverDriven ? '-50%' : '0'})`,
           }}
         >
-          <ChartTooltipBox className="bg-background/70 backdrop-blur-[2px] whitespace-nowrap">
+          <ChartTooltipBox className="bg-background/85 text-sm whitespace-nowrap">
             <div className="flex items-center gap-1 text-muted-foreground">
               <span>{moveLabel}</span>
               <span>&middot;</span>
-              <Cpu className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <Cpu className={TOOLTIP_ICON_CLASS} aria-hidden="true" />
               <span>{evalStr}</span>
             </div>
             {(activePoint?.clock_seconds != null || activePoint?.move_seconds != null) && (
               <div className="flex items-center gap-1 text-muted-foreground">
                 {activePoint.clock_seconds != null && (
                   <>
-                    <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <Clock className={TOOLTIP_ICON_CLASS} aria-hidden="true" />
                     {formatClock(activePoint.clock_seconds)}
                   </>
                 )}
@@ -1190,88 +1264,17 @@ export function EvalChart({
               </div>
             )}
             {!activeMarker && activeTier && (
-              <div
-                className="flex items-center gap-1.5"
-                style={{ color: activeTier === 'gem' ? MAIA_ACCENT : GREAT_ACCENT }}
-              >
+              <div className="flex items-center gap-1.5 text-foreground">
                 {activeTier === 'gem' ? (
-                  <GemIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <GemIcon className={TOOLTIP_ICON_CLASS} aria-hidden="true" />
                 ) : (
-                  <GreatMoveIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <GreatMoveIcon className={TOOLTIP_ICON_CLASS} aria-hidden="true" />
                 )}
                 <span>{activeTier === 'gem' ? 'Gem' : 'Great'}</span>
               </div>
             )}
             {activeMarker && (
-              <>
-                <div
-                  className="flex items-center gap-1.5"
-                  style={{ color: severityColor(activeMarker.severity) }}
-                >
-                  <MarkerGlyph
-                    isUser={activeMarker.is_user}
-                    color={severityColor(activeMarker.severity)}
-                  />
-                  <span>
-                    {activeMarker.is_user ? 'You' : 'Opponent'} &middot;{' '}
-                    {activeMarker.severity.charAt(0).toUpperCase() + activeMarker.severity.slice(1)}
-                  </span>
-                </div>
-                {/* Facepalm score of a scored blunder, on its own line below the verdict. */}
-                {activeMarker.severity === 'blunder' &&
-                  activeMarker.facepalm_score != null &&
-                  activeMarker.facepalm_type != null && (
-                    <FacepalmTooltipLine
-                      score={activeMarker.facepalm_score}
-                      type={activeMarker.facepalm_type}
-                    />
-                  )}
-                {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
-                  <ul className="flex flex-col gap-0.5 text-muted-foreground">
-                    {/* Tactic motifs listed first, each prefixed with its
-                        missed/allowed orientation to match the dual-orientation chips. */}
-                    {tooltipTactics.map(({ orientation, motif, family, depth }) => {
-                      const TacticIcon = TACTIC_FAMILY_ICON[family];
-                      // Orientation drives the row color (missed = teal, allowed = crimson),
-                      // matching the dual-orientation TacticMotifChip.
-                      const orientationColor =
-                        orientation === 'allowed' ? TAC_ALLOWED : TAC_MISSED;
-                      return (
-                        <li
-                          key={`${orientation}-${motif}`}
-                          className="flex flex-col gap-0.5"
-                          style={{ color: orientationColor }}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            {/* Icon inherits the row color via currentColor. */}
-                            <TacticIcon className="h-3 w-3 shrink-0" />
-                            {orientation}: {tacticMotifLabel(motif)}
-                          </span>
-                          {/* Depth on its own line, indented to align under the motif
-                              text (icon width + gap = 12px + 6px). */}
-                          {depth != null && (
-                            <span className="pl-[18px]">
-                              {/* anchored=false: the eval-chart tooltip is a navigable
-                                  surface, so the allowed +1 offset is dropped (allowed
-                                  reads on the same scale as missed). */}
-                              depth {toDisplayDepthForOrientation(depth, orientation, false)}
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                    {tooltipTags.map((t) => {
-                      const TagIcon = TAG_ICONS[t];
-                      return (
-                        <li key={t} className="flex items-center gap-1.5">
-                          <TagIcon className="h-3 w-3 shrink-0" style={{ color: getTagColor(t) }} />
-                          {t}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </>
+              <FlawTooltipDetail marker={activeMarker} tactics={tooltipTactics} tags={tooltipTags} />
             )}
           </ChartTooltipBox>
         </div>

@@ -827,6 +827,68 @@ Plans:
 **Wave 15** *(blocked on Wave 14 completion)*
 - [x] 259-15-PLAN.md — human-gated drop release (D-06)
 
+### Phase 260: Facepalm as a First-Class Move Quality (SEED-261122-j9p)
+
+**Goal**: Give facepalm blunders (the blunders a player should have avoided at their level) their own slot
+wherever move qualities are listed, so a player can go straight to them and compare both sides. Today the
+game card's move quality table and the Flaws filter buttons treat every blunder alike. Decisions in the seed
+("Decisions locked in the explore session", 2026-11-22).
+
+- **Game card table (`MoveStats`):** an 8th two-sided "Facepalm" row with the ??? icon, a main category like
+  the other rows, and its cell cycles through the facepalm plies. A facepalm is a blunder with a facepalm score
+  at or above `FACEPALM_HIGH_CUTOFF` (`isFacepalmBlunder`); an unscored blunder is never one.
+- **Mobile compact row:** Gem, Great, Best, Mistake, Blunder, Facepalm, chevron. Inaccuracy and Good drop out
+  of the compact row; the expanded table keeps all 8 rows.
+- **Terminology:** "Blunder" keeps its Lichess meaning (facepalms included) across the app. No blanket copy
+  change.
+- **Eval chart:** facepalm blunders get a dark red dot, distinct from the regular blunder dot. Reuse the darker
+  facepalm tone of the Flaws Timeline band if it fits before adding a theme constant.
+- **Flaws filter:** three OR tags, Facepalm, Blunder and Mistake (singular labels, in that order). Blunder means blunders that are not
+  facepalms, as in the card table. The Facepalm Score range filter is removed, in the UI and in the API
+  (`min_facepalm_pct` / `max_facepalm_pct`). Accepted loss: no filter for very hard-to-see blunders.
+- **Blunder row:** in the card table Blunder and Facepalm are disjoint; together they match the Lichess
+  blunder count.
+- **Desktop card:** the miniboard grows with the 8-row table so both end level.
+- **Scope:** frontend and backend. The severity filter of the shared flaw clause builder gains the facepalm
+  value; the removal of the range parameters is the last plan and runs after Phase 259 has merged. No
+  migration. Decisions in `260-CONTEXT.md`.
+- **Parallel with Phase 259:** the cut and its presets in `frontend/src/lib/facepalm.ts` belong to plan 259-12.
+  This phase reads the constant and never states the cut as a literal in code, copy or tests, and does not edit
+  the cutoff or preset values.
+
+**Depends on**: Phase 253 (facepalm score in the Library UI) and Phase 257. Built in its own worktree
+(`.claude/worktrees/phase-260`) in parallel with Phase 259, which has changed no frontend file. The final
+visual UAT and the merge wait for Phase 259's switch release (plan 259-12), since the refit changes which
+blunders count as facepalms.
+**Requirements**: TBD (decisions D-01 to D-28 in 260-CONTEXT.md)
+**Plans:** 9/9 plans complete
+
+Plans:
+**Wave 1**
+- [x] 260-01-PLAN.md — backend: severity=facepalm in the shared clause builder (D-12) and opponent facepalm scores on the card payloads (D-24)
+- [x] 260-02-PLAN.md — move quality table split: 8th Facepalm row, compact row, popover, cycling, desktop card geometry
+
+**Wave 2** *(blocked on Wave 1 completion; frontend plans run one at a time in the shared checkout)*
+- [x] 260-03-PLAN.md — frontend removal of the Facepalm Score range filter (D-14)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 260-04-PLAN.md — eval chart: dark red facepalm dots and the "Facepalm" tooltip
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 260-05-PLAN.md — Flaws filter: Facepalm, Blunder, Mistake tags and the "all three = none" state rules
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 260-06-PLAN.md — filter ring on the move quality cells, Gem and Great included, and on the SeverityBadge (D-20, D-27, D-28)
+
+**Wave 6** *(blocked on Wave 5 and on Phase 259 merged to main, branch rebased)*
+- [x] 260-07-PLAN.md — backend range-parameter removal (D-13), CHANGELOG, full pre-merge gate, final UAT list
+
+**Wave 7** *(gap closure from 260-UAT.md; blocked on Wave 6 completion)*
+- [x] 260-08-PLAN.md — gap closure (260-G1, G2, G3): one severity chip on the Flaws card with the facepalm popover, solid dark red Facepalm tag and chip, filter divider below Flaws
+
+**Wave 8** *(blocked on Wave 7 completion; frontend plans run one at a time in the shared checkout)*
+- [x] 260-09-PLAN.md — gap closure (260-G1, G2): move-list icons carry the facepalm popover, footer line names the score, eval chart tooltip in one neutral line, CHANGELOG, frontend gate
+
 ### Phase 261: Blunder-Check Exploration Arm (SEED-261121-t50)
 
 **Goal**: Serve about 20% of blunder windows from a random draw with no facepalm-score cut, record what was

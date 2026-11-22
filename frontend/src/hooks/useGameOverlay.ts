@@ -29,7 +29,7 @@ import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import type { EvalPoint, FlawMarker, FlawSeverity } from '@/types/library';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
 import type { PvLine } from '@/hooks/uciParser';
-import { isFacepalmBlunder } from '@/lib/facepalm';
+import { flawMoveCategory } from '@/lib/moveStatsCounts';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import {
@@ -131,7 +131,7 @@ function buildPlyMaps(
   const depthByPly = new Map<number, { missed?: string; allowed?: string }>();
   for (const fm of flawMarkers ?? []) {
     severityByPly.set(fm.ply, fm.severity);
-    if (fm.severity === 'blunder' && isFacepalmBlunder(fm.facepalm_score)) facepalmPlies.add(fm.ply);
+    if (flawMoveCategory(fm) === 'facepalm') facepalmPlies.add(fm.ply);
     // Opponent tactic arrows (crimson allowed / teal missed) are surfaced in
     // the eval-chart tooltip (built separately in EvalChart) but NOT on the board — suppress
     // the opponent's tactic depths here so no tactic arrow paints for them (the move list does

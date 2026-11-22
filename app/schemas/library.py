@@ -97,8 +97,8 @@ class FlawMarker(BaseModel):
     # 0-based ply depth of the missed tactic; None when its motif chip is hidden.
     missed_tactic_depth: int | None = None
     # Raw 0..1 score computed at query time by facepalm_expr(FACEPALM_LIBRARY_LAMBDA) over the
-    # stored facts (254 D-01), None when the flaw row carries none (today only the user's own
-    # blunders are scored). Same value and flooring as FlawListItem.facepalm_score. A ranking,
+    # stored facts (254 D-01), None when the flaw row carries none (blunders of both sides are
+    # scored since 260 D-24; the Flaws list and drill stay user-only). Same value and flooring as FlawListItem.facepalm_score. A ranking,
     # not a probability.
     facepalm_score: float | None = None
     # 257 D-08: missed win / allowed loss of the same row. Same source and same blunder gate as

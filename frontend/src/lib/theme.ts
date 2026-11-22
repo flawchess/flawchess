@@ -518,13 +518,20 @@ export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 // 257 D-17: the Flaws Timeline splits the Blunders area into two stacked transparent bands
 // under the unchanged Blunders line: facepalm blunders at the bottom in a darker red, the other
 // blunders above in the Blunders red. Untyped (D-04), so neither type tint (teal / crimson).
-export const FACEPALM_BAND_FILL = 'oklch(0.42 0.17 25 / 0.70)';
+// The one source of the facepalm dark red (L C H); the band fill and the swatch below are
+// both built from it so retuning the hue cannot leave one of them behind.
+const FACEPALM_OKLCH = '0.42 0.17 25';
+export const FACEPALM_BAND_FILL = `oklch(${FACEPALM_OKLCH} / 0.70)`;
 export const OTHER_BLUNDER_BAND_FILL = 'oklch(0.58 0.19 25 / 0.25)';
 // The legend / tooltip swatch of the facepalm band: the band hue without the transparency.
-export const FACEPALM_BAND_SWATCH = 'oklch(0.42 0.17 25)';
+export const FACEPALM_BAND_SWATCH = `oklch(${FACEPALM_OKLCH})`;
 // The "???" facepalm-blunder badge dot: the band's dark red, so the badge, the band and the
 // KPI tile read as one concept and stay distinct from the brighter "??" blunder red.
 export const SEV_FACEPALM = FACEPALM_BAND_SWATCH;
+// The light label on the solid Facepalm fill (selected Facepalm tag, Facepalm severity chip).
+// A fixed near-white, not the theme foreground token, because the fill is dark red in every
+// theme. Dark red text on a 14% tint failed UAT for contrast (260-G1).
+export const SEV_FACEPALM_ON = 'oklch(0.985 0 0)';
 
 // Primary line of the per-opening Score over time chart (expanded repertoire row): the
 // rolling expected score from the opening eval.

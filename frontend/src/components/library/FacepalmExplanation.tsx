@@ -1,8 +1,8 @@
 /**
  * The Facepalm score explanation, shared by every surface that shows the score:
- * the Flaws card chip popover (FacepalmBadgePopover) and the analysis move-list
- * mini-chip and "???" glyph (FacepalmMoveChip). One copy, so the wording never drifts.
- * 257 D-10: one line names the facepalm type in words, so the chip tint is never the only signal.
+ * the Flaws card severity chip popover (FacepalmBadgePopover) and the analysis move-list
+ * "??" / "???" glyph (FacepalmGlyphBadge). One copy, so the wording never drifts.
+ * 257 D-10: one line names the facepalm type in words.
  */
 
 import { Gauge } from 'lucide-react';

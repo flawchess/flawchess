@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import itertools
 import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -36,7 +37,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.game_flaw import GameFlaw
-from app.repositories.library_repository import _FACEPALM_PCT_SCALE
 from app.services import blunder_check_rules
 from app.services.blunder_check_rules import (
     FACEPALM_BEST_PROB_COEF,
@@ -706,17 +706,28 @@ def test_window_14_is_not_selected_by_the_shipped_model() -> None:
 # 257 D-01: the stats cut. 257 D-02: the facepalm type rule
 # ---------------------------------------------------------------------------
 
-# The Facepalm filter's High preset lower bound in whole percents (frontend/src/lib/facepalm.ts
-# FACEPALM_HIGH_CUTOFF), so a stats row counts exactly the blunders the High preset lists.
-HIGH_PRESET_PCT = 70
-STATS_MIN_VALUE = 0.7
+# The frontend's Facepalm tag cut in whole percents (frontend/src/lib/facepalm.ts
+# FACEPALM_HIGH_CUTOFF), parsed from the file so the backend stats cut cannot drift from it
+# unnoticed (parity-test precedent: tests/schemas/test_train_telemetry_parity.py).
+_FACEPALM_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/facepalm.ts"
+_HIGH_CUTOFF_PATTERN = re.compile(r"export const FACEPALM_HIGH_CUTOFF = (\d+);")
+# The frontend states the cut in whole percents, the backend as a 0..1 score.
+_PERCENT_SCALE = 100.0
 
 
-def test_facepalm_stats_min_is_the_high_preset_cut() -> None:
+def _frontend_facepalm_cutoff_pct() -> int:
+    match = _HIGH_CUTOFF_PATTERN.search(_FACEPALM_TS.read_text())
+    assert match is not None, (
+        "FACEPALM_HIGH_CUTOFF declaration not found in frontend/src/lib/facepalm.ts"
+    )
+    return int(match.group(1))
+
+
+def test_facepalm_stats_min_is_the_frontend_facepalm_cut() -> None:
     # Read through the module so a missing constant fails this assertion, not the file's import.
     stats_min = getattr(blunder_check_rules, "FACEPALM_STATS_MIN", None)
-    assert stats_min == STATS_MIN_VALUE
-    assert stats_min == HIGH_PRESET_PCT / _FACEPALM_PCT_SCALE
+    assert stats_min is not None
+    assert stats_min == _frontend_facepalm_cutoff_pct() / _PERCENT_SCALE
     # 259 D-15: the drill cut moved to 0.70 and now equals the stats cut in value; they stay two
     # constants (257 D-01) so either can move alone, hence no value inequality is asserted.
     assert "FACEPALM_STATS_MIN" in vars(blunder_check_rules)

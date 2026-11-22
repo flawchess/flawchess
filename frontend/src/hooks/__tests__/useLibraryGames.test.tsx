@@ -33,6 +33,7 @@ vi.mock('@/api/client', async () => {
 import { libraryApi } from '@/api/client';
 import { useLibraryFlaws, useLibraryGames } from '../useLibrary';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
+import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 
 function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
@@ -91,6 +92,56 @@ describe('useLibraryGames flaw-filter params', () => {
     const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
     expect(params.severity).toEqual(['blunder', 'mistake']);
     expect(params.tag).toEqual(['miss']);
+  });
+
+  it('sends the Facepalm tag as severity=facepalm', async () => {
+    renderHook(
+      () => useLibraryGames(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER, severity: ['facepalm'] }, 0, 20),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.severity).toEqual(['facepalm']);
+  });
+
+  it('does not send severity when all three tags are selected, even with a tag narrowing', async () => {
+    renderHook(
+      () =>
+        useLibraryGames(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, severity: ['mistake', 'facepalm', 'blunder'], tags: ['miss'] },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.severity).toBeUndefined();
+    expect(params.tag).toEqual(['miss']);
+  });
+
+  it('sends severity=facepalm&mistake to the Flaws list', async () => {
+    vi.mocked(libraryApi.getFlaws).mockReset();
+    vi.mocked(libraryApi.getFlaws).mockResolvedValue(
+      EMPTY_FLAWS_RESPONSE as unknown as Awaited<ReturnType<typeof libraryApi.getFlaws>>,
+    );
+    renderHook(
+      () =>
+        useLibraryFlaws(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, severity: ['facepalm', 'mistake'] },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
+    expect(params.severity).toEqual(['facepalm', 'mistake']);
   });
 
   // Tactic filters threaded to the Games tab.
@@ -161,7 +212,14 @@ describe('useLibraryGames flaw-filter params', () => {
 
 const EMPTY_FLAWS_RESPONSE = { flaws: [], matched_count: 0, total: 0 };
 
-describe('useLibraryFlaws facepalm params', () => {
+// A stale filter object (old in-memory state) may still carry the removed range fields.
+const STALE_RANGE_FILTER = {
+  ...DEFAULT_FLAW_FILTER,
+  facepalmMin: 70,
+  facepalmMax: 100,
+} as unknown as FlawFilterState;
+
+describe('useLibraryFlaws sends no facepalm range params', () => {
   beforeEach(() => {
     vi.mocked(libraryApi.getFlaws).mockReset();
     vi.mocked(libraryApi.getFlaws).mockResolvedValue(
@@ -169,8 +227,11 @@ describe('useLibraryFlaws facepalm params', () => {
     );
   });
 
-  it('sends no facepalm keys at the default flaw filter (D-04)', async () => {
-    renderHook(() => useLibraryFlaws(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER }, 0, 20), {
+  it.each([
+    ['the default flaw filter', { ...DEFAULT_FLAW_FILTER }],
+    ['a stale filter carrying range fields', STALE_RANGE_FILTER],
+  ])('sends no facepalm keys for %s', async (_label, flawFilter) => {
+    renderHook(() => useLibraryFlaws(DEFAULT_FILTERS, flawFilter, 0, 20), {
       wrapper: makeWrapper(),
     });
 
@@ -179,52 +240,19 @@ describe('useLibraryFlaws facepalm params', () => {
     expect('min_facepalm_pct' in params).toBe(false);
     expect('max_facepalm_pct' in params).toBe(false);
   });
-
-  it('sends 70 and 100 for the High range', async () => {
-    renderHook(
-      () =>
-        useLibraryFlaws(
-          DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 },
-          0,
-          20,
-        ),
-      { wrapper: makeWrapper() },
-    );
-
-    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
-    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
-    expect(params.min_facepalm_pct).toBe(70);
-    expect(params.max_facepalm_pct).toBe(100);
-  });
-
-  it('sends 0 and 30 for the Low range (handles 0/30)', async () => {
-    renderHook(
-      () =>
-        useLibraryFlaws(
-          DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 0, facepalmMax: 30 },
-          0,
-          20,
-        ),
-      { wrapper: makeWrapper() },
-    );
-
-    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
-    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
-    expect(params.min_facepalm_pct).toBe(0);
-    expect(params.max_facepalm_pct).toBe(30);
-  });
 });
 
-describe('useLibraryGames facepalm params', () => {
+describe('useLibraryGames sends no facepalm range params', () => {
   beforeEach(() => {
     vi.mocked(libraryApi.getGames).mockReset();
     vi.mocked(libraryApi.getGames).mockResolvedValue(EMPTY_RESPONSE);
   });
 
-  it('sends no facepalm keys at the default flaw filter (D-04)', async () => {
-    renderHook(() => useLibraryGames(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER }, 0, 20), {
+  it.each([
+    ['the default flaw filter', { ...DEFAULT_FLAW_FILTER }],
+    ['a stale filter carrying range fields', STALE_RANGE_FILTER],
+  ])('sends no facepalm keys for %s', async (_label, flawFilter) => {
+    renderHook(() => useLibraryGames(DEFAULT_FILTERS, flawFilter, 0, 20), {
       wrapper: makeWrapper(),
     });
 
@@ -234,43 +262,7 @@ describe('useLibraryGames facepalm params', () => {
     expect('max_facepalm_pct' in params).toBe(false);
   });
 
-  it('sends 70 and 100 for the High range', async () => {
-    renderHook(
-      () =>
-        useLibraryGames(
-          DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 },
-          0,
-          20,
-        ),
-      { wrapper: makeWrapper() },
-    );
-
-    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
-    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
-    expect(params.min_facepalm_pct).toBe(70);
-    expect(params.max_facepalm_pct).toBe(100);
-  });
-
-  it('sends 30 and 70 for the Mid range (handles 30/70)', async () => {
-    renderHook(
-      () =>
-        useLibraryGames(
-          DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 30, facepalmMax: 70 },
-          0,
-          20,
-        ),
-      { wrapper: makeWrapper() },
-    );
-
-    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
-    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
-    expect(params.min_facepalm_pct).toBe(30);
-    expect(params.max_facepalm_pct).toBe(70);
-  });
-
-  it('refetches when only the facepalm range changes (query key)', async () => {
+  it('does not refetch when only stale range fields change (they are not in the query key)', async () => {
     // One shared client: makeWrapper() builds a fresh client per render, which would
     // refetch on rerender regardless of the query key and make this test vacuous.
     const sharedClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -281,12 +273,13 @@ describe('useLibraryGames facepalm params', () => {
       ({ flawFilter }) => useLibraryGames(DEFAULT_FILTERS, flawFilter, 0, 20),
       {
         wrapper: sharedWrapper,
-        initialProps: { flawFilter: { ...DEFAULT_FLAW_FILTER } },
+        initialProps: { flawFilter: { ...DEFAULT_FLAW_FILTER } as FlawFilterState },
       },
     );
 
     await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalledTimes(1));
-    rerender({ flawFilter: { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 } });
-    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalledTimes(2));
+    rerender({ flawFilter: STALE_RANGE_FILTER });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalledTimes(1);
   });
 });

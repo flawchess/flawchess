@@ -33,8 +33,10 @@ from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
+    FLAW_SEVERITY_FILTER_VALUES,
     FacepalmChipValue,
     FacepalmGameCounts,
+    FlawSeverityFilter,
     RecentWindowRow,
     TacticOrientation,
     MIN_TACTIC_CHIP_CONFIDENCE,
@@ -209,7 +211,7 @@ def _build_eval_series(
                        get a best/good label. Defaults to 0 (no book gate).
         facepalm_by_ply: Optional dict mapping flaw ply -> FacepalmChipValue (raw 0..1
                        facepalm score plus its 257 D-02 type) from game_flaws (scored
-                       owner-side rows only). None/missing entry ->
+                       rows of both sides, 260 D-24). None/missing entry ->
                        FlawMarker.facepalm_score and .facepalm_type stay null.
 
     Returns:
@@ -965,8 +967,6 @@ async def get_library_games(
     tactic_orientation: Literal["either", "missed", "allowed"] = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -1026,8 +1026,6 @@ async def get_library_games(
             tactic_orientation=tactic_orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
-            min_facepalm_pct=min_facepalm_pct,
-            max_facepalm_pct=max_facepalm_pct,
             offset=offset,
             limit=limit,
             opponent_gap_min=opponent_gap_min,
@@ -1423,15 +1421,17 @@ async def get_flaw_stats(
 # Flaws subtab — GET /api/library/flaws
 # ---------------------------------------------------------------------------
 
-# Default severity tiers when none are specified (M+B only)
-_DEFAULT_SEVERITY: list[FlawSeverity] = ["mistake", "blunder"]
+# Default severity tags when none are specified: all three tags, which is the full mistake +
+# blunder set. Two tags (mistake + blunder) would now drop facepalm blunders, because Blunder
+# means "not a facepalm" in the Flaws filter (260 D-08, research Pitfall 2).
+_DEFAULT_SEVERITY: list[FlawSeverityFilter] = list(FLAW_SEVERITY_FILTER_VALUES)
 
 
 async def get_library_flaws(
     session: AsyncSession,
     user_id: int,
     *,
-    severity: list[FlawSeverity],
+    severity: list[FlawSeverityFilter],
     tags: list[FlawTag],
     time_control: list[str] | None,
     platform: list[str] | None,
@@ -1444,8 +1444,6 @@ async def get_library_flaws(
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     include_pasted: bool = False,
@@ -1455,7 +1453,8 @@ async def get_library_flaws(
     Each row is one flawed position from game_flaws, ordered recent-first
     (g.played_at DESC, f.ply ASC), with page size 20.
 
-    Severity defaults to M+B when unset. User-scoped (IDOR: user_id
+    Severity defaults to all three tags (facepalm / blunder / mistake, the full mistake +
+    blunder set) when unset. User-scoped (IDOR: user_id
     comes from the authenticated user only — the caller must never derive it
     from a request parameter). Predicate shared with the Games EXISTS filter
     (build_flaw_filter_clauses) to enforce cross-tab unification.
@@ -1463,8 +1462,8 @@ async def get_library_flaws(
     Args:
         session: AsyncSession for DB access.
         user_id: Authenticated user's ID — always scopes the query (IDOR).
-        severity: Severity tiers from the request. Caller defaults to M+B
-                  when empty (router) or explicitly defaults here.
+        severity: Severity tags from the request (260 D-08). Empty defaults to all
+                  three tags here.
         tags: FlawTag values to filter on (phase tags excluded at HTTP layer).
         time_control / platform / rated / opponent_type / from_date / to_date /
           color: Game-metadata filters.
@@ -1497,8 +1496,6 @@ async def get_library_flaws(
             orientation=tactic_orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
-            min_facepalm_pct=min_facepalm_pct,
-            max_facepalm_pct=max_facepalm_pct,
             offset=offset,
             limit=limit,
         )

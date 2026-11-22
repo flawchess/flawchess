@@ -10,9 +10,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FacepalmBadgePopover } from '../FacepalmBadgePopover';
+import { FACEPALM_HIGH_CUTOFF, facepalmScoreLabel } from '@/lib/facepalm';
 
 const TEST_ID = 'facepalm-badge-7-24';
 const POPOVER_ID = `${TEST_ID}-popover`;
+const PCT_SCALE = 100;
 const OPEN_DELAY_MS = 100;
 const CLOSE_GRACE_MS = 80;
 
@@ -69,6 +71,19 @@ function focusEl(el: HTMLElement): void {
 describe('FacepalmBadgePopover content and name', () => {
   it('names the trigger with Facepalm, the percent and the type', () => {
     expect(trigger().getAttribute('aria-label')).toBe('Facepalm 94%, allowed loss');
+  });
+
+  it('names a below-cut trigger a blunder, not a facepalm', () => {
+    cleanup();
+    const score = (FACEPALM_HIGH_CUTOFF - 10) / PCT_SCALE;
+    render(
+      <FacepalmBadgePopover testId="facepalm-badge-8-30" score={score} type="missed_win">
+        <span>Blunder</span>
+      </FacepalmBadgePopover>,
+    );
+    expect(screen.getByTestId('facepalm-badge-8-30').getAttribute('aria-label')).toBe(
+      facepalmScoreLabel(score, 'missed_win'),
+    );
   });
 
   it('names the type in the popover body', () => {

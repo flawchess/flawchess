@@ -23,7 +23,7 @@ import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { isFacepalmBlunder } from '@/lib/facepalm';
-import { FacepalmChip } from '@/components/library/FacepalmChip';
+import { FacepalmBadgePopover } from '@/components/library/FacepalmBadgePopover';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
@@ -79,12 +79,46 @@ function formatClock(clockSec: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// Hover affordance for the severity chip when it is the facepalm popover trigger, so it reads as tappable.
+const FLAW_CHIP_TRIGGER_CLASS = 'transition-all hover:-translate-y-px hover:brightness-125';
+
+/**
+ * The one severity chip of a Flaws card (260-G2): "??? Facepalm" for a facepalm blunder, "?? Blunder" for
+ * any other blunder, "? Mistake" for a mistake. For a scored blunder (score and type present, 257 D-09)
+ * it is the trigger of the facepalm popover; the testid stays numeric-only so the Umami target is unchanged.
+ */
+function FlawSeverityChip({ flaw }: { flaw: FlawListItem }) {
+  const { facepalm_score: score, facepalm_type: type } = flaw;
+  const scored = flaw.severity === 'blunder' && score != null && type != null;
+  const badge = (
+    <SeverityBadge
+      severity={flaw.severity}
+      count={1}
+      gameId={flaw.game_id}
+      showCount={false}
+      showIcon
+      facepalm={isFacepalmBlunder(score)}
+      className={scored ? FLAW_CHIP_TRIGGER_CLASS : undefined}
+    />
+  );
+  if (!scored) return badge;
+  return (
+    <FacepalmBadgePopover
+      testId={`facepalm-badge-${flaw.game_id}-${flaw.ply}`}
+      score={score}
+      type={type}
+    >
+      {badge}
+    </FacepalmBadgePopover>
+  );
+}
+
 /**
  * FlawCard — one flawed-move card for the Flaws subtab grid.
  *
  * Replicates the LibraryGameCard visual language: banded header with the
  * opponent + exact-ply platform deep-link, a miniboard with the flaw-move
- * arrow, standard-notation move + user-POV eval swing, severity badge,
+ * arrow, standard-notation move + user-POV eval swing, one severity chip (the facepalm popover trigger on a scored blunder),
  * family-colored tag chips, TagLegend, and metadata. An Analyze button below
  * the body opens /analysis at the flaw ply.
  *
@@ -341,32 +375,15 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     return motifs;
   })();
 
-  // Tags row — severity badge, the Facepalm chip (scored blunders), then the tactic-motif chip(s), then a second
+  // Tags row — the one severity chip (Facepalm / Blunder / Mistake), then the tactic-motif chip(s), then a second
   // (basis-full) line carrying the family-colored context flaw-tag chips followed by a
   // single brown Tags-icon legend explaining every tag listed except severity.
   // Shared by the mobile (full-width row) and desktop
   // (right-of-board column) bodies. Always rendered (every flaw has a severity).
   const tagsRow = (
     <div className="flex flex-wrap items-center gap-1.5">
-      {/* Severity badge — singular, count-less (one flaw per card). */}
-      <SeverityBadge
-        severity={flaw.severity}
-        count={1}
-        gameId={flaw.game_id}
-        showCount={false}
-        showIcon
-        facepalm={isFacepalmBlunder(flaw.facepalm_score)}
-      />
-      {/* Facepalm chip: its own pill after the severity badge. D-17: scored blunders only.
-          257 D-09: a chip without a type does not exist, so it needs score and type. */}
-      {flaw.severity === 'blunder' && flaw.facepalm_score != null && flaw.facepalm_type != null && (
-        <FacepalmChip
-          score={flaw.facepalm_score}
-          type={flaw.facepalm_type}
-          gameId={flaw.game_id}
-          ply={flaw.ply}
-        />
-      )}
+      {/* One severity chip, singular and count-less (one flaw per card). */}
+      <FlawSeverityChip flaw={flaw} />
 
       {/* Tactic motif chips — dual-chip matrix.
           Orientation controls which chip(s) render:

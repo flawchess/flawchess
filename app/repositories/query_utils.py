@@ -193,10 +193,6 @@ def apply_game_filters(
     orientation: Literal["either", "missed", "allowed"] = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    # Facepalm score range (inclusive whole percents). None or the full 0..100 range is
-    # neutral, so every non-library caller is unchanged.
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     has_gem: bool | None = None,
     has_great: bool | None = None,
     # Keyword-only, default None = unchanged behavior for every existing
@@ -253,6 +249,7 @@ def apply_game_filters(
                          listed values (set membership / IN, not a min-threshold; e.g.
                          ["mistake"] matches mistakes only, not blunders). None (default)
                          leaves the statement unchanged — all existing callers are unaffected.
+                         A full selection (all three tags) is treated like None (D-08).
                          Requires user_id (the EXISTS must be user-scoped).
         flaw_tags: When set (e.g. ["low-clock", "reversed"]), additionally
                          restrict to games containing a SINGLE flaw satisfying ALL
@@ -376,7 +373,7 @@ def apply_game_filters(
             stmt = stmt.where(gap <= opponent_gap_max)
     # Flaw + tactic filters form ONE family: a single game_flaws row must satisfy
     # ALL selected conditions (severity, context tags, tactic motif/orientation/
-    # depth, AND the facepalm score range) together. flaw_exists_from_table ANDs the whole build_flaw_filter_clauses
+    # depth) together. flaw_exists_from_table ANDs the whole build_flaw_filter_clauses
     # list onto one row, the same single-row AND semantics the Flaws list uses
     # (query_flaws).
     #
@@ -393,10 +390,11 @@ def apply_game_filters(
         FAMILY_TO_MOTIF_INTS,
         _tactic_controls_active,
         best_move_exists_from_table,
-        facepalm_range_active,
+        FlawSeverityFilter,
         flaw_exists_from_table,
+        is_full_severity_selection,
     )
-    from app.services.flaws_service import FlawSeverity, FlawTag
+    from app.services.flaws_service import FlawTag
 
     # The tactic EXISTS must apply whenever ANY tactic control is active (family,
     # orientation, OR depth) — mirroring build_flaw_filter_clauses for the Flaws
@@ -407,17 +405,17 @@ def apply_game_filters(
     tactic_active = _tactic_controls_active(
         resolved_families, orientation, min_tactic_depth, max_tactic_depth
     )
-    # The facepalm range must also activate the EXISTS on its own. Without this term a
-    # facepalm-only Games-tab filter silently returned every game, the same bug class the
-    # tactic depth filter once had.
-    facepalm_active = facepalm_range_active(min_facepalm_pct, max_facepalm_pct)
-    if flaw_severity or flaw_tags or tactic_active or facepalm_active:
+    # Bug fix (review WR-01): a full severity selection (all three tags) means "no severity
+    # narrowing" exactly like an empty one (260 D-08). Normalise here, at the gate every Games
+    # and stats endpoint shares, so it neither adds the EXISTS nor demands a user_id.
+    severity_active = bool(flaw_severity) and not is_full_severity_selection(flaw_severity or ())
+    if severity_active or flaw_tags or tactic_active:
         if user_id is None:
             # Message intentionally omits variable values to preserve Sentry grouping
             # (scoping requires an authenticated user_id).
             raise ValueError("flaw/tactic filter requires user_id for EXISTS scoping")
         # Callers pass validated Literal values; cast narrows Sequence[str].
-        severities = cast(Sequence[FlawSeverity], flaw_severity or [])
+        severities = cast(Sequence[FlawSeverityFilter], flaw_severity if severity_active else [])
         tag_list = cast(Sequence[FlawTag], flaw_tags or [])
         exists_pred = flaw_exists_from_table(
             user_id=user_id,
@@ -427,8 +425,6 @@ def apply_game_filters(
             orientation=orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
-            min_facepalm_pct=min_facepalm_pct,
-            max_facepalm_pct=max_facepalm_pct,
         )
         # flaw_exists_from_table returns true() only when no clause is produced;
         # this path is reached only when a filter is active, so exists_pred is a

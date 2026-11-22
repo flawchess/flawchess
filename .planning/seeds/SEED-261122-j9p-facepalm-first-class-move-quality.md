@@ -1,6 +1,6 @@
 ---
 id: SEED-261122-j9p
-status: dormant
+status: active
 planted: 2026-11-22
 planted_during: /gsd-explore session during Phase 259 (facepalm first-principles refit)
 trigger_when: after Phase 259 (facepalm first-principles refit) is merged to main, when planning the next Library/UI polish work

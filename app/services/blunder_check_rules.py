@@ -73,8 +73,8 @@ TYPE_LINE_MIN_SWING: int = 2
 HARD_TO_CATCH_SCORE_BELOW: float = 0.5
 # 257 D-01: the library stats cut, the label meaning of a facepalm blunder (253 D-23: "should
 # score above 70%"). Separate from the drill's FACEPALM_SCORE_MIN on purpose. It equals the
-# Facepalm filter's High preset bound (70 / 100.0 in library_repository), so a stats row counts
-# exactly the blunders the High preset lists (257 research Pitfall 7).
+# frontend FACEPALM_HIGH_CUTOFF (70 percent, pinned by a test that reads the frontend file), so a
+# stats row counts exactly the blunders the Facepalm tag lists (257 research Pitfall 7).
 FACEPALM_STATS_MIN: float = 0.7
 # Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
 PLAYED_PROB_OFFSET: float = 0.01

@@ -1,8 +1,8 @@
 /**
- * Popover around the Facepalm chip on the Flaws card (D-16, D-18).
+ * Popover around the severity chip of a scored blunder on the Flaws card (D-16, D-18, 260-G2).
  *
- * The trigger is a real <button> wrapping the chip span; the chip keeps its own
- * look (D-20), the button adds none. The body explains the Facepalm score.
+ * The trigger is a real <button> wrapping the chip (the "Facepalm" or "Blunder" severity badge);
+ * the chip keeps its own look (D-20), the button adds none. The body explains the facepalm score.
  *
  * text-xs is allowed in the body: frontend/CLAUDE.md exempts short, transient,
  * opt-in info popover bodies from the text-sm floor.
@@ -16,7 +16,7 @@ import * as React from 'react';
 import type { ReactNode } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
-import { FACEPALM_TYPE_LABEL, toFacepalmPct } from '@/lib/facepalm';
+import { facepalmScoreLabel } from '@/lib/facepalm';
 import { cn } from '@/lib/utils';
 import type { FacepalmType } from '@/types/library';
 import { FacepalmExplanation } from './FacepalmExplanation';
@@ -33,13 +33,12 @@ interface FacepalmBadgePopoverProps {
   score: number;
   /** Facepalm type; named in the aria-label and the popover body (257 D-10). */
   type: FacepalmType;
-  /** The chip span. */
+  /** The severity chip. */
   children: ReactNode;
 }
 
 export function FacepalmBadgePopover({ testId, score, type, children }: FacepalmBadgePopoverProps) {
   const [open, setOpen] = useTrackedPopoverOpen(testId);
-  const pct = toFacepalmPct(score);
   const openTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   // True only while a pointer press is in progress on the trigger, so a focus caused
@@ -87,7 +86,7 @@ export function FacepalmBadgePopover({ testId, score, type, children }: Facepalm
       <PopoverPrimitive.Trigger asChild>
         <button
           type="button"
-          aria-label={`Facepalm ${pct}%, ${FACEPALM_TYPE_LABEL[type].toLowerCase()}`}
+          aria-label={facepalmScoreLabel(score, type)}
           data-testid={testId}
           className="inline-flex cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onPointerEnter={armOpen}

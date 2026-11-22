@@ -348,8 +348,8 @@ export function useAnalysisGemMarkers(
           missedDepth: fm.missed_tactic_depth,
           allowedDepth: fm.allowed_tactic_depth,
           severity: sev,
-          // Facepalm mini-chip: either color, whenever the marker carries a score. 257 D-08 / D-09:
-          // the chip is tinted by the type, so it needs the score and the type together.
+          // Facepalm glyph popover: either color, whenever the marker carries a score. 257 D-09:
+          // the popover names the type, so score and type travel together.
           ...(fm.facepalm_score != null && fm.facepalm_type != null
             ? {
                 facepalmScore: fm.facepalm_score,

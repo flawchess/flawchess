@@ -16,7 +16,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
-import { MAIA_ACCENT, GREAT_ACCENT, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import { FACEPALM_HIGH_CUTOFF, FACEPALM_TYPE_LABEL, toFacepalmPct } from '@/lib/facepalm';
+import {
+  MAIA_ACCENT,
+  GREAT_ACCENT,
+  TAC_ALLOWED,
+  TAC_MISSED,
+} from '@/lib/theme';
 import type { EvalPoint, FlawMarker, PhaseTransitions } from '@/types/library';
 
 // Recharts' <ResponsiveContainer> measures its parent with ResizeObserver; in jsdom
@@ -39,7 +45,7 @@ vi.mock('recharts', async () => {
   };
 });
 
-import { EvalChart, FacepalmTooltipLine } from '../EvalChart';
+import { EvalChart, FlawTooltipDetail, FlawTooltipVerdict } from '../EvalChart';
 import { bestMoveDotSpec } from '@/lib/bestMoveDot';
 
 beforeAll(() => {
@@ -202,18 +208,154 @@ function normalized(color: string): string {
   return probe.style.color;
 }
 
-describe('FacepalmTooltipLine (257 D-08 / D-10)', () => {
-  it('names an allowed loss in text and tints it crimson', () => {
-    render(<FacepalmTooltipLine score={0.957} type="allowed_loss" />);
-    const line = screen.getByTestId('eval-chart-tooltip-facepalm');
-    expect(line.textContent).toBe('Facepalm 95% \u00b7 allowed loss');
-    expect(line.style.color).toBe(normalized(TAC_ALLOWED));
+describe('FlawTooltipVerdict (260-G1: one verdict line, colour on icons only)', () => {
+  // Local test constant: facepalm scores are 0..1 on the wire, the cut is a percent (D-21).
+  const PCT_SCALE = 100;
+  const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+  const BELOW_CUT = (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE;
+
+  function verdictMarker(overrides: Partial<FlawMarker>): FlawMarker {
+    return {
+      ply: 10,
+      severity: 'blunder',
+      tags: [],
+      is_user: true,
+      move_san: 'Qxb2',
+      allowed_tactic_motif: null,
+      allowed_tactic_confidence: null,
+      allowed_tactic_depth: null,
+      missed_tactic_motif: null,
+      missed_tactic_confidence: null,
+      missed_tactic_depth: null,
+      ...overrides,
+    };
+  }
+
+  it('states a user facepalm blunder and its score on one neutral line with the ??? icon', () => {
+    render(<FlawTooltipVerdict marker={verdictMarker({ facepalm_score: ABOVE_CUT })} />);
+    const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
+    expect(verdict.querySelector('span')?.textContent).toBe(`You \u00b7 Facepalm ${toFacepalmPct(ABOVE_CUT)}%`);
+    expect(verdict.getAttribute('style')).toBeNull();
+    expect(verdict.className).toContain('text-foreground');
+    // The ??? icon replaces the dot glyph: exactly one svg, and it carries the ??? text.
+    const icons = verdict.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0]?.textContent).toBe('???');
   });
 
-  it('names a missed win in text and tints it teal', () => {
-    render(<FacepalmTooltipLine score={0.4} type="missed_win" />);
-    const line = screen.getByTestId('eval-chart-tooltip-facepalm');
-    expect(line.textContent).toBe('Facepalm 40% \u00b7 missed win');
-    expect(line.style.color).toBe(normalized(TAC_MISSED));
+  it('names an opponent facepalm blunder', () => {
+    render(
+      <FlawTooltipVerdict marker={verdictMarker({ is_user: false, facepalm_score: ABOVE_CUT })} />,
+    );
+    const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
+    expect(verdict.querySelector('span')?.textContent).toBe(
+      `Opponent \u00b7 Facepalm ${toFacepalmPct(ABOVE_CUT)}%`,
+    );
+  });
+
+  it('shows the ?? icon and the score for a blunder below the cut', () => {
+    render(<FlawTooltipVerdict marker={verdictMarker({ facepalm_score: BELOW_CUT })} />);
+    const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
+    expect(verdict.querySelector('span')?.textContent).toBe(`You \u00b7 Blunder ${toFacepalmPct(BELOW_CUT)}%`);
+    const icons = verdict.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0]?.textContent).toBe('??');
+  });
+
+  it('shows no percent for an unscored blunder', () => {
+    render(<FlawTooltipVerdict marker={verdictMarker({ facepalm_score: null })} />);
+    const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
+    expect(verdict.textContent).toBe('??You \u00b7 Blunder');
+    expect(verdict.querySelector('svg')?.textContent).toBe('??');
+  });
+
+  it('keeps the dot glyph and no percent for an opponent mistake with a high score', () => {
+    render(
+      <FlawTooltipVerdict
+        marker={verdictMarker({ severity: 'mistake', is_user: false, facepalm_score: ABOVE_CUT })}
+      />,
+    );
+    const verdict = screen.getByTestId('eval-chart-tooltip-verdict');
+    expect(verdict.textContent).toBe('Opponent \u00b7 Mistake');
+    // The opponent dot glyph is a hollow square.
+    expect(verdict.querySelector('rect')).not.toBeNull();
+  });
+});
+
+describe('FlawTooltipDetail (260-G1)', () => {
+  const PCT_SCALE = 100;
+  const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+
+  function detailMarker(overrides: Partial<FlawMarker>): FlawMarker {
+    return {
+      ply: 10,
+      severity: 'blunder',
+      tags: [],
+      is_user: true,
+      move_san: 'Qxb2',
+      allowed_tactic_motif: null,
+      allowed_tactic_confidence: null,
+      allowed_tactic_depth: null,
+      missed_tactic_motif: null,
+      missed_tactic_confidence: null,
+      missed_tactic_depth: null,
+      ...overrides,
+    };
+  }
+
+  it.each(['allowed_loss', 'missed_win'] as const)(
+    'names the %s type in words when the blunder has no tactic row',
+    (type) => {
+      render(
+        <FlawTooltipDetail
+          marker={detailMarker({ facepalm_score: ABOVE_CUT, facepalm_type: type })}
+          tactics={[]}
+          tags={[]}
+        />,
+      );
+      expect(screen.getByTestId('eval-chart-tooltip-facepalm-type').textContent).toBe(
+        FACEPALM_TYPE_LABEL[type].toLowerCase(),
+      );
+    },
+  );
+
+  it('drops the type line and renders a neutral tactic row with a coloured icon when a tactic exists', () => {
+    render(
+      <FlawTooltipDetail
+        marker={detailMarker({ facepalm_score: ABOVE_CUT, facepalm_type: 'allowed_loss' })}
+        tactics={[{ orientation: 'allowed', motif: 'fork', family: 'fork', depth: 1 }]}
+        tags={[]}
+      />,
+    );
+    expect(screen.queryByTestId('eval-chart-tooltip-facepalm-type')).toBeNull();
+    const row = screen.getByText(/allowed: fork/);
+    expect(row.textContent).toBe('allowed: fork');
+    expect(row.getAttribute('style')).toBeNull();
+    const icon = row.querySelector('svg') as SVGElement;
+    expect(icon.style.color).toBe(normalized(TAC_ALLOWED));
+  });
+
+  it('colours the icon of a missed tactic row teal and leaves its text neutral', () => {
+    render(
+      <FlawTooltipDetail
+        marker={detailMarker({ facepalm_score: ABOVE_CUT, facepalm_type: 'missed_win' })}
+        tactics={[{ orientation: 'missed', motif: 'fork', family: 'fork', depth: null }]}
+        tags={[]}
+      />,
+    );
+    const row = screen.getByText(/missed: fork/);
+    expect(row.getAttribute('style')).toBeNull();
+    expect((row.querySelector('svg') as SVGElement).style.color).toBe(normalized(TAC_MISSED));
+  });
+
+  it('shows no type line for a mistake without tactics', () => {
+    render(
+      <FlawTooltipDetail
+        marker={detailMarker({ severity: 'mistake', facepalm_score: ABOVE_CUT, facepalm_type: 'allowed_loss' })}
+        tactics={[]}
+        tags={[]}
+      />,
+    );
+    expect(screen.queryByTestId('eval-chart-tooltip-facepalm-type')).toBeNull();
   });
 });

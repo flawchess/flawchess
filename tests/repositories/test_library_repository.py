@@ -11,8 +11,7 @@ Covers the five scenarios from the plan:
 All tests use the rollback-scoped db_session fixture so they do not reset the dev DB.
 """
 
-import math
-from typing import Literal, cast
+from typing import cast
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,17 +19,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game as GameModel
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
-from app.schemas.library import FlawListItem
 from app.repositories.library_repository import (
     ALLOWED_DECISION_DEPTH_OFFSET,
+    FLAW_SEVERITY_FILTER_VALUES,
     _TACTIC_DEPTH_FULL_MAX,
     _TACTIC_DEPTH_FULL_MIN,
+    FlawSeverityFilter,
     _build_flaw_item,
+    query_filtered_games,
     query_flaws,
     tactic_slot_visible,
 )
 
-from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.schemas.library import FlawListItem
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
 from tests.facepalm_seed import SEED_FACEPALM_MARGIN, SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
 
 # TacticMotifInt values used in tests (must match FAMILY_TO_MOTIF_INTS).
@@ -793,16 +795,16 @@ class TestBuildFlawItemClockSuppression:
 
 
 # ---------------------------------------------------------------------------
-# Facepalm range filter (Phase 253): query_flaws band boundaries and exclusions
+# Facepalm score chip on the Flaws list (Phase 253; the range filter is gone, Phase 260 D-13)
 # ---------------------------------------------------------------------------
 
 _FP_USER_ID = 25301
 _FP_SEVERITY_MISTAKE = 1
 _FP_OPPONENT_SCORE = 0.95
-_FP_PCT_SCALE = 100
-# Seeded user blunder TARGET scores straddling the 30 / 70 band cuts, each edge seeded at
-# plus and minus SEED_FACEPALM_MARGIN (REAL inputs cannot hit an exact decimal, so a target
-# exactly on a cut would be a coin flip). A target of exactly 1.0 is unreachable by facts.
+# Seeded user blunder TARGET scores spread over the whole scale, the middle two straddling the
+# 70% stats cut at plus and minus SEED_FACEPALM_MARGIN (REAL inputs cannot hit an exact
+# decimal, so a target exactly on a cut would be a coin flip). A target of exactly 1.0 is
+# unreachable by facts.
 _FP_BAND_TARGETS: tuple[float, ...] = (
     0.27,
     0.30 - SEED_FACEPALM_MARGIN,
@@ -811,29 +813,15 @@ _FP_BAND_TARGETS: tuple[float, ...] = (
     0.70 + SEED_FACEPALM_MARGIN,
     0.99,
 )
-# Scored-row count plus one unscored blunder and one unscored mistake.
-_FP_ALL_ROWS = len(_FP_BAND_TARGETS) + 2
-_FP_GRID_LIMIT = 1000
-# Facts grid for the chip/filter agreement property: every whole percent from 10 to 90, each
-# seeded just below and just above the percent boundary.
-_FP_GRID_PCT_FIRST = 10
-_FP_GRID_PCT_LAST = 90
-_FP_GRID_TARGETS: tuple[float, ...] = tuple(
-    pct / _FP_PCT_SCALE + offset
-    for pct in range(_FP_GRID_PCT_FIRST, _FP_GRID_PCT_LAST + 1)
-    for offset in (-SEED_FACEPALM_MARGIN, SEED_FACEPALM_MARGIN)
-)
-# Bands the agreement property sweeps: Low, Mid, High and two 5% slider bands.
-_FP_GRID_BANDS: tuple[tuple[int, int], ...] = ((0, 29), (30, 69), (70, 100), (35, 39), (85, 89))
 
 
 async def _seed_facepalm_band_game(
     session: AsyncSession, *, user_id: int, targets: tuple[float, ...] = _FP_BAND_TARGETS
 ) -> int:
-    """Seed one white-user game with the band-straddling scored blunders (facts, D-01).
+    """Seed one white-user game with the spread of scored blunders (facts, D-01).
 
     ply is 0-based with White on even plies: even plies are the user's moves. The odd-ply
-    row is a scored OPPONENT blunder that must never match a narrowed range (D-05).
+    row is a scored OPPONENT blunder that never lists in the Flaws list (D-05).
     """
     game = await _seed_game_with_flaw(session, user_id=user_id)
     ply = 2
@@ -860,184 +848,8 @@ async def _seed_facepalm_band_game(
     return game.id
 
 
-async def _query_facepalm_flaws(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    min_facepalm_pct: int | None,
-    max_facepalm_pct: int | None,
-    severity: list[Literal["mistake", "blunder"]] | None = None,
-    limit: int = 100,
-) -> tuple[list[FlawListItem], int]:
-    """Run query_flaws with only the facepalm range (and optional severity) active."""
-    return await query_flaws(
-        session,
-        user_id=user_id,
-        severity=severity or [],
-        tags=[],
-        time_control=None,
-        platform=None,
-        rated=None,
-        opponent_type="all",
-        from_date=None,
-        to_date=None,
-        color=None,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
-        limit=limit,
-    )
-
-
-class TestFacepalmRangeQueryFlaws:
-    """query_flaws facepalm range over band boundaries, NULLs, mistakes and the opponent."""
-
-    @pytest.mark.parametrize(
-        ("min_pct", "max_pct", "expected_targets"),
-        [
-            (0, 29, (0.27, 0.30 - SEED_FACEPALM_MARGIN)),
-            (30, 69, (0.30 + SEED_FACEPALM_MARGIN, 0.70 - SEED_FACEPALM_MARGIN)),
-            (70, 100, (0.70 + SEED_FACEPALM_MARGIN, 0.99)),
-            (40, 44, ()),
-        ],
-    )
-    @pytest.mark.asyncio
-    async def test_band_edges_with_margins(
-        self,
-        db_session: object,
-        min_pct: int,
-        max_pct: int,
-        expected_targets: tuple[float, ...],
-    ) -> None:
-        """Each band returns exactly its scored user blunders, seeds at an edge +- margin."""
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
-
-        items, count = await _query_facepalm_flaws(
-            session, user_id=_FP_USER_ID, min_facepalm_pct=min_pct, max_facepalm_pct=max_pct
-        )
-
-        returned = sorted(cast(float, i.facepalm_score) for i in items)
-        assert returned == pytest.approx(sorted(expected_targets), abs=SEED_FACEPALM_TOLERANCE)
-        assert count == len(expected_targets)
-        for item in items:
-            # The returned float is the same expression the filter used, so it floors exactly
-            # like the badge.
-            assert item.facepalm_score is not None
-            assert min_pct <= math.floor(item.facepalm_score * _FP_PCT_SCALE) <= max_pct
-
-    @pytest.mark.asyncio
-    async def test_chip_and_filter_agree_on_facts_grid(self, db_session: object) -> None:
-        """D-01 / D-04 property: the chip and the range filter read one expression.
-
-        For a facts grid straddling every whole-percent boundary and every band, each returned
-        flaw floors inside the band and each scored user blunder left out floors outside it, so
-        the filtered set equals the set derived from the chips of the unfiltered query.
-        """
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID, targets=_FP_GRID_TARGETS)
-
-        all_items, _ = await _query_facepalm_flaws(
-            session,
-            user_id=_FP_USER_ID,
-            min_facepalm_pct=None,
-            max_facepalm_pct=None,
-            limit=_FP_GRID_LIMIT,
-        )
-        # Scored user blunders only: the odd-ply opponent row and the unscored rows are out.
-        scored = {
-            (i.game_id, i.ply): math.floor(i.facepalm_score * _FP_PCT_SCALE)
-            for i in all_items
-            if i.facepalm_score is not None and i.ply % 2 == 0
-        }
-        assert len(scored) == len(_FP_GRID_TARGETS)
-
-        for min_pct, max_pct in _FP_GRID_BANDS:
-            items, count = await _query_facepalm_flaws(
-                session,
-                user_id=_FP_USER_ID,
-                min_facepalm_pct=min_pct,
-                max_facepalm_pct=max_pct,
-                limit=_FP_GRID_LIMIT,
-            )
-            returned = {(i.game_id, i.ply) for i in items}
-            expected = {key for key, pct in scored.items() if min_pct <= pct <= max_pct}
-            excluded = set(scored) - returned
-            assert expected, "the grid must put rows inside every swept band"
-            assert excluded, "the grid must leave rows outside every swept band"
-            assert returned == expected
-            assert count == len(expected)
-            assert all(not min_pct <= scored[key] <= max_pct for key in excluded)
-
-    @pytest.mark.asyncio
-    async def test_no_facepalm_params_returns_all_user_rows(self, db_session: object) -> None:
-        """No params and the full 0..100 range return every user row (8), opponent excluded."""
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
-
-        for min_pct, max_pct in ((None, None), (0, 100)):
-            items, count = await _query_facepalm_flaws(
-                session, user_id=_FP_USER_ID, min_facepalm_pct=min_pct, max_facepalm_pct=max_pct
-            )
-            assert count == _FP_ALL_ROWS
-            assert len(items) == _FP_ALL_ROWS
-
-    @pytest.mark.asyncio
-    async def test_opponent_ply_never_matches_high(self, db_session: object) -> None:
-        """A scored opponent-ply blunder (0.95) never appears under High (D-05)."""
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
-
-        items, _ = await _query_facepalm_flaws(
-            session, user_id=_FP_USER_ID, min_facepalm_pct=70, max_facepalm_pct=100
-        )
-        assert items, "High must still return the user's own 0.7001 and 0.99 blunders"
-        assert all(i.ply % 2 == 0 for i in items), "only the user's (even-ply) moves may match"
-
-    @pytest.mark.asyncio
-    async def test_unscored_blunder_never_matches_narrowed_range(self, db_session: object) -> None:
-        """An unscored blunder (no facts) is excluded by every narrowed range, Low included."""
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
-
-        for min_pct, max_pct in ((0, 29), (30, 69), (70, 100), (0, 99)):
-            items, _ = await _query_facepalm_flaws(
-                session, user_id=_FP_USER_ID, min_facepalm_pct=min_pct, max_facepalm_pct=max_pct
-            )
-            assert all(i.facepalm_score is not None for i in items)
-
-    @pytest.mark.asyncio
-    async def test_mistake_severity_with_range_returns_nothing(self, db_session: object) -> None:
-        """D-11: severity ["mistake"] plus a narrowed range is empty, with no error."""
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, _FP_USER_ID)
-        await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
-
-        items, count = await _query_facepalm_flaws(
-            session,
-            user_id=_FP_USER_ID,
-            min_facepalm_pct=70,
-            max_facepalm_pct=100,
-            severity=["mistake"],
-        )
-        assert items == []
-        assert count == 0
+class TestFacepalmChipQueryFlaws:
+    """query_flaws carries the chip expression for scored rows and None for unscored ones."""
 
     @pytest.mark.asyncio
     async def test_item_carries_expression_score_or_none(self, db_session: object) -> None:
@@ -1048,9 +860,289 @@ class TestFacepalmRangeQueryFlaws:
         await ensure_test_user(session, _FP_USER_ID)
         await _seed_facepalm_band_game(session, user_id=_FP_USER_ID)
 
-        items, _ = await _query_facepalm_flaws(
-            session, user_id=_FP_USER_ID, min_facepalm_pct=None, max_facepalm_pct=None
+        items, _ = await query_flaws(
+            session,
+            user_id=_FP_USER_ID,
+            severity=[],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            limit=100,
         )
         scored = sorted(i.facepalm_score for i in items if i.facepalm_score is not None)
         assert scored == pytest.approx(sorted(_FP_BAND_TARGETS), abs=SEED_FACEPALM_TOLERANCE)
         assert sum(1 for i in items if i.facepalm_score is None) == 2
+
+
+# ---------------------------------------------------------------------------
+# Flaws-filter severity tags (Phase 260 D-08): the truth table on both consumers of the
+# shared clause builder, the Flaws list (query_flaws) and the Games EXISTS
+# (query_filtered_games).
+# ---------------------------------------------------------------------------
+
+_SEV_FLAWS_USER_ID = 26010
+_SEV_GAMES_USER_ID = 26011
+# The cut is never a literal (D-21): each target sits one margin either side of the stats cut.
+_SEV_ABOVE_CUT = FACEPALM_STATS_MIN + SEED_FACEPALM_MARGIN
+_SEV_BELOW_CUT = FACEPALM_STATS_MIN - SEED_FACEPALM_MARGIN
+_SEV_MISTAKE_INT = 1
+_SEV_BLUNDER_INT = 2
+# White-user game: even plies are the user's moves, odd plies the opponent's.
+_PLY_FACEPALM = 2  # user blunder above the cut
+_PLY_OPPONENT_FACEPALM = 3  # opponent blunder above the cut: never matches a filter
+_PLY_BLUNDER_BELOW = 4  # user blunder below the cut
+_PLY_BLUNDER_UNSCORED = 6  # user blunder with no score: a Blunder, never a Facepalm (D-09)
+_PLY_MISTAKE = 8  # user mistake
+
+# (selected tags, plies the Flaws list returns). Every row of the D-08 table, plus the
+# empty selection and the remaining subsets. The opponent ply never appears.
+_SEVERITY_TAG_CASES: tuple[tuple[tuple[FlawSeverityFilter, ...], set[int]], ...] = (
+    (("facepalm",), {_PLY_FACEPALM}),
+    (("blunder",), {_PLY_BLUNDER_BELOW, _PLY_BLUNDER_UNSCORED}),
+    (("blunder", "facepalm"), {_PLY_FACEPALM, _PLY_BLUNDER_BELOW, _PLY_BLUNDER_UNSCORED}),
+    (("mistake", "facepalm"), {_PLY_MISTAKE, _PLY_FACEPALM}),
+    (("mistake",), {_PLY_MISTAKE}),
+    (("blunder", "mistake"), {_PLY_MISTAKE, _PLY_BLUNDER_BELOW, _PLY_BLUNDER_UNSCORED}),
+    (
+        FLAW_SEVERITY_FILTER_VALUES,
+        {_PLY_FACEPALM, _PLY_BLUNDER_BELOW, _PLY_BLUNDER_UNSCORED, _PLY_MISTAKE},
+    ),
+    (
+        (),
+        {_PLY_FACEPALM, _PLY_BLUNDER_BELOW, _PLY_BLUNDER_UNSCORED, _PLY_MISTAKE},
+    ),
+)
+
+
+def _severity_case_id(case: tuple[tuple[FlawSeverityFilter, ...], set[int]]) -> str:
+    return "+".join(case[0]) or "none"
+
+
+class TestFlawSeverityTags:
+    """The D-08 table on query_flaws and on the Games EXISTS."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("case", _SEVERITY_TAG_CASES, ids=_severity_case_id)
+    async def test_query_flaws_severity_tags_follow_d08(
+        self,
+        db_session: object,
+        case: tuple[tuple[FlawSeverityFilter, ...], set[int]],
+    ) -> None:
+        from tests.conftest import ensure_test_user
+
+        tags, expected_plies = case
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, _SEV_FLAWS_USER_ID)
+        game = await _seed_game_with_flaw(session, user_id=_SEV_FLAWS_USER_ID)
+        for ply, severity, target in (
+            (_PLY_FACEPALM, _SEV_BLUNDER_INT, _SEV_ABOVE_CUT),
+            (_PLY_BLUNDER_BELOW, _SEV_BLUNDER_INT, _SEV_BELOW_CUT),
+            (_PLY_BLUNDER_UNSCORED, _SEV_BLUNDER_INT, None),
+            (_PLY_MISTAKE, _SEV_MISTAKE_INT, None),
+            (_PLY_OPPONENT_FACEPALM, _SEV_BLUNDER_INT, _SEV_ABOVE_CUT),
+        ):
+            await _seed_non_tactic_flaw(
+                session,
+                user_id=_SEV_FLAWS_USER_ID,
+                game_id=game.id,
+                ply=ply,
+                severity=severity,
+                facepalm_target=target,
+            )
+
+        items, count = await query_flaws(
+            session,
+            user_id=_SEV_FLAWS_USER_ID,
+            severity=tags,
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            limit=100,
+        )
+        assert {item.ply for item in items} == expected_plies
+        assert count == len(expected_plies)
+
+    @pytest.mark.asyncio
+    async def test_chip_score_and_severity_clause_agree_on_the_same_rows(
+        self, db_session: object
+    ) -> None:
+        """The returned chip value and the severity clause read one score (D-01).
+
+        Over a grid of seeded scores spanning the whole scale (two straddling the cut), every
+        row listed under Facepalm carries a chip at or above FACEPALM_STATS_MIN and every row
+        listed under Blunder carries a chip below it or none. If the clause ever built its own
+        expression instead of the bound chip, a row could be listed under one tag while its
+        chip says the other.
+        """
+        from tests.conftest import ensure_test_user
+
+        user_id = _SEV_FLAWS_USER_ID + 100
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, user_id)
+        await _seed_facepalm_band_game(session, user_id=user_id)
+
+        async def listed(tags: list[FlawSeverityFilter]) -> list[FlawListItem]:
+            items, _ = await query_flaws(
+                session,
+                user_id=user_id,
+                severity=tags,
+                tags=[],
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                color=None,
+                limit=100,
+            )
+            return list(items)
+
+        facepalms = await listed(["facepalm"])
+        blunders = await listed(["blunder"])
+        both = await listed(["blunder", "facepalm"])
+
+        assert facepalms, "the grid seeds scores above the cut"
+        assert all(i.facepalm_score is not None for i in facepalms)
+        assert all(
+            i.facepalm_score is not None and i.facepalm_score >= FACEPALM_STATS_MIN
+            for i in facepalms
+        )
+        assert blunders, "the grid seeds scored rows below the cut and an unscored one"
+        assert all(
+            i.facepalm_score is None or i.facepalm_score < FACEPALM_STATS_MIN for i in blunders
+        )
+        # Blunder and Facepalm partition the stored blunders: disjoint, and together all of them.
+        facepalm_plies = {i.ply for i in facepalms}
+        blunder_plies = {i.ply for i in blunders}
+        assert facepalm_plies.isdisjoint(blunder_plies)
+        assert facepalm_plies | blunder_plies == {i.ply for i in both}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("tags", "expected_kinds"),
+        [
+            (("facepalm",), {"facepalm"}),
+            (("blunder",), {"below", "unscored"}),
+            (("blunder", "facepalm"), {"facepalm", "below", "unscored"}),
+            (("mistake", "facepalm"), {"mistake", "facepalm"}),
+            (("mistake",), {"mistake"}),
+            (("blunder", "mistake"), {"mistake", "below", "unscored"}),
+            # All three tags and no tag both mean "no narrowing" (D-08, review WR-01): the
+            # EXISTS is not applied, so the plain archive lists every game, including the one
+            # whose only flaw is the opponent's.
+            (FLAW_SEVERITY_FILTER_VALUES, {"facepalm", "below", "unscored", "mistake", "opponent"}),
+            ((), {"facepalm", "below", "unscored", "mistake", "opponent"}),
+        ],
+        ids=lambda v: "+".join(v) if isinstance(v, tuple) and v else "none",
+    )
+    async def test_games_severity_tags_follow_d08(
+        self,
+        db_session: object,
+        tags: tuple[FlawSeverityFilter, ...],
+        expected_kinds: set[str],
+    ) -> None:
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, _SEV_GAMES_USER_ID)
+        # One game per row kind; the "opponent" game holds only the opponent's above-cut blunder.
+        seeds: dict[str, tuple[int, int, float | None]] = {
+            "facepalm": (_PLY_FACEPALM, _SEV_BLUNDER_INT, _SEV_ABOVE_CUT),
+            "below": (_PLY_FACEPALM, _SEV_BLUNDER_INT, _SEV_BELOW_CUT),
+            "unscored": (_PLY_FACEPALM, _SEV_BLUNDER_INT, None),
+            "mistake": (_PLY_FACEPALM, _SEV_MISTAKE_INT, None),
+            "opponent": (_PLY_OPPONENT_FACEPALM, _SEV_BLUNDER_INT, _SEV_ABOVE_CUT),
+        }
+        game_kind: dict[int, str] = {}
+        for kind, (ply, severity, target) in seeds.items():
+            game = await _seed_game_with_flaw(session, user_id=_SEV_GAMES_USER_ID)
+            await _seed_non_tactic_flaw(
+                session,
+                user_id=_SEV_GAMES_USER_ID,
+                game_id=game.id,
+                ply=ply,
+                severity=severity,
+                facepalm_target=target,
+            )
+            game_kind[game.id] = kind
+
+        games, matched = await query_filtered_games(
+            session,
+            _SEV_GAMES_USER_ID,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=tags,
+            offset=0,
+            limit=100,
+        )
+        assert {game_kind[g.id] for g in games} == expected_kinds
+        assert matched == len(expected_kinds)
+
+    @pytest.mark.asyncio
+    async def test_games_all_three_tags_equal_no_tag(self, db_session: object) -> None:
+        """All three tags is "no narrowing" exactly like no tag on the Games path (D-08, WR-01).
+
+        The archive here holds a flawless game and a game whose only flaw is the opponent's;
+        both must list under all three tags, not only under no tag. Bug fixed: a full
+        selection used to add the user-flaw EXISTS and silently hide both.
+        """
+        from tests.conftest import ensure_test_user
+
+        user_id = _SEV_GAMES_USER_ID + 100
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, user_id)
+        flawless = await _seed_game_with_flaw(session, user_id=user_id)
+        opponent_only = await _seed_game_with_flaw(session, user_id=user_id)
+        await _seed_non_tactic_flaw(
+            session,
+            user_id=user_id,
+            game_id=opponent_only.id,
+            ply=_PLY_OPPONENT_FACEPALM,
+            severity=_SEV_BLUNDER_INT,
+            facepalm_target=_SEV_ABOVE_CUT,
+        )
+        own = await _seed_game_with_flaw(session, user_id=user_id)
+        await _seed_non_tactic_flaw(
+            session,
+            user_id=user_id,
+            game_id=own.id,
+            ply=_PLY_MISTAKE,
+            severity=_SEV_MISTAKE_INT,
+            facepalm_target=None,
+        )
+
+        async def listed(tags: tuple[FlawSeverityFilter, ...]) -> tuple[set[int], int]:
+            games, matched = await query_filtered_games(
+                session,
+                user_id,
+                time_control=None,
+                platform=None,
+                rated=None,
+                opponent_type="all",
+                from_date=None,
+                to_date=None,
+                flaw_severity=tags,
+                offset=0,
+                limit=100,
+            )
+            return {g.id for g in games}, matched
+
+        all_three_ids, all_three_matched = await listed(FLAW_SEVERITY_FILTER_VALUES)
+        no_tag_ids, no_tag_matched = await listed(())
+        assert all_three_ids == no_tag_ids == {flawless.id, opponent_only.id, own.id}
+        assert all_three_matched == no_tag_matched == 3

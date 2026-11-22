@@ -38,9 +38,13 @@ from app.repositories.library_repository import (
     query_flaws,
 )
 from app.repositories.query_utils import apply_game_filters
-from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
 from app.services.facepalm_score import FacepalmType
-from tests.facepalm_seed import SEED_FACEPALM_TOLERANCE, facepalm_fact_columns
+from tests.facepalm_seed import (
+    SEED_FACEPALM_MARGIN,
+    SEED_FACEPALM_TOLERANCE,
+    facepalm_fact_columns,
+)
 
 # Distinct user ID for TestDecidedLostSuppression tests so parallel -n auto runs
 # cannot cross-contaminate with the 99999/99998 fixtures.
@@ -2691,112 +2695,24 @@ class TestBestMoveExistsFromTable:
 
 
 # ---------------------------------------------------------------------------
-# Facepalm range filter (Phase 253): build_flaw_filter_clauses compile behavior
-# ---------------------------------------------------------------------------
-
-
-def _compile_facepalm_clauses(
-    min_facepalm_pct: int | None, max_facepalm_pct: int | None, *, asyncpg_dialect: bool = False
-) -> str:
-    """Compile only the facepalm clauses of build_flaw_filter_clauses to SQL text."""
-    from sqlalchemy import and_, select
-    from sqlalchemy.dialects import postgresql
-    from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
-
-    from app.repositories.library_repository import build_flaw_filter_clauses
-
-    clauses = build_flaw_filter_clauses(
-        [],
-        [],
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
-    )
-    if not clauses:
-        return ""
-    dialect = pg_asyncpg.dialect() if asyncpg_dialect else postgresql.dialect()
-    return str(
-        select(GameFlaw.ply)
-        .where(and_(*clauses))
-        .compile(dialect=dialect, compile_kwargs={"literal_binds": False})
-    )
-
-
-class TestFacepalmBuildFlawFilterClauses:
-    """build_flaw_filter_clauses facepalm range: neutral states and band shapes (D-04, D-10).
-
-    The clause reads the query-time expression over the stored facts (D-01), so the compiled
-    SQL names the fact columns and never the stored `facepalm_score` column.
-    """
-
-    @pytest.mark.parametrize(
-        ("min_pct", "max_pct"),
-        [(None, None), (0, 100), (0, None), (None, 100)],
-    )
-    def test_neutral_states_add_no_clause(self, min_pct: int | None, max_pct: int | None) -> None:
-        """None and the full 0..100 range (in any mix) add no facepalm clause (D-04)."""
-        assert _compile_facepalm_clauses(min_pct, max_pct) == ""
-
-    @pytest.mark.parametrize("band", [(0, 29), (70, 100), (30, 69)])
-    def test_narrowed_clause_references_the_fact_columns(self, band: tuple[int, int]) -> None:
-        """A narrowed range reads the facts, never the stored score column (D-01)."""
-        sql = _compile_facepalm_clauses(*band)
-        assert "material_loss" in sql, sql
-        assert "maia_played_prob" in sql, sql
-        assert "facepalm_score" not in sql, sql
-
-    def test_low_band_has_not_null_and_upper_bound_only(self) -> None:
-        """(0, 29): IS NOT NULL plus an upper '<' bound, no '>=' lower bound."""
-        sql = _compile_facepalm_clauses(0, 29)
-        assert "IS NOT NULL" in sql, sql
-        assert "AS FLOAT) <" in sql, sql
-        assert "AS FLOAT) >=" not in sql, sql
-
-    def test_high_band_has_not_null_and_lower_bound_only(self) -> None:
-        """(70, 100): IS NOT NULL plus a '>=' lower bound, no upper bound."""
-        sql = _compile_facepalm_clauses(70, 100)
-        assert "IS NOT NULL" in sql, sql
-        assert "AS FLOAT) >=" in sql, sql
-        assert "AS FLOAT) <" not in sql, sql
-
-    def test_mid_band_has_both_bounds(self) -> None:
-        """(30, 69): both bounds present."""
-        sql = _compile_facepalm_clauses(30, 69)
-        assert "AS FLOAT) >=" in sql, sql
-        assert "AS FLOAT) <" in sql, sql
-
-    def test_asyncpg_binds_double_thresholds_with_no_sql_floor(self) -> None:
-        """The band thresholds bind as ::FLOAT (double), never REAL, and nothing is floored.
-
-        Float4 arithmetic in Postgres would disagree with the floored whole percent the
-        frontend shows (RESEARCH Pitfall 3), so the double-precision expression is compared
-        against double thresholds with no SQL floor().
-        """
-        sql = _compile_facepalm_clauses(30, 69, asyncpg_dialect=True)
-        assert "::REAL" not in sql, sql
-        assert "floor" not in sql.lower(), sql
-        assert "::FLOAT" in sql, sql
-
-
-# ---------------------------------------------------------------------------
-# Facepalm range filter (Phase 253): Games tab same-row AND semantics (D-06)
+# Facepalm tag (Phase 260 D-08, D-13): the Games tab single-flaw-row semantics and the
+# opponent regression, pinned on severity=["facepalm"] (the former range filter is gone)
 # ---------------------------------------------------------------------------
 
 _FP_GAMES_USER_ID = 25351
-_FP_HIGH_MIN_PCT = 70
-_FP_HIGH_MAX_PCT = 100
 _FP_HIGH_SCORE = 0.95
-_FP_LOW_SCORE = 0.20
+# The cut is never a literal (D-21): each seed sits one margin either side of the stats cut.
+_FP_ABOVE_CUT_SCORE = FACEPALM_STATS_MIN + SEED_FACEPALM_MARGIN
+_FP_BELOW_CUT_SCORE = FACEPALM_STATS_MIN - SEED_FACEPALM_MARGIN
 
 
 async def _facepalm_game_ids(
     session: AsyncSession,
     *,
     user_id: int,
-    min_facepalm_pct: int | None,
-    max_facepalm_pct: int | None,
     flaw_tags: list[str] | None = None,
 ) -> set[int]:
-    """Run query_filtered_games with a facepalm range and return the matched game ids."""
+    """Run query_filtered_games with the Facepalm tag and return the matched game ids."""
     games, _ = await query_filtered_games(
         session,
         user_id=user_id,
@@ -2806,10 +2722,8 @@ async def _facepalm_game_ids(
         opponent_type="all",
         from_date=None,
         to_date=None,
-        flaw_severity=None,
+        flaw_severity=["facepalm"],
         flaw_tags=flaw_tags,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
         offset=0,
         limit=50,
     )
@@ -2817,87 +2731,58 @@ async def _facepalm_game_ids(
 
 
 class TestFacepalmGamesFilter:
-    """Facepalm range on the Games tab shares the single flaw EXISTS with the other filters."""
+    """The Facepalm tag on the Games tab shares the single flaw EXISTS with the other filters."""
 
     @pytest.mark.asyncio
-    async def test_range_and_tag_need_one_flaw_satisfying_both(
+    async def test_facepalm_and_context_tag_need_one_flaw_satisfying_both(
         self, db_session: AsyncSession
     ) -> None:
-        """G1 has a High flaw A (no tag) and a Low flaw B (reversed): High + reversed misses it.
+        """G1 has a facepalm flaw A (no tag) and a below-cut flaw B (reversed): Facepalm + reversed misses it.
 
-        G2 has one flaw that is both High and reversed: it matches. The two conditions
+        G2 has one flaw that is both a facepalm and reversed: it matches. The two conditions
         must hold on the SAME flaw row, exactly like the Flaws tab (D-06).
         """
         from tests.conftest import ensure_test_user
 
         await ensure_test_user(db_session, _FP_GAMES_USER_ID)
         g1 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=g1, ply=2, facepalm_target=_FP_HIGH_SCORE)
+        await _seed_game_flaw(db_session, game=g1, ply=2, facepalm_target=_FP_ABOVE_CUT_SCORE)
         await _seed_game_flaw(
-            db_session, game=g1, ply=4, facepalm_target=_FP_LOW_SCORE, is_reversed=True
+            db_session, game=g1, ply=4, facepalm_target=_FP_BELOW_CUT_SCORE, is_reversed=True
         )
         g2 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=g2, ply=2, facepalm_target=0.90, is_reversed=True)
+        await _seed_game_flaw(
+            db_session, game=g2, ply=2, facepalm_target=_FP_ABOVE_CUT_SCORE, is_reversed=True
+        )
 
         ids = await _facepalm_game_ids(
-            db_session,
-            user_id=_FP_GAMES_USER_ID,
-            min_facepalm_pct=_FP_HIGH_MIN_PCT,
-            max_facepalm_pct=_FP_HIGH_MAX_PCT,
-            flaw_tags=["reversed"],
+            db_session, user_id=_FP_GAMES_USER_ID, flaw_tags=["reversed"]
         )
-        assert g1.id not in ids, "High + reversed must not match across two different flaws"
+        assert g1.id not in ids, "Facepalm + reversed must not match across two different flaws"
         assert g2.id in ids
-
-    @pytest.mark.asyncio
-    async def test_facepalm_only_high_excludes_unscored_only_game(
-        self, db_session: AsyncSession
-    ) -> None:
-        """A facepalm-only High range excludes a game whose only blunder is unscored (D-04)."""
-        from tests.conftest import ensure_test_user
-
-        await ensure_test_user(db_session, _FP_GAMES_USER_ID)
-        scored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=scored, ply=2, facepalm_target=_FP_HIGH_SCORE)
-        unscored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
-        await _seed_game_flaw(db_session, game=unscored, ply=2, facepalm_target=None)
-
-        ids = await _facepalm_game_ids(
-            db_session,
-            user_id=_FP_GAMES_USER_ID,
-            min_facepalm_pct=_FP_HIGH_MIN_PCT,
-            max_facepalm_pct=_FP_HIGH_MAX_PCT,
-        )
-        assert scored.id in ids
-        assert unscored.id not in ids
 
     @pytest.mark.asyncio
     async def test_scored_opponent_row_never_surfaces_in_games_or_flaws_list(
         self, db_session: AsyncSession
     ) -> None:
-        """Regression (L-01): a white-owner game whose ONLY blunder is a High-scoring opponent ply.
+        """Regression (L-01): a white-owner game whose ONLY blunder is an above-cut opponent ply.
 
         Opponent rows score in SQL since SEED-261114-iuv Part A step 4; both the Games-tab
-        facepalm range (flaw_exists_from_table) and the Flaws list (query_flaws) already gate on
-        the owner side and must keep excluding it.
+        Facepalm tag (flaw_exists_from_table) and the Flaws list (query_flaws) gate on the
+        owner side and must keep excluding it.
         """
         from tests.conftest import ensure_test_user
 
         await ensure_test_user(db_session, _FP_GAMES_USER_ID)
         game = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
         # Odd ply = Black's move = the opponent's in a white-owner game.
-        await _seed_game_flaw(db_session, game=game, ply=3, facepalm_target=_FP_HIGH_SCORE)
+        await _seed_game_flaw(db_session, game=game, ply=3, facepalm_target=_FP_ABOVE_CUT_SCORE)
 
-        ids = await _facepalm_game_ids(
-            db_session,
-            user_id=_FP_GAMES_USER_ID,
-            min_facepalm_pct=_FP_HIGH_MIN_PCT,
-            max_facepalm_pct=_FP_HIGH_MAX_PCT,
-        )
+        ids = await _facepalm_game_ids(db_session, user_id=_FP_GAMES_USER_ID)
         items, matched = await query_flaws(
             db_session,
             user_id=_FP_GAMES_USER_ID,
-            severity=["blunder"],
+            severity=["facepalm"],
             tags=[],
             time_control=None,
             platform=None,
@@ -2906,8 +2791,6 @@ class TestFacepalmGamesFilter:
             from_date=None,
             to_date=None,
             color=None,
-            min_facepalm_pct=_FP_HIGH_MIN_PCT,
-            max_facepalm_pct=_FP_HIGH_MAX_PCT,
         )
 
         assert game.id not in ids
@@ -2934,14 +2817,12 @@ class TestFetchPageFacepalmScores:
         assert await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, []) == {}
 
     @pytest.mark.asyncio
-    async def test_owner_side_scored_rows_only_unscored_skipped(
-        self, db_session: AsyncSession
-    ) -> None:
-        """White owner: only the owner's scored ply comes back.
+    async def test_both_sides_scored_rows_unscored_skipped(self, db_session: AsyncSession) -> None:
+        """White owner: the owner's and the opponent's scored plies both come back (D-24).
 
-        The opponent ply carries a HIGH score (0.95, the old fixture used 0.33): since
-        SEED-261114-iuv Part A step 4 opponent rows score in SQL, so only the owner-side gate
-        keeps them out of the markers. An unscored row is absent as before.
+        The opponent ply carries a HIGH score (0.95): opponent rows score in SQL, and since
+        Phase 260 D-24 the marker reader no longer gates them out, so the Facepalm row and the
+        chart split work for the opponent too. An unscored row is absent as before.
         """
         from tests.conftest import ensure_test_user
 
@@ -2956,14 +2837,17 @@ class TestFetchPageFacepalmScores:
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
 
         assert set(scores) == {game.id}
-        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY}
-        value = scores[game.id][_FP_MARKER_USER_PLY]
-        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
-        assert value.facepalm_type == "allowed_loss"
+        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY, _FP_MARKER_OPPONENT_PLY}
+        user_value = scores[game.id][_FP_MARKER_USER_PLY]
+        assert user_value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert user_value.facepalm_type == "allowed_loss"
+        opponent_value = scores[game.id][_FP_MARKER_OPPONENT_PLY]
+        assert opponent_value.score == pytest.approx(_FP_HIGH_SCORE, abs=SEED_FACEPALM_TOLERANCE)
+        assert opponent_value.facepalm_type == "allowed_loss"
 
     @pytest.mark.asyncio
-    async def test_owner_side_scored_rows_only_black_owner(self, db_session: AsyncSession) -> None:
-        """Black owner: the odd ply is the owner's, the even high-scoring ply is the opponent's."""
+    async def test_both_sides_scored_rows_black_owner(self, db_session: AsyncSession) -> None:
+        """Black owner: the odd ply is the owner's, the even high-scoring ply the opponent's; both return."""
         from tests.conftest import ensure_test_user
 
         await ensure_test_user(db_session, _FP_MARKER_USER_ID)
@@ -2977,10 +2861,13 @@ class TestFetchPageFacepalmScores:
 
         scores = await fetch_page_facepalm_scores(db_session, _FP_MARKER_USER_ID, [game.id])
 
-        assert set(scores[game.id]) == {_FP_MARKER_OPPONENT_PLY}
-        value = scores[game.id][_FP_MARKER_OPPONENT_PLY]
-        assert value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
-        assert value.facepalm_type == "allowed_loss"
+        assert set(scores[game.id]) == {_FP_MARKER_USER_PLY, _FP_MARKER_OPPONENT_PLY}
+        assert scores[game.id][_FP_MARKER_USER_PLY].score == pytest.approx(
+            _FP_HIGH_SCORE, abs=SEED_FACEPALM_TOLERANCE
+        )
+        owner_value = scores[game.id][_FP_MARKER_OPPONENT_PLY]
+        assert owner_value.score == pytest.approx(0.87, abs=SEED_FACEPALM_TOLERANCE)
+        assert owner_value.facepalm_type == "allowed_loss"
 
     @pytest.mark.asyncio
     async def test_marker_value_carries_missed_win_type(self, db_session: AsyncSession) -> None:
@@ -3033,7 +2920,7 @@ class TestQueryFlawsFacepalmType:
         items, count = await query_flaws(
             db_session,
             user_id=99999,
-            severity=["blunder"],
+            severity=["blunder", "facepalm"],  # 0.8 seeds are facepalms under the D-08 split
             tags=[],
             time_control=None,
             platform=None,

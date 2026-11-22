@@ -2884,3 +2884,123 @@ class TestGameCardInitialFen:
         card = await get_library_game(session, cast(Game, game).id)
         assert card is not None
         assert card.initial_fen is None
+
+
+# ---------------------------------------------------------------------------
+# Flaws list default severity (Phase 260 D-08, research Pitfall 2)
+# ---------------------------------------------------------------------------
+
+
+class TestFlawsDefaultSeverity:
+    """With no severity the Flaws list shows every mistake and blunder, facepalms included."""
+
+    def test_default_severity_is_every_filter_tag(self) -> None:
+        """Two tags (mistake + blunder) would now drop facepalms: the default is all three."""
+        from app.repositories.library_repository import FLAW_SEVERITY_FILTER_VALUES
+        from app.services.library_service import _DEFAULT_SEVERITY
+
+        assert _DEFAULT_SEVERITY == list(FLAW_SEVERITY_FILTER_VALUES)
+
+    @pytest.mark.asyncio
+    async def test_default_severity_lists_facepalms(self, db_session: object) -> None:
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
+        from app.services.library_service import get_library_flaws
+        from tests.conftest import ensure_test_user
+        from tests.facepalm_seed import SEED_FACEPALM_MARGIN, facepalm_fact_columns
+
+        session = cast(AsyncSession, db_session)
+        uid = 99870
+        await ensure_test_user(session, uid)
+        game = await _seed_db_game(session, user_id=uid, user_color="white", ply_count=10)
+        above = facepalm_fact_columns(
+            FACEPALM_STATS_MIN + SEED_FACEPALM_MARGIN, lam=FACEPALM_LIBRARY_LAMBDA
+        )
+        below = facepalm_fact_columns(
+            FACEPALM_STATS_MIN - SEED_FACEPALM_MARGIN, lam=FACEPALM_LIBRARY_LAMBDA
+        )
+        # White user: even plies are the user's moves.
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, facts=above)
+        await _seed_db_flaw(session, game=game, ply=4, severity=2, facts=below)
+        await _seed_db_flaw(session, game=game, ply=6, severity=1)
+
+        resp = await get_library_flaws(
+            session,
+            uid,
+            severity=[],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=100,
+        )
+        assert {f.ply for f in resp.flaws} == {2, 4, 6}
+
+
+class TestOpponentFacepalmMarker:
+    """Opponent blunder markers carry their facepalm score and type (Phase 260 D-24)."""
+
+    @pytest.mark.asyncio
+    async def test_opponent_blunder_carries_facepalm_score(self, db_session: object) -> None:
+        """Both blunders sit above the cut: the opponent marker (ply 3) carries score and type.
+
+        severity_counts stays player-gated (D-07): the opponent blunder does not count.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
+        from app.services.flaws_service import BLUNDER_DROP
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+        from tests.facepalm_seed import (
+            SEED_FACEPALM_MARGIN,
+            SEED_FACEPALM_TOLERANCE,
+            facepalm_fact_columns,
+        )
+
+        session = cast(AsyncSession, db_session)
+        uid = 99871
+        await ensure_test_user(session, uid)
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+        game = cast(
+            GameModel,
+            await _seed_db_game(session, user_id=uid, user_color="white", ply_count=4),
+        )
+        # Same position sequence as TestOpponentTacticMarker: white blunders at ply 2,
+        # black gives it back at ply 3.
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=prev_b)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=prev_b)
+
+        above = facepalm_fact_columns(
+            FACEPALM_STATS_MIN + SEED_FACEPALM_MARGIN, lam=FACEPALM_LIBRARY_LAMBDA
+        )
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, facts=above)
+        await _seed_db_flaw(session, game=game, ply=3, severity=2, facts=above)
+
+        card = await get_library_game(session, game_id=game.id)
+        assert card is not None
+        assert card.flaw_markers is not None
+
+        opponent = next((fm for fm in card.flaw_markers if fm.ply == 3), None)
+        assert opponent is not None, "Expected an opponent flaw_marker at ply 3"
+        assert opponent.is_user is False
+        assert opponent.facepalm_score is not None
+        assert opponent.facepalm_score >= FACEPALM_STATS_MIN - SEED_FACEPALM_TOLERANCE
+        assert opponent.facepalm_type is not None
+
+        user = next((fm for fm in card.flaw_markers if fm.ply == 2), None)
+        assert user is not None
+        assert user.facepalm_score is not None
+
+        assert card.severity_counts is not None
+        assert card.severity_counts["blunder"] == 1

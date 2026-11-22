@@ -1,47 +1,28 @@
 /**
- * Facepalm filter: units, presets and API mapping.
+ * Facepalm score units, the stats cut and the shared copy.
  *
- * UNIT: the slider handles are whole percents 0..100 in steps of FACEPALM_STEP.
- * Both handles are sent to the API as they read: inclusive floored integer
- * percents, matching the whole percent the Facepalm chip shows. Because both
- * bounds are inclusive and land on multiples of 5, neighbouring presets share
- * their boundary percent (a 30% blunder is in both Low and Mid).
+ * UNIT: the facepalm score is a 0..1 probability; the UI shows it as a whole percent,
+ * rounded DOWN (toFacepalmPct), clamped to FACEPALM_PCT_MIN..FACEPALM_PCT_MAX.
  *
- * The 30 / 70 preset cutoffs are UI constants (D-09). They are unrelated to the
- * blunder-check drill cut.
- *
- * The filter is a two-handle RANGE [min, max]. All (0..100) is the default and
- * filters nothing: at All no facepalm param is sent (D-04), so the request and
- * the react-query key are unchanged. Cloned in spirit from tacticDepth.ts.
+ * The facepalm dimension is a cut (FACEPALM_HIGH_CUTOFF), not a range: a blunder at or
+ * above it is a facepalm blunder (isFacepalmBlunder). The former range filter, its
+ * presets and its summary are gone (Phase 260 D-10).
  */
 
-import {
-  TAC_ALLOWED,
-  TAC_ALLOWED_BG,
-  TAC_ALLOWED_BORDER,
-  TAC_MISSED,
-  TAC_MISSED_BG,
-} from '@/lib/theme';
 import type { FacepalmType } from '@/types/library';
 
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
 
-/** Slider domain minimum (whole percent). */
+/** Lower bound of the whole-percent scale toFacepalmPct clamps to. */
 export const FACEPALM_PCT_MIN = 0;
 
-/** Slider domain maximum (whole percent). */
+/** Upper bound of the whole-percent scale toFacepalmPct clamps to. */
 export const FACEPALM_PCT_MAX = 100;
 
-/** Slider step in whole percents. */
-export const FACEPALM_STEP = 5;
-
-/** Low / Mid boundary, included in both (whole percent, UI cutoff, D-09). */
-const FACEPALM_MID_CUTOFF = 30;
-
 /**
- * Mid / High boundary, included in both (whole percent, UI cutoff, D-09). It is also the stats
- * cut: the Flaws Timeline facepalm band and the Facepalm rows name it. The backend FACEPALM_STATS_MIN is
- * pinned to the same 70% by test.
+ * The facepalm cut (whole percent, UI cutoff): a blunder scoring at or above it is a facepalm
+ * blunder, the Facepalm tag. It is also the stats cut: the Flaws Timeline facepalm band and the
+ * Facepalm rows name it. The backend FACEPALM_STATS_MIN is pinned to the same 70% by test.
  */
 export const FACEPALM_HIGH_CUTOFF = 70;
 
@@ -69,7 +50,7 @@ const FACEPALM_AUDIENCE_LEVEL: Record<FacepalmAudience, string> = {
 
 /**
  * What the facepalm score means, in one sentence. Shared by the score popover
- * (FacepalmExplanation) and the Facepalm Score filter info, so the two never drift.
+ * (FacepalmExplanation) and any other copy that explains the score, so they never drift.
  * `audience` picks the level word: 'self' (your blunder) or 'opponent' (their blunder).
  */
 export function facepalmScoreMeaning(audience: FacepalmAudience = 'self'): string {
@@ -80,100 +61,11 @@ export function facepalmScoreMeaning(audience: FacepalmAudience = 'self'): strin
 /** Multiplier turning a 0..1 score into a percent. */
 const FACEPALM_PCT_SCALE = 100;
 
-/** Default preset: the full range, which filters nothing. */
-export const FACEPALM_DEFAULT_PRESET = 'all' as const;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type FacepalmPreset = 'all' | 'low' | 'mid' | 'high';
-
 /**
- * Slider handle positions in whole percents in [FACEPALM_PCT_MIN, FACEPALM_PCT_MAX].
- * min === max is valid (e.g. {40, 40} = blunders showing exactly 40%).
- */
-export interface FacepalmValue {
-  min: number;
-  max: number;
-}
-
-// ─── Presets ────────────────────────────────────────────────────────────────
-
-export const PRESET_RANGES: Record<FacepalmPreset, FacepalmValue> = {
-  all: { min: FACEPALM_PCT_MIN, max: FACEPALM_PCT_MAX },
-  low: { min: FACEPALM_PCT_MIN, max: FACEPALM_MID_CUTOFF },
-  mid: { min: FACEPALM_MID_CUTOFF, max: FACEPALM_HIGH_CUTOFF },
-  high: { min: FACEPALM_HIGH_CUTOFF, max: FACEPALM_PCT_MAX },
-};
-
-/** Short preset names shown on the chips (the range goes in the summary). */
-export const PRESET_LABELS: Record<FacepalmPreset, string> = {
-  all: 'All',
-  low: 'Low',
-  mid: 'Mid',
-  high: 'High',
-};
-
-export const PRESET_ORDER: FacepalmPreset[] = ['all', 'low', 'mid', 'high'];
-
-/** Default range = All (0..100). */
-export const DEFAULT_FACEPALM_VALUE: FacepalmValue = PRESET_RANGES[FACEPALM_DEFAULT_PRESET];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Which preset the {min, max} handles match exactly, or null for a custom range. */
-export function derivePreset(min: number, max: number): FacepalmPreset | null {
-  for (const preset of PRESET_ORDER) {
-    const r = PRESET_RANGES[preset];
-    if (r.min === min && r.max === max) return preset;
-  }
-  return null;
-}
-
-/** Inverse of derivePreset: preset name to handle range. */
-export function presetToRange(preset: FacepalmPreset): FacepalmValue {
-  return PRESET_RANGES[preset];
-}
-
-/** Convert a slider tuple [lo, hi] into a FacepalmValue, clamping into the domain and ordering. */
-export function sliderToRange(lo: number, hi: number): FacepalmValue {
-  return {
-    min: Math.max(FACEPALM_PCT_MIN, Math.min(lo, hi)),
-    max: Math.min(FACEPALM_PCT_MAX, Math.max(lo, hi)),
-  };
-}
-
-/** True unless the handles sit at the full range (All). */
-export function isFacepalmNarrowed(value: FacepalmValue): boolean {
-  return value.min !== FACEPALM_PCT_MIN || value.max !== FACEPALM_PCT_MAX;
-}
-
-/**
- * Summary text for the active range: `All` at the full range, otherwise
- * `${min}-${max}%` (or `${min}%` when both ends are equal) in the same units
- * the API receives.
- */
-export function formatFacepalmSummary(value: FacepalmValue): string {
-  if (!isFacepalmNarrowed(value)) return PRESET_LABELS[FACEPALM_DEFAULT_PRESET];
-  return value.min === value.max ? `${value.min}%` : `${value.min}-${value.max}%`;
-}
-
-/**
- * Build the facepalm API query params: empty at the full range (D-04, so the
- * request and cache key do not change), else inclusive floored percents.
- */
-export function facepalmToQueryParams(value: FacepalmValue): {
-  min_facepalm_pct?: number;
-  max_facepalm_pct?: number;
-} {
-  if (!isFacepalmNarrowed(value)) return {};
-  return { min_facepalm_pct: value.min, max_facepalm_pct: value.max };
-}
-
-/**
- * Whole percent shown in the Facepalm chip and its popover for a raw 0..1 score.
- * Rounded DOWN so the chip percent always lies in the band the filter puts the
- * flaw in (0.697 shows 69% and sits in Mid); the API compares the same
- * double-widened value against k/100. Clamped to the slider domain.
+ * Whole percent shown in the facepalm popover, the eval chart tooltip and the Explain bar for a
+ * raw 0..1 score. Rounded DOWN so the shown percent never reads above the score (0.697 shows 69%, below
+ * the 70% cut). The backend compares the unrounded score to FACEPALM_STATS_MIN, which
+ * agrees with this floor at the cut. Clamped to 0..100.
  */
 export function toFacepalmPct(score: number): number {
   const pct = Math.floor(score * FACEPALM_PCT_SCALE);
@@ -188,14 +80,7 @@ export function isFacepalmBlunder(score: number | null | undefined): boolean {
   return score != null && toFacepalmPct(score) >= FACEPALM_HIGH_CUTOFF;
 }
 
-// ─── Facepalm type tint (257 D-08) ──────────────────────────────────────────
-
-/** Inline colours of a type-tinted Facepalm chip. */
-export interface FacepalmTypeStyle {
-  color: string;
-  bg: string;
-  border: string;
-}
+// ─── Facepalm type copy (257 D-10) ───────────────────────────────────────────
 
 /** 257 D-10: short type name, shown lower-cased in aria-labels and the eval-chart tooltip. */
 export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
@@ -204,20 +89,24 @@ export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
 };
 
 /**
+ * The accessible name of a facepalm popover trigger: "Facepalm N%, type" on a facepalm blunder and
+ * "Blunder, facepalm score N%, type" on any other scored blunder, so a screen reader never calls an
+ * ordinary blunder a facepalm. Shared by the Flaws card chip and the analysis move-list glyph
+ * (plan 260-09) so the two never drift.
+ */
+export function facepalmScoreLabel(score: number, type: FacepalmType): string {
+  const pct = toFacepalmPct(score);
+  const typeName = FACEPALM_TYPE_LABEL[type].toLowerCase();
+  return isFacepalmBlunder(score)
+    ? `Facepalm ${pct}%, ${typeName}`
+    : `Blunder, facepalm score ${pct}%, ${typeName}`;
+}
+
+/**
  * 257 D-10: what the type means, in one mover-neutral sentence (so the opponent variant needs no
  * second wording). No probability words (D-05). Read as `${LABEL}: ${SENTENCE}`.
  */
 export const FACEPALM_TYPE_SENTENCE: Record<FacepalmType, string> = {
   missed_win: 'the best move won material or led to checkmate, and was not played.',
   allowed_loss: 'the move gave away material or allowed checkmate.',
-};
-
-/**
- * 257 D-08: teal for a missed win, crimson for an allowed loss, the same hues as the tactic chips
- * of the same orientation. The missed border is the full teal and the allowed border the
- * lower-alpha crimson (the TacticMotifChip convention, which keeps the crimson fill legible).
- */
-export const FACEPALM_TYPE_STYLE: Record<FacepalmType, FacepalmTypeStyle> = {
-  missed_win: { color: TAC_MISSED, bg: TAC_MISSED_BG, border: TAC_MISSED },
-  allowed_loss: { color: TAC_ALLOWED, bg: TAC_ALLOWED_BG, border: TAC_ALLOWED_BORDER },
 };

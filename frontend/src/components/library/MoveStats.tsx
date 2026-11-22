@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { InfoPopover } from '@/components/ui/info-popover';
 import {
   EVAL_BAR_BLACK,
@@ -8,15 +9,18 @@ import {
   SIDE_SWATCH_WHITE,
   ACTIVE_FILTER_RING_CLASS,
 } from '@/lib/theme';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
 import {
+  MOVE_STAT_CATEGORY_ORDER,
   severityCountsBySide,
   tierCountsBySide,
+  type FlawMoveCategory,
   type MoveStatCategory,
   type MoveStatSide,
 } from '@/lib/moveStatsCounts';
 import { cn } from '@/lib/utils';
 import { trackFeature } from '@/lib/analytics';
-import type { GameFlawCard, FlawSeverity } from '@/types/library';
+import type { GameFlawCard } from '@/types/library';
 
 /**
  * MoveStats — shared, presentational two-sided move-classification component,
@@ -24,9 +28,11 @@ import type { GameFlawCard, FlawSeverity } from '@/types/library';
  *
  * Renders (a) a single-line accuracy strip — "Accuracy" label, player
  * accuracy, opponent accuracy — where each cell's background is the LITERAL board
- * color (white bg = white, dark bg = black) — and (b) a fixed 7-row category table (Gem, Great,
- * Best, Good, Inaccuracy, Mistake, Blunder), each row a per-side count cell.
- * ALL 7 rows always render, even when every count is 0.
+ * color (white bg = white, dark bg = black) — and (b) a fixed 8-row category table (Gem, Great,
+ * Best, Good, Inaccuracy, Mistake, Blunder, Facepalm), each row a per-side count
+ * cell. ALL 8 rows always render, even when every count is 0. Blunder and
+ * Facepalm are disjoint (`flawMoveCategory`): together they make up the Lichess
+ * blunder count.
  *
  * Counts derive purely from `game.flaw_markers` / `game.eval_series` via
  * `severityCountsBySide` / `tierCountsBySide` — `game.severity_counts`
@@ -42,14 +48,14 @@ export interface MoveStatsCellRef {
   side: MoveStatSide;
 }
 
-const CATEGORY_ORDER: readonly MoveStatCategory[] = [
+/** Mobile compact row: the headline categories, no Good and no Inaccuracy (D-05). */
+const COMPACT_CATEGORY_ORDER: readonly MoveStatCategory[] = [
   'gem',
   'great',
   'best',
-  'good',
-  'inaccuracy',
   'mistake',
   'blunder',
+  'facepalm',
 ] as const;
 
 const CATEGORY_LABELS: Record<MoveStatCategory, string> = {
@@ -60,9 +66,15 @@ const CATEGORY_LABELS: Record<MoveStatCategory, string> = {
   inaccuracy: 'Inaccuracy',
   mistake: 'Mistake',
   blunder: 'Blunder',
+  facepalm: 'Facepalm',
 };
 
-const SEVERITY_CATEGORIES: readonly FlawSeverity[] = ['inaccuracy', 'mistake', 'blunder'];
+const SEVERITY_CATEGORIES: readonly FlawMoveCategory[] = [
+  'inaccuracy',
+  'mistake',
+  'blunder',
+  'facepalm',
+];
 
 /**
  * Shared 3-column grid template for the accuracy strip and the category
@@ -75,7 +87,7 @@ const SEVERITY_CATEGORIES: readonly FlawSeverity[] = ['inaccuracy', 'mistake', '
  */
 const SIDE_ALIGNED_GRID_CLASS = 'grid grid-cols-[1fr_4rem_4rem] gap-x-2 items-center';
 
-function isSeverityCategory(category: MoveStatCategory): category is FlawSeverity {
+function isSeverityCategory(category: MoveStatCategory): category is FlawMoveCategory {
   return (SEVERITY_CATEGORIES as readonly string[]).includes(category);
 }
 
@@ -83,8 +95,17 @@ function sameCellRef(a: MoveStatsCellRef | null | undefined, b: MoveStatsCellRef
   return a != null && a.category === b.category && a.side === b.side;
 }
 
+/** Default for the optional `outlinedRefs` prop: a stable empty list, so no cell rings. */
+const NO_OUTLINED_REFS: readonly MoveStatsCellRef[] = [];
+
 function formatAccuracy(value: number | null): string {
   return value === null ? '—' : `${Math.round(value)}%`;
+}
+
+/** Row/chip icon: the "???" badge for Facepalm, the move-quality icon for every other category. */
+function MoveStatIcon({ category, className }: { category: MoveStatCategory; className?: string }) {
+  if (category === 'facepalm') return <FacepalmBlunderIcon className={className} />;
+  return <MoveQualityIcon quality={category} className={className} />;
 }
 
 /**
@@ -100,9 +121,10 @@ const CATEGORY_DEFINITIONS: Record<MoveStatCategory, string> = {
   inaccuracy: 'Costs 5–10% winning chances.',
   mistake: 'Costs 10–15% winning chances.',
   blunder: 'Costs 15% winning chances or more.',
+  facepalm: `A blunder that should have been easy to see for a player at the mover's level: a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more.`,
 };
 
-/** Accuracy-strip help popover: explains Accuracy and all seven move qualities. */
+/** Accuracy-strip help popover: explains Accuracy and all eight move qualities. */
 function MoveStatsInfo({ gameId }: { gameId?: number }) {
   return (
     <InfoPopover
@@ -115,9 +137,9 @@ function MoveStatsInfo({ gameId }: { gameId?: number }) {
         move. 100% means no move gave anything away.
       </p>
       <ul className="mt-1.5 space-y-1">
-        {CATEGORY_ORDER.map((category) => (
+        {MOVE_STAT_CATEGORY_ORDER.map((category) => (
           <li key={category} className="flex items-start gap-1.5">
-            <MoveQualityIcon quality={category} className="mt-px h-3.5 w-3.5 shrink-0" />
+            <MoveStatIcon category={category} className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>
               <strong>{CATEGORY_LABELS[category]}</strong>: {CATEGORY_DEFINITIONS[category]}
             </span>
@@ -131,7 +153,8 @@ function MoveStatsInfo({ gameId }: { gameId?: number }) {
       </p>
       <p className="mt-1.5">
         Accuracy, inaccuracies, mistakes and blunders use the same formulas as{' '}
-        <strong>Lichess</strong>, so they match Lichess&apos;s game analysis.
+        <strong>Lichess</strong>, so they match Lichess&apos;s game analysis. Blunders and facepalms together make up
+        Lichess&apos;s blunder count.
       </p>
     </InfoPopover>
   );
@@ -154,18 +177,22 @@ export interface MoveStatsProps {
   onCellHover?: (ref: MoveStatsCellRef | null) => void;
   /** The cell currently selected for cycling (drives the active-cell style). */
   activeRef?: MoveStatsCellRef | null;
-  /** The cell the global flaw filter is emphasizing (library-only). */
-  outlinedRef?: MoveStatsCellRef | null;
   /**
-   * Mobile collapsed rendering. The full 7-row two-sided table is hidden
+   * The cells the global flaw filter is emphasizing (library-only): one per selected
+   * Flaws tag plus the Gem / Great cells for the has gem / has great tags. A cell is
+   * ringed when any ref matches it. Omitted (the /analysis tags panel) rings nothing.
+   */
+  outlinedRefs?: readonly MoveStatsCellRef[];
+  /**
+   * Mobile collapsed rendering. The full 8-row two-sided table is hidden
    * (native `hidden` attribute on its charcoal card) rather than unmounted, so
    * the toggle never remounts the component or loses hover/active state.
    * Meaningful only together with `showCompactRow` (the mobile card).
    */
   collapsed?: boolean;
   /**
-   * Mobile only: render the single-line, 8-column compact summary
-   * row — one `count + icon` cell per category (user-side counts) plus a
+   * Mobile only: render the single-line, 7-column compact summary
+   * row — one `count + icon` cell per headline category (user-side counts) plus a
    * trailing chevron toggle — in place of the full two-sided table. Tapping a
    * cell cycles the eval chart through that category's moves (via
    * `onCellActivate`, scoped to the user's side); the chevron flips the
@@ -189,7 +216,7 @@ export function MoveStats({
   onCellActivate,
   onCellHover,
   activeRef = null,
-  outlinedRef = null,
+  outlinedRefs = NO_OUTLINED_REFS,
   collapsed = false,
   showCompactRow = false,
   onToggleCollapse,
@@ -210,6 +237,10 @@ export function MoveStats({
   function countFor(category: MoveStatCategory, side: MoveStatSide): number {
     if (isSeverityCategory(category)) return severityCounts[side][category];
     return tierCounts[side][category];
+  }
+
+  function isOutlined(ref: MoveStatsCellRef): boolean {
+    return outlinedRefs.some((outlined) => sameCellRef(outlined, ref));
   }
 
   function renderAccuracyCell(side: MoveStatSide) {
@@ -269,7 +300,7 @@ export function MoveStats({
           className={cn(
             'cursor-pointer rounded px-1 text-sm font-bold',
             sameCellRef(activeRef, ref) && 'underline',
-            sameCellRef(outlinedRef, ref) && ACTIVE_FILTER_RING_CLASS,
+            isOutlined(ref) && ACTIVE_FILTER_RING_CLASS,
           )}
           onClick={() => onCellActivate?.(ref)}
           onMouseEnter={() => onCellHover?.(ref)}
@@ -287,8 +318,8 @@ export function MoveStats({
   // player accuracy, opponent accuracy. Rendered as the charcoal card's header
   // band (CardHeader's bg-card-band + border-b); px-2 matches the table's p-2 so
   // the pill columns line up with the count columns. py-0.5 (not py-1) keeps the
-  // card's natural height under the Library desktop miniboard (225px), so the
-  // card stretches to the board instead of pushing the row 1-2px taller.
+  // card's natural height in line with lib/gameCardGeometry.ts, which derives the
+  // Library desktop miniboard size from it, so board and card end level.
   const accuracyStrip = (
     <div
       className={cn(SIDE_ALIGNED_GRID_CLASS, 'bg-card-band border-b border-card-edge px-2 py-0.5')}
@@ -319,22 +350,22 @@ export function MoveStats({
       >
         {accuracyStrip}
 
-        {/* Mobile compact summary row: 8 columns spanning the card width
-            — one `count + icon` cell per category (user-side counts) plus a
-            trailing chevron toggle. */}
+        {/* Mobile compact summary row: 7 columns spanning the card width
+            — one `count + icon` cell per headline category (user-side counts)
+            plus a trailing chevron toggle; the table below keeps all 8 rows. */}
         {showCompactRow && (
           <div
-            className="grid grid-cols-8 items-center gap-1 p-2"
+            className="grid grid-cols-7 items-center gap-1 p-2"
             data-testid={tid('move-stats-compact', gameId)}
           >
-            {CATEGORY_ORDER.map((category) => {
+            {COMPACT_CATEGORY_ORDER.map((category) => {
               const count = countFor(category, userSide);
               const ref: MoveStatsCellRef = { kind: 'category', category, side: userSide };
               const testId = tid(`move-stats-compact-cell-${category}`, gameId);
               const inner = (
                 <>
                   <span className="text-sm font-bold tabular-nums">{count}</span>
-                  <MoveQualityIcon quality={category} className="h-4 w-4" />
+                  <MoveStatIcon category={category} className="h-4 w-4" />
                 </>
               );
               if (count === 0) {
@@ -357,6 +388,7 @@ export function MoveStats({
                   className={cn(
                     'flex cursor-pointer items-center justify-center gap-0.5 rounded',
                     sameCellRef(activeRef, ref) && 'underline',
+                    isOutlined(ref) && ACTIVE_FILTER_RING_CLASS,
                   )}
                   onClick={() => onCellActivate?.(ref)}
                   onMouseEnter={() => onCellHover?.(ref)}
@@ -396,7 +428,7 @@ export function MoveStats({
           hidden={collapsed}
           data-testid={tid('move-stats-table', gameId)}
         >
-          {CATEGORY_ORDER.map((category) => {
+          {MOVE_STAT_CATEGORY_ORDER.map((category) => {
             // Rows where neither side has a count are kept but dimmed,
             // so the table reads as only the rows that actually occurred.
             const bothZero =
@@ -408,7 +440,7 @@ export function MoveStats({
                 data-testid={tid(`move-stats-row-${category}`, gameId)}
               >
                 <div className={cn('flex items-center gap-2 py-0.5', bothZero && 'opacity-40')}>
-                  <MoveQualityIcon quality={category} className="h-5 w-5" />
+                  <MoveStatIcon category={category} className="h-5 w-5" />
                   <span className="text-sm">{CATEGORY_LABELS[category]}</span>
                 </div>
                 {renderCountCell(category, playerSide)}

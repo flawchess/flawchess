@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { severityCountsBySide, tierCountsBySide } from '@/lib/moveStatsCounts';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
+import { flawMoveCategory, MOVE_STAT_CATEGORY_ORDER, severityCountsBySide, tierCountsBySide } from '@/lib/moveStatsCounts';
 import type { EvalPoint, FlawMarker } from '@/types/library';
 
 function marker(overrides: Partial<FlawMarker> & Pick<FlawMarker, 'ply' | 'severity'>): FlawMarker {
@@ -31,11 +32,60 @@ function point(overrides: Partial<EvalPoint> & Pick<EvalPoint, 'ply'>): EvalPoin
   };
 }
 
+// Local test scale (percent to 0..1 score); the cut itself is read from FACEPALM_HIGH_CUTOFF.
+const PCT_SCALE = 100;
+const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+const BELOW_CUT = (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE;
+
+describe('flawMoveCategory', () => {
+  it('splits a blunder at or above the facepalm cut into facepalm', () => {
+    expect(flawMoveCategory({ severity: 'blunder', facepalm_score: ABOVE_CUT })).toBe('facepalm');
+  });
+
+  it('keeps a blunder below the cut as blunder', () => {
+    expect(flawMoveCategory({ severity: 'blunder', facepalm_score: BELOW_CUT })).toBe('blunder');
+  });
+
+  it('keeps an unscored blunder as blunder (null and absent score)', () => {
+    expect(flawMoveCategory({ severity: 'blunder', facepalm_score: null })).toBe('blunder');
+    expect(flawMoveCategory({ severity: 'blunder' })).toBe('blunder');
+  });
+
+  it('never splits a mistake or inaccuracy, even with an above-cut score', () => {
+    expect(flawMoveCategory({ severity: 'mistake', facepalm_score: ABOVE_CUT })).toBe('mistake');
+    expect(flawMoveCategory({ severity: 'inaccuracy', facepalm_score: ABOVE_CUT })).toBe('inaccuracy');
+  });
+});
+
+describe('MOVE_STAT_CATEGORY_ORDER', () => {
+  it('lists 8 categories with Facepalm last after Blunder', () => {
+    expect(MOVE_STAT_CATEGORY_ORDER).toHaveLength(8);
+    expect(MOVE_STAT_CATEGORY_ORDER.slice(-2)).toEqual(['blunder', 'facepalm']);
+  });
+});
+
+describe('severityCountsBySide facepalm split', () => {
+  it('counts Blunder and Facepalm disjointly; together they equal the blunder markers of the side', () => {
+    const markers = [
+      marker({ ply: 0, severity: 'blunder', facepalm_score: ABOVE_CUT }),
+      marker({ ply: 2, severity: 'blunder', facepalm_score: BELOW_CUT }),
+      marker({ ply: 4, severity: 'blunder', facepalm_score: null }),
+      marker({ ply: 1, severity: 'blunder', facepalm_score: ABOVE_CUT }),
+    ];
+    const result = severityCountsBySide(markers);
+    expect(result.white.facepalm).toBe(1);
+    expect(result.white.blunder).toBe(2);
+    expect(result.white.facepalm + result.white.blunder).toBe(3);
+    expect(result.black.facepalm).toBe(1);
+    expect(result.black.blunder).toBe(0);
+  });
+});
+
 describe('severityCountsBySide', () => {
   it('returns both sides all-zero for an empty marker list', () => {
     const result = severityCountsBySide([]);
-    expect(result.white).toEqual({ inaccuracy: 0, mistake: 0, blunder: 0 });
-    expect(result.black).toEqual({ inaccuracy: 0, mistake: 0, blunder: 0 });
+    expect(result.white).toEqual({ inaccuracy: 0, mistake: 0, blunder: 0, facepalm: 0 });
+    expect(result.black).toEqual({ inaccuracy: 0, mistake: 0, blunder: 0, facepalm: 0 });
   });
 
   it('counts a blunder at ply 0 (white) and a mistake at ply 1 (black), regardless of is_user', () => {

@@ -31,7 +31,10 @@ vi.mock('@/components/ui/tooltip', () => ({
 // tacticDepthMax must be present with their real defaults for that logic to run).
 function defaultTestFilter() {
   return {
-    severity: ['blunder', 'mistake'] as string[],
+    // [] = the default filter: no Flaws tag selected, so nothing narrows and no cell rings.
+    severity: [] as string[],
+    hasGem: false,
+    hasGreat: false,
     tags: [] as string[],
     tacticFamilies: [] as string[],
     tacticOrientation: 'either' as const,
@@ -41,7 +44,9 @@ function defaultTestFilter() {
 }
 const filterStore = vi.hoisted(() => ({
   filter: {
-    severity: ['blunder', 'mistake'] as string[],
+    severity: [] as string[],
+    hasGem: false,
+    hasGreat: false,
     tags: [] as string[],
     tacticFamilies: [] as string[],
     tacticOrientation: 'either' as const,
@@ -62,10 +67,12 @@ vi.mock('@/components/library/EvalChart', () => ({
     onActivePlyChange,
     commandedPly,
     commandSeq,
+    heightClass,
   }: {
     onActivePlyChange?: (p: number | null) => void;
     commandedPly?: number | null;
     commandSeq?: number;
+    heightClass?: string;
   }) => (
     <div>
       <button
@@ -76,6 +83,7 @@ vi.mock('@/components/library/EvalChart', () => ({
       {/* Exposes the imperative scrub command (gem/great cycling
           tests) so a click on a badge/chip can be asserted end-to-end. */}
       <span data-testid="stub-eval-chart-command">{`${commandedPly ?? 'null'}:${commandSeq ?? 0}`}</span>
+      <span data-testid="stub-eval-chart-height">{heightClass}</span>
     </div>
   ),
 }));
@@ -110,6 +118,8 @@ import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LibraryGameCard } from '../LibraryGameCard';
 import type { GameFlawCard, FlawMarker } from '@/types/library';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
+import { DESKTOP_EVAL_CHART_HEIGHT_CLASS } from '@/lib/gameCardGeometry';
 
 /**
  * Wraps any element in a MemoryRouter (useNavigate) + a fresh QueryClientProvider
@@ -474,6 +484,48 @@ describe('LibraryGameCard MoveStats', () => {
   });
 });
 
+describe('LibraryGameCard Facepalm row split and cycling (D-02, D-04)', () => {
+  // Local test scale (percent to 0..1 score); the cut is read from FACEPALM_HIGH_CUTOFF.
+  const PCT_SCALE = 100;
+  const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+  // user_color 'white'. ply 2 = user facepalm blunder, ply 4 = user unscored blunder,
+  // ply 3 = opponent facepalm blunder.
+  function facepalmSplitGame(): GameFlawCard {
+    return makeGame([
+      marker({ ply: 2, severity: 'blunder', is_user: true, facepalm_score: ABOVE_CUT }),
+      marker({ ply: 4, severity: 'blunder', is_user: true, facepalm_score: null }),
+      marker({ ply: 3, severity: 'blunder', is_user: false, facepalm_score: ABOVE_CUT }),
+    ]);
+  }
+  const cell = (category: string, side: string): HTMLElement =>
+    screen.getAllByTestId(`move-stats-cell-${category}-${side}-${GAME_ID}`)[0]!;
+
+  it('counts a facepalm blunder in the Facepalm row and not in Blunder', () => {
+    renderCard(<LibraryGameCard game={facepalmSplitGame()} />);
+    expect(cell('facepalm', 'white').textContent).toBe('1');
+    expect(cell('blunder', 'white').textContent).toBe('1');
+    expect(cell('facepalm', 'black').textContent).toBe('1');
+    expect(cell('blunder', 'black').textContent).toBe('0');
+  });
+
+  it('the facepalm cell cycles to the facepalm ply, the blunder cell to the unscored blunder ply', () => {
+    renderCard(<LibraryGameCard game={facepalmSplitGame()} />);
+    fireEvent.click(cell('facepalm', 'white'));
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('2:1');
+    fireEvent.click(cell('blunder', 'white'));
+    expect(screen.getAllByTestId('stub-eval-chart-command')[0]!.textContent).toBe('4:2');
+  });
+});
+
+describe('LibraryGameCard eval chart heights (D-16, D-25)', () => {
+  it('gives the desktop chart the derived height class and leaves the mobile chart at h-[114px]', () => {
+    renderCard(<LibraryGameCard game={makeGame([])} />);
+    const heights = screen.getAllByTestId('stub-eval-chart-height').map((el) => el.textContent);
+    expect(heights).toContain(DESKTOP_EVAL_CHART_HEIGHT_CLASS);
+    expect(heights).toContain('h-[114px]');
+  });
+});
+
 describe('LibraryGameCard MoveStats filter ring is user-scoped', () => {
   // user_color 'white'. ply 2 (even) = user blunder; ply 3 (odd) = opponent blunder.
   function twoSidedBlunderGame(): GameFlawCard {
@@ -496,15 +548,115 @@ describe('LibraryGameCard MoveStats filter ring is user-scoped', () => {
     expect(opponentCell.tagName).toBe('BUTTON');
   });
 
-  it('rings no cell when the severity filter is at its default (both blunder+mistake)', () => {
+  it('rings no cell when the severity filter is at its default (no tag selected)', () => {
     renderCard(<LibraryGameCard game={twoSidedBlunderGame()} />);
     const userCell = screen.getAllByTestId(`move-stats-cell-blunder-white-${GAME_ID}`)[0]!;
     expect(userCell.className).not.toContain(RING_CLASS_FRAGMENT);
   });
 });
 
+describe('LibraryGameCard MoveStats filter ring marks each selected tag (D-20, D-28)', () => {
+  const RING_CLASS_FRAGMENT = 'ring-2';
+  const PCT_SCALE = 100;
+  const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+  // user_color 'white': even plies are the user's, odd plies the opponent's. Every
+  // category has a non-zero cell on BOTH sides so each one renders as a button.
+  function bothSidesGame(): GameFlawCard {
+    return {
+      ...makeGame([
+        marker({ ply: 2, severity: 'blunder', is_user: true, facepalm_score: ABOVE_CUT }),
+        marker({ ply: 4, severity: 'blunder', is_user: true, facepalm_score: null }),
+        marker({ ply: 6, severity: 'mistake', is_user: true }),
+        marker({ ply: 3, severity: 'blunder', is_user: false, facepalm_score: ABOVE_CUT }),
+        marker({ ply: 5, severity: 'blunder', is_user: false, facepalm_score: null }),
+        marker({ ply: 7, severity: 'mistake', is_user: false }),
+      ]),
+      eval_series: [
+        { ply: 0, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+        { ply: 1, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'gem', maia_prob: 0.1 },
+        { ply: 8, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'great', maia_prob: 0.3 },
+        { ply: 9, es: 0.5, eval_cp: 0, eval_mate: null, best_move_tier: 'great', maia_prob: 0.3 },
+      ],
+    };
+  }
+  const CATEGORIES = ['facepalm', 'blunder', 'mistake', 'gem', 'great'] as const;
+  const cell = (category: string, side: 'white' | 'black'): HTMLElement =>
+    screen.getAllByTestId(`move-stats-cell-${category}-${side}-${GAME_ID}`)[0]!;
+  const ringed = (side: 'white' | 'black'): string[] =>
+    CATEGORIES.filter((c) => cell(c, side).className.includes(RING_CLASS_FRAGMENT));
+
+  function render(filter: Partial<ReturnType<typeof defaultTestFilter>>): void {
+    filterStore.filter = { ...defaultTestFilter(), ...filter };
+    renderCard(<LibraryGameCard game={bothSidesGame()} />);
+  }
+
+  it('rings only the facepalm cell for a facepalm selection', () => {
+    render({ severity: ['facepalm'] });
+    expect(ringed('white')).toEqual(['facepalm']);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('rings several cells for several selected tags', () => {
+    render({ severity: ['blunder', 'facepalm'] });
+    expect(ringed('white')).toEqual(['facepalm', 'blunder']);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('rings the mistake cell for a mistake selection', () => {
+    render({ severity: ['mistake'] });
+    expect(ringed('white')).toEqual(['mistake']);
+  });
+
+  it('rings nothing for no tag and for all three tags', () => {
+    render({ severity: [] });
+    expect(ringed('white')).toEqual([]);
+    cleanup();
+    render({ severity: ['facepalm', 'blunder', 'mistake'] });
+    expect(ringed('white')).toEqual([]);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('has gem rings only the user Gem cell', () => {
+    render({ hasGem: true });
+    expect(ringed('white')).toEqual(['gem']);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('has great rings only the user Great cell', () => {
+    render({ hasGreat: true });
+    expect(ringed('white')).toEqual(['great']);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('has gem and has great ring both cells', () => {
+    render({ hasGem: true, hasGreat: true });
+    expect(ringed('white')).toEqual(['gem', 'great']);
+    expect(ringed('black')).toEqual([]);
+  });
+
+  it('has gem with all three Flaws tags rings the Gem cell and no severity cell', () => {
+    render({ hasGem: true, severity: ['facepalm', 'blunder', 'mistake'] });
+    expect(ringed('white')).toEqual(['gem']);
+  });
+
+  it('a Flaws tag and has gem ring independently', () => {
+    render({ hasGem: true, severity: ['mistake'] });
+    expect(ringed('white')).toEqual(['mistake', 'gem']);
+  });
+
+  it('the mobile compact cells of the ringed categories carry the ring too', () => {
+    render({ severity: ['facepalm'], hasGreat: true });
+    const compact = (category: string): HTMLElement =>
+      screen.getAllByTestId(`move-stats-compact-cell-${category}-${GAME_ID}`)[0]!;
+    expect(compact('facepalm').className).toContain(RING_CLASS_FRAGMENT);
+    expect(compact('great').className).toContain(RING_CLASS_FRAGMENT);
+    expect(compact('blunder').className).not.toContain(RING_CLASS_FRAGMENT);
+    expect(compact('gem').className).not.toContain(RING_CLASS_FRAGMENT);
+  });
+});
+
 describe('LibraryGameCard mobile MoveStats collapse and unanalyzed pill', () => {
-  it('collapsed default shows the accuracy strip + the compact summary row + the chevron toggle; expand reveals the 7-row table', () => {
+  it('collapsed default shows the accuracy strip + the compact summary row + the chevron toggle; expand reveals the 8-row table', () => {
     const game: GameFlawCard = {
       ...makeGame([marker({ ply: 2, severity: 'blunder', is_user: true })]),
       white_accuracy: 88,
@@ -512,11 +664,15 @@ describe('LibraryGameCard mobile MoveStats collapse and unanalyzed pill', () => 
     renderCard(<LibraryGameCard game={game} />);
     // Accuracy strip always renders.
     expect(screen.getAllByTestId(`move-stats-accuracy-white-${GAME_ID}`).length).toBeGreaterThan(0);
-    // Collapsed (mobile): the compact 8-column summary row renders, including a
+    // Collapsed (mobile): the compact 7-column summary row renders, including a
     // per-category cell (replaces the old severity-badge row).
     expect(screen.getAllByTestId(`move-stats-compact-${GAME_ID}`).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(`move-stats-compact-cell-blunder-${GAME_ID}`).length).toBeGreaterThan(0);
-    // The card (with its accuracy header) stays visible; only the 7-row table is
+    expect(screen.getAllByTestId(`move-stats-compact-cell-facepalm-${GAME_ID}`).length).toBeGreaterThan(0);
+    // D-05: the compact row omits Good and Inaccuracy.
+    expect(screen.queryAllByTestId(`move-stats-compact-cell-inaccuracy-${GAME_ID}`)).toHaveLength(0);
+    expect(screen.queryAllByTestId(`move-stats-compact-cell-good-${GAME_ID}`)).toHaveLength(0);
+    // The card (with its accuracy header) stays visible; only the 8-row table is
     // hidden (native `hidden`) while collapsed.
     expect((screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0] as HTMLElement).hidden).toBe(false);
     const tableCard = screen.getAllByTestId(`move-stats-table-${GAME_ID}`)[0]!;

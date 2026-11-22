@@ -2508,11 +2508,11 @@ async def test_full_mode_user_output_unchanged_by_opponent_blunders(
     ) == (1, 1, 1, 1)
 
 
-async def test_facepalm_expr_scores_opponent_row_and_gated_reader_still_omits_it(
+async def test_facepalm_expr_scores_opponent_row_and_marker_reader_returns_it(
     session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
 ) -> None:
     """End to end: full-mode scoring (no hand-seeded facts) leaves the opponent row with facts that
-    score in SQL, while the owner-side gate of `fetch_page_facepalm_scores` still omits it."""
+    score in SQL, and `fetch_page_facepalm_scores` returns it as a marker (260 D-24)."""
     game_id = await _opponent_game(make_game)
     await _seed_stale_facepalm(session_factory, game_id, _OPPONENT_PLY)
     assert await _score(session_factory, game_id)
@@ -2535,10 +2535,10 @@ async def test_facepalm_expr_scores_opponent_row_and_gated_reader_still_omits_it
         markers = await fetch_page_facepalm_scores(session, _TEST_USER_ID, [game_id])
     assert drill[_OPPONENT_PLY] is not None
     assert library[_OPPONENT_PLY] is not None
-    # White user: ply 5 is Black's move, the opponent's. The owner-side reader omits it.
-    assert _OPPONENT_PLY not in markers.get(game_id, {})
-    scored_user_plies = {ply for ply, value in library.items() if value is not None}
-    assert set(markers.get(game_id, {})) == scored_user_plies - {_OPPONENT_PLY}
+    # White user: ply 5 is Black's move, the opponent's. The marker reader returns it (D-24).
+    assert _OPPONENT_PLY in markers.get(game_id, {})
+    scored_plies = {ply for ply, value in library.items() if value is not None}
+    assert set(markers.get(game_id, {})) == scored_plies
 
 
 # ---------------------------------------------------------------------------
