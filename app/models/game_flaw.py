@@ -57,6 +57,27 @@ class GameFlaw(Base):
             ],
             postgresql_where=text("severity = 2"),
         ),
+        # Phase 259 D-17: the covering partial index for the scalar score inputs. Same role as
+        # ix_game_flaws_blunder_facts, over the columns facepalm_expr and facepalm_type_expr read
+        # after the scalar switch. Keep the INCLUDE list in step with
+        # facepalm_score._game_flaw_columns (a new score input not listed here silently brings the
+        # heap fetches back). A new name is mandatory: autogenerate ignores INCLUDE / WHERE changes.
+        # The old index stays until the drop plan so a rollback of the switch keeps a usable index.
+        # Prod builds it with CREATE INDEX CONCURRENTLY (scripts/build_facepalm_inputs_index.py).
+        Index(
+            "ix_game_flaws_facepalm_inputs",
+            "user_id",
+            "game_id",
+            postgresql_include=[
+                "ply",
+                "maia_played_prob",
+                "material_loss",
+                "material_missed",
+                "maia_best_prob",
+                "maia_best_reply_prob",
+            ],
+            postgresql_where=text("severity = 2"),
+        ),
         # Phase 254 array shape checks, NOT VALID so the migration skips the table scan
         # (metadata matches alembic/versions/..._a7d2c9e1b254_phase_254_facepalm_facts.py).
         CheckConstraint(

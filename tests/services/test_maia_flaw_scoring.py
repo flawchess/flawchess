@@ -457,13 +457,10 @@ async def test_scores_set_counts_in_memory(
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=row["maia_played_prob"],
-            reply_spread=row["maia_reply_spread"],
-            played_material=row["played_line_material"],
-            mate_ply=row["line_mate_ply"],
-            best_material=row["best_line_material"],
-            best_mate_ply=row["best_line_mate_ply"],
+            loss=row["material_loss"],
+            missed=row["material_missed"],
             best_prob=row["maia_best_prob"],
-            pre_spread=row["maia_pre_spread"],
+            reply_prob=row["maia_best_reply_prob"],
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
@@ -1006,10 +1003,10 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            loss=row["material_loss"],
+            missed=row["material_missed"],
             best_prob=_STORED_BEST_PROB,
-            reply_spread=spread,
-            played_material=facts.material_array(),
-            mate_ply=facts.mate_ply,
+            reply_prob=None,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
@@ -1020,20 +1017,20 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
 
 
 def _expected_score_without_spread(pre: chess.Board, played: str, pv: str | None) -> float:
-    """The shipped model's score of the Scotch blunder when its reply spread is unknown.
+    """The shipped model's score of the Scotch blunder when no reply probability is stored.
 
-    Since the Phase 254 refit (spread form "best_prob_for_misses") the spread is read only on rows
-    that lose material at depth 3; this line does not, so a NULL spread no longer unscores it.
+    A row that loses no material reads the best-move probability, not the reply (259 D-08); this
+    line loses nothing, so a NULL reply probability does not unscore it.
     """
     facts = line_facts(pre, played, pv)
     assert (facts.loss_at(3) or 0) <= 0, "the fixture line must not lose material"
     score = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            loss=0.0,
+            missed=0.0,
             best_prob=_STORED_BEST_PROB,
-            reply_spread=None,
-            played_material=facts.material_array(),
-            mate_ply=facts.mate_ply,
+            reply_prob=None,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
@@ -1134,10 +1131,10 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
     expected = facepalm_score(
         FacepalmFacts(
             played_prob=_STORED_PLAYED_PROB,
+            loss=row["material_loss"],
+            missed=row["material_missed"],
             best_prob=_STORED_BEST_PROB,
-            reply_spread=_STORED_SPREAD,
-            played_material=facts.material_array(),
-            mate_ply=facts.mate_ply,
+            reply_prob=None,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
@@ -2768,12 +2765,19 @@ async def test_spread_and_opponent_key_sets_unchanged(
         assert "maia_best_reply_prob" not in row
 
 
-def test_r1_score_expressions_read_no_new_column() -> None:
-    """D-11: the R1 release stays behaviour-neutral, so the live score and type expressions compile
-    to SQL that reads none of the three new columns."""
+def test_score_expressions_read_the_scalar_columns_only() -> None:
+    """259 D-05: the live score and type expressions read the stored scalars and none of the line
+    arrays, mate plies or spreads they read before the twin switch."""
     for expression in (facepalm_expr(FACEPALM_DRILL_LAMBDA), facepalm_type_expr()):
         compiled = str(expression.compile(dialect=postgresql.dialect())).lower()
-        for column in ("material_loss", "material_missed", "maia_best_reply_prob"):
+        assert "material_loss" in compiled
+        for column in (
+            "played_line_material",
+            "best_line_material",
+            "line_mate_ply",
+            "maia_reply_spread",
+            "maia_pre_spread",
+        ):
             assert column not in compiled, column
 
 

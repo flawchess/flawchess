@@ -82,7 +82,9 @@ BLUNDER_SEVERITY: int = _SEVERITY_INT["blunder"]
 # Version 4 (Phase 256): blunder records carry both 9-slot material arrays so an aggregate
 # material input scores the full lines; a version 3 cache holds depth-3 values only and no longer
 # loads.
-CACHE_VERSION: int = 4
+# Version 5 (Phase 259, D-15): blunder records also carry the stored scalar inputs material_loss,
+# material_missed and maia_best_reply_prob; a version 4 cache lacks them and no longer loads.
+CACHE_VERSION: int = 5
 # Number of user moves kept before each blunder (positions 2..MAX_BLUNDER_POSITION need k-1).
 PRECEDING_MOVES_KEPT: int = MAX_BLUNDER_POSITION - 1
 
@@ -208,6 +210,11 @@ class BlunderRecord:
     maia_pre_spread: float | None
     has_line: bool
     preceding: list[MoveJudgement]
+    # Phase 259 stored scalar inputs (D-05, D-07): the NULL material pair is "unscored or not
+    # computed yet"; the reply probability is NULL when the refutation line is unknown.
+    material_loss: float | None = None
+    material_missed: float | None = None
+    maia_best_reply_prob: float | None = None
 
     @property
     def played_3(self) -> int | None:
@@ -223,18 +230,7 @@ class BlunderRecord:
     def facepalm_score(self) -> float | None:
         """The facepalm score of these facts at the drill lambda, None when unscored (254 D-01, D-03)."""
         return score_facepalm_facts(
-            FacepalmFacts(
-                played_prob=self.maia_played_prob,
-                reply_spread=self.maia_reply_spread,
-                played_material=self.played_material,
-                mate_ply=self.line_mate_ply,
-                best_material=self.best_material,
-                best_mate_ply=self.best_mate_ply,
-                best_prob=self.maia_best_prob,
-                pre_spread=self.maia_pre_spread,
-            ),
-            lam=FACEPALM_DRILL_LAMBDA,
-            model=FACEPALM_MODEL,
+            _facepalm_facts(self), lam=FACEPALM_DRILL_LAMBDA, model=FACEPALM_MODEL
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -261,6 +257,9 @@ class BlunderRecord:
             "maia_pre_spread": self.maia_pre_spread,
             "has_line": self.has_line,
             "preceding": [_judgement_to_list(j) for j in self.preceding],
+            "material_loss": self.material_loss,
+            "material_missed": self.material_missed,
+            "maia_best_reply_prob": self.maia_best_reply_prob,
         }
 
     @classmethod
@@ -286,7 +285,25 @@ class BlunderRecord:
             maia_pre_spread=raw["maia_pre_spread"],
             has_line=bool(raw["has_line"]),
             preceding=[_judgement_from_list(j) for j in raw["preceding"]],
+            material_loss=raw["material_loss"],
+            material_missed=raw["material_missed"],
+            maia_best_reply_prob=raw["maia_best_reply_prob"],
         )
+
+
+def _facepalm_facts(record: BlunderRecord) -> FacepalmFacts:
+    """Every input of the score twin for one blunder record, built in this one place (259 D-05).
+
+    The twin reads the five stored scalars: the played probability, the decaying-mean loss and
+    missed gain, the best move's probability and the best-reply probability.
+    """
+    return FacepalmFacts(
+        played_prob=record.maia_played_prob,
+        loss=record.material_loss,
+        missed=record.material_missed,
+        best_prob=record.maia_best_prob,
+        reply_prob=record.maia_best_reply_prob,
+    )
 
 
 @dataclass
@@ -431,6 +448,9 @@ class FlawRow:
     maia_best_prob: float | None
     maia_pre_spread: float | None
     has_line: bool
+    material_loss: float | None
+    material_missed: float | None
+    maia_best_reply_prob: float | None
 
 
 @dataclass
@@ -563,6 +583,9 @@ def _flaw_row(row: Sequence[Any]) -> FlawRow:
         maia_best_prob=row[10],
         maia_pre_spread=row[11],
         has_line=bool(row[12]),
+        material_loss=row[13],
+        material_missed=row[14],
+        maia_best_reply_prob=row[15],
     )
 
 
@@ -587,6 +610,9 @@ async def _load_flaws(session: AsyncSession, game_ids: Sequence[int]) -> dict[in
             GameFlaw.maia_best_prob,
             GameFlaw.maia_pre_spread,
             has_line,
+            GameFlaw.material_loss,
+            GameFlaw.material_missed,
+            GameFlaw.maia_best_reply_prob,
         )
         .select_from(GameFlaw)
         .outerjoin(
@@ -662,6 +688,9 @@ def _blunder_record(
         maia_pre_spread=flaw.maia_pre_spread,
         has_line=flaw.has_line,
         preceding=[j for j in judgements if j.ply < flaw.ply][-PRECEDING_MOVES_KEPT:],
+        material_loss=flaw.material_loss,
+        material_missed=flaw.material_missed,
+        maia_best_reply_prob=flaw.maia_best_reply_prob,
     )
 
 

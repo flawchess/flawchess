@@ -742,14 +742,24 @@ def test_cli_skip_missing_exits_0_and_lists_rows(
     assert not out.exists()
 
 
-def test_current_fit_tool_loads_the_extended_table(tmp_path: Path) -> None:
+def test_fit_tool_loads_the_extended_table_as_scalar_rows(tmp_path: Path) -> None:
     out = tmp_path / "features.tsv"
     write_features_tsv([row for row, *_ in _feature_rows()], out)
 
     table = load_features(out)
 
-    assert table.schema == "facts"
+    assert table.has_shipped
     assert len(table.rows) == len(TRACER_PLIES)
+    for fit_row, (feature_row, *_) in zip(table.rows, _feature_rows(), strict=True):
+        for loaded, written in (
+            (fit_row.loss, feature_row.quiet.loss),
+            (fit_row.missed, feature_row.quiet.missed),
+            (fit_row.loss_shipped, feature_row.shipped.loss),
+            (fit_row.reply_prob, feature_row.reply_prob),
+        ):
+            assert (loaded is None) == (written is None)
+            if loaded is not None and written is not None:
+                assert loaded == pytest.approx(written, rel=1e-5)
 
 
 def test_quiet_and_shipped_columns_are_not_swapped_on_changed_positions(tmp_path: Path) -> None:

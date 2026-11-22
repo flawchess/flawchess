@@ -13,7 +13,6 @@ from pathlib import Path
 import chess
 import pytest
 
-from app.services.line_material import best_line_facts, line_facts
 from scripts.blunder_check import miss_labels
 from scripts.blunder_check.facepalm_features import parse_labels
 from scripts.blunder_check.metrics import MaterialType
@@ -53,6 +52,7 @@ from scripts.blunder_check.miss_labels import (
     write_blind_tsv,
     write_key,
 )
+from tests.services.line_material_fixtures import LINE_FIXTURES
 from tests.services.maia_fakes import fake_full_policy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -116,7 +116,7 @@ def fake_candidate(
 
 
 def test_candidate_pipeline_on_fake_rows() -> None:
-    """A fake row goes through line facts, material_type and a fake policy into a candidate."""
+    """A fake row goes through the quiet line facts, material_type_of and a fake policy into a candidate."""
     tally = Tally()
     board = chess.Board(MISS_FEN)
 
@@ -512,8 +512,11 @@ def disagreement_candidate(
 
 def test_build_candidate_modes_and_arrays() -> None:
     board = chess.Board(MISS_FEN)
-    expected_played = line_facts(board, MISS_PLAYED, MISS_REFUTATION_PV).material_array()
-    expected_best = best_line_facts(board, MISS_BEST_PV).material_array()
+    # Hand-derived quiet arrays (odd depths only, 259 D-02): Qa8+ captures nothing and the refutation
+    # line has no capture, so the played line stays at 0; the best line wins Qxe7 at once (+9) and
+    # holds it. Both stored lines run out after depth 3, so the deeper odd slots are unknown.
+    expected_played = (0, None, 0, None, None, None, None, None, None)
+    expected_best = (9, None, 9, None, None, None, None, None, None)
 
     default = build_candidate(raw_miss(), board, MISS_PLAYED, fake_full_policy, Tally())
     disagreement = build_candidate(
@@ -522,9 +525,38 @@ def test_build_candidate_modes_and_arrays() -> None:
 
     assert default is not None and disagreement is not None
     assert (default.played_3, default.best_3, default.material) == (0, 9, "misses")
-    assert disagreement.played_material == tuple(expected_played)
-    assert disagreement.best_material == tuple(expected_best)
+    assert disagreement.played_material == expected_played
+    assert disagreement.best_material == expected_best
     assert (disagreement.played_3, disagreement.best_3) == (0, 9)
+
+
+def test_candidate_arrays_follow_the_quiet_rule_on_a_labelled_fixture() -> None:
+    """Label 153: the old walk reads 1 at depth 9, the quiet rule 2 (the committed expectations)."""
+    fixture = next(f for f in LINE_FIXTURES if f.label_n == 153)
+    board = chess.Board(fixture.pre_fen)
+    # Any stable legal best line will do: three plies of the first legal moves.
+    walker, best_moves = board.copy(), []
+    for _ in range(3):
+        move = next(iter(walker.legal_moves))
+        best_moves.append(move.uci())
+        walker.push(move)
+    raw = raw_miss(
+        best_pv=" ".join(best_moves), best_move=best_moves[0], refutation_pv=fixture.line
+    )
+
+    candidate = build_candidate(
+        raw, board, fixture.played_uci, fake_full_policy, Tally(), mode="disagreement"
+    )
+
+    assert candidate is not None
+    # played_material is signed (positive = the blunderer is up); the fixture holds the loss.
+    odd_slots = candidate.played_material[::2]
+    expected = tuple(None if loss is None else -loss for loss in fixture.expected_quiet_loss)
+    assert odd_slots[1:] == expected[1:]
+    assert odd_slots[0] in (None, expected[0])
+    assert (
+        fixture.expected_quiet_loss != fixture.expected_loss
+    )  # the fixture does separate the rules
 
 
 def tracer_pool() -> list[MissCandidate]:

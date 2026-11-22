@@ -1292,14 +1292,14 @@ async def test_facepalm_reads_run_with_jit_off(db_session: AsyncSession) -> None
         assert (await db_session.execute(text("SHOW jit"))).scalar_one() == "off", reader
 
 
-def test_blunder_facts_index_covers_every_score_input() -> None:
-    """257 D-21: a score input missing from the covering index brings the heap fetches back."""
+def test_facepalm_inputs_index_covers_every_score_input() -> None:
+    """259 D-17: a score input missing from the covering index brings the heap fetches back."""
     from app.models.base import Base
     from app.models.game_flaw import GameFlaw
     from app.services.facepalm_score import _game_flaw_columns
 
     table = Base.metadata.tables[GameFlaw.__tablename__]
-    index = next(i for i in table.indexes if i.name == "ix_game_flaws_blunder_facts")
+    index = next(i for i in table.indexes if i.name == "ix_game_flaws_facepalm_inputs")
     covered = {c.name for c in index.columns} | set(index.dialect_options["postgresql"]["include"])
     inputs = {column.key for column in _game_flaw_columns()}
     assert inputs | {"ply", "game_id", "user_id"} <= covered

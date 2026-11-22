@@ -29,7 +29,6 @@ from app.services.flaws_service import _MoveEntry  # noqa: PLC2701
 from app.services.blunder_check_rules import (
     HAZARD,
     LEAD_IN_PLIES,
-    LINE_DEPTH,
     MAX_BLUNDER_POSITION,
     WINDOW_LENGTHS,
     MissCase,
@@ -70,7 +69,7 @@ __all__ = [
     "flaw_control",
     "herring_flags",
     "in_band",
-    "material_type",
+    "material_type_of",
     "miss_case",
     "quartiles",
     "user_move_judgements",
@@ -174,31 +173,18 @@ def estimated_user_windows(
     return total
 
 
-def material_type(
-    played_3: int | None,
-    mate_ply: int | None,
-    best_3: int | None,
-    best_mate_ply: int | None,
-) -> MaterialType:
-    """Classify a blunder by what its played line loses and what its best line gains (D-13).
+def material_type_of(loss: float | None, missed: float) -> MaterialType:
+    """Classify a blunder from the stored scalar inputs (259 D-03, D-05): `loss` and `missed`.
 
-    `played_3` / `best_3` are the signed material (positive = the blunderer is up) after
-    LINE_DEPTH plies of the played / best line; `mate_ply` is the ply the blunderer is mated on
-    the played line, `best_mate_ply` the ply the best line mates the opponent. A blunder loses
-    when it is mated within LINE_DEPTH or ends behind; it misses when the best line mates within
-    LINE_DEPTH or gains at least MIN_MISSED_GAIN beyond what the played line kept (an unknown
-    best line misses nothing, D-18). `unknown` when the played line is unsettled and no mate
-    settles it.
+    `loss` is the quiet-rule decaying mean of what the played
+    line loses (None when no settled line tells), `missed` the same for what the best line gains
+    (0 when the best line is unknown, 254 D-18). A blunder loses when loss > 0 and misses when
+    missed >= MIN_MISSED_GAIN. `unknown` when the loss is None.
     """
-    mated = mate_ply is not None and mate_ply <= LINE_DEPTH
-    if played_3 is None and not mated:
+    if loss is None:
         return "unknown"
-    loses = mated or (played_3 is not None and played_3 < 0)
-    missed_mate = best_mate_ply is not None and best_mate_ply <= LINE_DEPTH
-    # Like `missed_feature`: without a settled played line only a best-line mate counts as a miss.
-    misses = missed_mate or (
-        played_3 is not None and best_3 is not None and best_3 - max(0, played_3) >= MIN_MISSED_GAIN
-    )
+    loses = loss > 0
+    misses = missed >= MIN_MISSED_GAIN
     if loses and misses:
         return "loses_and_misses"
     if loses:
