@@ -89,6 +89,18 @@ cache (heals on its own since #472), any frontend change, new worker lanes.
   drain rate measured with the fleet as it is; if it trips, the run returns to the owner.
 - **No local undo log** (owner declined). The pilot gates and dry-run mode remain the only safety net (D-10).
 
+### Decision added during execution (2026-11-22, owner, after the tactic-tagging review)
+- **D-16:** The re-walk also repairs opening line blobs whose node 0 lacks a second-best move. Cause: the
+  full-game drain dropped the second-best move of its opening flaw re-search (fixed going forward by quick
+  261122-l3u, `_fill_engine_game_flaw_pvs`). Affected lines: node-0 ply <= `DEDUP_MAX_PLY`, a non-empty blob whose
+  node 0 has a best eval but neither `s` nor `sm`, in a position with more than one legal move. The forcing-line
+  gate reads such a node as "only legal move", which credits some tags unchecked and drops others. Measured on prod
+  (last six weeks, read-only): 5-8% of allowed and 8-11% of missed lines at ply <= 20. These lines go through the
+  same feeder and tier-4 lane as the short-line re-walk (D-03 single line per flaw, D-11 windows, D-13 no guests),
+  as a second pass after the current feed has drained. The pass runs only after quick 261122-l3u is deployed
+  (otherwise the server pool keeps producing new rows), and before the prod and benchmark retags (D-14), so one
+  retag covers everything. Plan 252-10.
+
 ### Measured on prod at plan time (2026-11-12, read-only)
 - Non-guest tier-3 backlog 0 and non-guest natural tier-4 backlog 0 (guests: 56,007 and 2,063), so the fleet's
   flaw-blob rung gets time.

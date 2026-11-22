@@ -418,7 +418,7 @@ measure throughput. Plan, sizing and open questions in the seed (Part B).
 numbered 250 on the phase-249 branch) first prod backfill may overlap this phase's pv repair; its line-only
 recompute pass (250-CONTEXT D-18) runs after the repair is complete.
 **Requirements**: TBD
-**Plans:** 6/9 plans executed
+**Plans:** 6/10 plans executed
 
 Plans:
 **Wave 1**
@@ -437,6 +437,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 252-07-PLAN.md — prod re-walk feed, benchmark line repair alongside, prod retag (orchestrator-inline)
+- [ ] 252-10-PLAN.md — D-16: node-0 second-move pass (feeder `--pass node0`, then prod and benchmark runs before their retags; added 2026-11-22)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 252-08-PLAN.md — benchmark re-walk on the restarted :8001 backend and benchmark retag (orchestrator-inline)
