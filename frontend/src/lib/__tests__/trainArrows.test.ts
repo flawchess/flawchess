@@ -684,6 +684,16 @@ describe('buildTrainStepMarkers', () => {
     ]);
   });
 
+  it('badges a facepalm blunder "???", and only a blunder', () => {
+    expect(buildTrainStepMarkers('e2e4', 'blunder', true, true)).toEqual([
+      { square: 'e4', severity: 'blunder', facepalm: true },
+    ]);
+    expect(buildTrainStepMarkers('e2e4', 'mistake', true, true)).toEqual([
+      { square: 'e4', severity: 'mistake' },
+    ]);
+    expect(buildTrainStepMarkers('e2e4', 'best', true, true)).toEqual([{ square: 'e4', best: true }]);
+  });
+
   it('returns nothing for deeper steps, unknown quality, or a malformed UCI', () => {
     expect(buildTrainStepMarkers('e2e4', 'good', false)).toEqual([]);
     expect(buildTrainStepMarkers('e2e4', null, true)).toEqual([]);

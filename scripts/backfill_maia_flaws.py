@@ -8,14 +8,14 @@ the same transaction as its column write (every mode but --mode opponent, which 
 Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode was removed by D-11):
     --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob,
                        the facepalm columns (the eight Phase 250 values plus the Phase 254 played
-                       and best line material arrays and best-line mate ply), the two pre-blunder
+                       and best-line mate plies and the two stored material scalars), the two pre-blunder
                        keys, the best-reply probability and the five stamps.
     --mode spread      games that are base-stamped with facepalm_spread_completed_at NULL (the
                        Maia pass of the facepalm backfill, 250 D-08). One post-blunder inference
                        per user-side blunder yields the reply spread; the line facts are derived
                        with the hook's own scorer, reading the STORED maia_played_prob instead of
                        re-running the base inference. Writes exactly the facepalm fact columns
-                       (the reply spread, both line arrays, both mate plies; the score is computed
+                       (the reply spread, both mate plies, the two material scalars; the score is computed
                        at query time, 254 D-01; never the two pre-blunder keys) and
                        stamps facepalm_spread_completed_at and facepalm_line_completed_at.
     --mode line --cutoff <ISO timestamp with offset>
@@ -23,7 +23,7 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
                        whose facepalm_line_completed_at is NULL or older than the cutoff has the
                        line facts of its blunders of BOTH sides (user and opponent) recomputed from
                        the stored lines (the played line at ply + 1 and the best line at the flaw
-                       ply): played and best line material arrays, line_mate_ply and
+                       ply): the two material scalars, line_mate_ply and
                        best_line_mate_ply, INCLUDING rows that already hold values and blunders that
                        had no line before. A cutoff at or after the deploy of the opponent line
                        facts (SEED-261114-iuv Part A step 4) re-selects every game, so opponent
@@ -68,8 +68,8 @@ Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode
 
 Two-pass design for the facepalm columns (250 D-08, D-18): the spread pass needs Maia and is run
 once (about 2.3M user blunders on prod); the line pass needs only the DB, so it can be re-run
-whenever the stored lines change (e.g. after the Phase 252 pv repair). The line pass writes both
-line material arrays and both mate plies (played and best line) (254 D-09), and never a Maia
+whenever the stored lines change (e.g. after the Phase 252 pv repair). The line pass writes the two
+material scalars and both mate plies (played and best line) (254 D-09, 259 D-05), and never a Maia
 value; the spread pass never writes the two pre-blunder keys. For the line pass the
 CUTOFF is the checkpoint: re-run with the SAME cutoff to resume a crashed or stopped run (games
 stamped at or after it are skipped); use a NEW (later) cutoff for a new full recompute.

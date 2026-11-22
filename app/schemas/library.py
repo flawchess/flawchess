@@ -23,6 +23,9 @@ from pydantic import BaseModel
 from app.schemas.normalization import TimeControlBucket
 from app.services.flaw_delta_zones import FlawDeltaMetric, FlawPhaseMetric, FlawTempoMetric
 from app.services.facepalm_score import FacepalmType
+
+# FacepalmMetric / FACEPALM_METRICS live in the registry module (same note as FlawTempoMetric).
+from app.services.facepalm_zones import FacepalmMetric
 from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
@@ -94,8 +97,8 @@ class FlawMarker(BaseModel):
     # 0-based ply depth of the missed tactic; None when its motif chip is hidden.
     missed_tactic_depth: int | None = None
     # Raw 0..1 score computed at query time by facepalm_expr(FACEPALM_LIBRARY_LAMBDA) over the
-    # stored facts (254 D-01), None when the flaw row carries none (today only the user's own
-    # blunders are scored). Same value and flooring as FlawListItem.facepalm_score. A ranking,
+    # stored facts (254 D-01), None when the flaw row carries none (blunders of both sides are
+    # scored since 260 D-24; the Flaws list and drill stay user-only). Same value and flooring as FlawListItem.facepalm_score. A ranking,
     # not a probability.
     facepalm_score: float | None = None
     # 257 D-08: missed win / allowed loss of the same row. Same source and same blunder gate as
@@ -416,25 +419,14 @@ class TempoPhaseCell(BaseModel):
     significant: bool
 
 
-# The three facepalm rows of FlawComparisonTc.facepalm_bullets (257 D-12): the total and one row
-# per type (D-04: a type is only ever paired with the same type of the opponents). Deliberately
-# NOT part of FlawDeltaMetric / FLAW_DELTA_METRICS, which drive the 12-metric zone registry and
-# the benchmark generator.
-FacepalmMetric = Literal["facepalm", "facepalm_missed_win", "facepalm_allowed_loss"]
-FACEPALM_METRICS: Final[tuple[FacepalmMetric, ...]] = (
-    "facepalm",
-    "facepalm_missed_win",
-    "facepalm_allowed_loss",
-)
-
-
 class FacepalmBullet(BaseModel):
     """One facepalm row of the flaw comparison: you vs your opponents, per 100 of your moves.
 
     FlawBullet's fields exactly, on the same paired basis (both sides divided by the user's move
-    count per game, so player_rate - opp_rate == delta). D-13: no benchmark band exists in this
-    phase, so has_zone is False and zone_lo == zone_hi == 0.0. p_value and significant are still
-    computed so the card can state them, but they drive no colour.
+    count per game, so player_rate - opp_rate == delta). The zone bounds come from the
+    provisional per-TC FACEPALM_ZONES registry (quick 261121-ha7, prod-derived, replaced by
+    SEED-261120-bzq), symmetric around 0; only a significant gap outside the band gets a
+    verdict, exactly like FlawBullet.
     """
 
     tag: FacepalmMetric
@@ -448,15 +440,15 @@ class FacepalmBullet(BaseModel):
     opp_events: int
     zone_lo: float
     zone_hi: float
-    has_zone: bool = False
+    has_zone: bool = True
     significant: bool
 
 
 class FacepalmComparisonTc(BaseModel):
     """One time control's facepalm rows of "You vs. your opponents" (257 D-11 to D-13).
 
-    bullets: the three FACEPALM_METRICS rows (total, missed wins, allowed losses), neutral
-             (no band), computed on the analyzed games of the same recent window as
+    bullets: the three FACEPALM_METRICS rows (total, missed wins, allowed losses), banded per TC
+             from FACEPALM_ZONES, computed on the analyzed games of the same recent window as
              FlawComparisonTc (258 D-06). Empty when low_coverage is True.
     low_coverage: True when too few of either side's blunders in this TC carry a facepalm
                   score for the two rates to be comparable (evaluated on the window rows,

@@ -2433,8 +2433,12 @@ async def test_reveal_key_set_excludes_stored_answer_key_fields(test_engine) -> 
             "puzzle_type",
             "source",
             "has_tactic_lines",
+            # A boolean off the stored flaw facts (the "???" badge), not an engine line or eval.
+            "game_move_facepalm",
             "motif",
         }
+        # Neither an unscored flaw row nor a herring is ever a facepalm blunder.
+        assert resp.json()["game_move_facepalm"] is False
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -2560,8 +2564,12 @@ async def test_reveal_cross_user_herring_hides_game_move_and_no_owner_scope_leak
             "puzzle_type",
             "source",
             "has_tactic_lines",
+            # A boolean off the stored flaw facts (the "???" badge), not an engine line or eval.
+            "game_move_facepalm",
             "motif",
         }
+        # Neither an unscored flaw row nor a herring is ever a facepalm blunder.
+        assert resp.json()["game_move_facepalm"] is False
     finally:
         await _delete_herring_pool_rows(test_engine, [pool_id])
         await _delete_games(test_engine, [game_id_b])
@@ -2724,6 +2732,60 @@ async def test_reveal_unknown_position_404(test_engine) -> None:
         assert resp.status_code == 404
     finally:
         await _delete_games(test_engine, [game_id])
+
+
+# Flaw facts scoring ~1.00 and ~0.09 at the library lambda: far from the 0.7 facepalm cut.
+_FACEPALM_HIGH_FACTS: dict[str, float] = {
+    "maia_played_prob": 0.02,
+    "material_loss": 9.0,
+    "material_missed": 0.0,
+    "maia_best_prob": 0.9,
+    "maia_best_reply_prob": 0.9,
+}
+_FACEPALM_LOW_FACTS: dict[str, float] = {
+    "maia_played_prob": 0.6,
+    "material_loss": 1.0,
+    "material_missed": 0.0,
+    "maia_best_prob": 0.1,
+    "maia_best_reply_prob": 0.1,
+}
+_SEVERITY_MISTAKE = 1
+
+
+@pytest.mark.asyncio
+async def test_reveal_game_move_facepalm_flag(test_engine) -> None:
+    """game_move_facepalm is True only for a blunder scoring at or above the facepalm cut:
+    not for a low-scoring blunder, and not for a mistake whatever its facts."""
+    email = f"train-reveal-facepalm-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    cases: list[tuple[dict[str, float | int], bool]] = [
+        (dict(_FACEPALM_HIGH_FACTS), True),
+        (dict(_FACEPALM_LOW_FACTS), False),
+        ({**_FACEPALM_HIGH_FACTS, "severity": _SEVERITY_MISTAKE}, False),
+    ]
+    game_ids: list[int] = []
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        for values, expected in cases:
+            game_id = await _seed_game_with_blunder(test_engine, user_id)
+            game_ids.append(game_id)
+            async with session_maker() as session, session.begin():
+                await session.execute(
+                    update(GameFlaw).where(GameFlaw.game_id == game_id).values(**values)
+                )
+            await _seed_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
+            session_id = await _seed_session(
+                test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
+            )
+            # A single-puzzle session completes on its solve, freeing the open-session slot.
+            solved = await _solve(token, session_id, 0, move_quality="good")
+            assert solved.status_code == 200
+
+            resp = await _reveal(token, session_id, 0)
+            assert resp.status_code == 200
+            assert resp.json()["game_move_facepalm"] is expected
+    finally:
+        await _delete_games(test_engine, game_ids)
 
 
 @pytest.mark.asyncio

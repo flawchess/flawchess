@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MoveStats } from '@/components/library/MoveStats';
 import type { MoveStatsCellRef } from '@/components/library/MoveStats';
+import { flawMoveCategory } from '@/lib/moveStatsCounts';
 import type { MoveStatCategory, MoveStatSide } from '@/lib/moveStatsCounts';
 import { TacticMotifGroup } from '@/components/library/TacticMotifGroup';
 import { ChipColumn } from '@/components/library/ChipColumn';
@@ -170,7 +171,7 @@ export function AnalysisTagsPanel({
 
   // Move Stats (category × side) ascending ply lists,
   // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
-  // severities) and eval_series (gem/great/best/good tiers) into one map keyed
+  // severities, with facepalm blunders split out via flawMoveCategory) and eval_series (gem/great/best/good tiers) into one map keyed
   // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since both
   // players' cells are deliberately surfaced here.
   const categoryPlies = useMemo(() => {
@@ -182,7 +183,7 @@ export function AnalysisTagsPanel({
       else m.set(key, [ply]);
     };
     for (const fm of markers) {
-      push(fm.severity, moverColorAtPly(fm.ply), fm.ply);
+      push(flawMoveCategory(fm), moverColorAtPly(fm.ply), fm.ply);
     }
     for (const pt of game.eval_series ?? []) {
       if (pt.best_move_tier == null) continue;
@@ -254,7 +255,7 @@ export function AnalysisTagsPanel({
 
   // The mount condition is exactly analysis_state === 'analyzed' — no
   // markers/tiers emptiness clause. A flawless analyzed game (zero flaw markers
-  // AND zero gem/great plies) renders the full all-zero 7-row MoveStats
+  // AND zero gem/great plies) renders the full all-zero 8-row MoveStats
   // table instead of returning null. Belt-and-suspenders: the Analysis page
   // already gates mounting this component on evalChartReady (which implies
   // flaw_markers/eval_series present), but the guard stays here too.

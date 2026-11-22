@@ -2,14 +2,14 @@
 
 Phase 259 D-02 to D-05: the two stored numbers, ``loss`` and ``missed``, are the decaying mean over
 the odd depths of the quiet-point material walk (``quiet_line_facts`` / ``quiet_best_line_facts``),
-computed by the unchanged ``material_loss`` / ``material_missed``. The write-time hook, the line
+computed by ``material_loss`` / ``material_missed``. The write-time hook, the line
 pass, the features pull and the review all call ``facepalm_material_inputs``, so the rule exists
 once. No I/O.
 """
 
 from __future__ import annotations
 
-from typing import Final, NamedTuple
+from typing import NamedTuple
 
 import chess
 
@@ -18,13 +18,11 @@ from app.services.blunder_check_rules import (
     FACEPALM_MISSED_CAP,
     FACEPALM_MISSED_FLOOR,
     FACEPALM_MISSED_MATE,
-    MaterialInput,
 )
 from app.services.facepalm_score import material_loss, material_missed
 from app.services.line_material import LineFacts, quiet_best_line_facts, quiet_line_facts
 
-# 259 D-03: the stored inputs are always the decaying mean, never chosen by a fit.
-STORED_MATERIAL_INPUT: Final[MaterialInput] = "decaying_mean"
+# 259 D-03: the stored inputs are always the decaying mean over the odd depths, never chosen by a fit.
 
 
 class MaterialInputs(NamedTuple):
@@ -40,7 +38,6 @@ def material_inputs_from_facts(played: LineFacts, best: LineFacts) -> MaterialIn
     loss = material_loss(
         played.material_array(),
         played.mate_ply,
-        material_input=STORED_MATERIAL_INPUT,
         loss_floor=FACEPALM_LOSS_FLOOR,
     )
     if loss is None:
@@ -49,7 +46,6 @@ def material_inputs_from_facts(played: LineFacts, best: LineFacts) -> MaterialIn
         played.material_array(),
         best.material_array(),
         best.opponent_mate_ply,
-        material_input=STORED_MATERIAL_INPUT,
         missed_floor=FACEPALM_MISSED_FLOOR,
         missed_cap=FACEPALM_MISSED_CAP,
         missed_mate=FACEPALM_MISSED_MATE,

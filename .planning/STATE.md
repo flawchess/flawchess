@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 259
-current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
-status: executing
-stopped_at: Completed 259-14-PLAN.md
-last_updated: "2026-11-22T12:44:23.780Z"
-last_activity: 2026-11-21
-last_activity_desc: Phase 259 execution started
-state_head: d9aad47e9061b793c8c4d44f7da0791b9ce5d141
+current_phase: 261
+current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
+status: completed
+stopped_at: Phase 260 complete — all phases complete
+last_updated: "2026-11-22T21:27:29.585Z"
+last_activity: 2026-11-22
+last_activity_desc: Phase 260 complete
+state_head: ba22c4e5979a28b147b817b25ae41b33487f22ae
 progress:
-  total_phases: 13
+  total_phases: 15
   completed_phases: 63
-  total_plans: 120
-  completed_plans: 116
+  total_plans: 137
+  completed_plans: 133
+  percent: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,14 +22,16 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 259 (Facepalm Score Refit on First Principles (SEED-261121-tau)) — EXECUTING
-Plan: 15 of 15
+Phase: 261 — Blunder-Check Exploration Arm (SEED-261121-t50)
+Plan: 7
 
-Status: Ready to execute
+Status: All phases complete
 
-Last activity: 2026-11-21 — Phase 259 execution started
+Last activity: 2026-11-22 — Phase 260 complete (Phase 261 completed earlier the same day)
 
 Open threads carried forward (not blockers):
+
+- Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
 
 - Phase 251 follow-ups: review WR-04 (Start within 600 ms of a settings edit drops the pending save), IN-02 (level options duplicated in three components), IN-03 (stale medal-cap comment); launch-notice copy says "Change the amount on the card" though the size lives in the settings row; owner should know assumption A8 (~3.6% sparse-weekday users who split modes across days can lose that day) and W-06 (puzzles on with no material still needs a warm-up session for the streak); low-urgency `drill_sessions (user_id, session_date)` index; `complete_session` could take `user_id` as defense in depth.
 
@@ -51,8 +54,12 @@ Open threads carried forward (not blockers):
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-11-19 after Phase 251)
+See: .planning/PROJECT.md (updated 2026-11-22 after Phase 259)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau) complete 2026-11-22**, all three releases live on prod (#497 R1 dual-write, #498 switch, #499 array drop; server `59e1edcb`, schema `f3a7b9c1e259`): verified 18/18 decisions, threats_open 0, Nyquist-compliant, code review 0 critical / 3 warnings (2 fixed, WR-03 dead-code cleanup and IN-01 stale docstrings open). Owner cuts: `FACEPALM_SCORE_MIN` 0.70, `FACEPALM_STATS_MIN` 0.70. No phase is queued on this roadmap; follow-ups live as seeds (SEED-261122-s0j promotions as material, SEED-261122-j9p facepalm as a move quality, SEED-261121-t50).
+
+### Superseded: focus before Phase 259
+
 Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau)**, ready to plan. Phase 258 (Library Stats Recent Sample for Snapshot Charts, SEED-261121-3ou) complete 2026-11-21 on branch `gsd/phase-258-library-stats-recent-sample-snapshots`: verified 20/20, UAT 5/5 (test 3 resolved by gap plan 258-05), threats_open 0; Nyquist validation still draft (`/gsd-validate-phase 258`); not yet squash-merged to `main`.
 
 ### Superseded: focus after Phase 251
@@ -203,6 +210,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 261 added 2026-11-22 (explicit user request, "can we add a new phase for" the seed, after Phase 259 merged and its switch and drop releases went live): **Blunder-Check Exploration Arm** (SEED-261121-t50). About 20% of blunder windows from a random draw with no facepalm-score cut, a serve-time record of the arm and the score inputs on `blunder_check_windows`, avatar feedback (score, type line, "hard to catch" line) and a calibration script. Written by hand as 261 because Phase 260 exists only on its worktree branch (`gsd/phase-260-facepalm-first-class-move-quality`) and `phase.add` on `main` would have reused 260. Expect a keep-both conflict in ROADMAP.md and here when Phase 260 squash-merges. Standalone phase, no open milestone; `current_phase` stays 259. Next: `/gsd-discuss-phase 261`.
 - Phase 259 added 2026-11-21 (explicit user request, "add phase 259 and start the discuss phase", after the owner reviewed the facepalm score of prod game 2883555 ply 47 and the seed was planted the same day): **Facepalm Score Refit on First Principles** (SEED-261121-tau). A stored best-reply Maia probability and a quiet-point material input replacing `decaying_mean`, one refit; the input is chosen by first principles, the AUC only has to stay in a similar range. Built in its own worktree in parallel with Phase 258; `current_phase` stays 258. Standalone phase, no open milestone.
 - Phase 258 added 2026-11-21 (explicit user request, "add it as a phase to the roadmap", after the `/gsd-explore` session that planted the seed the same day): **Library Stats Recent Sample for Snapshot Charts** (SEED-261121-3ou). Timelines keep full history; the flaw, facepalm and tactic comparisons always use the most recent 1000 games per time control within 36 months, taken from the filtered games. No filter-default changes, no "all games" switch. Standalone phase, no open milestone.
 - Phase 257 added 2026-11-20 (explicit user request via `/gsd-phase @.planning/seeds/SEED-261114-iuv-facepalm-rate-library-stats.md`, seed refined the same day): **Facepalm Rate in the Library Stats** (SEED-261114-iuv). Benchmark-free part only: a stats cut at 0.7 separate from `FACEPALM_SCORE_MIN`, facepalm type per blunder (allowed loss / missed win on the raw material inputs) in the library API, chip colour by type, a facepalm-share chart below the Flaws Timeline (facepalm / scored blunders, pooled over the rolling window, from `game_flaws`), and paired you-vs-opponents rows (total and per type; no type-share statistic). Opponent scoring (seed Part A) is already on prod. Benchmark zones, the clock matrix and the training weighting are deferred to SEED-261120-bzq. Written by hand as 257 (known mature-ROADMAP behavior); `current_phase` stays 252. Next: `/gsd-discuss-phase 257`.
@@ -1189,7 +1197,11 @@ None active.
 | 261120-li5 | Fix ranked-stats 15-110 s latency: drop redundant outer ranked-id ANY in endgame queries | 2026-11-20 | d06c5847b | [261120-li5-drop-redundant-outer-ranked-id-any-predi](./quick/261120-li5-drop-redundant-outer-ranked-id-any-predi/) |
 | 261120-qjc | Decayed per-worker evals/hour rates (1h and 24h) in worker_heartbeats, maintained in the heartbeat upsert | 2026-11-20 | a55fcf911 | [261120-qjc-add-decayed-rate-columns-evals-per-hour-](./quick/261120-qjc-add-decayed-rate-columns-evals-per-hour-/) |
 | 261120-qzo | Sentry noise: silent hidden-tab watchdog kill (FLAWCHESS-9G), ignore extension runtime.sendMessage (FLAWCHESS-DH) | 2026-11-20 | e53159834 | [261120-qzo-sentry-noise-silent-hidden-tab-watchdog-](./quick/261120-qzo-sentry-noise-silent-hidden-tab-watchdog-/) |
+| 261121-ha7 | Preliminary facepalm IQR bands from prod data (per TC) for the Library Stats facepalm tile and card | 2026-11-22 | 22fe9de97 | [261121-ha7-preliminary-facepalm-iqr-bands-from-prod](./quick/261121-ha7-preliminary-facepalm-iqr-bands-from-prod/) |
 | 261121-n50 | Delete low-value backend tests: dead skip stubs, shipped-migration tests, archived/one-off script tests (-9.9k lines, -11% test CPU) | 2026-11-21 | edc89e46c | [261121-n50-delete-low-value-backend-tests-dead-stub](./quick/261121-n50-delete-low-value-backend-tests-dead-stub/) |
+| 261122-jsf | Forcing-line gate: a mate tag survives a tie between two mating moves (prod game 1461616 ply 76) | 2026-11-22 | 4fe187674 | [261122-jsf-fix-mate-tie-rule-in-forcing-line-gate](./quick/261122-jsf-fix-mate-tie-rule-in-forcing-line-gate/) |
+| 261122-kos | Tactic tags: forced-mate flag reads the right eval row; mate in 1 survives the only-move strip | 2026-11-22 | fa3462b81 | [261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s](./quick/261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s/) |
+| 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
 
 ## Deferred Items
 
@@ -1242,9 +1254,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-22T12:44:21.676Z
-**Stopped at:** Completed 259-14-PLAN.md
-**Resume file:** None
+**Last session:** 2026-11-22T14:17:09.813Z
+**Stopped at:** Phase 260 complete — all phases complete
+**Resume file:** .planning/phases/261-blunder-check-exploration-arm/261-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

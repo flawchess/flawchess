@@ -1,22 +1,15 @@
-import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
-import { GAP_SAME_WORD, gapWords, type GapCell } from '@/lib/gapBar';
-
-/** 257 D-16 / orchestrator decision 3: no benchmark band exists yet, so no range is shown. */
-const COPY_NO_RANGE = 'There is no typical range for facepalm blunders yet.';
+import { gapWords, withGapVerdict, type GapCell } from '@/lib/gapBar';
 
 /**
- * 257 D-13: significance may be stated, it drives no colour. These two sentences (this one and
- * COPY_CHANCE) describe the gap, not the score, so they sit outside D-05's probability ban;
- * the owner confirms this reading at UAT.
- */
-const COPY_GAP_SIGNIFICANT = 'The gap is too large to be chance.';
-
-/**
- * The popover's first list item: the no-range sentence plus what the significance says. Shared
- * with the Facepalm blunders tile of Flaw Stats.
+ * The popover's first list item: the typical-gap range plus the shared chance / verdict
+ * sentence. Shared with the Facepalm blunders tile of Flaw Stats. The facepalm band is per TC
+ * without Elo keying, so the line names FlawChess players rather than players at your level,
+ * and the copy never says benchmark. No provisional caveat in user copy (popover minimalism):
+ * the provisional status lives in app/services/facepalm_zones.py and SEED-261120-bzq.
  */
 export function facepalmRangeNote(cell: GapCell): string {
-  if (cell.significant) return `${COPY_NO_RANGE} ${COPY_GAP_SIGNIFICANT}`;
-  const isSame = cell.delta === null || gapWords(cell.delta) === GAP_SAME_WORD;
-  return isSame ? COPY_NO_RANGE : `${COPY_NO_RANGE} ${COPY_CHANCE}`;
+  return withGapVerdict(
+    `Typical gap among FlawChess players: ${gapWords(cell.zoneLo)} to ${gapWords(cell.zoneHi)}.`,
+    cell,
+  );
 }

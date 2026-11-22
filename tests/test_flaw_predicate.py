@@ -8,7 +8,8 @@ Verifies the family-aware boolean logic and single-flaw EXISTS semantics:
   reversed flaw on a DIFFERENT ply Y does NOT match (AND across families is
   per-flaw, not per-game — the make-or-break test)
 - OR within family: a flaw tagged "miss" OR "lucky" matches either
-- severity set-membership: ["mistake"] matches mistakes only (not blunders)
+- severity tags (Phase 260 D-08): ["mistake"] matches mistakes only (not blunders); the
+  Facepalm / Blunder tags split the blunders at the stats cut
 - cross-user isolation: another user's game_flaws row does not satisfy the EXISTS
   for the requesting user
 """
@@ -16,18 +17,26 @@ Verifies the family-aware boolean logic and single-flaw EXISTS semantics:
 from __future__ import annotations
 
 import uuid
+from itertools import combinations
+from typing import Any
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.game import Game
 from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 from app.repositories.library_repository import (
+    FLAW_SEVERITY_FILTER_VALUES,
+    FlawSeverityFilter,
     build_flaw_filter_clauses,
     flaw_exists_from_table,
 )
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.facepalm_score import facepalm_expr
 
 
 # ---------------------------------------------------------------------------
@@ -126,13 +135,14 @@ async def _games_matching_exists(
     tactic_families: list[str] | None = None,
 ) -> set[int]:
     """Return the subset of candidate_game_ids for which flaw_exists_from_table is True."""
-    from app.services.flaws_service import FlawSeverity, FlawTag
+    from app.repositories.library_repository import FlawSeverityFilter
+    from app.services.flaws_service import FlawTag
     from typing import cast
     from collections.abc import Sequence
 
     pred = flaw_exists_from_table(
         user_id=user_id,
-        severity=cast(Sequence[FlawSeverity], severity),
+        severity=cast(Sequence[FlawSeverityFilter], severity),
         tags=cast(Sequence[FlawTag], tags),
         tactic_families=tactic_families or [],
     )
@@ -162,6 +172,54 @@ class TestBuildFlawFilterClausesUnit:
         """Non-empty severity → exactly one severity clause."""
         clauses = build_flaw_filter_clauses(["blunder"], [])
         assert len(clauses) == 1, "severity only should produce exactly one clause"
+
+    @pytest.mark.parametrize(
+        "tags",
+        [
+            subset
+            for size in range(1, len(FLAW_SEVERITY_FILTER_VALUES) + 1)
+            for subset in combinations(FLAW_SEVERITY_FILTER_VALUES, size)
+        ],
+        ids="+".join,
+    )
+    def test_every_severity_tag_subset_yields_one_clause(
+        self, tags: tuple[FlawSeverityFilter, ...]
+    ) -> None:
+        """Every non-empty subset of the filter tags builds without raising.
+
+        Guards the KeyError class: "facepalm" is not a stored severity, so it must never be
+        looked up in _SEVERITY_INT. A narrowing subset builds one clause; the full set (all
+        three tags) is "no severity narrowing" like an empty selection and builds none
+        (D-08, review WR-01).
+        """
+        clauses = build_flaw_filter_clauses(tags, [])
+        assert len(clauses) == (0 if len(tags) == len(FLAW_SEVERITY_FILTER_VALUES) else 1)
+
+    @pytest.mark.parametrize(
+        ("tags", "score_occurrences"),
+        [
+            (("facepalm",), 1),
+            (("blunder",), 1),
+            (("blunder", "facepalm"), 0),
+            (("mistake",), 0),
+            (("mistake", "facepalm"), 1),
+            (("mistake", "blunder"), 1),
+        ],
+        ids=lambda v: "+".join(v) if isinstance(v, tuple) else str(v),
+    )
+    def test_severity_clause_renders_score_expression_only_when_needed(
+        self, tags: tuple[FlawSeverityFilter, ...], score_occurrences: int
+    ) -> None:
+        """The large score expression is in the SQL once for a lone Blunder / Facepalm, else never."""
+
+        def render(clause: ColumnElement[Any]) -> str:
+            return str(
+                clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+            )
+
+        score_sql = render(facepalm_expr(FACEPALM_LIBRARY_LAMBDA))
+        (clause,) = build_flaw_filter_clauses(tags, [])
+        assert render(clause).count(score_sql) == score_occurrences
 
     def test_single_tag_family_produces_one_clause(self) -> None:
         """One tag from one family → exactly one clause (OR within that family)."""
@@ -592,13 +650,13 @@ class TestFlawExistsFromTable:
         # User 77002 owns no games and has no flaw rows — the EXISTS must not cross users.
         # We query as user 77002 but select from user 77001's game to directly test the
         # user_id scope inside the EXISTS subquery.
-        from app.services.flaws_service import FlawSeverity
+        from app.repositories.library_repository import FlawSeverityFilter
         from typing import cast
         from collections.abc import Sequence
 
         pred = flaw_exists_from_table(
             user_id=77002,  # different user
-            severity=cast(Sequence[FlawSeverity], ["blunder"]),
+            severity=cast(Sequence[FlawSeverityFilter], ["blunder"]),
             tags=[],
         )
         stmt = select(Game.id).where(Game.id == game.id, pred)

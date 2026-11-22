@@ -13,7 +13,7 @@ Coverage:
 - omission   : a zero coefficient (or a zero lambda weight) omits its term and its column
 - expr       : facepalm_expr / facepalm_type_expr over stored game_flaws facts equal the twins (D-01)
 - size       : the compiled expressions stay under MAX_EXPRESSION_CHARS (D-18)
-- write-time : loss_feature / missed_feature / material_loss / material_missed and the pinned rule
+- write-time : material_loss / material_missed (the decaying mean) and the pinned rule
 - shape CHECK: the two stored-array CHECKs (they stay until the arrays go)
 - spread     : reply_spread of a uniform policy is the move count
 - constants  : the known D-04 values and LINE_DEPTH being a stored depth
@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import itertools
 import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -36,7 +37,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.game_flaw import GameFlaw
-from app.repositories.library_repository import _FACEPALM_PCT_SCALE
 from app.services import blunder_check_rules
 from app.services.blunder_check_rules import (
     FACEPALM_BEST_PROB_COEF,
@@ -60,7 +60,6 @@ from app.services.blunder_check_rules import (
     MATERIAL_DECAY_RATIO,
     PLAYED_PROB_OFFSET,
 )
-from app.services.facepalm_inputs import STORED_MATERIAL_INPUT
 from app.services.facepalm_score import (
     FACEPALM_MODEL,
     FacepalmColumns,
@@ -74,10 +73,8 @@ from app.services.facepalm_score import (
     facepalm_type_expr,
     facepalm_type_of,
     facepalm_type_sql,
-    loss_feature,
     material_loss,
     material_missed,
-    missed_feature,
 )
 from app.services.line_material import LINE_LOSS_DEPTHS
 from app.services.maia_flaw_stats import _effective_moves, reply_spread
@@ -523,12 +520,7 @@ async def test_type_expr_matches_python_twin_over_stored_facts(
 
 
 def _loss(played_3: int | None, mate_ply: int | None = None, *, loss_floor: int | None = 0) -> Any:
-    return material_loss(
-        lone_depth_line(played_3),
-        mate_ply,
-        material_input="depth_3",
-        loss_floor=loss_floor,
-    )
+    return material_loss(lone_depth_line(played_3), mate_ply, loss_floor=loss_floor)
 
 
 def test_mate_within_depth_settles_a_missing_loss() -> None:
@@ -541,9 +533,13 @@ def test_loss_is_capped() -> None:
     assert _loss(-9) == _loss(-LOSS_CAP) == float(LOSS_CAP)
 
 
-def test_mate_loss_applies_within_line_depth_only() -> None:
+def test_mate_loss_short_circuits_within_line_depth_and_enters_per_depth_after() -> None:
     assert _loss(0, LINE_DEPTH) == float(MATE_LOSS)
-    assert _loss(0, LINE_DEPTH + 1) == _loss(0) == 0.0
+    assert _loss(0) == 0.0
+    # A mate at ply 4 is beyond LINE_DEPTH: the lone depth-3 line stays 0 at depth 3, and depths
+    # 5, 7, 9 (weights 1/4, 1/8, 1/16) count MATE_LOSS. Depth 1 is unknown, so the weights
+    # renormalise over 1/2 + 1/4 + 1/8 + 1/16 = 15/16: 5 * (7/16) / (15/16) = 7/3.
+    assert _loss(0, LINE_DEPTH + 1) == pytest.approx(7 / 3)
 
 
 def test_loss_floor_clips_negative_losses_only_when_set() -> None:
@@ -551,12 +547,21 @@ def test_loss_floor_clips_negative_losses_only_when_set() -> None:
     assert _loss(3, loss_floor=None) == -3.0
 
 
-def test_loss_feature_values() -> None:
-    assert loss_feature(None, None, loss_floor=None) is None
-    assert loss_feature(None, LINE_DEPTH + 1, loss_floor=None) is None
-    assert loss_feature(None, 1, loss_floor=None) == MATE_LOSS
-    assert loss_feature(-2, None, loss_floor=0) == 0
-    assert loss_feature(-2, None, loss_floor=None) == -2
+def _missed(
+    played_3: int | None,
+    best_3: int | None,
+    best_mate_ply: int | None = None,
+    *,
+    missed_floor: int | None = 0,
+) -> float:
+    return material_missed(
+        lone_depth_line(played_3),
+        None if best_3 is None else lone_depth_line(best_3),
+        best_mate_ply,
+        missed_floor=missed_floor,
+        missed_cap=LOSS_CAP,
+        missed_mate=MISSED_MATE_VALUE,
+    )
 
 
 @pytest.mark.parametrize(
@@ -564,39 +569,32 @@ def test_loss_feature_values() -> None:
     [(-5, 0, 0.0), (5, 10, 5.0), (-5, 3, 3.0)],
     ids=["5_0_loss_only", "0_5_pure_miss", "5_3_mixed"],
 )
-def test_missed_feature_d05_table(played_3: int, best_3: int, expected: float) -> None:
+def test_missed_d05_table(played_3: int, best_3: int, expected: float) -> None:
     # D-05 table rows (loss / missed): 5/0, 0/5 and 5/3 for (played, best) = (-5, 0), (5, 10), (-5, 3).
-    missed = missed_feature(
-        played_3,
-        best_3,
-        None,
-        missed_floor=None,
-        missed_cap=LOSS_CAP,
-        missed_mate=MISSED_MATE_VALUE,
-    )
-    assert missed == expected
+    # The gain is best - max(0, played) capped at LOSS_CAP; a lone depth-3 line gives it unchanged.
+    assert _missed(played_3, best_3, missed_floor=None) == expected
 
 
-def test_missed_feature_floor_cap_unknown_and_mate() -> None:
-    kwargs: dict[str, Any] = {"missed_cap": LOSS_CAP, "missed_mate": MISSED_MATE_VALUE}
+def test_missed_floor_cap_unknown_and_mate() -> None:
     # A negative raw gain (best line behind) is kept without a floor and raised to 0 with floor 0.
-    assert missed_feature(5, 2, None, missed_floor=None, **kwargs) == -3.0
-    assert missed_feature(5, 2, None, missed_floor=0, **kwargs) == 0.0
+    assert _missed(5, 2, missed_floor=None) == -3.0
+    assert _missed(5, 2) == 0.0
     # The cap applies to a big gain.
-    assert missed_feature(0, 9, None, missed_floor=0, **kwargs) == float(LOSS_CAP)
+    assert _missed(0, 9) == float(LOSS_CAP)
     # D-18: an unknown best line contributes 0 (and so does an unknown played line).
-    assert missed_feature(0, None, None, missed_floor=0, **kwargs) == 0.0
-    assert missed_feature(None, 4, None, missed_floor=0, **kwargs) == 0.0
+    assert _missed(0, None) == 0.0
+    assert _missed(None, 4) == 0.0
     # A best mate within LINE_DEPTH (ply 0 = the best move itself mates) counts the mate value,
-    # even when the best line's material is unknown; a later mate does not.
+    # even when the best line's material is unknown.
     for mate_ply in (0, 2):
-        assert missed_feature(0, None, mate_ply, missed_floor=0, **kwargs) == MISSED_MATE_VALUE
-    assert missed_feature(0, 1, LINE_DEPTH + 1, missed_floor=0, **kwargs) == 1.0
+        assert _missed(0, None, mate_ply) == MISSED_MATE_VALUE
+    # A mate at ply 4 is beyond LINE_DEPTH: depth 3 gains 1 (weight 1/2), depths 5, 7, 9 count the
+    # mate value 7 (weights 1/4, 1/8, 1/16), depth 1 is unknown: (1/2 + 7 * 7/16) / (15/16) = 19/5.
+    assert _missed(0, 1, LINE_DEPTH + 1) == pytest.approx(3.8)
 
 
 def test_material_missed_reads_the_best_line_only_when_the_played_line_is_known() -> None:
     kwargs: dict[str, Any] = {
-        "material_input": "depth_3",
         "missed_floor": 0,
         "missed_cap": LOSS_CAP,
         "missed_mate": MISSED_MATE_VALUE,
@@ -618,7 +616,6 @@ def test_write_time_material_rule_is_pinned() -> None:
     assert FACEPALM_MISSED_CAP == 5, message
     assert FACEPALM_MISSED_MATE == 5, message
     assert MATERIAL_DECAY_RATIO == 0.5, message
-    assert STORED_MATERIAL_INPUT == "decaying_mean", message
 
 
 # ---------------------------------------------------------------------------
@@ -709,17 +706,28 @@ def test_window_14_is_not_selected_by_the_shipped_model() -> None:
 # 257 D-01: the stats cut. 257 D-02: the facepalm type rule
 # ---------------------------------------------------------------------------
 
-# The Facepalm filter's High preset lower bound in whole percents (frontend/src/lib/facepalm.ts
-# FACEPALM_HIGH_CUTOFF), so a stats row counts exactly the blunders the High preset lists.
-HIGH_PRESET_PCT = 70
-STATS_MIN_VALUE = 0.7
+# The frontend's Facepalm tag cut in whole percents (frontend/src/lib/facepalm.ts
+# FACEPALM_HIGH_CUTOFF), parsed from the file so the backend stats cut cannot drift from it
+# unnoticed (parity-test precedent: tests/schemas/test_train_telemetry_parity.py).
+_FACEPALM_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/facepalm.ts"
+_HIGH_CUTOFF_PATTERN = re.compile(r"export const FACEPALM_HIGH_CUTOFF = (\d+);")
+# The frontend states the cut in whole percents, the backend as a 0..1 score.
+_PERCENT_SCALE = 100.0
 
 
-def test_facepalm_stats_min_is_the_high_preset_cut() -> None:
+def _frontend_facepalm_cutoff_pct() -> int:
+    match = _HIGH_CUTOFF_PATTERN.search(_FACEPALM_TS.read_text())
+    assert match is not None, (
+        "FACEPALM_HIGH_CUTOFF declaration not found in frontend/src/lib/facepalm.ts"
+    )
+    return int(match.group(1))
+
+
+def test_facepalm_stats_min_is_the_frontend_facepalm_cut() -> None:
     # Read through the module so a missing constant fails this assertion, not the file's import.
     stats_min = getattr(blunder_check_rules, "FACEPALM_STATS_MIN", None)
-    assert stats_min == STATS_MIN_VALUE
-    assert stats_min == HIGH_PRESET_PCT / _FACEPALM_PCT_SCALE
+    assert stats_min is not None
+    assert stats_min == _frontend_facepalm_cutoff_pct() / _PERCENT_SCALE
     # 259 D-15: the drill cut moved to 0.70 and now equals the stats cut in value; they stay two
     # constants (257 D-01) so either can move alone, hence no value inequality is asserted.
     assert "FACEPALM_STATS_MIN" in vars(blunder_check_rules)

@@ -10,6 +10,12 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+# Hard-coded user ids for TestGetPlatformGameIdsForUser, kept out of reach of the
+# users id sequence (see the fixture comment below).
+_SCOPED_IDS_USER = 900_801
+_SCOPED_IDS_OTHER_USER = 900_802
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
@@ -18,8 +24,31 @@ async def _create_test_users(db_session: AsyncSession) -> None:
     # 601-606: TestGetCurrentRatingByPlatform.
     # 701-702: TestCountBacklogByPlatformAndTc.
     # 711-713: TestCountImportedByPlatformAndTc.
-    # 801-802: TestGetPlatformGameIdsForUser.
-    for uid in [1, 2, 42, 55, 601, 602, 603, 604, 605, 606, 701, 702, 711, 712, 713, 801, 802]:
+    # 900801-900802: TestGetPlatformGameIdsForUser. These sit far above the users
+    # id sequence on purpose. Bug fix (Phase 261): they were 801/802, and in a serial
+    # run the registered seeded-portfolio user (tests/seed_fixtures.py, committed
+    # games "seed-NN") was handed id 801 by the sequence once enough earlier tests
+    # had registered users, so its games leaked into this test's result. `-n auto`
+    # hid it (each worker has its own DB and a shorter sequence).
+    for uid in [
+        1,
+        2,
+        42,
+        55,
+        601,
+        602,
+        603,
+        604,
+        605,
+        606,
+        701,
+        702,
+        711,
+        712,
+        713,
+        _SCOPED_IDS_USER,
+        _SCOPED_IDS_OTHER_USER,
+    ]:
         await ensure_test_user(db_session, uid)
 
 
@@ -787,8 +816,8 @@ class TestGetPlatformGameIdsForUser:
             get_platform_game_ids_for_user,
         )
 
-        user_id = 801
-        other_user_id = 802
+        user_id = _SCOPED_IDS_USER
+        other_user_id = _SCOPED_IDS_OTHER_USER
         rows = [
             self._make_game_row("cc-1", user_id, "chess.com"),
             self._make_game_row("cc-2", user_id, "chess.com"),

@@ -16,11 +16,41 @@ import {
   isFlawFilterNonDefault,
 } from '../useFlawFilterStore';
 import type { FlawFilterState } from '../useFlawFilterStore';
+import {
+  FLAW_SEVERITY_FILTER_VALUES,
+  isSeverityNarrowed,
+  parseSeverityFilterParams,
+} from '@/lib/flawSeverityFilter';
 
-describe('facepalm range in the flaw filter', () => {
-  it('defaults to All {0, 100}', () => {
-    expect(DEFAULT_FLAW_FILTER.facepalmMin).toBe(0);
-    expect(DEFAULT_FLAW_FILTER.facepalmMax).toBe(100);
+describe('flawSeverityFilter helpers', () => {
+  it('lists the three tags in D-08 order', () => {
+    expect([...FLAW_SEVERITY_FILTER_VALUES]).toEqual(['facepalm', 'blunder', 'mistake']);
+  });
+
+  it.each([
+    [[], false],
+    [['facepalm'], true],
+    [['blunder'], true],
+    [['mistake'], true],
+    [['blunder', 'mistake'], true],
+    [['facepalm', 'blunder'], true],
+    [['mistake', 'facepalm', 'blunder'], false],
+  ] as const)('isSeverityNarrowed(%j) is %s', (selection, expected) => {
+    expect(isSeverityNarrowed([...selection])).toBe(expected);
+  });
+
+  it('parseSeverityFilterParams keeps known values, de-duplicated, in input order', () => {
+    expect(
+      parseSeverityFilterParams(['facepalm', 'inaccuracy', 'fatal', 'blunder', 'facepalm']),
+    ).toEqual(['facepalm', 'blunder']);
+    expect(parseSeverityFilterParams([])).toEqual([]);
+    expect(parseSeverityFilterParams(['bogus', 'Blunder', ''])).toEqual([]);
+  });
+});
+
+describe('removed facepalm range fields', () => {
+  it('has no facepalm keys in the default filter', () => {
+    expect(Object.keys(DEFAULT_FLAW_FILTER).filter((k) => k.startsWith('facepalm'))).toEqual([]);
   });
 
   it('is default for an object without the facepalm fields (partial mocks)', () => {
@@ -28,12 +58,9 @@ describe('facepalm range in the flaw filter', () => {
     expect(isFlawFilterNonDefault(partial)).toBe(false);
   });
 
-  it('lights the dot when facepalmMin is 70', () => {
-    expect(isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, facepalmMin: 70 })).toBe(true);
-  });
-
-  it('lights the dot when facepalmMax is 25', () => {
-    expect(isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, facepalmMax: 25 })).toBe(true);
+  it('loads a stale object still carrying range fields as the default filter (D-14)', () => {
+    const stale = { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 } as unknown as FlawFilterState;
+    expect(isFlawFilterNonDefault(stale)).toBe(false);
   });
 });
 
@@ -123,10 +150,32 @@ describe('isFlawFilterNonDefault', () => {
     ).toBe(true);
   });
 
-  it('returns true when severity is narrowed to one tier', () => {
+  it('returns true when severity is narrowed to one tag', () => {
     expect(
       isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, severity: ['blunder'] }),
     ).toBe(true);
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, severity: ['facepalm'] }),
+    ).toBe(true);
+  });
+
+  it('returns true for two tags, including blunder + mistake (which excludes facepalms)', () => {
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, severity: ['blunder', 'mistake'] }),
+    ).toBe(true);
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, severity: ['facepalm', 'mistake'] }),
+    ).toBe(true);
+  });
+
+  it.each([
+    [['facepalm', 'blunder', 'mistake']],
+    [['mistake', 'facepalm', 'blunder']],
+    [[]],
+  ] as const)('returns false when severity is %j (shows everything)', (severity) => {
+    expect(
+      isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, severity: [...severity] }),
+    ).toBe(false);
   });
 
   it('returns true when tags is non-empty', () => {

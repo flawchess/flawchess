@@ -17,8 +17,9 @@ Gate model:
     retroactively reject a tactic that already landed. firing_depth=None preserves
     the legacy whole-line check.
   - Mate priority: only-best-is-mate forced; both-mates shorter
-    distance forced; mate-in-1 is NEVER suppressed; else fall through to
-    win-prob margin. A solver-winning forced mate at the firing node is
+    distance forced (for a mate motif any solver mate is forced, ties included:
+    whichever mating move is chosen, the tag is true); mate-in-1 is NEVER
+    suppressed; else fall through to win-prob margin. A solver-winning forced mate at the firing node is
     additionally exempt from the already-winning reject and the one-mover discard.
   - Already-winning reject: discard the motif if the pre-flaw position
     was already > ALREADY_WINNING_CP_THRESHOLD from the solver's perspective
@@ -53,7 +54,7 @@ from app.services.eval_utils import (
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
 )
-from app.services.tactic_detector import floor_cp_for_motif
+from app.services.tactic_detector import floor_cp_for_motif, is_mate_motif
 
 # Only-move margin (lichess-puzzler's +0.7 in -1..+1 win-chance space
 # equals +0.35 in our 0..1 win-prob space).
@@ -160,8 +161,15 @@ def _is_already_winning(
 def _resolve_mate_priority(
     node: PvNode,
     solver_color: Literal["white", "black"],
+    mate_motif: bool = False,
 ) -> bool | None:
     """Apply the mate-priority hierarchy via eval_mate_to_expected_score.
+
+    Args:
+        node: The PvNode blob entry.
+        solver_color: Color of the tactic-delivering side.
+        mate_motif: True when the tag being gated is a mate motif. A node where both
+            moves mate for the solver then passes whatever the two distances are.
 
     Returns:
         True  -- forced (best mate wins uniquely over second).
@@ -192,7 +200,16 @@ def _resolve_mate_priority(
         # Second mate is against solver; best wins unconditionally.
         return True
 
-    # Both mates win for the solver: shorter distance (fewer moves) is forced.
+    # Bug fix: a mate tag used to be rejected when two moves mated equally fast
+    # (prod game 1461616 ply 76: a mate line with two mates in 2 at the last solver
+    # node lost its tag, and because mates short-circuit the detector the flaw ended
+    # up with no tag at all). "You allowed/missed a checkmate" is true whichever
+    # mating move is chosen, so for a mate motif any solver mate passes.
+    if mate_motif:
+        return True
+
+    # Non-mate motif, both mates win for the solver: shorter distance (fewer moves)
+    # is forced. A tie stays rejected here: the tagged tactic is not the only way.
     return abs(bm) < abs(sm)
 
 
@@ -201,6 +218,7 @@ def is_solver_node_forced(
     solver_color: Literal["white", "black"],
     margin: float = ONLY_MOVE_WIN_PROB_MARGIN,
     cp_gap: int = ONLY_MOVE_CP_GAP_THRESHOLD,
+    mate_motif: bool = False,
 ) -> bool:
     """Return True if this solver node passes the only-move gate.
 
@@ -219,6 +237,9 @@ def is_solver_node_forced(
         cp_gap: Centipawn-gap escape threshold (default: ONLY_MOVE_CP_GAP_THRESHOLD).
             The win-prob margin saturates when the solver is already clearly ahead, so a
             large solver-perspective best-vs-second cp gap also counts as forced.
+        mate_motif: True when the tag being gated is a mate motif; relaxes the
+            both-moves-mate case (see _resolve_mate_priority). Default False keeps
+            the strict shorter-mate rule.
 
     Returns:
         True if the solver had no practical alternative at this node.
@@ -228,7 +249,7 @@ def is_solver_node_forced(
         return True
 
     # Try mate-priority hierarchy; returns None if no mate on best move.
-    mate_result = _resolve_mate_priority(node, solver_color)
+    mate_result = _resolve_mate_priority(node, solver_color, mate_motif)
     if mate_result is not None:
         return mate_result
 
@@ -584,6 +605,17 @@ def apply_forcing_line_filter(
 
     # Every solver node through the firing depth must be forced.
     relevant = _solver_nodes_through_firing_depth(stripped, firing_depth)
+    if not relevant and forced_mate:
+        # Bug fix: a forced mate whose only solver node has no stored second move
+        # (a mate in 1 with a missing second-best eval, e.g. Qxf7# in prod game
+        # 1459222 ply 15) was stripped as a "trailing only-move", leaving nothing to
+        # check, and the mate tag was rejected. A forced mate is exempt from the
+        # one-mover discard, so it is checked on the unstripped line instead.
+        relevant = _solver_nodes_through_firing_depth(truncated, firing_depth)
     if not relevant:
         return False
-    return all(is_solver_node_forced(node, solver_color, margin) for node in relevant)
+    mate_motif = is_mate_motif(motif_int)
+    return all(
+        is_solver_node_forced(node, solver_color, margin, mate_motif=mate_motif)
+        for node in relevant
+    )

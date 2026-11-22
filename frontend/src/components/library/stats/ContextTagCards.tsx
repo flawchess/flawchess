@@ -10,16 +10,10 @@ import {
   type ContextTagCardDef,
   type ContextTagMetric,
 } from '@/lib/flawComparisonMeta';
-import { GAP_AXIS_LABELS } from '@/lib/gapBar';
+import { GapAxisCaption } from './GapAxisCaption';
 import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 import type { FlawComparisonTc } from '@/types/library';
-
-/**
- * Right margin that ends the caption row where the bar track ends: on phones the words
- * column (6rem) and popover sit right of the track; from md up the track is full width.
- */
-const AXIS_CAPTION_CLASS = 'mr-34 md:mr-0 flex justify-between text-sm text-muted-foreground';
 
 /** Cards per row from lg up; the `afterFirstRow` slot goes in after this many cards. */
 const CARDS_PER_ROW = 2;
@@ -75,11 +69,7 @@ function ContextTagCard({ card, tcStats }: ContextTagCardProps) {
         {card.metrics.map((metric) => (
           <ContextTagRow key={metric} metric={metric} tcStats={tcStats} />
         ))}
-        <div className={AXIS_CAPTION_CLASS} data-testid={`${testId}-axis`}>
-          {GAP_AXIS_LABELS.map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
+        <GapAxisCaption testId={`${testId}-axis`} />
       </CardBody>
     </Card>
   );
@@ -98,7 +88,7 @@ interface ContextTagCardsProps {
  * The four context-tag cards: Game phase, Clock, Lost advantages, Opponent
  * errors. Two columns from lg up, one on phones. Each card ends with the
  * better / worse axis caption: fewer flaws (better) sit left on every gap bar. A `trailing`
- * card goes in last, with no axis caption of its own.
+ * card goes in last and carries its own caption.
  */
 export function ContextTagCards({ tcStats, afterFirstRow, trailing }: ContextTagCardsProps) {
   const renderCards = (cards: readonly ContextTagCardDef[]) =>

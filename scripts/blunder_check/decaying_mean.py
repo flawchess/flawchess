@@ -8,7 +8,7 @@ sampler share one decaying mean (Phase 256 D-06). This module stays as the set-8
 and ``decaying_mean`` takes a depth-keyed mapping. ``tests/scripts/test_decaying_mean.py`` pins
 both series to the app's ``loss_by_depth`` / ``gain_by_depth`` (floor 0).
 
-Only odd depths are used: even slots of the material arrays are mid-exchange values (Phase 254
+Only odd depths are used: even slots of the in-memory material lists are mid-exchange values (Phase 254
 D-17, ``app.services.line_material``). The decay ratio is fixed by the owner, not fitted.
 """
 
@@ -42,7 +42,7 @@ def loss_series(
 ) -> dict[int, int | None]:
     """Loss per odd depth: MATE_LOSS from the played-line mate ply on, else -material capped.
 
-    `played_material` is the signed 9-slot array of the played line (positive = blunderer up).
+    `played_material` is the signed 9-slot list (`LineFacts.material_array()`) of the played line (positive = blunderer up).
     A depth the stored line does not settle is None.
     """
     series: dict[int, int | None] = {}

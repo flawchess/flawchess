@@ -171,28 +171,21 @@ describe('postReviewKeepalive', () => {
   });
 });
 
-// Facepalm range: forwarded when set (a min of 0 included, so != null not truthiness),
-// omitted when undefined so the request is unchanged at All.
-describe('facepalm range params', () => {
-  beforeEach(() => {
-    vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
-  });
-
+// The facepalm range filter is gone: the request builders forward nothing named
+// min_facepalm_pct / max_facepalm_pct, even for a stray caller that still passes them.
+describe('no facepalm range params', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it.each(['getGames', 'getFlaws'] as const)('%s forwards both bounds including a min of 0', async (method) => {
+  it.each(['getGames', 'getFlaws'] as const)('%s forwards no facepalm range keys', async (method) => {
     const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
-    await libraryApi[method]({ min_facepalm_pct: 0, max_facepalm_pct: 29 });
+    const stray = { severity: ['blunder'], min_facepalm_pct: 0, max_facepalm_pct: 29 } as Parameters<
+      (typeof libraryApi)[typeof method]
+    >[0];
+    await libraryApi[method](stray);
 
-    expect(lastGetParams(getSpy)).toMatchObject({ min_facepalm_pct: 0, max_facepalm_pct: 29 });
-  });
-
-  it.each(['getGames', 'getFlaws'] as const)('%s omits both keys when undefined', async (method) => {
-    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
-    await libraryApi[method]({ severity: ['blunder'] });
-
+    expect(lastGetParams(getSpy)).toMatchObject({ severity: ['blunder'] });
     expect(lastGetParams(getSpy)).not.toHaveProperty('min_facepalm_pct');
     expect(lastGetParams(getSpy)).not.toHaveProperty('max_facepalm_pct');
   });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * MoveStats vitest suite — covers the accuracy
- * strip (canonical-or-muted), all 7 rows always rendering, counts
+ * strip (canonical-or-muted), all 8 rows always rendering, counts
  * derived from flaw_markers/eval_series, opponent tiers surfaced, and
  * the player-first column reorder.
  */
@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { MoveStats } from '../MoveStats';
 import type { EvalPoint, FlawMarker, GameFlawCard } from '@/types/library';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
 
 afterEach(() => {
   cleanup();
@@ -80,10 +81,19 @@ function point(overrides: Partial<EvalPoint> & Pick<EvalPoint, 'ply'>): EvalPoin
   };
 }
 
-const ALL_CATEGORIES = ['gem', 'great', 'best', 'good', 'inaccuracy', 'mistake', 'blunder'] as const;
+const ALL_CATEGORIES = [
+  'gem',
+  'great',
+  'best',
+  'good',
+  'inaccuracy',
+  'mistake',
+  'blunder',
+  'facepalm',
+] as const;
 
-describe('MoveStats — all 7 rows always render', () => {
-  it('renders exactly 7 category rows with muted 0s for an all-zero analyzed game', () => {
+describe('MoveStats — all 8 rows always render', () => {
+  it('renders exactly 8 category rows with muted 0s for an all-zero analyzed game', () => {
     render(<MoveStats game={makeGame()} />);
     for (const category of ALL_CATEGORIES) {
       expect(screen.getByTestId(`move-stats-row-${category}`)).toBeTruthy();
@@ -192,13 +202,107 @@ describe('MoveStats — accuracy info popover', () => {
 
     fireEvent.click(screen.getByTestId('move-stats-info'));
     const body = document.body.textContent ?? '';
-    for (const label of ['Accuracy', 'Gem', 'Great', 'Best', 'Good', 'Inaccuracy', 'Mistake', 'Blunder', 'Lichess']) {
+    for (const label of ['Accuracy', 'Gem', 'Great', 'Best', 'Good', 'Inaccuracy', 'Mistake', 'Blunder', 'Facepalm', 'Lichess']) {
       expect(body).toContain(label);
     }
+  });
+
+  it('defines Facepalm from the cut constant, keeps the Blunder wording and states the Lichess sum', () => {
+    render(<MoveStats game={makeGame()} />);
+    fireEvent.click(screen.getByTestId('move-stats-info'));
+    const body = document.body.textContent ?? '';
+    expect(body).toContain(`facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more`);
+    expect(body).toContain('Costs 15% winning chances or more.');
+    expect(body).toContain("Blunders and facepalms together make up Lichess's blunder count.");
   });
 
   it('suffixes the info trigger testid with the game id', () => {
     render(<MoveStats game={makeGame()} gameId={GAME_ID} />);
     expect(screen.getByTestId(`move-stats-info-${GAME_ID}`)).toBeTruthy();
+  });
+});
+
+describe('MoveStats — mobile compact row (D-05)', () => {
+  it('renders gem, great, best, mistake, blunder, facepalm and the chevron, no inaccuracy or good cell', () => {
+    render(<MoveStats game={makeGame()} showCompactRow />);
+    for (const category of ['gem', 'great', 'best', 'mistake', 'blunder', 'facepalm']) {
+      expect(screen.getByTestId(`move-stats-compact-cell-${category}`)).toBeTruthy();
+    }
+    expect(screen.queryByTestId('move-stats-compact-cell-inaccuracy')).toBeNull();
+    expect(screen.queryByTestId('move-stats-compact-cell-good')).toBeNull();
+    expect(screen.getByTestId('move-stats-expand-toggle')).toBeTruthy();
+    expect(screen.getByTestId('move-stats-compact').className).toContain('grid-cols-7');
+  });
+
+  it('counts user-side with the Blunder / Facepalm split and dispatches the facepalm ref on tap', () => {
+    const onCellActivate = vi.fn();
+    const aboveCut = (FACEPALM_HIGH_CUTOFF + 1) / 100;
+    const game = makeGame({
+      user_color: 'white',
+      flaw_markers: [
+        marker({ ply: 0, severity: 'blunder', is_user: true, facepalm_score: aboveCut }),
+        marker({ ply: 2, severity: 'blunder', is_user: true }),
+        // Opponent facepalm must not count in the user-side compact row.
+        marker({ ply: 1, severity: 'blunder', is_user: false, facepalm_score: aboveCut }),
+      ],
+    });
+    render(<MoveStats game={game} showCompactRow onCellActivate={onCellActivate} />);
+    // The count is the first span; the icon's glyph text sits after it in textContent.
+    const countOf = (category: string): string | undefined =>
+      screen.getByTestId(`move-stats-compact-cell-${category}`).querySelector('span')?.textContent;
+    expect(countOf('blunder')).toBe('1');
+    const facepalmCell = screen.getByTestId('move-stats-compact-cell-facepalm');
+    expect(countOf('facepalm')).toBe('1');
+    fireEvent.click(facepalmCell);
+    expect(onCellActivate).toHaveBeenCalledWith({ kind: 'category', category: 'facepalm', side: 'white' });
+  });
+});
+
+describe('MoveStats - outlinedRefs filter ring (D-20, D-28)', () => {
+  const RING_CLASS_FRAGMENT = 'ring-2';
+  const aboveCut = (FACEPALM_HIGH_CUTOFF + 1) / 100;
+  // user_color 'white': a facepalm blunder and a mistake on each side.
+  function ringedGame(): GameFlawCard {
+    return makeGame({
+      user_color: 'white',
+      flaw_markers: [
+        marker({ ply: 0, severity: 'blunder', is_user: true, facepalm_score: aboveCut }),
+        marker({ ply: 2, severity: 'mistake', is_user: true }),
+        marker({ ply: 1, severity: 'blunder', is_user: false, facepalm_score: aboveCut }),
+        marker({ ply: 3, severity: 'mistake', is_user: false }),
+      ],
+    });
+  }
+
+  it('rings every matching table cell and the matching compact cells, and only those', () => {
+    render(
+      <MoveStats
+        game={ringedGame()}
+        showCompactRow
+        outlinedRefs={[
+          { kind: 'category', category: 'facepalm', side: 'white' },
+          { kind: 'category', category: 'mistake', side: 'white' },
+        ]}
+      />,
+    );
+    const cls = (id: string): string => screen.getByTestId(id).className;
+    expect(cls('move-stats-cell-facepalm-white')).toContain(RING_CLASS_FRAGMENT);
+    expect(cls('move-stats-cell-mistake-white')).toContain(RING_CLASS_FRAGMENT);
+    expect(cls('move-stats-cell-facepalm-black')).not.toContain(RING_CLASS_FRAGMENT);
+    expect(cls('move-stats-cell-mistake-black')).not.toContain(RING_CLASS_FRAGMENT);
+    expect(cls('move-stats-compact-cell-facepalm')).toContain(RING_CLASS_FRAGMENT);
+    expect(cls('move-stats-compact-cell-mistake')).toContain(RING_CLASS_FRAGMENT);
+  });
+
+  it('rings nothing without outlinedRefs (the AnalysisTagsPanel case)', () => {
+    render(<MoveStats game={ringedGame()} showCompactRow />);
+    for (const id of [
+      'move-stats-cell-facepalm-white',
+      'move-stats-cell-mistake-white',
+      'move-stats-compact-cell-facepalm',
+      'move-stats-compact-cell-mistake',
+    ]) {
+      expect(screen.getByTestId(id).className).not.toContain(RING_CLASS_FRAGMENT);
+    }
   });
 });

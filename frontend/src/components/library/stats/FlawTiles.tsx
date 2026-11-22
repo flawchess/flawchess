@@ -140,8 +140,9 @@ interface FacepalmTileProps extends TileProps {
 
 /**
  * The Facepalm blunders tile: the total row of the Facepalm blunders card as a headline tile.
- * Neutral like that row (no band, no verdict, D-16), and it loads and fails on its own request
- * (D-21) without holding the Blunders tile.
+ * Banded like that row (the provisional per-TC typical band and the standard verdict colour on
+ * the words and dot; the rate number keeps FACEPALM_BAND_SWATCH), and it loads and fails on its
+ * own request (D-21) without holding the Blunders tile.
  */
 function FacepalmTile({ tcStats, analyzedGate, bullets, isError, lowCoverage }: FacepalmTileProps) {
   if (isError) {
@@ -194,7 +195,6 @@ function FacepalmTile({ tcStats, analyzedGate, bullets, isError, lowCoverage }: 
             noun={meta.noun}
             basis={libraryBasisText(tcStats.analyzed_n, tcStats.tc)}
             cell={cell}
-            omitDirection
             rangeNote={facepalmRangeNote(cell)}
           />
         )

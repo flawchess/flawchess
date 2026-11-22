@@ -5,7 +5,6 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { FlawFilterControl } from '../FlawFilterControl';
 import { OpponentStrengthFilter } from '../OpponentStrengthFilter';
 import { TacticDepthFilter } from '../TacticDepthFilter';
-import { FacepalmFilter } from '../FacepalmFilter';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import type { OpponentStrengthRange } from '@/types/api';
 import {
@@ -13,12 +12,15 @@ import {
   presetToRange,
   type TacticDepthValue,
 } from '@/lib/tacticDepth';
+import type { FlawSeverityFilter, FlawTag } from '@/types/library';
 import {
-  DEFAULT_FACEPALM_VALUE,
-  presetToRange as facepalmPresetToRange,
-  type FacepalmValue,
-} from '@/lib/facepalm';
-import type { FlawTag } from '@/types/library';
+  SEV_FACEPALM,
+  SEV_FACEPALM_ON,
+  SEV_BLUNDER,
+  SEV_BLUNDER_BG,
+  SEV_MISTAKE,
+  SEV_MISTAKE_BG,
+} from '@/lib/theme';
 import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup.
@@ -35,7 +37,7 @@ beforeAll(() => {
 });
 
 const defaultProps = {
-  severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
+  severity: ['blunder', 'mistake'] as FlawSeverityFilter[],
   tags: [] as FlawTag[],
   onSeverityChange: vi.fn(),
   onTagChange: vi.fn(),
@@ -45,6 +47,13 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
+
+/** jsdom normalizes colour strings (oklch(0.50 ..) -> oklch(0.5 ..)); compare normalized forms. */
+function normalizedColor(prop: 'color' | 'backgroundColor' | 'borderColor', value: string): string {
+  const probe = document.createElement('div');
+  probe.style[prop] = value;
+  return probe.style[prop];
+}
 
 /**
  * Render FlawFilterControl. The Context tag families now render as a normal (always
@@ -155,47 +164,105 @@ describe('FlawFilterControl', () => {
   // Severity is pinned to the top of the panel, above Tactic Depth:
   // it is always visible, no longer inside the collapsed Context section.
   describe('severity buttons', () => {
-    it('renders both severity buttons without expanding Context', () => {
-      render(<FlawFilterControl {...defaultProps} />);
-      expect(screen.getByTestId('filter-flaw-severity-blunder')).toBeTruthy();
-      expect(screen.getByTestId('filter-flaw-severity-mistake')).toBeTruthy();
+    it('renders the three tags in D-08 order with singular labels, without expanding Context', () => {
+      render(<FlawFilterControl {...defaultProps} severity={[]} />);
+      const facepalm = screen.getByTestId('filter-flaw-severity-facepalm');
+      const blunder = screen.getByTestId('filter-flaw-severity-blunder');
+      const mistake = screen.getByTestId('filter-flaw-severity-mistake');
+      expect(facepalm.textContent).toMatch(/Facepalm$/);
+      expect(blunder.textContent).toMatch(/Blunder$/);
+      expect(mistake.textContent).toMatch(/Mistake$/);
+      expect(facepalm.getAttribute('aria-label')).toBe('Filter flaws by severity: Facepalm');
+      expect(blunder.getAttribute('aria-label')).toBe('Filter flaws by severity: Blunder');
+      expect(mistake.getAttribute('aria-label')).toBe('Filter flaws by severity: Mistake');
+      expect(Boolean(facepalm.compareDocumentPosition(blunder) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      expect(Boolean(blunder.compareDocumentPosition(mistake) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    });
+
+    it('the Facepalm tag carries the ??? icon, Blunder the ?? icon', () => {
+      render(<FlawFilterControl {...defaultProps} severity={[]} />);
+      const glyph = (sev: string): string =>
+        screen.getByTestId(`filter-flaw-severity-${sev}`).querySelector('svg')?.textContent ?? '';
+      expect(glyph('facepalm')).toContain('???');
+      expect(glyph('blunder')).toContain('??');
+      expect(glyph('blunder')).not.toContain('???');
+    });
+
+    it('selected Facepalm tag is a solid SEV_FACEPALM fill with a light label; Blunder and Mistake stay tinted (260-G1)', () => {
+      render(
+        <FlawFilterControl {...defaultProps} severity={['facepalm', 'blunder', 'mistake']} />,
+      );
+      const facepalm = screen.getByTestId('filter-flaw-severity-facepalm');
+      expect(facepalm.style.backgroundColor).toBe(normalizedColor('backgroundColor', SEV_FACEPALM));
+      expect(facepalm.style.borderColor).toBe(normalizedColor('borderColor', SEV_FACEPALM));
+      expect(facepalm.style.color).toBe(normalizedColor('color', SEV_FACEPALM_ON));
+      const blunder = screen.getByTestId('filter-flaw-severity-blunder');
+      expect(blunder.style.color).toBe(normalizedColor('color', SEV_BLUNDER));
+      expect(blunder.style.backgroundColor).toBe(normalizedColor('backgroundColor', SEV_BLUNDER_BG));
+      const mistake = screen.getByTestId('filter-flaw-severity-mistake');
+      expect(mistake.style.color).toBe(normalizedColor('color', SEV_MISTAKE));
+      expect(mistake.style.backgroundColor).toBe(normalizedColor('backgroundColor', SEV_MISTAKE_BG));
+    });
+
+    it('an unselected Facepalm tag has no inline colour', () => {
+      render(<FlawFilterControl {...defaultProps} severity={[]} />);
+      const facepalm = screen.getByTestId('filter-flaw-severity-facepalm');
+      expect(facepalm.style.color).toBe('');
+      expect(facepalm.style.backgroundColor).toBe('');
+      expect(facepalm.style.borderColor).toBe('');
     });
 
     it('severity buttons reflect active state via aria-pressed', () => {
       render(<FlawFilterControl {...defaultProps} severity={['blunder']} />);
-      const blunderBtn = screen.getByTestId('filter-flaw-severity-blunder');
-      const mistakeBtn = screen.getByTestId('filter-flaw-severity-mistake');
-      expect(blunderBtn.getAttribute('aria-pressed')).toBe('true');
-      expect(mistakeBtn.getAttribute('aria-pressed')).toBe('false');
+      expect(screen.getByTestId('filter-flaw-severity-facepalm').getAttribute('aria-pressed')).toBe('false');
+      expect(screen.getByTestId('filter-flaw-severity-blunder').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('filter-flaw-severity-mistake').getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('clicking an inactive severity button calls onSeverityChange', () => {
+    it('clicking Facepalm with nothing selected selects only facepalm', () => {
+      const onSeverityChange = vi.fn();
+      render(<FlawFilterControl {...defaultProps} severity={[]} onSeverityChange={onSeverityChange} />);
+      fireEvent.click(screen.getByTestId('filter-flaw-severity-facepalm'));
+      expect(onSeverityChange).toHaveBeenCalledWith(['facepalm']);
+    });
+
+    it('clicking Facepalm with Blunder selected adds it (OR)', () => {
       const onSeverityChange = vi.fn();
       render(
         <FlawFilterControl {...defaultProps} severity={['blunder']} onSeverityChange={onSeverityChange} />,
       );
-      fireEvent.click(screen.getByTestId('filter-flaw-severity-mistake'));
-      expect(onSeverityChange).toHaveBeenCalledWith(['blunder', 'mistake']);
+      fireEvent.click(screen.getByTestId('filter-flaw-severity-facepalm'));
+      expect(onSeverityChange).toHaveBeenCalledWith(['blunder', 'facepalm']);
     });
 
-    it('deselecting the last active severity yields [] (both shown — no guard)', () => {
+    it('clicking a selected tag removes it', () => {
+      const onSeverityChange = vi.fn();
+      render(
+        <FlawFilterControl
+          {...defaultProps}
+          severity={['facepalm', 'blunder']}
+          onSeverityChange={onSeverityChange}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('filter-flaw-severity-facepalm'));
+      expect(onSeverityChange).toHaveBeenCalledWith(['blunder']);
+    });
+
+    it('deselecting the last active severity yields [] (all shown, no guard)', () => {
       const onSeverityChange = vi.fn();
       render(
         <FlawFilterControl {...defaultProps} severity={['blunder']} onSeverityChange={onSeverityChange} />,
       );
-      // Clicking the only active severity clears it — empty severity = both shown.
+      // Clicking the only active severity clears it: empty severity = everything shown.
       fireEvent.click(screen.getByTestId('filter-flaw-severity-blunder'));
       expect(onSeverityChange).toHaveBeenCalledWith([]);
     });
 
-    it('defaults render both severity buttons inactive (empty severity = both shown)', () => {
+    it('defaults render all three severity buttons inactive (empty severity = all shown)', () => {
       render(<FlawFilterControl {...defaultProps} severity={[]} />);
-      expect(
-        screen.getByTestId('filter-flaw-severity-blunder').getAttribute('aria-pressed'),
-      ).toBe('false');
-      expect(
-        screen.getByTestId('filter-flaw-severity-mistake').getAttribute('aria-pressed'),
-      ).toBe('false');
+      for (const sev of ['facepalm', 'blunder', 'mistake']) {
+        expect(screen.getByTestId(`filter-flaw-severity-${sev}`).getAttribute('aria-pressed')).toBe('false');
+      }
     });
   });
 
@@ -478,6 +545,9 @@ describe('filter-change tracking', () => {
     fireEvent.click(screen.getByTestId('filter-flaw-severity-blunder'));
     expectSingleEvent({ target: 'severity', value: 'blunder' });
     track.mockClear();
+    fireEvent.click(screen.getByTestId('filter-flaw-severity-facepalm'));
+    expectSingleEvent({ target: 'severity', value: 'facepalm' });
+    track.mockClear();
     fireEvent.click(screen.getByTestId('filter-flaw-tag-miss'));
     expectSingleEvent({ target: 'flaw-tag', value: 'miss' });
     track.mockClear();
@@ -522,18 +592,6 @@ describe('filter-change tracking', () => {
     track.mockClear();
     fireEvent.click(screen.getByTestId('filter-opponent-strength-preset-stronger'));
     expectSingleEvent({ target: 'opponent-strength', value: 'stronger' });
-  });
-
-  it('reports a facepalm preset change with the preset key, never bounds', () => {
-    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('filter-facepalm-preset-high'));
-    expectSingleEvent({ target: 'facepalm', value: 'high' });
-  });
-
-  it('stays silent when the already-active facepalm preset is re-clicked', () => {
-    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('filter-facepalm-preset-all'));
-    expect(track).not.toHaveBeenCalled();
   });
 
   it('stays silent when the already-active preset is re-clicked', () => {
@@ -617,29 +675,6 @@ describe('filter-change tracking', () => {
       expect(['any', 'stronger', 'similar', 'weaker', 'custom']).toContain(props.value);
     });
 
-    function StatefulFacepalm() {
-      const [value, setValue] = useState<FacepalmValue>(DEFAULT_FACEPALM_VALUE);
-      return <FacepalmFilter value={value} onChange={setValue} />;
-    }
-
-    it('reports a facepalm slider commit as one debounced preset-or-custom event', () => {
-      render(<StatefulFacepalm />);
-      const slider = screen.getByTestId('filter-facepalm-slider');
-      stubSliderRect(slider);
-      fireEvent.pointerDown(slider, { clientX: 100, pointerId: 1, button: 0, buttons: 1 });
-      fireEvent.pointerMove(slider, { clientX: 120, pointerId: 1, buttons: 1 });
-      expect(track).not.toHaveBeenCalled();
-      fireEvent.pointerUp(slider, { clientX: 120, pointerId: 1 });
-      expect(track).not.toHaveBeenCalled();
-      act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
-      expect(track).toHaveBeenCalledTimes(1);
-      const [name, props] = track.mock.calls[0] as [string, Record<string, string>];
-      expect(name).toBe('filter-change');
-      expect(props.target).toBe('facepalm');
-      // Never the bounds: only a preset key or 'custom'.
-      expect(['all', 'low', 'mid', 'high', 'custom']).toContain(props.value);
-    });
-
     it('reports a tactic-depth slider commit as a preset or custom', () => {
       render(<StatefulDepth />);
       const slider = screen.getByTestId('filter-tactic-depth-slider');
@@ -683,133 +718,66 @@ describe('TacticDepthFilter summary highlight', () => {
   });
 });
 
-describe('Facepalm section', () => {
+describe('Facepalm range filter removal (D-10)', () => {
   afterEach(cleanup);
 
-  const summary = () => screen.getByTestId('filter-facepalm-summary');
-
-  it('renders under onFacepalmChange and emits handles 70/100 for High', () => {
-    const onFacepalmChange = vi.fn();
-    render(<FlawFilterControl {...defaultProps} onFacepalmChange={onFacepalmChange} />);
-    expect(screen.getByTestId('filter-facepalm')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('filter-facepalm-preset-high'));
-    expect(onFacepalmChange).toHaveBeenCalledTimes(1);
-    expect(onFacepalmChange).toHaveBeenCalledWith({ min: 70, max: 100 });
-  });
-
-  it('is absent without the onFacepalmChange handler', () => {
-    render(<FlawFilterControl {...defaultProps} />);
-    expect(screen.queryByTestId('filter-facepalm')).toBeNull();
-  });
-
-  it('labels the section Facepalm Score', () => {
-    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-    expect(screen.getByTestId('filter-facepalm').textContent).toContain('Facepalm Score');
-  });
-
-  // The "Mistakes are excluded" note was removed: appearing only while narrowed,
-  // it made the filter panel layout jump.
-  it.each(['all', 'low', 'mid', 'high'] as const)('renders no inline hint at %s', (preset) => {
-    const { container } = render(
-      <FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />,
-    );
-    expect(container.querySelector('[data-testid$="-hint"]')).toBeNull();
-    expect(container.textContent).not.toContain('Mistakes are excluded');
-  });
-
-  describe('summary', () => {
-    it('is muted and reads All at the default', () => {
-      render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-      expect(summary().textContent).toBe('All');
-      expect(summary().className).toContain('text-muted-foreground');
-      expect(summary().className).not.toContain('text-toggle-active');
-    });
-
-    it.each([
-      ['low', '0-30%'],
-      ['mid', '30-70%'],
-      ['high', '70-100%'],
-    ] as const)('reads %s as %s in the active style', (preset, text) => {
-      render(<FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />);
-      expect(summary().textContent).toBe(text);
-      expect(summary().className).toContain('text-toggle-active');
-    });
-
-    it('reads handles 40/40 as 40%', () => {
-      render(<FacepalmFilter value={{ min: 40, max: 40 }} onChange={vi.fn()} />);
-      expect(summary().textContent).toBe('40%');
-      expect(summary().className).toContain('text-toggle-active');
-    });
-  });
-
-  it('renders the chips in order All, Low, Mid, High with only the active one pressed', () => {
-    render(<FacepalmFilter value={facepalmPresetToRange('mid')} onChange={vi.fn()} />);
-    const chips = Array.from(screen.getByTestId('filter-facepalm-presets').querySelectorAll('button'));
-    expect(chips.map((c) => c.textContent)).toEqual(['All', 'Low', 'Mid', 'High']);
-    expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
-  });
-
-  it('holds both owner-approved info paragraphs verbatim in the popover', () => {
-    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('filter-facepalm-info'));
-    const text = document.body.textContent ?? '';
-    expect(text).toContain(
-      "A high facepalm score tells you the blunder should have been easy to see for a player at your level, a low one that it was probably hard to see.",
-    );
-    expect(text).toContain(
-      'Low keeps 0 to 30%, Mid 30 to 70%, High 70 to 100%. Drag either handle for a custom range. Any range other than All shows blunders only.',
-    );
-  });
-
-  it('orders the panel Best Moves, divider, Flaws, Facepalm, divider, Tactic Depth', () => {
-    render(
+  it('renders no facepalm control, divider or summary on either tab layout', () => {
+    const { container, rerender } = render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+    expect(container.querySelector('[data-testid^="filter-facepalm"]')).toBeNull();
+    rerender(
       <FlawFilterControl
         {...defaultProps}
         showTacticFilter
-        onFacepalmChange={vi.fn()}
         onHasGemToggle={vi.fn()}
         onHasGreatToggle={vi.fn()}
       />,
     );
-    const order = [
-      screen.getByTestId('filter-has-gem'),
-      screen.getByTestId('filter-best-moves-divider'),
-      screen.getByTestId('filter-flaw-severity-mistake'),
-      screen.getByTestId('filter-facepalm'),
-      screen.getByTestId('filter-facepalm-divider'),
-      screen.getByTestId('filter-tactic-depth'),
-    ];
-    const follows = (a: HTMLElement, b: HTMLElement) =>
-      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    order.slice(1).forEach((el, i) => expect(follows(order[i]!, el)).toBe(true));
+    expect(container.querySelector('[data-testid^="filter-facepalm"]')).toBeNull();
   });
+});
 
-  it('renders neither divider when Best Moves and Facepalm are not shown', () => {
-    render(<FlawFilterControl {...defaultProps} showTacticFilter />);
-    expect(screen.queryByTestId('filter-best-moves-divider')).toBeNull();
-    expect(screen.queryByTestId('filter-facepalm-divider')).toBeNull();
-  });
+describe('filter divider between Flaws and the tactic filters (260-G3)', () => {
+  afterEach(cleanup);
 
-  it('keeps the Facepalm divider on the Flaws tab, where Best Moves is absent', () => {
-    render(<FlawFilterControl {...defaultProps} showTacticFilter onFacepalmChange={vi.fn()} />);
-    expect(screen.queryByTestId('filter-best-moves-divider')).toBeNull();
-    expect(screen.getByTestId('filter-facepalm-divider')).toBeTruthy();
-  });
+  const follows = (a: Element, b: Element): boolean =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const firstWithTestIdPrefix = (prefix: string): Element => {
+    const el = document.querySelector(`[data-testid^="${prefix}"]`);
+    if (!el) throw new Error(`no element with testid prefix ${prefix}`);
+    return el;
+  };
 
-  it('leaves the severity toggles untouched by a narrowed range (D-11)', () => {
+  function expectDividerBetweenFlawsAndTactics(): void {
+    expect(screen.getAllByTestId('filter-tactics-divider')).toHaveLength(1);
+    const divider = screen.getByTestId('filter-tactics-divider');
+    expect(follows(screen.getByTestId('filter-flaw-severity-mistake'), divider)).toBe(true);
+    expect(follows(divider, firstWithTestIdPrefix('filter-tactic-depth'))).toBe(true);
+    expect(follows(divider, firstWithTestIdPrefix('filter-tactic-orientation'))).toBe(true);
+  }
+
+  it('Games tab: one divider after Flaws and before Tactic Depth, none between Best Moves and Flaws', () => {
     render(
       <FlawFilterControl
         {...defaultProps}
-        severity={['blunder']}
-        facepalm={{ min: 70, max: 100 }}
-        onFacepalmChange={vi.fn()}
+        showTacticFilter
+        onHasGemToggle={vi.fn()}
+        onHasGreatToggle={vi.fn()}
       />,
     );
-    const blunder = screen.getByTestId('filter-flaw-severity-blunder');
-    const mistake = screen.getByTestId('filter-flaw-severity-mistake');
-    expect(blunder.hasAttribute('disabled')).toBe(false);
-    expect(mistake.hasAttribute('disabled')).toBe(false);
-    expect(blunder.getAttribute('aria-pressed')).toBe('true');
-    expect(mistake.getAttribute('aria-pressed')).toBe('false');
+    expectDividerBetweenFlawsAndTactics();
+    const divider = screen.getByTestId('filter-tactics-divider');
+    // The divider is not between the two sections that combine with OR.
+    expect(follows(screen.getByTestId('filter-has-great'), screen.getByTestId('filter-flaw-severity-facepalm'))).toBe(true);
+    expect(follows(divider, screen.getByTestId('filter-has-great'))).toBe(false);
+  });
+
+  it('Flaws tab: one divider after Flaws and before Tactic Depth', () => {
+    render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+    expectDividerBetweenFlawsAndTactics();
+  });
+
+  it('renders no divider when the tactic section is absent', () => {
+    render(<FlawFilterControl {...defaultProps} />);
+    expect(screen.queryByTestId('filter-tactics-divider')).toBeNull();
   });
 });

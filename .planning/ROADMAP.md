@@ -418,7 +418,7 @@ measure throughput. Plan, sizing and open questions in the seed (Part B).
 numbered 250 on the phase-249 branch) first prod backfill may overlap this phase's pv repair; its line-only
 recompute pass (250-CONTEXT D-18) runs after the repair is complete.
 **Requirements**: TBD
-**Plans:** 6/9 plans executed
+**Plans:** 6/10 plans executed
 
 Plans:
 **Wave 1**
@@ -437,6 +437,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 252-07-PLAN.md — prod re-walk feed, benchmark line repair alongside, prod retag (orchestrator-inline)
+- [ ] 252-10-PLAN.md — D-16: node-0 second-move pass (feeder `--pass node0`, then prod and benchmark runs before their retags; added 2026-11-22)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 252-08-PLAN.md — benchmark re-walk on the restarted :8001 backend and benchmark retag (orchestrator-inline)
@@ -778,7 +779,7 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 14/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+**Plans:** 15/15 plans complete (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
 **Wave 1**
@@ -824,7 +825,127 @@ Plans:
 - [x] 259-14-PLAN.md — drop migration, model cleanup, D-18 code outcome
 
 **Wave 15** *(blocked on Wave 14 completion)*
-- [ ] 259-15-PLAN.md — human-gated drop release (D-06)
+- [x] 259-15-PLAN.md — human-gated drop release (D-06)
+
+### Phase 260: Facepalm as a First-Class Move Quality (SEED-261122-j9p)
+
+**Goal**: Give facepalm blunders (the blunders a player should have avoided at their level) their own slot
+wherever move qualities are listed, so a player can go straight to them and compare both sides. Today the
+game card's move quality table and the Flaws filter buttons treat every blunder alike. Decisions in the seed
+("Decisions locked in the explore session", 2026-11-22).
+
+- **Game card table (`MoveStats`):** an 8th two-sided "Facepalm" row with the ??? icon, a main category like
+  the other rows, and its cell cycles through the facepalm plies. A facepalm is a blunder with a facepalm score
+  at or above `FACEPALM_HIGH_CUTOFF` (`isFacepalmBlunder`); an unscored blunder is never one.
+- **Mobile compact row:** Gem, Great, Best, Mistake, Blunder, Facepalm, chevron. Inaccuracy and Good drop out
+  of the compact row; the expanded table keeps all 8 rows.
+- **Terminology:** "Blunder" keeps its Lichess meaning (facepalms included) across the app. No blanket copy
+  change.
+- **Eval chart:** facepalm blunders get a dark red dot, distinct from the regular blunder dot. Reuse the darker
+  facepalm tone of the Flaws Timeline band if it fits before adding a theme constant.
+- **Flaws filter:** three OR tags, Facepalm, Blunder and Mistake (singular labels, in that order). Blunder means blunders that are not
+  facepalms, as in the card table. The Facepalm Score range filter is removed, in the UI and in the API
+  (`min_facepalm_pct` / `max_facepalm_pct`). Accepted loss: no filter for very hard-to-see blunders.
+- **Blunder row:** in the card table Blunder and Facepalm are disjoint; together they match the Lichess
+  blunder count.
+- **Desktop card:** the miniboard grows with the 8-row table so both end level.
+- **Scope:** frontend and backend. The severity filter of the shared flaw clause builder gains the facepalm
+  value; the removal of the range parameters is the last plan and runs after Phase 259 has merged. No
+  migration. Decisions in `260-CONTEXT.md`.
+- **Parallel with Phase 259:** the cut and its presets in `frontend/src/lib/facepalm.ts` belong to plan 259-12.
+  This phase reads the constant and never states the cut as a literal in code, copy or tests, and does not edit
+  the cutoff or preset values.
+
+**Depends on**: Phase 253 (facepalm score in the Library UI) and Phase 257. Built in its own worktree
+(`.claude/worktrees/phase-260`) in parallel with Phase 259, which has changed no frontend file. The final
+visual UAT and the merge wait for Phase 259's switch release (plan 259-12), since the refit changes which
+blunders count as facepalms.
+**Requirements**: TBD (decisions D-01 to D-28 in 260-CONTEXT.md)
+**Plans:** 9/9 plans complete
+
+Plans:
+**Wave 1**
+- [x] 260-01-PLAN.md — backend: severity=facepalm in the shared clause builder (D-12) and opponent facepalm scores on the card payloads (D-24)
+- [x] 260-02-PLAN.md — move quality table split: 8th Facepalm row, compact row, popover, cycling, desktop card geometry
+
+**Wave 2** *(blocked on Wave 1 completion; frontend plans run one at a time in the shared checkout)*
+- [x] 260-03-PLAN.md — frontend removal of the Facepalm Score range filter (D-14)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 260-04-PLAN.md — eval chart: dark red facepalm dots and the "Facepalm" tooltip
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 260-05-PLAN.md — Flaws filter: Facepalm, Blunder, Mistake tags and the "all three = none" state rules
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 260-06-PLAN.md — filter ring on the move quality cells, Gem and Great included, and on the SeverityBadge (D-20, D-27, D-28)
+
+**Wave 6** *(blocked on Wave 5 and on Phase 259 merged to main, branch rebased)*
+- [x] 260-07-PLAN.md — backend range-parameter removal (D-13), CHANGELOG, full pre-merge gate, final UAT list
+
+**Wave 7** *(gap closure from 260-UAT.md; blocked on Wave 6 completion)*
+- [x] 260-08-PLAN.md — gap closure (260-G1, G2, G3): one severity chip on the Flaws card with the facepalm popover, solid dark red Facepalm tag and chip, filter divider below Flaws
+
+**Wave 8** *(blocked on Wave 7 completion; frontend plans run one at a time in the shared checkout)*
+- [x] 260-09-PLAN.md — gap closure (260-G1, G2): move-list icons carry the facepalm popover, footer line names the score, eval chart tooltip in one neutral line, CHANGELOG, frontend gate
+
+### Phase 261: Blunder-Check Exploration Arm (SEED-261121-t50)
+
+**Goal**: Serve about 20% of blunder windows from a random draw with no facepalm-score cut, record what was
+served, and show the score after the answer. The drill only serves blunders at or above `FACEPALM_SCORE_MIN`
+(0.70 since Phase 259), so user answers can never validate or refit the score below the cut. The random arm is a
+plain sample of what the drill would serve with no cut, usable for any future score without weights. Owner
+decisions of 2026-11-21 and the evidence are in the seed.
+
+- **Exploration draw:** one coin flip per blunder slot (share in one named constant, 20%), own and foreign slots
+  alike. The draw is the existing game-first probe without the score cut, on scored rows only; among several
+  eligible blunders of the picked game it chooses at random, never by score. The main arm keeps the 0.70 cut;
+  this phase does not change it.
+- **Serve-time record on `blunder_check_windows`:** the arm, the sampling probability and a snapshot of the
+  score and its inputs (`loss`, `missed`, `maia_played_prob`, `maia_best_prob`, the best-reply probability). The
+  score is a query-time expression that changes with every refit, and a deleted foreign game leaves the window
+  with a NULL `game_id`.
+- **Counts as normal:** exploration windows give points, streaks, medals and leaderboard score like any other
+  window, with no marker the user can see.
+- **Avatar feedback in the solution view:** the snapshotted facepalm score, a type line ("The blunder allows a
+  material loss / checkmate", "The blunder misses a material win / checkmate") and a "hard to catch" line when
+  the snapshotted score is below 50% (a named constant). The type line needs a real material swing of at least 2
+  points or a mate in the engine line, walked at serve time with Phase 259's quiet-point rule and stored on the
+  window. Shown only when the blunder was caught or missed, never for an unreached blunder (249 D-10). Copy
+  stays neutral about whose blunder it is.
+- **Calibration script** under `scripts/blunder_check/`: caught rate by score band with intervals, split by arm
+  and `is_own`. The analysis itself runs later, on demand; a refit on answers is not part of this phase.
+- **First step in discuss-phase:** re-measure on the Phase 259 score. Every number under the seed's Evidence is
+  from the old score: pool sizes per user, the caught-rate table and the natural score distribution.
+- **Open for discuss and planning:** acceptance criteria (e.g. the served exploration share against the 20%
+  target), the prod cost of the probe without the cut and its fit with `ix_game_flaws_facepalm_inputs` (259
+  D-17), the served-once rule using up a user's low-score own blunders, and whether the best move's engine line
+  is still stored after the Phase 259 drop release (the type line needs it).
+- **Out of scope:** the one-tap "unfair" flag (deferred by the owner), review gates or a stop rule for the arm
+  (declined by the owner), a fit on user answers, any change to the herring share, the window length or the
+  timing.
+
+**Depends on**: Phase 259 (the refit score, the stored inputs and the 0.70 cut; switch and drop releases live on
+prod since 2026-11-22). Independent of Phase 260, which is being built in its own worktree at the same time; the
+two overlap only where both read the facepalm score.
+**Requirements**: none mapped; the contract is 261-CONTEXT.md D-01 to D-12 and the seed decisions
+**Plans:** 7/7 plans complete
+
+Plans:
+**Wave 1**
+- [x] 261-01-PLAN.md — serve-time record: migration, snapshot columns, type-line facts and the feedback decision (D-04, D-06, D-08, D-09, D-12)
+- [x] 261-02-PLAN.md — neutral Facepalm chip for the drill (D-01, D-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 261-03-PLAN.md — exploration draw: 20% coin flip, no-cut scored probe, pool provenance, arm kept on rewrites (D-10, D-11)
+- [x] 261-04-PLAN.md — feedback paragraph in the blunder solution, desktop card and phone strip (D-01 to D-05, D-07, D-09)
+- [x] 261-05-PLAN.md — calibration script with the served-share verdict
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 261-06-PLAN.md — feedback on the solution wire, HTTP end to end, counts as normal, no pre-answer leak (D-04 to D-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 261-07-PLAN.md — release gate: changelog, full and serial suites, D-10 prod EXPLAIN and browser check (orchestrator checkpoints)
 
 ## Backlog
 

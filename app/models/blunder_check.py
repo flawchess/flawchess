@@ -45,6 +45,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -66,6 +67,13 @@ class WindowOutcome(IntEnum):
     CAUGHT = 1  # blunder window, the user flagged the blunder
     MISSED = 2  # blunder window, the user let the blunder pass
     FALSE_ALARM = 3  # the user flagged a safe move
+
+
+class WindowArm(IntEnum):
+    """Which arm drew a blunder window (Phase 261, stored as SMALLINT)."""
+
+    MAIN = 0  # drawn under the facepalm score cut
+    EXPLORATION = 1  # drawn at random, no score cut
 
 
 class AnswerKind(IntEnum):
@@ -160,6 +168,44 @@ class BlunderCheckWindow(Base):
             "better_move_tier IS NULL OR better_move_tier IN (0, 1, 2)",
             name="ck_blunder_check_windows_better_move_tier",
         ),
+        # Phase 261 serve-time record: a blunder window carries its arm and a score snapshot, a
+        # herring never does, and the record is all-or-nothing.
+        CheckConstraint(
+            "selection_arm IS NULL OR selection_arm IN (0, 1)",
+            name="ck_blunder_check_windows_selection_arm",
+        ),
+        CheckConstraint(
+            "(selection_arm IS NULL) = (arm_probability IS NULL) "
+            "AND (arm_probability IS NULL OR (arm_probability > 0 AND arm_probability <= 1))",
+            name="ck_blunder_check_windows_arm_probability",
+        ),
+        CheckConstraint(
+            "(selection_arm IS NULL) = (facepalm_score IS NULL)",
+            name="ck_blunder_check_windows_arm_snapshot",
+        ),
+        CheckConstraint(
+            "window_case <> 0 OR selection_arm IS NULL",
+            name="ck_blunder_check_windows_arm_herring",
+        ),
+        CheckConstraint(
+            "facepalm_score IS NULL OR (facepalm_score >= 0 AND facepalm_score <= 1)",
+            name="ck_blunder_check_windows_facepalm_score",
+        ),
+        # best_prob may be NULL on a scored losing row and reply_prob on a scored row that loses
+        # nothing, so neither is required.
+        CheckConstraint(
+            "facepalm_score IS NULL OR (facepalm_played_prob IS NOT NULL "
+            "AND facepalm_loss IS NOT NULL AND facepalm_missed IS NOT NULL)",
+            name="ck_blunder_check_windows_snapshot_inputs",
+        ),
+        CheckConstraint(
+            "(facepalm_score IS NULL) = (type_mate IS NULL)",
+            name="ck_blunder_check_windows_type_mate",
+        ),
+        CheckConstraint(
+            "type_swing IS NULL OR type_swing >= 0",
+            name="ck_blunder_check_windows_type_swing",
+        ),
         # D-10 lookups: which plies of a game has this solver already been served.
         Index("ix_blunder_check_windows_user_game", "user_id", "game_id"),
         # Phase 251: feeds the weekly board aggregate (mirrors ix_drill_solves_solved_at).
@@ -217,6 +263,22 @@ class BlunderCheckWindow(Base):
     better_move_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Phase 261 serve-time record (CONTEXT "Claude's Discretion"): the arm, P(arm) at serve time, a
+    # snapshot of the facepalm score and its five inputs, and the type-line facts. The score is a
+    # query-time expression that moves with every refit and a deleted foreign game NULLs game_id,
+    # so the feedback and the calibration read this snapshot. NULL on herring windows and on
+    # windows composed before Phase 261, a separate legacy population (no backfill to main).
+    selection_arm: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    arm_probability: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_score: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_played_prob: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_loss: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_missed: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_best_prob: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    facepalm_reply_prob: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    # Deepest settled swing and mate flag on the facepalm-type side (blunder_check_feedback).
+    type_swing: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    type_mate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class BlunderCheckAnswer(Base):
@@ -262,6 +324,7 @@ __all__ = [
     "BlunderCheckAnswer",
     "BlunderCheckSession",
     "BlunderCheckWindow",
+    "WindowArm",
     "WindowCase",
     "WindowOutcome",
 ]

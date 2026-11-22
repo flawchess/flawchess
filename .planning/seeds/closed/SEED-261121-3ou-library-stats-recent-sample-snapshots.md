@@ -1,6 +1,9 @@
 ---
 id: SEED-261121-3ou
-status: active
+status: closed
+closed: 2026-11-22
+closed_reason: shipped as Phase 258 (recent 1000 games per TC within 36 months for the three comparison endpoints, basis line; release #497)
+promoted_to: Phase 258 (2026-11-21)
 planted: 2026-11-21
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)
 trigger_when: when planning the next milestone or phase that touches Library Stats or the stats filter behaviour

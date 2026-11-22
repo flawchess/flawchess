@@ -623,6 +623,8 @@ export function TrainSolveScreen({
   // TrainReveal itself) so the board's arrows prop can include the thin white
   // game-move arrow alongside the best/played-move arrows.
   const [gameMoveUci, setGameMoveUci] = useState<string | null>(null);
+  // Reported the same way: the game move is a facepalm blunder ("???" on its badge and chip).
+  const [gameMoveFacepalm, setGameMoveFacepalm] = useState(false);
   // The reveal-time search's state, reported up from
   // TrainReveal (idle / loading / ready with the line / error). Its line derives
   // the game move's quality badge; the whole state builds the standalone game
@@ -800,6 +802,7 @@ export function TrainSolveScreen({
             gameMoveLine: gameMoveLineState,
             playedMoveQuality,
             gameMoveQuality,
+            gameMoveFacepalm,
           }),
     [
       verdict,
@@ -811,6 +814,7 @@ export function TrainSolveScreen({
       gameMoveLineState,
       playedMoveQuality,
       gameMoveQuality,
+      gameMoveFacepalm,
     ],
   );
 
@@ -1435,7 +1439,12 @@ export function TrainSolveScreen({
   const revealOverlay = useMemo(() => {
     const playedMove: TrainOverlayMove | null =
       lastPlayedUci !== null && playedMoveQuality !== null
-        ? { uci: lastPlayedUci, quality: playedMoveQuality }
+        ? {
+            uci: lastPlayedUci,
+            quality: playedMoveQuality,
+            // Replaying the game's own facepalm blunder keeps its "???" badge.
+            facepalm: gameMoveFacepalm && lastPlayedUci === gameMoveUci,
+          }
         : null;
     return buildTrainRevealOverlay(
       revealPuzzleType,
@@ -1448,7 +1457,9 @@ export function TrainSolveScreen({
       // (trainArrows.ts filters the alternatives against this UCI).
       revealBestUci,
       playedMove,
-      gameMoveUci !== null ? { uci: gameMoveUci, quality: gameMoveQuality } : null,
+      gameMoveUci !== null
+        ? { uci: gameMoveUci, quality: gameMoveQuality, facepalm: gameMoveFacepalm }
+        : null,
       verdict !== null,
     );
   }, [
@@ -1460,6 +1471,7 @@ export function TrainSolveScreen({
     playedMoveQuality,
     gameMoveUci,
     gameMoveQuality,
+    gameMoveFacepalm,
   ]);
 
   // A soft puzzle's live engine alternatives, latched from the root search and
@@ -2007,6 +2019,7 @@ export function TrainSolveScreen({
           onChipSelect={handleChipSelect}
           treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
           onGameMoveUciChange={setGameMoveUci}
+          onGameMoveFacepalmChange={setGameMoveFacepalm}
           onGameMoveLineStateChange={setGameMoveLineState}
           alsoFineMoves={alsoFineMoves}
           tourTarget={tourTarget}

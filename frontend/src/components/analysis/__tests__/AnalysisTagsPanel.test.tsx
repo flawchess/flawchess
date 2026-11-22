@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { AnalysisTagsPanel } from '../AnalysisTagsPanel';
 import type { GameFlawCard, FlawMarker } from '@/types/library';
+import { FACEPALM_HIGH_CUTOFF } from '@/lib/facepalm';
 
 // TagChip's useIsMobile hook reads window.matchMedia — jsdom has no implementation,
 // so it must be stubbed (mirrors LibraryGameCard.test.tsx).
@@ -209,12 +210,44 @@ describe('AnalysisTagsPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the full all-zero 7-row table for a flawless analyzed game, instead of null', () => {
+  it('renders the full all-zero 8-row table for a flawless analyzed game, instead of null', () => {
     const flawless = buildGame({ flaw_markers: [] });
     render(<AnalysisTagsPanel game={flawless} onCyclePly={() => {}} />);
     expect(screen.getByTestId('analysis-tags-panel')).toBeDefined();
     expect(screen.getByTestId('move-stats-cell-blunder-white-1').textContent).toBe('0');
     expect(screen.getByTestId('move-stats-cell-gem-white-1').textContent).toBe('0');
+    expect(screen.getByTestId('move-stats-cell-facepalm-white-1').textContent).toBe('0');
+  });
+});
+
+describe('AnalysisTagsPanel Facepalm split and cycling (D-02, D-04)', () => {
+  // Local test scale (percent to 0..1 score); the cut is read from FACEPALM_HIGH_CUTOFF.
+  const PCT_SCALE = 100;
+  const ABOVE_CUT = (FACEPALM_HIGH_CUTOFF + 1) / PCT_SCALE;
+  // user_color 'white': ply 2 = user facepalm blunder, ply 6 = user unscored blunder.
+  const splitGame = buildGame({
+    severity_counts: { inaccuracy: 0, mistake: 0, blunder: 2 },
+    chips: [],
+    flaw_markers: [
+      buildMarker({ ply: 2, severity: 'blunder', is_user: true, facepalm_score: ABOVE_CUT }),
+      buildMarker({ ply: 6, severity: 'blunder', is_user: true, facepalm_score: null }),
+    ],
+  });
+
+  it('counts the facepalm blunder in Facepalm and the unscored one in Blunder', () => {
+    render(<AnalysisTagsPanel game={splitGame} onCyclePly={() => {}} />);
+    expect(screen.getByTestId('move-stats-cell-facepalm-white-1').textContent).toBe('1');
+    expect(screen.getByTestId('move-stats-cell-blunder-white-1').textContent).toBe('1');
+  });
+
+  it('each cell cycles only its own plies', () => {
+    const onCyclePly = vi.fn();
+    render(<AnalysisTagsPanel game={splitGame} onCyclePly={onCyclePly} />);
+    fireEvent.click(screen.getByTestId('move-stats-cell-facepalm-white-1'));
+    expect(onCyclePly).toHaveBeenLastCalledWith(2);
+    fireEvent.click(screen.getByTestId('move-stats-cell-blunder-white-1'));
+    expect(onCyclePly).toHaveBeenLastCalledWith(6);
+    expect(onCyclePly).toHaveBeenCalledTimes(2);
   });
 });
 

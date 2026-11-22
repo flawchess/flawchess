@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { ZONE_SUCCESS } from '@/lib/theme';
+import { FACEPALM_BAND_SWATCH, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import { FlawTiles } from '../FlawTiles';
 import type { FacepalmBullet } from '@/types/library';
 import {
@@ -87,13 +87,20 @@ describe('FlawTiles', () => {
     expect(screen.queryByTestId('flaw-tile-blunder-info')).toBeNull();
   });
 
-  it('keeps the Facepalm tile neutral: no verdict colour even for a significant gap', () => {
+  it('bands the Facepalm tile and colours a significant gap, the rate number keeping its swatch', () => {
     renderTiles(RAPID_ENTRY, makeFacepalmRows({ facepalm: { delta: 2, significant: true } }));
-    expect(screen.getByTestId('flaw-tile-facepalm-bar-words').style.color).toBe('');
+    expect(screen.getByTestId('flaw-tile-facepalm-bar-words').style.color).toBe(normalized(ZONE_DANGER));
+    expect(screen.getByTestId('flaw-tile-facepalm-bar-band')).not.toBeNull();
+    expect(screen.getByTestId('flaw-tile-facepalm-rate').style.color).toBe(
+      normalized(FACEPALM_BAND_SWATCH),
+    );
     fireEvent.click(screen.getByTestId('gap-popover-facepalm-tile-tc-rapid'));
     const popover = text('gap-popover-facepalm-tile-tc-rapid-popover');
-    expect(popover).toContain('There is no typical range for facepalm blunders yet.');
-    expect(popover).not.toContain('Fewer is better.');
+    expect(popover).toContain('Fewer is better.');
+    expect(popover).toContain(
+      'Typical gap among FlawChess players: 0.30 fewer to 0.30 more. You are worse than typical.',
+    );
+    expect(popover).not.toContain('players at your level');
   });
 
   it('shows a skeleton while the facepalm rows load and an error inside the tile on failure', () => {

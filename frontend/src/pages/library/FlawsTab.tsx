@@ -34,8 +34,8 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { FlawTag, TacticOrientation } from '@/types/library';
+import { isSeverityNarrowed, parseSeverityFilterParams } from '@/lib/flawSeverityFilter';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
-import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -99,11 +99,12 @@ export function FlawsTab() {
     didInitFromUrl.current = true;
 
     const urlTags = initialSearchParams.current.getAll('tag') as FlawTag[];
-    const urlSeverity = initialSearchParams.current.getAll('severity') as ('blunder' | 'mistake')[];
+    // Only the three known tag values survive; a stale or hand-edited ?severity= never reaches the API.
+    const urlSeverity = parseSeverityFilterParams(initialSearchParams.current.getAll('severity'));
     const urlTactic = initialSearchParams.current.getAll('tactic') as TacticFamily[];
 
     if (urlTags.length > 0 || urlSeverity.length > 0 || urlTactic.length > 0) {
-      // Empty severity in the URL = both shown (the default narrowing-off state).
+      // Empty severity in the URL = everything shown (the default narrowing-off state).
       // Preserve defaults for fields not present in the URL.
       setFlawFilter((prev) => ({ ...prev, tags: urlTags, severity: urlSeverity, tacticFamilies: urlTactic }));
     }
@@ -113,7 +114,8 @@ export function FlawsTab() {
   useEffect(() => {
     const params = new URLSearchParams();
     flawFilter.tags.forEach((t) => params.append('tag', t));
-    if (flawFilter.severity.length < 2) {
+    // Empty or all three tags selected shows everything, so neither writes a param.
+    if (isSeverityNarrowed(flawFilter.severity)) {
       flawFilter.severity.forEach((s) => params.append('severity', s));
     }
     (flawFilter.tacticFamilies ?? []).forEach((f) => params.append('tactic', f));
@@ -338,10 +340,6 @@ export function FlawsTab() {
         onTacticDepthChange={(next: TacticDepthValue) =>
           setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
-        facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
-        onFacepalmChange={(next: FacepalmValue) =>
-          setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
-        }
       />
     </div>
   );
@@ -562,10 +560,6 @@ export function FlawsTab() {
             tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
             onTacticDepthChange={(next: TacticDepthValue) =>
               setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
-            }
-            facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
-            onFacepalmChange={(next: FacepalmValue) =>
-              setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
             }
           />
         </MobileFilterDrawer>

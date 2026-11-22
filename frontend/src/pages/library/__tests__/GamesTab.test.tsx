@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { FlawSeverityFilter } from '@/types/library';
 
 // ── Mock heavy dependencies ───────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ vi.mock('@/hooks/useLibrary', () => ({
 // ── useFlawFilterStore mock ───────────────────────────────────────────────────
 
 let mockFlawFilterState = {
-  severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
+  severity: [] as FlawSeverityFilter[],
   tags: [] as string[],
 };
 const mockSetFlawFilter = vi.fn((updater: unknown) => {
@@ -162,7 +163,7 @@ function renderGamesTab(path = '/library/games') {
 // ── Setup / teardown ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockFlawFilterState = { severity: ['blunder', 'mistake'], tags: [] };
+  mockFlawFilterState = { severity: [], tags: [] };
   capturedFlawFilter = null;
   vi.clearAllMocks();
   mockGamesResult = {

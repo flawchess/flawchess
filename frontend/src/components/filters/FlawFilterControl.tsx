@@ -14,7 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { BlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
+import { BlunderIcon, FacepalmBlunderIcon, MistakeIcon } from '@/components/icons/SeverityGlyphIcon';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { TagLegend } from '@/components/library/TagChip';
@@ -28,6 +28,8 @@ import {
   FAM_IMPACT_BG,
   FAM_PHASE,
   FAM_PHASE_BG,
+  SEV_FACEPALM,
+  SEV_FACEPALM_ON,
   SEV_BLUNDER,
   SEV_BLUNDER_BG,
   SEV_MISTAKE,
@@ -37,7 +39,7 @@ import {
   GREAT_ACCENT,
   GREAT_ACCENT_BG,
 } from '@/lib/theme';
-import type { FlawTag, TacticOrientation } from '@/types/library';
+import type { FlawSeverityFilter, FlawTag, TacticOrientation } from '@/types/library';
 import type { TacticFamily, TacticGroupKey } from '@/lib/tacticComparisonMeta';
 import {
   TACTIC_COMPARISON_FAMILIES,
@@ -46,19 +48,16 @@ import {
   TACTIC_GROUPS,
 } from '@/lib/tacticComparisonMeta';
 import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
-import { FacepalmFilter } from '@/components/filters/FacepalmFilter';
 import { onOff, trackFeature } from '@/lib/analytics';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
-import { DEFAULT_FACEPALM_VALUE } from '@/lib/facepalm';
-import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface FlawFilterControlProps {
-  severity: ('blunder' | 'mistake')[];
+  severity: FlawSeverityFilter[];
   tags: FlawTag[];
-  onSeverityChange: (next: ('blunder' | 'mistake')[]) => void;
+  onSeverityChange: (next: FlawSeverityFilter[]) => void;
   onTagChange: (next: FlawTag[]) => void;
   /**
    * Tactic-motif family filter. Only relevant when `showTacticFilter` is set
@@ -80,14 +79,6 @@ export interface FlawFilterControlProps {
    */
   tacticDepth?: TacticDepthValue;
   onTacticDepthChange?: (next: TacticDepthValue) => void;
-  /**
-   * Facepalm range (handle positions, whole percents). Default All (full range).
-   * Rendered directly under the Flaws section, above Tactic Depth,
-   * and only when onFacepalmChange is supplied (both Library tabs do;
-   * LibraryFilterPanel does not).
-   */
-  facepalm?: FacepalmValue;
-  onFacepalmChange?: (next: FacepalmValue) => void;
   /**
    * "Has gem" / "has great" toggles, independent
    * booleans narrowing the Library games list. The Gem/Great section renders
@@ -120,16 +111,21 @@ const TAG_ICONS: Record<string, LucideIcon> = {
 // ─── Severity → pill style (mirrors the page severity badges) ─────────────────
 
 interface SeverityButtonConfig {
-  sev: 'blunder' | 'mistake';
+  sev: FlawSeverityFilter;
   label: string;
   icon: FlawIcon;
   color: string;
   bg: string;
+  /** Label colour when selected; defaults to `color`. The solid Facepalm fill needs a light label. */
+  selectedText?: string;
 }
 
+// D-08 order: Facepalm, Blunder, Mistake, singular labels. 'blunder' selects the blunders that
+// are not facepalms (the backend splits them, D-09).
 const SEVERITY_BUTTONS: SeverityButtonConfig[] = [
-  { sev: 'blunder', label: 'Blunders', icon: BlunderIcon, color: SEV_BLUNDER, bg: SEV_BLUNDER_BG },
-  { sev: 'mistake', label: 'Mistakes', icon: MistakeIcon, color: SEV_MISTAKE, bg: SEV_MISTAKE_BG },
+  { sev: 'facepalm', label: 'Facepalm', icon: FacepalmBlunderIcon, color: SEV_FACEPALM, bg: SEV_FACEPALM, selectedText: SEV_FACEPALM_ON },
+  { sev: 'blunder', label: 'Blunder', icon: BlunderIcon, color: SEV_BLUNDER, bg: SEV_BLUNDER_BG },
+  { sev: 'mistake', label: 'Mistake', icon: MistakeIcon, color: SEV_MISTAKE, bg: SEV_MISTAKE_BG },
 ];
 
 // ─── Family sections ──────────────────────────────────────────────────────────
@@ -223,17 +219,18 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
 interface SeverityFilterButtonProps {
   config: SeverityButtonConfig;
   selected: boolean;
-  onToggle: (sev: 'blunder' | 'mistake') => void;
+  onToggle: (sev: FlawSeverityFilter) => void;
 }
 
 /**
  * A severity toggle styled like the tag pills (and the page severity badges):
  * rounded-full, severity-colored when selected, with the severity glyph icon
- * (red "??" / orange "?"), so the severity row reads as the same family of pills
- * as the tags below it.
+ * (dark red "???" / red "??" / orange "?"), so the severity row reads as the same family of pills
+ * as the tags below it. The Facepalm tag is a solid dark red fill with a light label (260-G1), so
+ * it stays legible and reads heavier than Blunder.
  */
 function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButtonProps) {
-  const { sev, label, icon: Icon, color, bg } = config;
+  const { sev, label, icon: Icon, color, bg, selectedText } = config;
   return (
     <button
       type="button"
@@ -245,7 +242,9 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
         !selected
           && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
       )}
-      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+      style={
+        selected ? { color: selectedText ?? color, borderColor: color, backgroundColor: bg } : undefined
+      }
       onClick={() => onToggle(sev)}
     >
       <Icon className="h-4 w-4 shrink-0" />
@@ -460,10 +459,9 @@ function BestMovesInfo() {
  *
  * Renders (top to bottom):
  * - Best Moves (Gem / Great) — Games tab only (gated on the presence of the
- *   onHasGem/GreatToggle handlers, which only GamesTab passes), then a divider
- * - Severity (Blunders / Mistakes)
- * - Facepalm range (Library tabs only, gated on the onFacepalmChange handler),
- *   then a divider
+ *   onHasGem/GreatToggle handlers, which only GamesTab passes)
+ * - Severity (Facepalm / Blunder / Mistake), one OR group with Best Moves, then a divider
+ *   (showTacticFilter only)
  * - Tactic Depth filter (showTacticFilter only)
  * - Orientation toggle (showTacticFilter only)
  * - Tactic Type families incl. "Advanced" (showTacticFilter only) — each a titled section
@@ -496,8 +494,6 @@ export function FlawFilterControl({
   onOrientationChange,
   tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
   onTacticDepthChange,
-  facepalm = DEFAULT_FACEPALM_VALUE,
-  onFacepalmChange,
   hasGem = false,
   hasGreat = false,
   onHasGemToggle,
@@ -505,10 +501,10 @@ export function FlawFilterControl({
 }: FlawFilterControlProps) {
   const showTactics = showTacticFilter;
 
-  // Severity toggles narrow like the tag families: empty = both shown, one = that
-  // tier only, both = both shown (same as empty). Deselecting the last severity is
-  // allowed (yields []) — there is no at-least-one guard.
-  const handleSeverityToggle = (sev: 'blunder' | 'mistake'): void => {
+  // Severity toggles narrow like the tag families and combine with OR: empty = everything
+  // shown, one or two = those tags only, all three = everything shown (same as empty).
+  // Deselecting the last severity is allowed (yields []) — there is no at-least-one guard.
+  const handleSeverityToggle = (sev: FlawSeverityFilter): void => {
     const next = severity.includes(sev)
       ? severity.filter((s) => s !== sev)
       : [...severity, sev];
@@ -584,12 +580,10 @@ export function FlawFilterControl({
           </div>
         </div>
       )}
-      {(onHasGemToggle || onHasGreatToggle) && (
-        <div className="border-t border-border/40" data-testid="filter-best-moves-divider" />
-      )}
 
-      {/* ── Severity (Blunders / Mistakes) — empty = both shown ──────────────
-          Below Best Moves (when shown), above Tactic Depth, on both tabs. ──── */}
+      {/* ── Severity (Facepalm / Blunder / Mistake) — empty or all three = all shown ──────────────
+          Below Best Moves (when shown), above Tactic Depth, on both tabs. Best Moves and Flaws
+          combine with OR (e.g. gems plus facepalms), so they are one group with no line between. ──── */}
       <div className="flex flex-col gap-2">
         <p className="text-sm text-muted-foreground">Flaws</p>
         <div className="flex gap-2 flex-wrap">
@@ -604,13 +598,11 @@ export function FlawFilterControl({
         </div>
       </div>
 
-      {/* ── Facepalm range (directly under Flaws, above Tactic Depth), closed by
-          a divider that ends the Flaws group. Gated on the opt-in handler like Gem/Great, not on
-          showTactics: it is not a tactic control. The severity toggles above are
-          deliberately independent of it (D-11). ──── */}
-      {onFacepalmChange && <FacepalmFilter value={facepalm} onChange={onFacepalmChange} />}
-      {onFacepalmChange && (
-        <div className="border-t border-border/40" data-testid="filter-facepalm-divider" />
+      {/* ── Divider between the Best Moves + Flaws group and the tactic filters (260-G3) ──
+          Only when the tactic section renders: without it the Context section's own top
+          border is the only separator, and a divider here would double it. ──── */}
+      {showTactics && (
+        <div className="border-t border-border/40" data-testid="filter-tactics-divider" />
       )}
 
       {/* ── Tactic depth filter ──

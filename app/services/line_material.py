@@ -24,8 +24,9 @@ unless the blunderer or the opponent is mated within the walked line or the stat
 the short line. A missing, empty, malformed or illegal line gives all-None facts and never raises.
 The caller's board is never mutated.
 
-Facts expose a 9-slot signed array indexed by depth (``material_array``, slot N = depth N; only the
-odd slots are filled). Material is signed, positive = the blunderer is up
+Facts expose a 9-slot signed list indexed by depth (``material_array``, list index N - 1 = depth N;
+only the odd depths are filled). It is an in-memory shape, no longer stored: what is stored are the
+two scalars aggregated from it (``game_flaws.material_loss`` / ``material_missed``). Material is signed, positive = the blunderer is up
 (``material_at(depth) == -loss_at(depth)``). Ply convention: the first move (the blunder, or the
 best move) is ply 0, so line ply N is the Nth token of the stored line. ``opponent_mate_ply`` is the
 ply after which the opponent is mated (a best move that mates itself has ply 0, mate-in-2 has
@@ -42,11 +43,12 @@ from dataclasses import dataclass
 
 import chess
 
-# Odd depths (plies of the stored line) the Phase 250 fixtures are aligned with (D-05); the score
-# reads the depth-3 slot of the signed arrays.
+# Odd depths (plies of the stored line) the Phase 250 fixtures are aligned with (D-05); the stored
+# scalars are the decaying mean over these depths. Only the depth-3 slot (LINE_DEPTH) gates the mate
+# and None shortcuts of ``material_loss`` / ``material_missed``.
 LINE_LOSS_DEPTHS: tuple[int, ...] = (1, 3, 5, 7, 9)
 
-# Slots of the signed material arrays (D-09, D-17): slot N (1-based) = net material at depth N.
+# Slots of the in-memory signed material list (D-09, D-17): slot N (1-based) = net material at depth N.
 # Only the odd depths are filled by the quiet rule; the even slots stay None.
 LINE_MATERIAL_SLOTS: int = 9
 LINE_MATERIAL_DEPTHS: tuple[int, ...] = tuple(range(1, LINE_MATERIAL_SLOTS + 1))
@@ -98,9 +100,9 @@ class LineFacts:
 
 
 def material_at_depth(material: Sequence[int | None] | None, depth: int) -> int | None:
-    """Signed material at `depth` read from a stored array; None for a missing or short array.
+    """Signed material at `depth` read from a `material_array()` list; None for a missing or short one.
 
-    Stored arrays are 1-based in Postgres (`array[3]` = depth 3); the Python list is 0-based.
+    The list is 0-based: index `depth - 1` holds depth `depth`.
     """
     if material is None or not 1 <= depth <= len(material):
         return None

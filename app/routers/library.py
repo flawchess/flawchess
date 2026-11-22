@@ -14,6 +14,7 @@ from app.core.database import get_async_session
 from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.repositories import library_repository
+from app.repositories.library_repository import FlawSeverityFilter
 from app.schemas.library import (
     FacepalmComparisonResponse,
     FlawComparisonResponse,
@@ -32,10 +33,11 @@ router = APIRouter(prefix="/library", tags=["library"])
 
 NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
-# The Games/Flaws filter offers only the mistake/blunder severity tiers
-# (inaccuracies are count-only, never a filter; game_flaws stores M+B only).
-# Constraining the Query type rejects anything else at the HTTP boundary.
-SeverityFilter = Literal["mistake", "blunder"]
+# The Games/Flaws filter offers the facepalm / blunder / mistake severity tags (260 D-08;
+# inaccuracies are count-only, never a filter; game_flaws stores M+B only). The Literal is
+# owned by the repository so the clause builder and the HTTP boundary validate one type.
+# FastAPI 422-rejects anything else.
+SeverityFilter = FlawSeverityFilter
 
 # Tag filter for GET /library/games and /library/flaws — the 7 classification
 # tags plus the 3 phase tags. Phase tags are a first-class filter family
@@ -81,18 +83,6 @@ async def get_library_games(
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
     min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
-    # Inclusive whole-percent bounds on the floored facepalm score; the full range or
-    # omitted = no filter.
-    min_facepalm_pct: int | None = Query(
-        default=None,
-        ge=library_repository.FACEPALM_PCT_MIN,
-        le=library_repository.FACEPALM_PCT_MAX,
-    ),
-    max_facepalm_pct: int | None = Query(
-        default=None,
-        ge=library_repository.FACEPALM_PCT_MIN,
-        le=library_repository.FACEPALM_PCT_MAX,
-    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     opponent_gap_min: int | None = Query(default=None),
@@ -104,8 +94,9 @@ async def get_library_games(
 ) -> LibraryGamesResponse:
     """Return a paginated, flaw-filterable game archive.
 
-    When `severity` is supplied, only games with >=1 of the user's OWN plies at
-    that severity (or worse) are returned. When `tag` is supplied, only games
+    When `severity` is supplied (any of facepalm / blunder / mistake, OR-combined; Blunder
+    excludes Facepalm), only games with >=1 of the user's OWN flaws carrying one of the
+    selected tags are returned. All three tags is the same as none (260 D-08). When `tag` is supplied, only games
     containing a SINGLE flaw satisfying ALL selected tag families are returned
     (OR within family, AND across families — single-flaw EXISTS semantics).
     When `tactic_family` is supplied, only games with >=1 flaw whose tactic motif (in the
@@ -136,8 +127,6 @@ async def get_library_games(
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
         offset=offset,
         limit=limit,
         opponent_gap_min=opponent_gap_min,
@@ -399,18 +388,6 @@ async def get_library_flaws(
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
     min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
-    # Inclusive whole-percent bounds on the floored facepalm score; the full range or
-    # omitted = no filter.
-    min_facepalm_pct: int | None = Query(
-        default=None,
-        ge=library_repository.FACEPALM_PCT_MIN,
-        le=library_repository.FACEPALM_PCT_MAX,
-    ),
-    max_facepalm_pct: int | None = Query(
-        default=None,
-        ge=library_repository.FACEPALM_PCT_MIN,
-        le=library_repository.FACEPALM_PCT_MAX,
-    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     include_pasted: bool = Query(default=False),
@@ -452,8 +429,6 @@ async def get_library_flaws(
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
         offset=offset,
         limit=limit,
         include_pasted=include_pasted,

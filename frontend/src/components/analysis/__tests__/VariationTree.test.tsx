@@ -23,8 +23,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { VariationTree } from '../VariationTree';
 import type { FlawMarkerEntry } from '../VariationTree';
-import { TAC_ALLOWED } from '@/lib/theme';
+import { FACEPALM_HIGH_CUTOFF, facepalmScoreLabel, toFacepalmPct } from '@/lib/facepalm';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
+
+/** Whole-percent to raw 0..1 score scale (the score is a probability). */
+const PCT_SCALE = 100;
 
 beforeAll(() => {
   // jsdom does not implement scrollIntoView — stub it so the desktop auto-scroll
@@ -528,28 +531,43 @@ describe('VariationTree', () => {
     expect(svgs.length).toBeGreaterThan(0);
   });
 
-  it('(10b) a scored blunder shows the Facepalm mini-chip with the floored percent; unscored shows none', () => {
+  it('(10b) a scored blunder is one "??" icon that opens the facepalm score popover; no score chip', () => {
     const { nodes, mainLine } = buildPvFixture();
     const entry: FlawMarkerEntry = {
       missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1,
     };
+    const belowCutScore = (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE;
+    const onNodeClick = vi.fn();
     const { unmount } = render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmType: 'allowed_loss', facepalmByOpponent: true }]])}
-        onNodeClick={vi.fn()}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: belowCutScore, facepalmType: 'allowed_loss', facepalmByOpponent: true }]])}
+        onNodeClick={onNodeClick}
       />,
     );
-    const chips = screen.getAllByTestId('facepalm-move-popover');
-    expect(chips.length).toBeGreaterThan(0);
-    expect((chips[0] as HTMLElement).textContent).toBe('95%');
-    expect((chips[0] as HTMLElement).querySelector('svg.lucide-gauge')).not.toBeNull();
-    // 257 D-08: an allowed loss is tinted crimson (jsdom normalizes colour strings).
-    const probe = document.createElement('div');
-    probe.style.color = TAC_ALLOWED;
-    expect(((chips[0] as HTMLElement).querySelector('span') as HTMLElement).style.color).toBe(probe.style.color);
+    const desktop = screen.getByTestId('variation-tree-desktop');
+    const triggers = screen.getAllByTestId('facepalm-glyph-popover');
+    expect(triggers.length).toBeGreaterThan(0);
+    const trigger = triggers[0] as HTMLElement;
+    // 260-G2: the icon is the whole marker, no gauge icon and no percent text in the move list.
+    expect(trigger.textContent).toBe('??');
+    expect(trigger.getAttribute('aria-label')).toBe(
+      `${facepalmScoreLabel(belowCutScore, 'allowed_loss')}, what the score means`,
+    );
+    expect(desktop.querySelector('svg.lucide-gauge')).toBeNull();
+    expect(desktop.textContent).not.toContain(`${toFacepalmPct(belowCutScore)}%`);
+    expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+    // A tap on the icon opens the popover and does not navigate to the move.
+    fireEvent.click(trigger);
+    expect(onNodeClick).not.toHaveBeenCalled();
+    expect(screen.getByText(`Facepalm ${toFacepalmPct(belowCutScore)}%`)).toBeTruthy();
+    expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
+      `???${FACEPALM_HIGH_CUTOFF}% or more counts as a facepalm blunder.`,
+    );
+    // The opponent wording of the meaning sentence.
+    expect(screen.getByText(/their level/)).toBeTruthy();
     unmount();
     const { unmount: unmount2 } = render(
       <VariationTree
@@ -560,15 +578,17 @@ describe('VariationTree', () => {
         onNodeClick={vi.fn()}
       />,
     );
+    // An unscored blunder keeps a plain "??" with no trigger.
+    expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
     expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
     unmount2();
-    // 257 D-09: a score without a type renders no chip at all.
+    // 257 D-09: a score without a type renders no popover trigger.
     render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957 }]])}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: belowCutScore }]])}
         onNodeClick={vi.fn()}
       />,
     );
@@ -582,7 +602,7 @@ describe('VariationTree', () => {
     expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
   });
 
-  it('(10c) a blunder at or above the 70% facepalm cut shows "???" instead of "??"', () => {
+  it('(10c) a blunder at or above the facepalm cut shows "???" instead of "??", with the same popover', () => {
     const { nodes, mainLine } = buildPvFixture();
     const entry: FlawMarkerEntry = {
       missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1,
@@ -592,33 +612,40 @@ describe('VariationTree', () => {
       Array.from(screen.getByTestId('variation-tree-desktop').querySelectorAll('svg'))
         .filter((svg) => svg.querySelector('text') !== null)
         .map((svg) => svg.textContent ?? '');
+    const atCutScore = FACEPALM_HIGH_CUTOFF / PCT_SCALE;
     const { unmount } = render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.7 }]])}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: atCutScore }]])}
         onNodeClick={vi.fn()}
       />,
     );
     expect(glyphs()).toContain('???');
     expect(glyphs()).not.toContain('??');
-    // 257 D-22: the "???" glyph opens the facepalm explanation, naming the 70% cut.
-    fireEvent.click(screen.getAllByTestId('facepalm-glyph-popover')[0] as HTMLElement);
-    expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
-      '???Facepalm blunder: a facepalm score of 70% or more.',
+    const trigger = screen.getAllByTestId('facepalm-glyph-popover')[0] as HTMLElement;
+    expect(trigger.textContent).toBe('???');
+    expect(trigger.getAttribute('aria-label')).toBe(
+      `${facepalmScoreLabel(atCutScore, 'allowed_loss')}, what the score means`,
     );
+    // 257 D-22: the "???" glyph opens the facepalm explanation, naming the cut.
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('facepalm-explanation-blunder').textContent).toBe(
+      `???Facepalm blunder: a facepalm score of ${FACEPALM_HIGH_CUTOFF}% or more.`,
+    );
+    expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
     unmount();
+    // A mistake keeps a plain "?" with no trigger, even with a score attached.
     render(
       <VariationTree
         nodes={nodes}
         mainLine={mainLine}
         currentNodeId={null}
-        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.699 }]])}
+        flawMarkerByNodeId={new Map([[2, { ...entry, severity: 'mistake', facepalmScore: atCutScore }]])}
         onNodeClick={vi.fn()}
       />,
     );
-    expect(glyphs()).toContain('??');
     expect(glyphs()).not.toContain('???');
     expect(screen.queryByTestId('facepalm-glyph-popover')).toBeNull();
   });

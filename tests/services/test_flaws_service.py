@@ -2483,7 +2483,8 @@ class TestDetectTacticForFlawForcedMatePov:
         """
         captured = self._capture_forced_mate(monkeypatch)
         positions = _make_positions_128()
-        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        # The missed line starts BEFORE the flaw move: its eval is positions[4].
+        positions[4].eval_mate = -4
         _detect_tactic_for_flaw(
             n=5,
             fen_map=_FEN_MAP_128,
@@ -2505,7 +2506,7 @@ class TestDetectTacticForFlawForcedMatePov:
         """
         captured = self._capture_forced_mate(monkeypatch)
         positions = _make_positions_128()
-        positions[5] = _make_pos_with_pv(5, eval_mate=4, move_san="Bg4", pv="d5c4")
+        positions[4].eval_mate = 4
         _detect_tactic_for_flaw(
             n=5,
             fen_map=_FEN_MAP_128,
@@ -2523,7 +2524,10 @@ class TestDetectTacticForFlawForcedMatePov:
         """'allowed' at ply 4 (refuter=Black): a Black forced mate (eval_mate<0) sets the flag."""
         captured = self._capture_forced_mate(monkeypatch)
         positions = _make_positions_128()
-        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        # The refutation line starts AFTER the flaw move: its eval is positions[4],
+        # while its PV is stored one row later (positions[5].pv).
+        positions[4].eval_mate = -4
+        positions[5] = _make_pos_with_pv(5, eval_cp=300, move_san="Bg4", pv="d5c4")
         _detect_tactic_for_flaw(
             n=4,
             fen_map=_FEN_MAP_128,
@@ -2533,6 +2537,47 @@ class TestDetectTacticForFlawForcedMatePov:
         assert captured == [True], (
             "black refuter with a Black forced mate (eval_mate=-4) must set has_forced_mate=True"
         )
+
+    def test_missed_reads_the_eval_before_the_flaw_move(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Off-by-one regression: 'missed' reads positions[n - 1], not positions[n].
+
+        positions[N] holds the eval AFTER move N. A mate eval on the flaw's own row
+        (after the flaw move) says nothing about the line the mover should have played,
+        so it must not set the flag. The old code read exactly that row.
+        """
+        captured = self._capture_forced_mate(monkeypatch)
+        positions = _make_positions_128()
+        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        _detect_tactic_for_flaw(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            pv_by_ply={5: "d5c4"},
+            orientation="missed",
+        )
+        assert captured == [False]
+
+    def test_allowed_reads_the_eval_after_the_flaw_move(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Off-by-one regression: 'allowed' reads positions[n], not positions[n + 1].
+
+        A mate eval on the row after the refuter's reply must not set the flag; the
+        refutation line starts one ply earlier. The old code read positions[n + 1],
+        so the flag depended on what the opponent actually played next.
+        """
+        captured = self._capture_forced_mate(monkeypatch)
+        positions = _make_positions_128()
+        positions[5] = _make_pos_with_pv(5, eval_mate=-4, move_san="Bg4", pv="d5c4")
+        _detect_tactic_for_flaw(
+            n=4,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+        )
+        assert captured == [False]
 
 
 # ---------------------------------------------------------------------------

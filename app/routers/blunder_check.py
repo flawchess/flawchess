@@ -33,6 +33,7 @@ from app.schemas.blunder_check import (
     BetterMoveResponse,
     BetterMoveTask,
     BlunderCheckSessionResponse,
+    BlunderFeedback,
     BlunderSolution,
     FalseAlarmSolution,
     GameInfo,
@@ -49,6 +50,7 @@ from app.schemas.blunder_check import (
 )
 from app.schemas.train import ServerGradedMove
 from app.services import blunder_check_service
+from app.services.blunder_check_feedback import BlunderFeedbackData
 from app.services.blunder_check_grading import MOVE_TIMER_SECONDS
 from app.users import current_active_user
 
@@ -395,6 +397,14 @@ def _game_info_schema(info: GameInfoRow | None) -> GameInfo | None:
     )
 
 
+def _feedback_schema(data: BlunderFeedbackData | None) -> BlunderFeedback | None:
+    if data is None:
+        return None
+    return BlunderFeedback(
+        score=data.score, type_line=data.type_line, hard_to_catch=data.hard_to_catch
+    )
+
+
 def _blunder_solution_schema(data: blunder_check_service.BlunderSolutionData) -> BlunderSolution:
     return BlunderSolution(
         kind="blunder",
@@ -416,6 +426,7 @@ def _blunder_solution_schema(data: blunder_check_service.BlunderSolutionData) ->
         safe_points=data.safe_points,
         blunder_points=data.blunder_points,
         better_move_points=data.better_move_points,
+        feedback=_feedback_schema(data.feedback),
     )
 
 

@@ -2,7 +2,7 @@
  * Metadata for the Library Stats you-vs-opponents views.
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
- * FACEPALM_METRICS / FACEPALM_GAP_META / facepalmMetricCell (the three neutral facepalm rows),
+ * FACEPALM_METRICS / FACEPALM_GAP_META / facepalmMetricCell (the three banded facepalm rows),
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
  * flawMetricCell / tempoPhaseGapCell (API bullet or crossed tempo x phase cell ->
  * gap-bar view model), TEMPO_PHASE_TEMPOS / TEMPO_PHASE_PHASES (the heatmap axes), libraryBasisText /
@@ -256,16 +256,16 @@ export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetri
 }
 
 /**
- * The neutral gap-bar cell of one facepalm row (257 D-13): significance is carried for the
- * popover but `noVerdict` keeps the bar free of any verdict colour. Null when the payload
- * carries no such row.
+ * The gap-bar cell of one facepalm row: banded per TC by the backend's provisional registry
+ * (quick 261121-ha7), so it gets the standard verdict (significant AND outside the band).
+ * Null when the payload carries no such row.
  */
 export function facepalmMetricCell(
   bullets: readonly FacepalmBullet[],
   metric: FacepalmMetric,
 ): GapCell | null {
   const bullet = bullets.find((b) => b.tag === metric);
-  return bullet ? { ...flawBulletToGapCell(bullet), noVerdict: true } : null;
+  return bullet ? flawBulletToGapCell(bullet) : null;
 }
 
 const TEMPO_ADJECTIVE: Record<FlawTempoMetric, string> = {

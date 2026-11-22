@@ -37,6 +37,7 @@ from app.models.blunder_check import (
     BlunderCheckAnswer,
     BlunderCheckSession,
     BlunderCheckWindow,
+    WindowArm,
     WindowCase,
     WindowOutcome,
 )
@@ -231,6 +232,26 @@ async def get_session_date(
 
 
 @dataclass(frozen=True)
+class WindowSelectionRecord:
+    """The Phase 261 serve-time record of one blunder window (what was served and why).
+
+    The arm and its probability, the facepalm score as the loader read it plus its five inputs, and
+    the type-line facts on the facepalm-type side (`type_swing` None = nothing settled).
+    """
+
+    arm: WindowArm
+    arm_probability: float
+    facepalm_score: float
+    played_prob: float
+    loss: float
+    missed: float
+    best_prob: float | None
+    reply_prob: float | None
+    type_swing: int | None
+    type_mate: bool
+
+
+@dataclass(frozen=True)
 class NewWindow:
     """One composed window, ready to insert (the plan 03 composer's output row)."""
 
@@ -250,6 +271,26 @@ class NewWindow:
     refutation_uci: str | None
     points_possible: int
     prior_uci: str | None = None
+    # Phase 261: None for a herring window (and for a blunder window with no usable record).
+    selection: WindowSelectionRecord | None = None
+
+
+def _selection_columns(record: WindowSelectionRecord | None) -> dict[str, Any]:
+    """The ten Phase 261 columns of a window row; a missing record leaves all of them NULL."""
+    if record is None:
+        return {}
+    return {
+        "selection_arm": int(record.arm),
+        "arm_probability": record.arm_probability,
+        "facepalm_score": record.facepalm_score,
+        "facepalm_played_prob": record.played_prob,
+        "facepalm_loss": record.loss,
+        "facepalm_missed": record.missed,
+        "facepalm_best_prob": record.best_prob,
+        "facepalm_reply_prob": record.reply_prob,
+        "type_swing": record.type_swing,
+        "type_mate": record.type_mate,
+    }
 
 
 def _window_row(*, session_id: int, user_id: int, window: NewWindow) -> BlunderCheckWindow:
@@ -273,6 +314,7 @@ def _window_row(*, session_id: int, user_id: int, window: NewWindow) -> BlunderC
         key_uci=window.key_uci,
         refutation_uci=window.refutation_uci,
         points_possible=window.points_possible,
+        **_selection_columns(window.selection),
     )
 
 
@@ -365,12 +407,16 @@ def _unserved_qualifying_blunder_exists(
     *,
     flaw_owner_id: int | None = None,
     cooled_pairs: Sequence[tuple[int, int]] = (),
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> ColumnElement[bool]:
-    """EXISTS a qualifying blunder (drill facepalm score >= FACEPALM_SCORE_MIN) this user was not served yet.
+    """EXISTS a qualifying blunder (drill facepalm score >= `min_score`) this user was not served yet.
 
     The score is the query-time expression over the stored facts with the drill lambda
     (`facepalm_expr(FACEPALM_DRILL_LAMBDA)`, 254 D-01 / D-03), not a stored column. Unscored
-    rows drop out by SQL semantics. Only blunders played by the game owner's side qualify
+    rows drop out by SQL semantics. `min_score` defaults to the main arm's cut; None is the
+    exploration arm's scored probe (Phase 261, D-10): every scored row qualifies (`IS NOT NULL`,
+    the inputs must exist to be snapshotted), served by the same covering index
+    ix_game_flaws_facepalm_inputs, so no new index. Only blunders played by the game owner's side qualify
     (`player_only_gate` on `user_color_col`, the game's own color, never the requester's):
     opponent rows carry scores too since SEED-261114-iuv Part A step 4, and the drill must
     never serve the opponent's blunder as the owner's. `user_color_col` is the games row of
@@ -400,9 +446,10 @@ def _unserved_qualifying_blunder_exists(
         )
         .correlate_except(BlunderCheckWindow)
     )
+    score = facepalm_expr(FACEPALM_DRILL_LAMBDA)
     conditions: list[ColumnElement[bool]] = [
         GameFlaw.game_id == game_id_col,
-        facepalm_expr(FACEPALM_DRILL_LAMBDA) >= FACEPALM_SCORE_MIN,
+        score.isnot(None) if min_score is None else score >= min_score,
         # Owner side only: a parity filter on the flaw rows the index probe already fetched.
         player_only_gate(GameFlaw.ply, user_color_col),
         not_(already_served),
@@ -422,6 +469,7 @@ async def pick_own_game_ids(
     exclude_ids: Sequence[int],
     require_facepalm: bool = False,
     cooled_pairs: Sequence[tuple[int, int]] = (),
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> list[int]:
     """Random ids of the user's fully evaluated games (index scan on ix_games_user_full_evals).
 
@@ -429,7 +477,8 @@ async def pick_own_game_ids(
     weighting: ordering by age needs the heap and defeats the index scan. `require_facepalm`
     keeps only games holding a qualifying blunder the user has not been served yet; the EXISTS
     probes ix_game_flaws_game_id per candidate game. `cooled_pairs` (flaws served as puzzles inside
-    the cross-mode cooldown, D-16) never count as such a blunder.
+    the cross-mode cooldown, D-16) never count as such a blunder. `min_score` (with
+    `require_facepalm`) is the probe's score floor; None drops the cut (Phase 261 exploration).
     """
     stmt = select(Game.id).where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
     if exclude_ids:
@@ -442,6 +491,7 @@ async def pick_own_game_ids(
                 user_id,
                 flaw_owner_id=user_id,
                 cooled_pairs=cooled_pairs,
+                min_score=min_score,
             )
         )
     stmt = stmt.order_by(func.random()).limit(limit)
@@ -458,13 +508,15 @@ async def pick_foreign_game_ids(
     exclude_ids: Sequence[int],
     sample_percent: float,
     require_facepalm: bool = False,
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> list[int]:
     """Ids of other users' fully evaluated games whose owner's rating at game time is in range (D-09).
 
     Uses TABLESAMPLE SYSTEM so the pick never scans the whole games table. Guests are
     excluded (their games never get the full pipeline) and so are the caller's own games.
     `require_facepalm` keeps only games holding a qualifying blunder the caller has not been
-    served yet (the NOT EXISTS is scoped to the caller's own windows).
+    served yet (the NOT EXISTS is scoped to the caller's own windows); `min_score` None drops
+    the score cut (Phase 261 exploration probe, scored rows only).
     Only game ids leave the repository: no usernames, emails or owner ids.
     """
     sampled = tablesample(Game.__table__, func.system(sample_percent), name="g")
@@ -487,7 +539,9 @@ async def pick_foreign_game_ids(
         stmt = stmt.where(sampled.c.id.notin_(exclude_ids))
     if require_facepalm:
         stmt = stmt.where(
-            _unserved_qualifying_blunder_exists(sampled.c.id, sampled.c.user_color, user_id)
+            _unserved_qualifying_blunder_exists(
+                sampled.c.id, sampled.c.user_color, user_id, min_score=min_score
+            )
         )
     stmt = stmt.limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
@@ -503,6 +557,7 @@ async def pick_nearest_foreign_game_ids(
     exclude_ids: Sequence[int],
     sample_percent: float,
     require_facepalm: bool = False,
+    min_score: float | None = FACEPALM_SCORE_MIN,
 ) -> list[int]:
     """Ids of other users' fully evaluated games whose owner's rating is closest to `level`.
 
@@ -512,7 +567,7 @@ async def pick_nearest_foreign_game_ids(
     on the raw rating, an approximation of the pinned Elo the composer ranks by after loading.
     `require_facepalm` is applied to the nearest pool only, so the blunder probe runs at most
     `pool_size` times however large the sample is. Same guest, own-game, platform and full-eval
-    filters as the band pick; only game ids leave the repository.
+    filters as the band pick (and the same `min_score`); only game ids leave the repository.
     """
     sampled = tablesample(Game.__table__, func.system(sample_percent), name="g")
     owner_rating = case(
@@ -538,7 +593,9 @@ async def pick_nearest_foreign_game_ids(
     stmt = select(nearest.c.id)
     if require_facepalm:
         stmt = stmt.where(
-            _unserved_qualifying_blunder_exists(nearest.c.id, nearest.c.user_color, user_id)
+            _unserved_qualifying_blunder_exists(
+                nearest.c.id, nearest.c.user_color, user_id, min_score=min_score
+            )
         )
     stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
@@ -636,16 +693,25 @@ class BlunderFlawRow:
     severity: int
     is_miss: bool
     facepalm_score: float | None
+    # Phase 261: the five stored inputs of the score, snapshotted on the window (same order as
+    # the loader's select, rows are built positionally).
+    maia_played_prob: float | None
+    material_loss: float | None
+    material_missed: float | None
+    maia_best_prob: float | None
+    maia_best_reply_prob: float | None
 
 
 async def load_blunder_flaws(
     session: AsyncSession, game_ids: Sequence[int]
 ) -> dict[int, list[BlunderFlawRow]]:
-    """Qualifying stored blunders per game: severity blunder with drill facepalm score >= FACEPALM_SCORE_MIN.
+    """Every scored owner-side stored blunder per game, with its score and the five inputs.
 
     The score is `facepalm_expr(FACEPALM_DRILL_LAMBDA)` over the stored facts (254 D-01 / D-03),
-    bound once and used both as the selected `facepalm_score` column and in the filter. The
-    threshold is a plain SQL filter (250 D-05 / D-09); NULL scores drop out by SQL semantics.
+    bound once and used both as the selected `facepalm_score` column and in the filter. Since
+    Phase 261 the 0.70 cut (FACEPALM_SCORE_MIN) is no longer applied here: the composer applies it
+    per slot at option time, because an exploration slot draws from the whole scored range.
+    Unscored rows (a NULL score) are dropped: they can be snapshotted by neither arm.
     The SQL keeps only owner-side blunders (the game's own user_color, so foreign games served
     by the drill keep their owner's blunders); the pure layer re-checks via key plies.
     """
@@ -661,6 +727,11 @@ async def load_blunder_flaws(
             GameFlaw.severity,
             GameFlaw.is_miss,
             score.label("facepalm_score"),
+            GameFlaw.maia_played_prob,
+            GameFlaw.material_loss,
+            GameFlaw.material_missed,
+            GameFlaw.maia_best_prob,
+            GameFlaw.maia_best_reply_prob,
         )
         .select_from(GameFlaw)
         .join(Game, Game.id == GameFlaw.game_id)
@@ -668,7 +739,7 @@ async def load_blunder_flaws(
             GameFlaw.game_id.in_(game_ids),
             GameFlaw.severity == _SEVERITY_INT["blunder"],
             player_only_gate(GameFlaw.ply, Game.user_color),
-            score >= FACEPALM_SCORE_MIN,
+            score.isnot(None),
         )
         .order_by(GameFlaw.game_id, GameFlaw.ply)
     )

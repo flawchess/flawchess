@@ -54,12 +54,17 @@ from app.services.stats_service import (
 from app.services.zobrist import compute_hashes
 
 # ---------------------------------------------------------------------------
-# User IDs (800-series to avoid cross-test pollution with other test modules)
+# User IDs, kept far above the users id sequence
 # ---------------------------------------------------------------------------
 
-_USER_RATING = 801
-_USER_GLOBAL = 802
-_USER_MOST_PLAYED = 803
+# Bug fix: these were 801-803. In a serial run (CI) the registered seeded-portfolio
+# user (tests/seed_fixtures.py, committed games "seed-NN") was handed id 802 by the
+# sequence once enough earlier tests had registered users, so its games leaked into
+# TestGetGlobalStats (blitz total 20 instead of 3). `-n auto` hid it (each worker has
+# its own DB and a shorter sequence). Same fix as tests/test_game_repository.py.
+_USER_RATING = 900_901
+_USER_GLOBAL = 900_902
+_USER_MOST_PLAYED = 900_903
 # 24205-24207 are reserved for the Phase 242 most-played pipeline tests below.
 _USER_PIPELINE = 24205
 _USER_TWIN = 24206

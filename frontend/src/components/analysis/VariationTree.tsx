@@ -30,7 +30,7 @@ import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
-import { FacepalmGlyphBadge, FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
+import { FacepalmGlyphBadge } from '@/components/analysis/FacepalmGlyphBadge';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
 import { isFacepalmBlunder } from '@/lib/facepalm';
 import { moveLabel } from '@/lib/moveNumberLabel';
@@ -47,9 +47,10 @@ function zebraBg(rowIdx: number): string {
 }
 
 /**
- * "???" for a facepalm blunder (score >= the 70% stats cut), else "??" / "?". The type is
- * required too: without it MoveListMarker renders no popover or chip, and "???" is not a
- * standard NAG, so it would stand unexplained (257 D-22, PR #495 review).
+ * "???" for a facepalm blunder (score >= the stats cut), else "??" / "?". The type is
+ * required too: without it MoveListMarker renders no glyph popover, and "???" is not a
+ * standard NAG, so it would stand unexplained (257 D-22, PR #495 review). Both this and
+ * FacepalmGlyphBadge pick the glyph through isFacepalmBlunder, so they cannot disagree.
  */
 function severityIcon(flaw: FlawMarkerEntry): typeof BlunderIcon {
   if (flaw.severity !== 'blunder') return MistakeIcon;
@@ -139,26 +140,16 @@ function MoveListMarker({
       />
     );
   }
-  // A scored blunder gets the Facepalm mini-chip right after its "??" / "???" glyph. 257 D-09: the chip
-  // needs the type as well (it picks the tint), so a score without a type renders no chip.
+  // 260-G2: a scored blunder is one icon, "??" or "???", that opens the facepalm score popover (no chip
+  // next to it). 257 D-09: the popover needs the type as well, so a score without a type stays a plain "??".
   if (flaw?.severity === 'blunder' && flaw.facepalmScore != null && flaw.facepalmType != null) {
-    // 257 D-22: a "???" glyph opens the same explanation as the chip (it is not a standard NAG).
-    const glyph =
-      Icon === FacepalmBlunderIcon ? (
-        <FacepalmGlyphBadge
-          score={flaw.facepalmScore}
-          type={flaw.facepalmType}
-          byOpponent={flaw.facepalmByOpponent}
-          className={className}
-        />
-      ) : (
-        <Icon className={className} aria-hidden />
-      );
     return (
-      <>
-        {glyph}
-        <FacepalmMoveChip score={flaw.facepalmScore} type={flaw.facepalmType} byOpponent={flaw.facepalmByOpponent} />
-      </>
+      <FacepalmGlyphBadge
+        score={flaw.facepalmScore}
+        type={flaw.facepalmType}
+        byOpponent={flaw.facepalmByOpponent}
+        className={className}
+      />
     );
   }
   return <Icon className={className} aria-hidden />;
@@ -214,8 +205,8 @@ export interface FlawMarkerEntry {
   allowedDepth: number | null;
   severity?: FlawSeverity;
   /**
-   * Raw 0..1 facepalm score of this node's blunder: renders the Facepalm mini-chip
-   * after the blunder glyph. Set only from a game flaw marker that carries a score.
+   * Raw 0..1 facepalm score of this node's blunder: feeds the popover of the "??" / "???" glyph.
+   * Set only from a game flaw marker that carries a score.
    */
   facepalmScore?: number;
   /** Facepalm type of the same blunder; set together with facepalmScore from a marker that carries both. */

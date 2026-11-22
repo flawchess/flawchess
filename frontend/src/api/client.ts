@@ -22,7 +22,7 @@ import type {
 } from '@/types/stats';
 import type { OutOfOpeningStatsResponse } from '@/types/openingOut';
 import type { EndgameGamesResponse, EndgameRankedStatsResponse, EndgameStatsResponse } from '@/types/endgames';
-import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, FacepalmComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
+import type { FlawSeverityFilter, GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, FacepalmComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import type { FeedbackRequest, FeedbackResponse } from '@/types/feedback';
@@ -500,7 +500,7 @@ type FlawComparisonParams = {
   opponent_type?: string;
   opponent_strength?: OpponentStrengthRange;
   color?: string | null;
-  severity?: ('blunder' | 'mistake')[];
+  severity?: FlawSeverityFilter[];
   // Library "Pasted" opt-in, off by default.
   include_pasted?: boolean;
 };
@@ -517,7 +517,7 @@ export const libraryApi = {
     color?: string | null;
     // severity and tag are multi-value: serialized as severity=blunder&severity=mistake
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
-    severity?: ('blunder' | 'mistake')[];
+    severity?: FlawSeverityFilter[];
     tag?: string[];
     // Tactic filters on the Games tab (mirrors getFlaws). The
     // tactic family tag group is repeated as tactic_family=fork&...; orientation is
@@ -527,9 +527,6 @@ export const libraryApi = {
     tactic_orientation?: string;
     min_tactic_depth?: number;
     max_tactic_depth?: number;
-    // Facepalm range, inclusive floored percents; omitted at the full range (All).
-    min_facepalm_pct?: number;
-    max_facepalm_pct?: number;
     // "has gem" / "has great" Library filter toggles, each
     // independent (union at the backend when both are true); omitted when false.
     has_gem?: boolean;
@@ -552,8 +549,6 @@ export const libraryApi = {
           : {}),
         ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
         ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
-        ...(params.min_facepalm_pct != null ? { min_facepalm_pct: params.min_facepalm_pct } : {}),
-        ...(params.max_facepalm_pct != null ? { max_facepalm_pct: params.max_facepalm_pct } : {}),
         ...(params.has_gem ? { has_gem: true } : {}),
         ...(params.has_great ? { has_great: true } : {}),
         offset: params.offset ?? 0,
@@ -570,7 +565,7 @@ export const libraryApi = {
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;
     color?: string | null;
-    severity?: ('blunder' | 'mistake')[];
+    severity?: FlawSeverityFilter[];
     // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
   }) =>
@@ -608,7 +603,7 @@ export const libraryApi = {
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;
     color?: string | null;
-    severity?: ('blunder' | 'mistake')[];
+    severity?: FlawSeverityFilter[];
     tactic_families?: string[];
     // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
@@ -634,7 +629,7 @@ export const libraryApi = {
     color?: string | null;
     // severity and tag are multi-value: serialized as severity=blunder&severity=mistake
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
-    severity?: ('blunder' | 'mistake')[];
+    severity?: FlawSeverityFilter[];
     tag?: string[];
     // Flaw-level tactic motif family filter, repeated as tactic_family=fork&...
     tactic_family?: string[];
@@ -643,9 +638,6 @@ export const libraryApi = {
     // Inclusive tactic-depth range bounds (0-based ply, 0..11).
     min_tactic_depth?: number;
     max_tactic_depth?: number;
-    // Facepalm range, inclusive floored percents; omitted at the full range (All).
-    min_facepalm_pct?: number;
-    max_facepalm_pct?: number;
     // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
     offset?: number;
@@ -666,8 +658,6 @@ export const libraryApi = {
         // Depth range: both bounds sent when present (0 is valid).
         ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
         ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
-        ...(params.min_facepalm_pct != null ? { min_facepalm_pct: params.min_facepalm_pct } : {}),
-        ...(params.max_facepalm_pct != null ? { max_facepalm_pct: params.max_facepalm_pct } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },

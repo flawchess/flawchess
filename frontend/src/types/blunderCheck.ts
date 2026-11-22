@@ -164,6 +164,22 @@ export interface GameInfo {
 
 export type BlunderWindowCase = 'allowed' | 'pure_miss' | 'mixed';
 
+/** What the blunder allowed or missed (Phase 261 D-09), for the one-line type description. */
+export type BlunderTypeLine =
+  | 'allowed_material'
+  | 'allowed_mate'
+  | 'missed_material'
+  | 'missed_mate';
+
+/** The avatar feedback after a caught or missed blunder (Phase 261 D-03). */
+export interface BlunderFeedback {
+  /** The Facepalm score snapshotted when the window was served (D-04), raw 0..1. */
+  score: number;
+  type_line: BlunderTypeLine | null;
+  /** True for a subtle blunder: shown as the "hard to catch" line (D-07). */
+  hard_to_catch: boolean;
+}
+
 /** Solution of a caught or missed blunder window. */
 export interface BlunderSolution {
   kind: 'blunder';
@@ -187,6 +203,8 @@ export interface BlunderSolution {
   blunder_points: number;
   /** The points of the better move, null when none was played. */
   better_move_points: number | null;
+  /** Null for a window served before Phase 261 (and a solution cached before the release). */
+  feedback: BlunderFeedback | null;
 }
 
 /** Solution of a cleared herring window: every judged move was fine. */

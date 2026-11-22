@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { ExplainBar } from '../ExplainBar';
 import type { ExplainBarState } from '@/lib/explainBar';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import { FACEPALM_HIGH_CUTOFF, toFacepalmPct } from '@/lib/facepalm';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
 
 let track: ReturnType<typeof vi.fn>;
@@ -22,6 +23,9 @@ afterEach(() => {
   cleanup();
   delete window.umami;
 });
+
+/** A facepalm score at the cut, in whole percent. */
+const FACEPALM_PCT = toFacepalmPct(FACEPALM_HIGH_CUTOFF / 100);
 
 const EXPLAIN_BLUNDER: ExplainBarState = {
   kind: 'explain',
@@ -123,6 +127,34 @@ describe('ExplainBar explain state', () => {
     expect(within(tactics).queryAllByRole('button')).toHaveLength(0);
   });
 
+  it('a facepalm names its score before the tactics, in neutral text', () => {
+    renderBar({
+      ...EXPLAIN_BLUNDER,
+      san: 'Qf6+',
+      facepalmPct: FACEPALM_PCT,
+      tactics: [{ orientation: 'missed', text: 'missed checkmate in 7' }],
+    });
+    const headline = screen.getByTestId('analysis-explain-headline');
+    expect(headline.textContent).toBe(`Qf6+???: Facepalm ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`);
+    const score = screen.getByTestId('analysis-explain-facepalm');
+    expect(score.textContent).toBe(`Facepalm ${FACEPALM_PCT}%`);
+    expect(score.getAttribute('style')).toBeNull();
+    const tactic = screen.getByTestId('analysis-explain-tactics').querySelector<HTMLElement>('[data-orientation="missed"]');
+    expect(tactic?.style.color).not.toBe('');
+  });
+
+  it('a facepalm without tactics shows the score only', () => {
+    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: FACEPALM_PCT });
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(`Qf6+???: Facepalm ${FACEPALM_PCT}%`);
+    expect(screen.queryByTestId('analysis-explain-tactics')).toBeNull();
+  });
+
+  it('an ordinary blunder has no score text', () => {
+    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', tactics: [{ orientation: 'missed', text: 'missed fork in 2' }] });
+    expect(screen.queryByTestId('analysis-explain-facepalm')).toBeNull();
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qf6+??: missed fork in 2');
+  });
+
   it('each button opens its line', () => {
     const { onOpenLine } = renderBar(EXPLAIN_BLUNDER);
     fireEvent.click(screen.getByTestId('btn-analysis-explain-best'));
@@ -169,6 +201,21 @@ describe('ExplainBar got-it state', () => {
       'btn-analysis-explain-line-forward',
       'btn-analysis-explain-got-it',
     ]);
+  });
+
+  it('shows the facepalm score in the got-it headline too', () => {
+    renderBar({
+      ...GOT_IT_MISSED,
+      headline: {
+        san: 'Qf6+',
+        severity: 'blunder',
+        facepalmPct: FACEPALM_PCT,
+        tactics: [{ orientation: 'missed', text: 'missed checkmate in 7' }],
+      },
+    });
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
+      `Qf6+???: Facepalm ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`,
+    );
   });
 
   it('without a headline shows only the line stepper and Got it, no line buttons', () => {

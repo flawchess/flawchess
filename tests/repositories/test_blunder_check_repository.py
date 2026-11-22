@@ -628,6 +628,188 @@ async def test_pick_foreign_require_facepalm_skips_games_without_unserved_qualif
 
 
 # ---------------------------------------------------------------------------
+# Phase 261: the scored probe (min_score=None) keeps below-cut games
+# ---------------------------------------------------------------------------
+
+_BELOW_CUT = FACEPALM_SCORE_MIN - 0.3
+_SCORED_PLY = _TRACER_PLIES[1]
+
+
+async def _seed_scored_probe_games(test_engine, owner_id: int) -> dict[str, int]:
+    """Games that separate the scored probe from the cut probe, all owned by `owner_id`."""
+    evals = _three_blunder_evals()
+
+    async def game(color: str, target: float | None) -> int:
+        return await seed_judged_game(
+            test_engine,
+            user_id=owner_id,
+            user_color=color,
+            evals_cp=evals,
+            blunders=[SeedBlunder(ply=_SCORED_PLY, facepalm_target=target)],
+        )
+
+    return {
+        "above": await game("white", SEED_FACEPALM_SCORE),
+        "below": await game("white", _BELOW_CUT),
+        "unscored": await game("white", None),
+        "served": await game("white", _BELOW_CUT),
+        # The opponent's blunder at an even ply of a black-owner game: scored, but not the owner's.
+        "opponent": await game("black", _BELOW_CUT),
+        "cooled": await game("white", _BELOW_CUT),
+    }
+
+
+@pytest.mark.asyncio
+async def test_pick_own_scored_probe_keeps_below_cut_games(test_engine) -> None:
+    user_id, _ = await register_user("bc-scored-own", beta=True, test_engine=test_engine)
+    games = await _seed_scored_probe_games(test_engine, user_id)
+    session_id = await _insert(
+        test_engine,
+        user_id,
+        [_window(games["served"], 0, first_ply=_SCORED_PLY - 2, blunder_ply=_SCORED_PLY)],
+    )
+    cooled_pairs = [(games["cooled"], _SCORED_PLY)]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            scored = await repo.pick_own_game_ids(
+                session,
+                user_id=user_id,
+                limit=10,
+                exclude_ids=[],
+                require_facepalm=True,
+                cooled_pairs=cooled_pairs,
+                min_score=None,
+            )
+            cut = await repo.pick_own_game_ids(
+                session,
+                user_id=user_id,
+                limit=10,
+                exclude_ids=[],
+                require_facepalm=True,
+                cooled_pairs=cooled_pairs,
+            )
+        # Unscored, already served, opponent-side and cooled games never qualify, whatever the cut.
+        assert set(scored) == {games["above"], games["below"]}
+        assert set(cut) == {games["above"]}
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id])
+        await delete_games(test_engine, list(games.values()))
+
+
+@pytest.mark.asyncio
+async def test_pick_foreign_scored_probe_keeps_below_cut_games(test_engine) -> None:
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-scored-fcaller")
+    owner_id, _ = await register_user("bc-scored-fowner", beta=False, test_engine=test_engine)
+    games = await _seed_scored_probe_games(test_engine, owner_id)
+    session_id = await _insert(
+        test_engine,
+        caller_id,
+        [_window(games["served"], 0, first_ply=_SCORED_PLY - 2, blunder_ply=_SCORED_PLY)],
+    )
+    seeded = [caller_game, *games.values()]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def pick(min_score: float | None) -> set[int]:
+        async with maker() as session:
+            ids = await repo.pick_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                raw_low=1400,
+                raw_high=1600,
+                limit=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+                require_facepalm=True,
+                min_score=min_score,
+            )
+        return set(ids) & set(seeded)
+
+    try:
+        # The cooled game has no cooldown on the foreign pick (it is another user's flaw), so it
+        # is as eligible as the plain below-cut game; only the served, unscored and opponent games
+        # drop out.
+        assert await pick(min_score=None) == {games["above"], games["below"], games["cooled"]}
+        assert await pick(min_score=FACEPALM_SCORE_MIN) == {games["above"]}
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id])
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_pick_nearest_foreign_scored_probe_keeps_below_cut_games(test_engine) -> None:
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-scored-ncaller")
+    owner_id, _ = await register_user("bc-scored-nowner", beta=False, test_engine=test_engine)
+    games = await _seed_scored_probe_games(test_engine, owner_id)
+    session_id = await _insert(
+        test_engine,
+        caller_id,
+        [_window(games["served"], 0, first_ply=_SCORED_PLY - 2, blunder_ply=_SCORED_PLY)],
+    )
+    seeded = [caller_game, *games.values()]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def pick(min_score: float | None) -> set[int]:
+        async with maker() as session:
+            ids = await repo.pick_nearest_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                level=1500,
+                limit=100_000,
+                pool_size=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+                require_facepalm=True,
+                min_score=min_score,
+            )
+        return set(ids) & set(seeded)
+
+    try:
+        assert await pick(min_score=None) == {games["above"], games["below"], games["cooled"]}
+        assert await pick(min_score=FACEPALM_SCORE_MIN) == {games["above"]}
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id])
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_load_blunder_flaws_returns_every_scored_owner_blunder_with_inputs(
+    test_engine,
+) -> None:
+    user_id, _ = await register_user("bc-load-all", beta=True, test_engine=test_engine)
+    games = await _seed_scored_probe_games(test_engine, user_id)
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            loaded = await repo.load_blunder_flaws(session, list(games.values()))
+            stored = (
+                await session.execute(
+                    select(
+                        GameFlaw.maia_played_prob,
+                        GameFlaw.material_loss,
+                        GameFlaw.material_missed,
+                        GameFlaw.maia_best_prob,
+                        GameFlaw.maia_best_reply_prob,
+                    ).where(GameFlaw.game_id == games["below"], GameFlaw.ply == _SCORED_PLY)
+                )
+            ).one()
+        # Scored owner-side rows come back whatever their score; unscored and opponent rows do not.
+        assert set(loaded) == {games["above"], games["below"], games["served"], games["cooled"]}
+        (row,) = loaded[games["below"]]
+        assert row.facepalm_score == pytest.approx(_BELOW_CUT, abs=SEED_FACEPALM_TOLERANCE)
+        returned = (
+            row.maia_played_prob,
+            row.material_loss,
+            row.material_missed,
+            row.maia_best_prob,
+            row.maia_best_reply_prob,
+        )
+        assert returned == tuple(stored)
+    finally:
+        await delete_games(test_engine, list(games.values()))
+
+
+# ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
 
@@ -935,8 +1117,10 @@ def _three_blunder_evals() -> list[int]:
 
 
 @pytest.mark.asyncio
-async def test_facepalm_loader_and_judge_keep_only_qualifying(test_engine) -> None:
-    """Tracer (250 D-09): the SQL filter and the pure judge both keep only the qualifying blunder."""
+async def test_facepalm_loader_keeps_scored_and_judge_cuts_by_default(test_engine) -> None:
+    """Phase 261: the loader returns every scored owner-side blunder (the low and the qualifying
+    ply, not the unscored one); the judge keeps only the qualifying ply by default (250 D-09) and
+    both with min_score None (the composer's judging pass, the cut applied per slot later)."""
     low_ply, qualifying_ply, null_ply = _TRACER_PLIES
     user_id, _ = await register_user("bc-facepalm", beta=True, test_engine=test_engine)
     game_id = await seed_judged_game(
@@ -954,19 +1138,25 @@ async def test_facepalm_loader_and_judge_keep_only_qualifying(test_engine) -> No
         async with maker() as session:
             flaws = (await repo.load_blunder_flaws(session, [game_id]))[game_id]
             positions = (await repo.load_positions(session, [game_id]))[game_id]
-        assert [f.ply for f in flaws] == [qualifying_ply]
+        assert [f.ply for f in flaws] == [low_ply, qualifying_ply]
         key_plies = legal_key_plies(SEED_PGN, positions, {f.ply for f in flaws})
-        candidates = judge_game(
-            game_id=game_id,
-            user_is_white=True,
-            positions=positions,
-            flaws=flaws,
-            key_plies=key_plies,
-            served_blunder_plies=set(),
-            served_ply_ranges=[],
-        )
-        assert candidates is not None
-        assert [c.ply for c in candidates.blunders] == [qualifying_ply]
+
+        def judged_plies(**kwargs: float | None) -> list[int]:
+            candidates = judge_game(
+                game_id=game_id,
+                user_is_white=True,
+                positions=positions,
+                flaws=flaws,
+                key_plies=key_plies,
+                served_blunder_plies=set(),
+                served_ply_ranges=[],
+                **kwargs,
+            )
+            assert candidates is not None
+            return [c.ply for c in candidates.blunders]
+
+        assert judged_plies() == [qualifying_ply]
+        assert judged_plies(min_score=None) == [low_ply, qualifying_ply]
     finally:
         await delete_games(test_engine, [game_id])
 

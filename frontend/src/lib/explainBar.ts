@@ -11,7 +11,8 @@
 import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
 import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
-import { isFacepalmBlunder } from '@/lib/facepalm';
+import { flawMoveCategory } from '@/lib/moveStatsCounts';
+import { toFacepalmPct } from '@/lib/facepalm';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
@@ -66,8 +67,11 @@ export interface ExplainHeadline {
   severity: ExplainSeverity;
   /** Every visible tactic on this flaw (missed first, then allowed); empty: none. */
   tactics: ExplainTactic[];
-  /** Set on a facepalm blunder (score >= the 70% stats cut): the badge reads "???", not "??". */
-  facepalm?: true;
+  /**
+   * Set on a facepalm blunder only: the whole-percent facepalm score (toFacepalmPct). The badge
+   * reads "???" and the headline names the score.
+   */
+  facepalmPct?: number;
 }
 
 export type ExplainBarState =
@@ -137,7 +141,9 @@ function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, ply: numb
     san: marker.move_san,
     severity: marker.severity,
     tactics: explainTactics(marker),
-    ...(marker.severity === 'blunder' && isFacepalmBlunder(marker.facepalm_score) ? { facepalm: true as const } : {}),
+    ...(flawMoveCategory(marker) === 'facepalm' && marker.facepalm_score != null
+      ? { facepalmPct: toFacepalmPct(marker.facepalm_score) }
+      : {}),
   };
 }
 

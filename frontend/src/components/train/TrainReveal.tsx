@@ -101,6 +101,8 @@ export interface TrainRevealProps {
    * stale prior-puzzle game move never leaks into the next puzzle's arrows.
    */
   onGameMoveUciChange?: (uci: string | null) => void;
+  /** Whether the game move is a facepalm blunder ("???" badge), reported with the UCI above. */
+  onGameMoveFacepalmChange?: (facepalm: boolean) => void;
   /**
    * Reports every state of the reveal-time "played in game" search
    * (idle / loading / ready with the line / error) to the board owner, which
@@ -182,6 +184,7 @@ export function TrainReveal({
   onChipSelect,
   treeList,
   onGameMoveUciChange,
+  onGameMoveFacepalmChange,
   onGameMoveLineStateChange,
   alsoFineMoves = [],
   tourTarget = null,
@@ -224,6 +227,15 @@ export function TrainReveal({
       onGameMoveUciChange?.(null);
     };
   }, [gameMoveUci, onGameMoveUciChange]);
+
+  // The same report for the facepalm flag of that move (the "???" badge), reset the same way.
+  const gameMoveFacepalm = revealQuery.data?.game_move_facepalm === true;
+  useEffect(() => {
+    onGameMoveFacepalmChange?.(gameMoveFacepalm);
+    return () => {
+      onGameMoveFacepalmChange?.(false);
+    };
+  }, [gameMoveFacepalm, onGameMoveFacepalmChange]);
 
   // A primitive dep, so the grade landing (the pending state
   // replaced by a gradeResult with the same best UCI) does not re-dispatch the

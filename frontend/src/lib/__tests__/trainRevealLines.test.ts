@@ -140,6 +140,32 @@ describe('buildChipGroups', () => {
     expect(chips.map((c) => c.line?.moves[0])).toEqual(['d2d4', 'e2e4']);
   });
 
+  it('flags only the game move\'s blunder as a facepalm blunder ("???")', () => {
+    const base = {
+      playedMoveUci: 'd2d4',
+      gradeResult: gradeResult(['e2e4', 'e7e5'], ['d2d4', 'd7d5']),
+      gameMoveUci: 'g1f3',
+      playedMoveQuality: 'blunder',
+      gameMoveQuality: 'blunder',
+    } as const;
+    const facepalmOf = (overrides: Partial<BuildChipGroupsInput>): Record<string, boolean | undefined> =>
+      Object.fromEntries(
+        buildChipGroups(input({ ...base, ...overrides })).map((c) => [c.key, c.facepalm]),
+      );
+
+    // The user's own blunder and the best move are never flagged.
+    expect(facepalmOf({ gameMoveFacepalm: true })).toEqual({ your: false, best: false, game: true });
+    // No flag from the server (or a stale cache entry without the field): plain "??".
+    expect(facepalmOf({})).toEqual({ your: false, best: false, game: false });
+    // The client engine does not call the game move a blunder: no "???" on a "?" move.
+    expect(facepalmOf({ gameMoveFacepalm: true, gameMoveQuality: 'mistake' }).game).toBe(false);
+    // Replaying the game's own facepalm blunder: the merged Move = Game chip keeps it.
+    expect(facepalmOf({ gameMoveFacepalm: true, gameMoveUci: 'd2d4' })).toEqual({
+      your: true,
+      best: false,
+    });
+  });
+
   it('produces no chips before any grade or key exists, and no your/best chip without a played move', () => {
     expect(buildChipGroups(input())).toEqual([]);
     const chips = buildChipGroups(

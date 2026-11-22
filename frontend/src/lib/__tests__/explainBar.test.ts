@@ -5,10 +5,14 @@ import {
   usableExplainLines,
   type ExplainBarInputs,
 } from '@/lib/explainBar';
+import { FACEPALM_HIGH_CUTOFF, toFacepalmPct } from '@/lib/facepalm';
 import type { OpenLine } from '@/lib/analysisTactics';
 import type { FlawMarker, TacticLinesResponse } from '@/types/library';
 
 // Pure rules for the contextual Explain bar (D-08, D-10, D-11; Best move / Punish UAT rework).
+
+/** Whole-percent to raw 0..1 score scale. */
+const PCT_SCALE = 100;
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -116,11 +120,27 @@ describe('resolveExplainBarState', () => {
     });
   });
 
-  it('flags a facepalm blunder (score >= 70%) so the badge reads "???"', () => {
-    const at = (score: number) =>
-      resolveExplainBarState(inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: score })] }));
-    expect(at(0.7)).toMatchObject({ kind: 'explain', facepalm: true });
-    expect(at(0.699)).not.toHaveProperty('facepalm');
+  it('carries the whole-percent score on a facepalm blunder at the cut', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: FACEPALM_HIGH_CUTOFF / PCT_SCALE })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', facepalmPct: toFacepalmPct(FACEPALM_HIGH_CUTOFF / PCT_SCALE) });
+  });
+
+  it('has no facepalmPct just below the cut', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain' });
+    expect(state).not.toHaveProperty('facepalmPct');
+  });
+
+  it('has no facepalmPct on a mistake with a high score', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, severity: 'mistake', facepalm_score: 0.99 })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain' });
+    expect(state).not.toHaveProperty('facepalmPct');
   });
 
   it('keeps the bar with one usable line and marks the other unusable', () => {

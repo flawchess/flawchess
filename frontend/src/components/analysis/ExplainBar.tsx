@@ -6,8 +6,9 @@
  * Phase 245 UAT replaced the single Explain button with two named lines:
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
- * One row: the headline (move, severity badge and the tactics as colored text, e.g.
- * "c3 [blunder badge]: missed discovered-attack in 2", up to two lines) then both buttons. Inside a
+ * One row: the headline (move, severity badge, the facepalm score when the move is a facepalm and
+ * the tactics as colored text, e.g. "c3 [blunder badge]: missed discovered-attack in 2" or
+ * "Qf6+ [facepalm badge]: Facepalm 76% · missed checkmate in 7", up to two lines) then both buttons. Inside a
  * line the headline stays and the buttons become a line stepper then Got it (the other
  * line's button is hidden there).
  * Clickable tactic chips live in the move list only.
@@ -173,12 +174,14 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
 }
 
 const HEADLINE_BADGE_CLASS = 'ml-1.5 inline-block size-4 align-text-bottom';
+/** Space, middle dot, space: between the facepalm score and the tactics that follow it. */
+const HEADLINE_SCORE_SEPARATOR = ' \u00B7 ';
 
 /**
  * Same headline in both states, so it stays put when a line opens or closes.
  *
- * One inline text flow: move, badge and colon, then the tactics on the same first line,
- * wrapping under the move. At most two lines; normal wrapping only breaks at spaces and
+ * One inline text flow: move, badge and colon, then the facepalm score (facepalm only) and the
+ * tactics on the same first line, wrapping under the move. The score is neutral text, never tinted. At most two lines; normal wrapping only breaks at spaces and
  * after hyphens ("discovered-|attack"), and line-clamp ellipsizes the rest.
  * leading-tight!: the unlayered mobile .text-sm bump in index.css (line-height 1.5rem)
  * otherwise beats the utility, and two 24px lines outgrow the button row. max-h-10: the
@@ -186,6 +189,8 @@ const HEADLINE_BADGE_CLASS = 'ml-1.5 inline-block size-4 align-text-bottom';
  * than the button height.
  */
 function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
+  const isFacepalm = headline.facepalmPct != null;
+  const hasTactics = headline.tactics.length > 0;
   return (
     <span
       data-testid="analysis-explain-headline"
@@ -200,14 +205,20 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
         >
           {headline.san ?? SEVERITY_NOUN[headline.severity]}
         </span>
-        {headline.facepalm ? (
+        {isFacepalm ? (
           <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />
         ) : (
           <MoveQualityIcon quality={headline.severity} className={HEADLINE_BADGE_CLASS} />
         )}
-        {headline.tactics.length > 0 && ':'}
+        {(isFacepalm || hasTactics) && ':'}
       </span>
-      {headline.tactics.length > 0 && ' '}
+      {(isFacepalm || hasTactics) && ' '}
+      {isFacepalm && (
+        <span data-testid="analysis-explain-facepalm" className="whitespace-nowrap text-foreground">
+          Facepalm {headline.facepalmPct}%
+        </span>
+      )}
+      {isFacepalm && hasTactics && HEADLINE_SCORE_SEPARATOR}
       <TacticText tactics={headline.tactics} />
     </span>
   );

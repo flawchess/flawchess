@@ -4,12 +4,12 @@ import axios from 'axios';
 import { libraryApi } from '@/api/client';
 import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
-import type { FlawTag, TacticLinesResponse } from '@/types/library';
+import type { FlawSeverityFilter, FlawTag, TacticLinesResponse } from '@/types/library';
 import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 import { depthToQueryParams } from '@/lib/tacticDepth';
-import { DEFAULT_FACEPALM_VALUE, facepalmToQueryParams } from '@/lib/facepalm';
+import { isSeverityNarrowed } from '@/lib/flawSeverityFilter';
 import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
@@ -88,7 +88,7 @@ export function libraryGamePollInterval(
  */
 export function buildLibraryParams(
   filters: FilterState,
-  severity: ('blunder' | 'mistake')[],
+  severity: FlawSeverityFilter[],
   tags: FlawTag[] = [],
   hasGem = false,
   hasGreat = false,
@@ -133,17 +133,18 @@ export function useLibraryGames(
 ) {
   // Send severity/tags only when the flaw filter actually narrows
   // (isFlawFilterNonDefault): the backend's severity EXISTS excludes every game
-  // without engine analysis, so a non-narrowing filter (e.g. both tiers selected)
-  // would show "0 games matched" to users whose games are unanalyzed. The default
+  // without engine analysis, so a non-narrowing filter (e.g. all three severity tags
+  // selected) would show "0 games matched" to users whose games are unanalyzed. The default
   // state means "no flaw filtering" on the Games tab (matching the modified-dot
-  // logic).
+  // logic). Severity has its own gate: all three tags selected shows everything, so
+  // it is not sent even when a tag family narrows.
   const isFiltering = isFlawFilterNonDefault(flawFilter);
   // has_gem/has_great are threaded unconditionally (not gated on isFiltering like
   // severity/tags above): they already default to false, so buildLibraryParams
   // omits them the same way as an inactive filter — no separate gate needed.
   const params = buildLibraryParams(
     filters,
-    isFiltering ? flawFilter.severity : [],
+    isFiltering && isSeverityNarrowed(flawFilter.severity) ? flawFilter.severity : [],
     isFiltering ? flawFilter.tags : [],
     flawFilter.hasGem,
     flawFilter.hasGreat,
@@ -153,22 +154,13 @@ export function useLibraryGames(
   // selected family would keep a depth-only or orientation-only filter from ever
   // reaching the backend. The family group is sent only when ≥1 is selected. The
   // backend treats the all-inclusive default (no family, either, full range) as a
-  // no-op. The facepalm range below is applied by the backend inside the same
-  // single flaw EXISTS as severity, tags and tactics (D-06); a narrowed range makes
-  // isFlawFilterNonDefault true, which only affects severity/tags (empty by default).
+  // no-op.
   // Optional-chained: defensive against partial filter objects (e.g. test mocks),
   // matching isFlawFilterNonDefault.
   const tacticFamily =
     (flawFilter.tacticFamilies?.length ?? 0) > 0 ? flawFilter.tacticFamilies : undefined;
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
   const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
-  // Facepalm range (D-06): sent only when narrowed (unlike the always-sent depth
-  // bounds), so the common request and its cache key are unchanged at All (D-04).
-  // Optional fallbacks keep partial filter objects (test mocks) at the default.
-  const facepalmParam = facepalmToQueryParams({
-    min: flawFilter.facepalmMin ?? DEFAULT_FACEPALM_VALUE.min,
-    max: flawFilter.facepalmMax ?? DEFAULT_FACEPALM_VALUE.max,
-  });
   return useQuery({
     queryKey: [
       'library-games',
@@ -176,7 +168,6 @@ export function useLibraryGames(
       tacticFamily,
       tacticOrientation,
       depthParam,
-      facepalmParam,
       offset,
       limit,
     ],
@@ -186,7 +177,6 @@ export function useLibraryGames(
         tactic_family: tacticFamily,
         tactic_orientation: tacticOrientation,
         ...depthParam,
-        ...facepalmParam,
         offset,
         limit,
       }),
@@ -366,7 +356,7 @@ export function useTacticLines(
 /**
  * Fetch the paginated per-flaw list for the current filter + flaw filter.
  *
- * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, facepalmParam, offset, limit]
+ * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
  * tactic_orientation + max_tactic_depth appended to key so changing either
  * triggers a refetch.
@@ -386,13 +376,6 @@ export function useLibraryFlaws(
   // treats the defaults as a no-op.
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
   const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
-  // Facepalm range (D-06): sent only when narrowed (unlike the always-sent depth
-  // bounds), so the common request and its cache key are unchanged at All (D-04).
-  // Optional fallbacks keep partial filter objects (test mocks) at the default.
-  const facepalmParam = facepalmToQueryParams({
-    min: flawFilter.facepalmMin ?? DEFAULT_FACEPALM_VALUE.min,
-    max: flawFilter.facepalmMax ?? DEFAULT_FACEPALM_VALUE.max,
-  });
   return useQuery({
     queryKey: [
       'library-flaws',
@@ -400,7 +383,6 @@ export function useLibraryFlaws(
       tacticFamily,
       tacticOrientation,
       depthParam,
-      facepalmParam,
       offset,
       limit,
     ],
@@ -410,7 +392,6 @@ export function useLibraryFlaws(
         tactic_family: tacticFamily,
         tactic_orientation: tacticOrientation,
         ...depthParam,
-        ...facepalmParam,
         offset,
         limit,
       }),

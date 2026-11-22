@@ -335,6 +335,11 @@ export interface PuzzleRevealResponse {
   puzzle_type: 'sharp' | 'soft' | 'herring';
   source: 'sr_item' | 'red_herring' | 'sharp_filler';
   has_tactic_lines: boolean;
+  /**
+   * The in-game move is a facepalm blunder (facepalm score of 70% or more): the reveal badges
+   * it "???" instead of "??". OPTIONAL: a stale server or an old reveal-cache entry omits it.
+   */
+  game_move_facepalm?: boolean;
   /** The sharp filler's motif label ("Fork", "Skewer", ...), read straight
    * from the committed data file. null for every
    * sr_item/red_herring reveal — no motif taxonomy exists for those today. */

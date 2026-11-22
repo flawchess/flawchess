@@ -78,6 +78,33 @@ from app.services.tactic_detector import (
 TacticOrientation = Literal["either", "missed", "allowed"]
 
 # ---------------------------------------------------------------------------
+# Flaws-filter severity tags (Phase 260 D-08, D-12). Deliberately NOT FlawSeverity: the
+# stored severity stays inaccuracy / mistake / blunder, and a facepalm is a blunder whose
+# query-time facepalm score reaches FACEPALM_STATS_MIN. The three values are the tags of the
+# Flaws filter row, in D-08 order; mirrored by FlawSeverityFilter in
+# frontend/src/types/library.ts. Imported by library_service and the router.
+# ---------------------------------------------------------------------------
+FlawSeverityFilter = Literal["facepalm", "blunder", "mistake"]
+FLAW_SEVERITY_FILTER_VALUES: tuple[FlawSeverityFilter, ...] = ("facepalm", "blunder", "mistake")
+
+
+def is_full_severity_selection(severity: Sequence[str]) -> bool:
+    """True when every Flaws-filter severity tag is selected.
+
+    D-08: selecting nothing and selecting all three tags both mean "no severity narrowing".
+    Every consumer of the shared clause builder (the Flaws list, the Games EXISTS and every
+    stats endpoint through apply_game_filters) must treat the two identically, so this is
+    the one place that defines "full". Mistake plus Blunder is NOT full: Blunder excludes
+    Facepalm, so that pair still narrows.
+    """
+    return set(FLAW_SEVERITY_FILTER_VALUES) <= set(severity)
+
+
+# An unscored blunder (NULL facepalm score) sorts below any cut, so it is a Blunder, never a
+# Facepalm (D-09). Used as the coalesce default of the Blunder-only branch.
+_UNSCORED_FACEPALM_SCORE: float = 0.0
+
+# ---------------------------------------------------------------------------
 # Tactic chip confidence threshold.
 # Imported by library_service (and, through it, the benchmark scripts) so the same
 # value gates the comparison repo fn.
@@ -91,15 +118,6 @@ MIN_TACTIC_CHIP_CONFIDENCE: int = 70  # 0-100 scale matching tactic_confidence c
 # used by _tactic_controls_active to detect the "full-range = no depth filter" state.
 _TACTIC_DEPTH_FULL_MIN: int = 0
 _TACTIC_DEPTH_FULL_MAX: int = 11
-
-# Facepalm score range filter: inclusive whole-percent bounds on the floored scale the
-# Flaws-card Facepalm chip shows. Mirrors FACEPALM_PCT_MIN / FACEPALM_PCT_MAX in
-# frontend/src/lib/facepalm.ts. Deliberately this module's own constants, independent of
-# the blunder-check drill cut, so a refit of that cut never moves the filter (D-09, D-07).
-# Public because the router uses them as Query bounds.
-FACEPALM_PCT_MIN: int = 0
-FACEPALM_PCT_MAX: int = 100
-_FACEPALM_PCT_SCALE: float = 100.0
 
 # Decision-anchored depth offset for the ALLOWED orientation.
 # missed_tactic_depth and allowed_tactic_depth both store the RAW 0-based detector
@@ -337,43 +355,51 @@ def _tactic_controls_active(
     return families_active or orientation_active or depth_active
 
 
-def facepalm_range_active(min_pct: int | None, max_pct: int | None) -> bool:
-    """Return True when the inclusive percent range is narrower than the full 0..100.
-
-    The full range (or both bounds None) means no facepalm filter and no clause (D-04).
-    """
-    min_active = min_pct is not None and min_pct != FACEPALM_PCT_MIN
-    max_active = max_pct is not None and max_pct != FACEPALM_PCT_MAX
-    return min_active or max_active
-
-
-def _facepalm_clause(
-    min_pct: int | None,
-    max_pct: int | None,
+def _severity_clause(
+    severity: Sequence[FlawSeverityFilter],
     score: ColumnElement[float] | None = None,
 ) -> ColumnElement[bool] | None:
-    """Score clause: floor(100 * score) in [min_pct, max_pct], NULL scores excluded (D-04, D-10).
+    """Severity-tag clause for the Flaws filter (D-08, D-09, D-12): OR across the selected tags.
 
-    `score` is the query-time expression `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` (D-01). A
-    caller that also selects the chip passes its own bound object so the chip and the filter
-    read one expression and cannot disagree at a band edge; None builds a fresh one.
+    `Mistake` selects stored mistakes. `Blunder` selects stored blunders that are not
+    facepalms (score below FACEPALM_STATS_MIN, or unscored). `Facepalm` selects stored
+    blunders whose score reaches FACEPALM_STATS_MIN. Selecting both Blunder and Facepalm
+    selects every blunder, so that branch needs no score. An empty selection and a full
+    selection (all three tags, D-08) both return None (no severity filter).
 
-    Written as two float comparisons with no floor() or multiplication on the expression: it is
-    double precision (PostgreSQL exp() over float inputs) and is compared against plain Python
-    float thresholds, which asyncpg binds as double precision, so the chip value and the bound
-    are compared in the same precision and match the floored whole percent the frontend shows.
-    An inverted range (min > max) is not validated and simply matches nothing.
+    `score` is the query-time `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)`. query_flaws passes
+    the bound chip expression so the chip and this clause read one object; None builds a
+    fresh one. It is referenced only when exactly one of Blunder / Facepalm is selected,
+    and once (the Blunder branch uses coalesce so the large expression is rendered once).
+
+    Filter values map to stored ints here and nowhere else: never index _SEVERITY_INT with a
+    filter value ("facepalm" is not a stored severity).
     """
-    if not facepalm_range_active(min_pct, max_pct):
+    # Bug fix (review WR-01): a full selection used to compile to mistake OR blunder, which the
+    # Games EXISTS turned into "game has one of the user's own flaws" while an empty selection
+    # returned the plain archive. Both mean "no narrowing" (D-08), so both return None here.
+    # game_flaws stores only mistake/blunder, so the Flaws list result is unchanged.
+    if not severity or is_full_severity_selection(severity):
         return None
-    if score is None:
-        score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
-    bounds: list[ColumnElement[bool]] = [score.isnot(None)]
-    if min_pct is not None and min_pct > FACEPALM_PCT_MIN:
-        bounds.append(score >= min_pct / _FACEPALM_PCT_SCALE)
-    if max_pct is not None and max_pct < FACEPALM_PCT_MAX:
-        bounds.append(score < (max_pct + 1) / _FACEPALM_PCT_SCALE)
-    return and_(*bounds)
+    selected = set(severity)
+    is_blunder = GameFlaw.severity == _SEVERITY_INT["blunder"]
+    branches: list[ColumnElement[bool]] = []
+    if "mistake" in selected:
+        branches.append(GameFlaw.severity == _SEVERITY_INT["mistake"])
+    if {"blunder", "facepalm"} <= selected:
+        branches.append(is_blunder)
+    elif selected & {"blunder", "facepalm"}:
+        expr = score if score is not None else facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
+        if "facepalm" in selected:
+            branches.append(and_(is_blunder, expr >= FACEPALM_STATS_MIN))
+        else:
+            branches.append(
+                and_(
+                    is_blunder,
+                    func.coalesce(expr, _UNSCORED_FACEPALM_SCORE) < FACEPALM_STATS_MIN,
+                )
+            )
+    return or_(*branches)
 
 
 def tactic_slot_visible(
@@ -645,15 +671,13 @@ def _build_tactic_clause(
 
 
 def build_flaw_filter_clauses(
-    severity: Sequence[FlawSeverity],
+    severity: Sequence[FlawSeverityFilter],
     tags: Sequence[FlawTag],
     tactic_families: Sequence[str] = (),
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
     decided_lost: ColumnElement[bool] | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     facepalm_score: ColumnElement[float] | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (family-aware logic).
@@ -668,10 +692,11 @@ def build_flaw_filter_clauses(
     §Shared Query Filters).
 
     Args:
-        severity: Subset of ["mistake", "blunder"]. Set-membership: ["mistake"]
-                  matches mistakes only, ["blunder"] matches blunders only, both
-                  matches either. Empty = no severity filter (match all severities
-                  present in game_flaws).
+        severity: Subset of FLAW_SEVERITY_FILTER_VALUES ("facepalm" / "blunder" /
+                  "mistake"), OR-combined by _severity_clause (D-08): Facepalm = blunders
+                  scoring at or above FACEPALM_STATS_MIN, Blunder = blunders below it or
+                  unscored, Mistake = mistakes. Empty = no severity filter (match all
+                  severities present in game_flaws).
         tags: Selected FlawTag values from FlawFilterControl. Empty = no tag
               filter. Includes the phase family (opening/middlegame/endgame).
         tactic_families: Tactic motif families to filter on. Empty = no tactic
@@ -696,13 +721,10 @@ def build_flaw_filter_clauses(
                   tempo, opportunity, impact, and phase clauses are NOT gated. Callers
                   build this expression via decided_lost_sql and pass it here.
                   None (default) = no suppression (backward-compatible).
-        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent bounds on the
-                  floored facepalm score (0..100). None, or the full 0..100 range, =
-                  no facepalm clause. A narrowed range keeps only rows with a non-NULL
-                  score inside it. NOT gated by decided_lost (that gate is tactic-only).
         facepalm_score: Optional bound `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` the caller also
-                  selects as the chip, so the chip and the range filter share one object
-                  (D-01). None = a fresh expression is built when a range is active.
+                  selects as the chip, so the chip and the severity clause share one object
+                  (D-01). None = a fresh expression is built when a lone Blunder / Facepalm
+                  tag needs one.
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -710,12 +732,13 @@ def build_flaw_filter_clauses(
     """
     clauses: list[ColumnElement[bool]] = []
 
-    # Severity filter — set membership. The UI exposes Blunders/Mistakes as
-    # independent toggles, so ["mistake"] must match mistakes ONLY (not "mistakes or
-    # worse"). A prior MIN-threshold (severity >= min) leaked blunders into a
-    # mistakes-only selection. game_flaws stores only mistake(1)/blunder(2).
-    if severity:
-        clauses.append(GameFlaw.severity.in_([_SEVERITY_INT[s] for s in severity]))
+    # Severity tags (D-08, D-12): Facepalm / Blunder / Mistake are independent toggles, OR
+    # combined, so ["mistake"] matches mistakes ONLY (not "mistakes or worse"; a prior
+    # MIN-threshold leaked blunders into a mistakes-only selection). Blunder excludes facepalms.
+    # game_flaws stores only mistake(1)/blunder(2); the facepalm split is the query-time score.
+    severity_clause = _severity_clause(severity, facepalm_score)
+    if severity_clause is not None:
+        clauses.append(severity_clause)
 
     # Tempo family: OR within {low-clock, hasty, unrushed}
     tempo_tags = [t for t in tags if t in {"low-clock", "hasty", "unrushed"}]
@@ -760,36 +783,28 @@ def build_flaw_filter_clauses(
     if tactic_clause is not None:
         clauses.append(tactic_clause)
 
-    # Facepalm score range: rides the same single flaw row as every other family (D-06).
-    facepalm_clause = _facepalm_clause(min_facepalm_pct, max_facepalm_pct, facepalm_score)
-    if facepalm_clause is not None:
-        clauses.append(facepalm_clause)
-
     return clauses
 
 
 def flaw_exists_from_table(
     user_id: int,
-    severity: Sequence[FlawSeverity],
+    severity: Sequence[FlawSeverityFilter],
     tags: Sequence[FlawTag],
     tactic_families: Sequence[str] = (),
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
 ) -> ColumnElement[bool]:
     """Correlated EXISTS: True iff the game has >=1 flaw row satisfying the filter.
 
     game_flaws-backed EXISTS. Scopes to the authenticated user and the outer
     Game.id so cross-user leaks are impossible.
 
-    Returns true() when no filter family is active (severity, tags, tactics, AND the
-    facepalm range all empty/default) — no filter = match all games, so callers that
+    Returns true() when no filter family is active (severity, tags and tactics all
+    empty/default) — no filter = match all games, so callers that
     pass no filter see no restriction added.
 
-    All filter families (severity, context tags, tactic motif/orientation/depth, AND
-    the facepalm range)
+    All filter families (severity, context tags, tactic motif/orientation/depth)
     are ANDed onto the SAME game_flaws row via build_flaw_filter_clauses. This is the
     single-row AND semantics the Flaws list uses (query_flaws): a game matches only
     when ONE flaw satisfies every selected condition together — e.g. a flaw that is
@@ -799,14 +814,12 @@ def flaw_exists_from_table(
     Args:
         user_id: The authenticated user's ID — always included in the EXISTS
                  WHERE clause to prevent cross-user information disclosure.
-        severity: Subset of ["mistake", "blunder"]. Empty = no severity filter.
+        severity: Subset of FLAW_SEVERITY_FILTER_VALUES (D-08 tags). Empty = no severity filter.
         tags: Selected FlawTag values. Empty = no tag filter.
         tactic_families: Tactic motif families to filter on. Empty = no filter.
         orientation: Which tactic column set to filter on ("either"/"missed"/"allowed").
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds on the
                  active orientation's depth column. None = unbounded that side.
-        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent facepalm range on
-                 the floored score. None or the full 0..100 = no facepalm clause.
     """
     # Decided-lost suppression: LEFT JOIN the pre-move position (ply N-1) inside the
     # EXISTS so the SQL gate has access to eval_cp/eval_mate. LEFT JOIN so ply 0/1
@@ -828,8 +841,6 @@ def flaw_exists_from_table(
         min_tactic_depth,
         max_tactic_depth,
         decided_lost=dl,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
     )
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
@@ -1147,7 +1158,7 @@ async def query_flaws(
     session: AsyncSession,
     *,
     user_id: int,
-    severity: Sequence[FlawSeverity],
+    severity: Sequence[FlawSeverityFilter],
     tags: Sequence[FlawTag],
     time_control: Sequence[str] | None,
     platform: Sequence[str] | None,
@@ -1160,8 +1171,6 @@ async def query_flaws(
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[FlawListItem], int]:
@@ -1184,13 +1193,11 @@ async def query_flaws(
     Args:
         session: AsyncSession for DB access.
         user_id: The authenticated user's ID — always scopes the query (IDOR).
-        severity: Severity tiers to include. Empty = no severity filter.
+        severity: Severity tags to include (D-08: facepalm / blunder / mistake). Empty = no
+          severity filter.
         tags: FlawTag values to filter on (phase tags filter on game_flaws.phase).
         time_control / platform / rated / opponent_type / from_date / to_date /
           color: Game-metadata filters (threaded through apply_game_filters).
-        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent facepalm range on the
-          floored score. None or the full 0..100 = no filter; a narrowed range keeps only
-          the user's own scored flaws inside it (D-04, D-05).
         offset: Pagination offset (>= 0).
         limit: Page size (1..100, default 20).
 
@@ -1206,8 +1213,8 @@ async def query_flaws(
     PositionTwoBefore = _flaw_position_lateral("pos_two_before", GameFlaw.ply - 2)  # noqa: N806
     dl_sql = decided_lost_sql(PositionBefore.eval_cp, PositionBefore.eval_mate, Game.user_color)
 
-    # One bound expression for the chip (SELECT) and the range filter (WHERE), so a card can
-    # never show a score outside the range that selected it (D-01, D-04).
+    # One bound expression for the chip (SELECT) and the severity clause (WHERE), so a
+    # card can never show a score outside the tag that selected it (D-01, D-08).
     facepalm_chip = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
 
     flaw_clauses = build_flaw_filter_clauses(
@@ -1218,8 +1225,6 @@ async def query_flaws(
         min_tactic_depth,
         max_tactic_depth,
         decided_lost=dl_sql,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
         facepalm_score=facepalm_chip,
     )
 
@@ -1412,29 +1417,24 @@ async def fetch_page_facepalm_scores(
     D-04: the eval-chart tooltip and the analysis move-list markers use the library lambda,
     never a Python computation); the type is `facepalm_type_expr()` of the same row, selected in
     the same statement (257 D-08). Rows whose score expression is NULL (unscored) are skipped.
-    Returns owner-side plies only (`player_only_gate` on the game's own user_color): opponent
-    rows carry facts and score in SQL since SEED-261114-iuv Part A step 4, but opponent markers
-    keep a null facepalm score and type because showing opponent scores is an open product
-    decision (Part B; 257 D-06). Callers still gate on severity. User-scoped via
-    GameFlaw.user_id == user_id (IDOR).
+    Returns the scored plies of BOTH sides (260 D-24): the two-sided Facepalm row and the chart
+    split need the opponent's score too. This reader feeds display only; the Flaws filter, the
+    Games EXISTS and the drill selection stay user-only through their own player gates
+    (257 D-06). Callers still gate on severity. User-scoped via GameFlaw.user_id == user_id
+    (IDOR).
     """
     if not game_ids:
         return {}
     score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
-    stmt = (
-        select(
-            GameFlaw.game_id,
-            GameFlaw.ply,
-            score.label("score"),
-            facepalm_type_expr().label("ftype"),
-        )
-        .join(Game, Game.id == GameFlaw.game_id)
-        .where(
-            GameFlaw.user_id == user_id,
-            GameFlaw.game_id.in_(game_ids),
-            player_only_gate(GameFlaw.ply, Game.user_color),  # owner side only
-            score.isnot(None),
-        )
+    stmt = select(
+        GameFlaw.game_id,
+        GameFlaw.ply,
+        score.label("score"),
+        facepalm_type_expr().label("ftype"),
+    ).where(
+        GameFlaw.user_id == user_id,
+        GameFlaw.game_id.in_(game_ids),
+        score.isnot(None),
     )
     result: dict[int, dict[int, FacepalmChipValue]] = {}
     for game_id, ply, value, ftype in (await session.execute(stmt)).all():
@@ -1834,8 +1834,6 @@ async def query_filtered_games(
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
-    min_facepalm_pct: int | None = None,
-    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -1859,9 +1857,6 @@ async def query_filtered_games(
     SAME classifier the board uses — union semantics when both are
     set. When all of flaw_severity / flaw_tags / tactic_families / has_gem /
     has_great are None/empty/False the query is a plain filtered archive (no EXISTS).
-    min_facepalm_pct / max_facepalm_pct (inclusive whole percents) join the same single
-    flaw EXISTS, so a game matches only when ONE user flaw satisfies the range together
-    with every other selected flaw condition (D-06).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
     games before offset/limit. Ordered played_at DESC nulls last. The user_id is
@@ -1885,8 +1880,6 @@ async def query_filtered_games(
         orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
-        min_facepalm_pct=min_facepalm_pct,
-        max_facepalm_pct=max_facepalm_pct,
         user_id=user_id,
         has_gem=has_gem,
         has_great=has_great,

@@ -28,6 +28,7 @@ from app.repositories import blunder_check_repository, train_repository
 from app.repositories.blunder_check_repository import GameInfoRow, SessionProgress
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services import blunder_check_selection
+from app.services.blunder_check_feedback import BlunderFeedbackData, blunder_feedback
 from app.services.blunder_check_grading import (
     ANSWER_KIND_BY_NAME,
     MOVE_QUALITY_BY_TIER,
@@ -1054,6 +1055,8 @@ class BlunderSolutionData:
     safe_points: int
     blunder_points: int
     better_move_points: int | None
+    # Phase 261 D-04: built from the window's serve-time snapshot, None for a pre-phase window.
+    feedback: BlunderFeedbackData | None
 
 
 @dataclass(frozen=True)
@@ -1157,6 +1160,15 @@ async def _blunder_solution(
         safe_points=window.points_scored - blunder_points - (better_move_points or 0),
         blunder_points=blunder_points,
         better_move_points=better_move_points,
+        # Reads the window snapshot only, never game_flaws: the value stays when the game is
+        # deleted or the score is refit (seed "score shown is the serve-time snapshot").
+        feedback=blunder_feedback(
+            score=window.facepalm_score,
+            loss=window.facepalm_loss,
+            missed=window.facepalm_missed,
+            type_swing=window.type_swing,
+            type_mate=window.type_mate,
+        ),
     )
 
 

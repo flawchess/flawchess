@@ -83,6 +83,8 @@ BLUNDER_SEVERITY: int = _SEVERITY_INT["blunder"]
 # loads.
 # Version 5 (Phase 259, D-15): blunder records also carry the stored scalar inputs material_loss,
 # material_missed and maia_best_reply_prob; a version 4 cache lacks them and no longer loads.
+# Version 6 (Phase 259, D-06): blunder records no longer carry the two 9-slot material arrays (the
+# columns are dropped); a version 5 cache holds them and no longer loads.
 CACHE_VERSION: int = 6
 # Number of user moves kept before each blunder (positions 2..MAX_BLUNDER_POSITION need k-1).
 PRECEDING_MOVES_KEPT: int = MAX_BLUNDER_POSITION - 1

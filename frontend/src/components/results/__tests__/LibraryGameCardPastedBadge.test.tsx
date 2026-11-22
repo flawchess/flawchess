@@ -21,7 +21,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 vi.mock('@/hooks/useFlawFilterStore', () => ({
   useFlawFilterStore: () => [
     {
-      severity: ['blunder', 'mistake'] as string[],
+      severity: [] as string[],
       tags: [] as string[],
       tacticFamilies: [] as string[],
       tacticOrientation: 'either' as const,

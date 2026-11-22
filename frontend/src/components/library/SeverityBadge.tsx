@@ -9,17 +9,21 @@ import {
   SEV_BLUNDER_BORDER,
   SEV_MISTAKE_BORDER,
   SEV_INACCURACY_BORDER,
+  SEV_FACEPALM,
+  SEV_FACEPALM_ON,
   ACTIVE_FILTER_RING_CLASS,
 } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { isSeverityNarrowed } from '@/lib/flawSeverityFilter';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
-import type { FlawSeverity } from '@/types/library';
+import type { FlawSeverity, FlawSeverityFilter } from '@/types/library';
 
 // Badge bg = foreground at 14% alpha, border = 30% alpha.
 // The composites live in theme.ts (SEV_*_BG / SEV_*_BORDER) and are shared with
-// the severity filter toggles (FlawFilterControl).
+// the severity filter toggles (FlawFilterControl). Exception: the Facepalm chip is a solid
+// SEV_FACEPALM fill with a light SEV_FACEPALM_ON label (260-G1), see badgePalette.
 
 // Maps severity to CSS color string from theme.ts (foreground)
 const SEV_COLORS: Record<FlawSeverity, string> = {
@@ -47,6 +51,31 @@ const SEV_BORDER_COLORS: Record<FlawSeverity, string> = {
 // long as it has focus. All three SEV_*_BG strings end in `/ 0.14)`.
 const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.14)', '/ 0.3)');
 
+interface BadgePalette {
+  foreground: string;
+  background: string;
+  border: string;
+  ring: string;
+}
+
+/** Colours of a badge: the solid dark red Facepalm chip, or the tinted pill of its severity. */
+function badgePalette(severity: FlawSeverity, isFacepalmBadge: boolean): BadgePalette {
+  if (isFacepalmBadge) {
+    return {
+      foreground: SEV_FACEPALM_ON,
+      background: SEV_FACEPALM,
+      border: SEV_FACEPALM,
+      ring: SEV_FACEPALM,
+    };
+  }
+  return {
+    foreground: SEV_COLORS[severity],
+    background: SEV_BG_COLORS[severity],
+    border: SEV_BORDER_COLORS[severity],
+    ring: SEV_COLORS[severity],
+  };
+}
+
 // Full (plural) label text per severity — used with a leading count (Games card)
 const SEVERITY_LABELS: Record<FlawSeverity, string> = {
   blunder: 'Blunders',
@@ -61,6 +90,10 @@ const SEVERITY_LABELS_SINGULAR: Record<FlawSeverity, string> = {
   mistake: 'Mistake',
   inaccuracy: 'Inaccuracy',
 };
+
+// A blunder badge carrying `facepalm` is a Facepalm chip: it reads "Facepalm" (260-G2).
+const FACEPALM_LABEL_SINGULAR = 'Facepalm';
+const FACEPALM_LABEL_PLURAL = 'Facepalms';
 
 const BADGE_ICON_CLASS = 'h-4 w-4 shrink-0';
 
@@ -99,12 +132,21 @@ interface SeverityBadgeProps {
    */
   showIcon?: boolean;
   /**
-   * With showIcon on a blunder: lead with the "???" facepalm-blunder glyph instead of "??"
-   * (the flaw's facepalm score reaches the 70% stats cut). Defaults to false.
+   * On a blunder: the badge is a Facepalm chip (the flaw's facepalm score reaches
+   * FACEPALM_HIGH_CUTOFF). It reads "Facepalm" instead of "Blunder", with showIcon it leads
+   * with the "???" glyph instead of "??", and its own filter tag is Facepalm instead of
+   * Blunder. The stored severity and the testid stay blunder (D-12). Ignored on other
+   * severities. Defaults to false.
    */
   facepalm?: boolean;
   /** Extra classes merged onto the badge span (e.g. `self-start` to size to content). */
   className?: string;
+}
+
+/** The Flaws filter tag a badge stands for: Facepalm for a "???" badge, null for inaccuracy. */
+function ownFilterTag(severity: FlawSeverity, facepalm: boolean): FlawSeverityFilter | null {
+  if (severity === 'inaccuracy') return null;
+  return severity === 'blunder' && facepalm ? 'facepalm' : severity;
 }
 
 /**
@@ -113,11 +155,12 @@ interface SeverityBadgeProps {
  * SEV_* constants; backgrounds and borders are alpha-composites of those same
  * oklch values — no new color values are hard-coded here.
  *
- * Active-filter ring: mirrors TagChip — the badge subscribes to useFlawFilterStore
- * and rings when the severity filter is narrowed to exactly this severity. Empty
- * and both-selected both mean 'all severities', so the ring keys on length===1: it
- * marks the active constraint (you've filtered to only blunders, or only mistakes).
- * Inaccuracy is not a filterable severity, so its badge never rings.
+ * Active-filter ring: mirrors TagChip. The badge subscribes to useFlawFilterStore and
+ * rings when its OWN filter tag is selected and the selection narrows (at least one of
+ * the three Flaws tags selected, at least one not). The own tag is Facepalm for a "???"
+ * badge (blunder with `facepalm`), else the badge's severity; inaccuracy is not a
+ * filterable tag, so its badge never rings. Nothing selected and all three selected
+ * both mean no filter, so no badge rings.
  */
 export function SeverityBadge({
   severity,
@@ -132,11 +175,24 @@ export function SeverityBadge({
   className,
 }: SeverityBadgeProps) {
   const [flawFilter] = useFlawFilterStore();
+  const ownTag = ownFilterTag(severity, facepalm);
+  const isFacepalmBadge = facepalm && severity === 'blunder';
+  const label = isFacepalmBadge
+    ? showCount
+      ? FACEPALM_LABEL_PLURAL
+      : FACEPALM_LABEL_SINGULAR
+    : showCount
+      ? SEVERITY_LABELS[severity]
+      : SEVERITY_LABELS_SINGULAR[severity];
+  const palette = badgePalette(severity, isFacepalmBadge);
+  const ariaLabel = showCount
+    ? `${count} ${isFacepalmBadge ? 'facepalm' : severity}s`
+    : label;
   const isActive =
     showActiveFilterRing &&
-    (severity === 'blunder' || severity === 'mistake') &&
-    flawFilter.severity.length === 1 &&
-    flawFilter.severity.includes(severity);
+    ownTag != null &&
+    isSeverityNarrowed(flawFilter.severity) &&
+    flawFilter.severity.includes(ownTag);
 
   // Brighten the badge while it is hovered or focused (tap-focus on mobile), held
   // for as long as it has focus.
@@ -171,15 +227,16 @@ export function SeverityBadge({
         className,
       )}
       style={{
-        color: SEV_COLORS[severity],
-        backgroundColor: highlighted ? HIGHLIGHT_BG(SEV_BG_COLORS[severity]) : SEV_BG_COLORS[severity],
-        borderColor: SEV_BORDER_COLORS[severity],
+        color: palette.foreground,
+        // The alpha swap is a no-op on the solid Facepalm fill; the brightness filter still applies.
+        backgroundColor: highlighted ? HIGHLIGHT_BG(palette.background) : palette.background,
+        borderColor: palette.border,
         // Brighten font/border while hovered or focused.
         filter: highlighted ? 'brightness(1.2)' : undefined,
-        // Ring color matches the severity color for active-filter emphasis.
-        ...(isActive ? ({ '--tw-ring-color': SEV_COLORS[severity] } as React.CSSProperties) : {}),
+        // Ring color matches the badge's own colour for active-filter emphasis.
+        ...(isActive ? ({ '--tw-ring-color': palette.ring } as React.CSSProperties) : {}),
       }}
-      aria-label={showCount ? `${count} ${severity}s` : SEVERITY_LABELS_SINGULAR[severity]}
+      aria-label={ariaLabel}
       data-testid={`severity-${severity}-${gameId}`}
       onMouseEnter={
         interactive
@@ -215,15 +272,13 @@ export function SeverityBadge({
       }
     >
       {showIcon &&
-        (facepalm && severity === 'blunder' ? (
+        (isFacepalmBadge ? (
           <FacepalmBlunderIcon className={BADGE_ICON_CLASS} />
         ) : (
           <MoveQualityIcon quality={severity} className={BADGE_ICON_CLASS} />
         ))}
       {showCount && <span className="text-base font-bold">{count}</span>}
-      <span className="text-sm font-bold">
-        {showCount ? SEVERITY_LABELS[severity] : SEVERITY_LABELS_SINGULAR[severity]}
-      </span>
+      <span className="text-sm font-bold">{label}</span>
     </span>
   );
 }

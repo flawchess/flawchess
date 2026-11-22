@@ -32,14 +32,20 @@ from app.models.blunder_check import (
     BlunderCheckAnswer,
     BlunderCheckSession,
     BlunderCheckWindow,
+    WindowArm,
     WindowCase,
 )
 from app.models.game import Game
+from app.models.game_flaw import GameFlaw
 from app.models.user import User
-from app.repositories.blunder_check_repository import EloSourceRow, NewWindow
+from app.repositories import blunder_check_repository as repo
+from app.repositories.blunder_check_repository import CandidateGame, EloSourceRow, NewWindow
+from app.services.blunder_check_candidates import BlunderCandidate, GameCandidates
 from app.services import blunder_check_selection
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
+    EXPLORATION_SHARE,
+    FACEPALM_DRILL_LAMBDA,
     FACEPALM_SCORE_MIN,
     FOREIGN_RATING_BAND,
     LEAD_IN_PLIES,
@@ -49,12 +55,18 @@ from app.services.blunder_check_rules import (
 from app.services.blunder_check_selection import (
     DEFAULT_USER_LEVEL_ELO,
     REFERENCE_ELO_GAMES,
+    Probe,
+    _Batch,
+    _Filled,
+    _next_probe,
+    _Pool,
     build_snapshot,
     compose_windows,
     level_fallback_elo,
     user_level_elo,
 )
-from tests.facepalm_seed import SEED_FACEPALM_MARGIN
+from app.services.facepalm_score import facepalm_expr
+from tests.facepalm_seed import SEED_FACEPALM_MARGIN, SEED_FACEPALM_TOLERANCE
 from tests.blunder_check_seed import (
     SEED_FACEPALM_SCORE,
     SEED_PGN,
@@ -538,6 +550,366 @@ async def test_short_session_keeps_gap_free_positions(test_engine, monkeypatch) 
     finally:
         await delete_games(test_engine, game_ids)
     assert [w.position for w in windows] == [0, 1]
+
+
+# ---------------------------------------------------------------------------
+# Phase 261: the serve-time record
+# ---------------------------------------------------------------------------
+
+
+async def _fresh_flaw_facts(test_engine, game_id: int, ply: int):
+    """The loader's score expression and the five stored inputs of one game_flaws row, re-read."""
+    async with _maker(test_engine)() as session:
+        return (
+            await session.execute(
+                select(
+                    facepalm_expr(FACEPALM_DRILL_LAMBDA),
+                    GameFlaw.maia_played_prob,
+                    GameFlaw.material_loss,
+                    GameFlaw.material_missed,
+                    GameFlaw.maia_best_prob,
+                    GameFlaw.maia_best_reply_prob,
+                ).where(GameFlaw.game_id == game_id, GameFlaw.ply == ply)
+            )
+        ).one()
+
+
+async def _insert_and_read_back(
+    test_engine, user_id: int, windows: Sequence[NewWindow]
+) -> tuple[int, list[BlunderCheckWindow]]:
+    """Insert the windows as one session and read the stored rows back, ordered by position."""
+    async with _maker(test_engine)() as session:
+        async with session.begin():
+            session_id = await repo.insert_session(
+                session,
+                user_id=user_id,
+                windows=windows,
+                now_utc=_TS,
+                session_date=_TS.date(),
+                expires_on=_TS.date() + datetime.timedelta(days=1),
+            )
+    assert session_id is not None
+    async with _maker(test_engine)() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(BlunderCheckWindow)
+                    .where(BlunderCheckWindow.session_id == session_id)
+                    .order_by(BlunderCheckWindow.position)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return session_id, list(rows)
+
+
+@pytest.mark.asyncio
+async def test_blunder_window_records_the_main_arm_snapshot(test_engine, monkeypatch) -> None:
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE)])
+    caller = await _user(test_engine, "bcs-record")
+    game_ids = await _seed_games(test_engine, caller, 8)
+    session_id: int | None = None
+    try:
+        windows = await _compose(test_engine, caller, seed=2)
+        assert windows, "the seeded games must compose at least one blunder window"
+        facts = {
+            w.game_id: await _fresh_flaw_facts(test_engine, w.game_id, _USER_BLUNDER_PLY)
+            for w in windows
+        }
+        session_id, rows = await _insert_and_read_back(test_engine, caller, windows)
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, game_ids)
+    for window in windows:
+        record = window.selection
+        assert record is not None
+        score, played_prob, loss, missed, best_prob, reply_prob = facts[window.game_id]
+        assert record.arm == WindowArm.MAIN
+        assert record.arm_probability == pytest.approx(1 - EXPLORATION_SHARE)
+        assert record.facepalm_score == pytest.approx(score)
+        assert record.played_prob == pytest.approx(played_prob)
+        assert record.loss == pytest.approx(loss)
+        assert record.missed == pytest.approx(missed)
+        assert record.best_prob == (pytest.approx(best_prob) if best_prob is not None else None)
+        assert record.reply_prob == (pytest.approx(reply_prob) if reply_prob is not None else None)
+        # The seed stores no pv, so no line settles and nothing mates.
+        assert record.type_swing is None
+        assert record.type_mate is False
+    for window, row in zip(windows, rows, strict=True):
+        record = window.selection
+        assert record is not None
+        assert row.selection_arm == int(WindowArm.MAIN)
+        assert row.arm_probability == pytest.approx(record.arm_probability)
+        assert row.facepalm_score == pytest.approx(record.facepalm_score)
+        assert row.facepalm_played_prob == pytest.approx(record.played_prob)
+        assert row.facepalm_loss == pytest.approx(record.loss)
+        assert row.facepalm_missed == pytest.approx(record.missed)
+        assert row.type_swing is None
+        assert row.type_mate is False
+
+
+@pytest.mark.asyncio
+async def test_herring_window_records_nothing(test_engine, monkeypatch) -> None:
+    _force_plans(monkeypatch, [SlotPlan("own", _HERRING_SHAPE)])
+    caller = await _user(test_engine, "bcs-record-herring")
+    game_ids = await _seed_games(test_engine, caller, 8)
+    session_id: int | None = None
+    try:
+        windows = await _compose(test_engine, caller, seed=2)
+        assert windows, "the seeded games must compose at least one herring window"
+        session_id, rows = await _insert_and_read_back(test_engine, caller, windows)
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
+        await delete_games(test_engine, game_ids)
+    assert all(w.blunder_ply is None and w.selection is None for w in windows)
+    for row in rows:
+        assert row.selection_arm is None
+        assert row.arm_probability is None
+        assert row.facepalm_score is None
+        assert row.facepalm_played_prob is None
+        assert row.facepalm_loss is None
+        assert row.facepalm_missed is None
+        assert row.facepalm_best_prob is None
+        assert row.facepalm_reply_prob is None
+        assert row.type_swing is None
+        assert row.type_mate is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 261: the exploration arm serves below-cut scored blunders, the main arm never does
+# ---------------------------------------------------------------------------
+
+_BELOW_CUT = FACEPALM_SCORE_MIN - 0.3
+
+
+async def _seed_one_blunder_game(test_engine, user_id: int, target: float | None) -> int:
+    """One own game whose only blunder (the white user's, at _USER_BLUNDER_PLY) targets `target`."""
+    evals = with_user_blunder(flat_evals(_ROWS, 0), _USER_BLUNDER_PLY, _BLUNDER_DROP_CP)
+    return await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=_USER_BLUNDER_PLY, facepalm_target=target)],
+    )
+
+
+@pytest.mark.asyncio
+async def test_exploration_slot_serves_a_below_cut_blunder(test_engine, monkeypatch) -> None:
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE, "exploration")])
+    caller = await _user(test_engine, "bcs-explore")
+    game_id = await _seed_one_blunder_game(test_engine, caller, _BELOW_CUT)
+    try:
+        async with _maker(test_engine)() as session:
+            windows = await compose_windows(session, user_id=caller, rng=random.Random(1), count=1)
+    finally:
+        await delete_games(test_engine, [game_id])
+    assert [w.game_id for w in windows] == [game_id]
+    record = windows[0].selection
+    assert record is not None
+    assert record.arm == WindowArm.EXPLORATION
+    assert record.arm_probability == pytest.approx(EXPLORATION_SHARE)
+    assert record.facepalm_score == pytest.approx(_BELOW_CUT, abs=SEED_FACEPALM_TOLERANCE)
+
+
+@pytest.mark.asyncio
+async def test_main_slot_never_serves_a_below_cut_blunder(test_engine, monkeypatch) -> None:
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE, "main")])
+    caller = await _user(test_engine, "bcs-main-cut")
+    game_id = await _seed_one_blunder_game(test_engine, caller, _BELOW_CUT)
+    try:
+        windows = [await _compose(test_engine, caller, seed=seed) for seed in _SEEDS]
+    finally:
+        await delete_games(test_engine, [game_id])
+    assert all(w.game_id != game_id for batch in windows for w in batch)
+
+
+@pytest.mark.asyncio
+async def test_unscored_blunder_is_served_by_neither_arm(test_engine, monkeypatch) -> None:
+    caller = await _user(test_engine, "bcs-unscored")
+    game_id = await _seed_one_blunder_game(test_engine, caller, None)
+    try:
+        for arm in ("main", "exploration"):
+            _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE, arm)])
+            windows = [await _compose(test_engine, caller, seed=seed) for seed in _SEEDS]
+            assert all(w.game_id != game_id for batch in windows for w in batch), arm
+    finally:
+        await delete_games(test_engine, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# Phase 261: pool provenance, per-probe exclusion and arm survival (deterministic detectors)
+# ---------------------------------------------------------------------------
+
+_HIGH_SCORE = 0.95
+
+
+def _unit_batch(game_id: int, probe: Probe, score: float) -> _Batch:
+    """A judged game holding one blunder candidate that fits _BLUNDER_SHAPE, built without a DB."""
+    game = CandidateGame(
+        game_id=game_id,
+        user_color="white",
+        platform="lichess",
+        time_control_bucket="blitz",
+        time_control_str="300+0",
+        white_rating=_RATING,
+        black_rating=_RATING,
+        pgn="",
+    )
+    blunder = BlunderCandidate(
+        game_id=game_id,
+        ply=_USER_BLUNDER_PLY,
+        case="allowed",
+        max_position=3,
+        preceding_plies=(36, 38),
+        facepalm_score=score,
+    )
+    candidates = GameCandidates(game_id=game_id, blunders=(blunder,), herrings={})
+    return _Batch(game, [], candidates, True, float(_RATING), probe)
+
+
+def _pool_of(*batches: _Batch) -> _Pool:
+    pool = _Pool()
+    for batch in batches:
+        pool.batches[batch.game.game_id] = batch
+        pool.loaded_by[batch.game.game_id] = batch.probe
+    return pool
+
+
+def test_exploration_never_draws_from_a_cut_batch() -> None:
+    pool = _pool_of(
+        _unit_batch(1, "cut", _HIGH_SCORE),
+        _unit_batch(2, "scored", _BELOW_CUT),
+        _unit_batch(3, "plain", _BELOW_CUT),
+    )
+    assert [c.game_id for c in pool.candidates(for_exploration=True)] == [2, 3]
+    assert [c.game_id for c in pool.candidates()] == [1, 2, 3]
+
+
+def test_fill_from_pool_exploration_slot_skips_cut_batch() -> None:
+    empty = {0: SlotPlan("own", _BLUNDER_SHAPE, "exploration")}
+    filled: dict[int, _Filled] = {}
+    cut_only = _pool_of(_unit_batch(1, "cut", _HIGH_SCORE))
+    # The cut batch's one candidate fits the slot and clears the cut, yet the slot stays empty:
+    # neither the exploration pass nor the main (cut) pass may take it.
+    blunder_check_selection._fill_from_pool(empty, cut_only, filled, rng=random.Random(1))
+    assert filled == {}
+    with_scored = _pool_of(_unit_batch(1, "cut", _HIGH_SCORE), _unit_batch(2, "scored", _BELOW_CUT))
+    blunder_check_selection._fill_from_pool(empty, with_scored, filled, rng=random.Random(1))
+    assert filled[0].pick.game_id == 2
+    assert filled[0].arm == "exploration"
+
+
+def test_pool_exclude_ids_keeps_cut_loaded_games_for_scored_probe() -> None:
+    pool = _Pool()
+    pool.loaded_by.update({1: "cut", 2: "cut", 3: "scored", 4: "plain"})
+    assert sorted(pool.exclude_ids("scored")) == [3, 4]
+    assert sorted(pool.exclude_ids("cut")) == [1, 2, 3, 4]
+    assert sorted(pool.exclude_ids("plain")) == [1, 2, 3, 4]
+    pool.loaded_by[2] = "scored"
+    assert sorted(pool.exclude_ids("scored")) == [2, 3, 4]
+
+
+def test_convert_own_to_foreign_keeps_the_arm() -> None:
+    plans = {0: SlotPlan("own", _BLUNDER_SHAPE, "exploration")}
+    blunder_check_selection._convert_empty_own_to_foreign(plans, {})
+    assert plans[0] == SlotPlan("foreign", _BLUNDER_SHAPE, "exploration")
+
+
+def test_redraw_keeps_the_arm(monkeypatch) -> None:
+    redrawn = WindowShape(5, 2)
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: redrawn)
+    plans = {0: SlotPlan("own", _BLUNDER_SHAPE, "exploration")}
+    blunder_check_selection._redraw_and_refill(plans, "own", _Pool(), {}, rng=random.Random(1))
+    assert plans[0] == SlotPlan("own", redrawn, "exploration")
+
+
+def test_next_probe_order() -> None:
+    explore = SlotPlan("own", _BLUNDER_SHAPE, "exploration")
+    main = SlotPlan("own", _BLUNDER_SHAPE, "main")
+    herring = SlotPlan("own", _HERRING_SHAPE, "main")
+    assert _next_probe({0: explore, 1: main}, set()) == "scored"
+    assert _next_probe({0: main}, set()) == "cut"
+    assert _next_probe({0: main, 1: herring}, {"cut"}) == "plain"
+    assert _next_probe({0: explore, 1: herring}, {"scored", "cut"}) == "plain"
+    assert _next_probe({0: explore, 1: main}, {"scored", "cut"}) is None
+    assert _next_probe({0: herring}, set()) == "plain"
+    assert _next_probe({}, set()) is None
+
+
+def _arm_of(window: NewWindow) -> WindowArm | None:
+    return None if window.selection is None else window.selection.arm
+
+
+@pytest.mark.asyncio
+async def test_refill_from_own_keeps_exploration_off_cut_batches(test_engine, monkeypatch) -> None:
+    _force_plans(
+        monkeypatch,
+        [
+            SlotPlan("own", _BLUNDER_SHAPE, "main"),
+            SlotPlan("foreign", _BLUNDER_SHAPE, "exploration"),
+        ],
+    )
+
+    async def no_foreign_supply(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(blunder_check_selection, "_fill_foreign_slots", no_foreign_supply)
+    original = repo.pick_own_game_ids
+    calls: list[dict] = []
+
+    async def spy(session, **kwargs):
+        ids = await original(session, **kwargs)
+        calls.append(
+            {
+                "require_facepalm": kwargs.get("require_facepalm", False),
+                "min_score": kwargs.get("min_score", FACEPALM_SCORE_MIN),
+                "exclude_ids": list(kwargs["exclude_ids"]),
+                "ids": ids,
+            }
+        )
+        return ids
+
+    monkeypatch.setattr(repo, "pick_own_game_ids", spy)
+    caller = await _user(test_engine, "bcs-trap")
+    high_1 = await _seed_one_blunder_game(test_engine, caller, _HIGH_SCORE)
+    high_2 = await _seed_one_blunder_game(test_engine, caller, _HIGH_SCORE)
+    low = await _seed_one_blunder_game(test_engine, caller, _BELOW_CUT)
+    try:
+        async with _maker(test_engine)() as session:
+            windows = await compose_windows(session, user_id=caller, rng=random.Random(4), count=2)
+    finally:
+        await delete_games(test_engine, [high_1, high_2, low])
+    cut_calls = [c for c in calls if c["require_facepalm"] and c["min_score"] is not None]
+    scored_calls = [c for c in calls if c["require_facepalm"] and c["min_score"] is None]
+    assert len(cut_calls) >= 1 and len(scored_calls) >= 1
+    assert set(cut_calls[0]["ids"]) == {high_1, high_2}
+    # The scored pick ran after the cut pick and still saw the cut-loaded games.
+    assert calls.index(scored_calls[0]) > calls.index(cut_calls[0])
+    assert not {high_1, high_2} & set(scored_calls[0]["exclude_ids"])
+    exploration = [w for w in windows if _arm_of(w) == WindowArm.EXPLORATION]
+    assert len(exploration) == 1
+    assert exploration[0].game_id in scored_calls[0]["ids"]
+    assert exploration[0].game_id in {high_1, high_2, low}
+
+
+@pytest.mark.asyncio
+async def test_own_to_foreign_conversion_keeps_the_exploration_arm(
+    test_engine, monkeypatch
+) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE, "exploration")])
+    caller = await _user(test_engine, "bcs-conv")
+    stranger = await _user(test_engine, "bcs-conv-stranger")
+    foreign_game = await _seed_one_blunder_game(test_engine, stranger, _BELOW_CUT)
+    try:
+        async with _maker(test_engine)() as session:
+            windows = await compose_windows(session, user_id=caller, rng=random.Random(2), count=1)
+    finally:
+        await delete_games(test_engine, [foreign_game])
+    assert [w.game_id for w in windows] == [foreign_game]
+    assert not windows[0].is_own
+    assert _arm_of(windows[0]) == WindowArm.EXPLORATION
 
 
 # ---------------------------------------------------------------------------

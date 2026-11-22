@@ -21,7 +21,6 @@ import {
   TAC_MISSED_LABEL,
 } from '@/lib/theme';
 import type { SquareMarker } from '@/components/board/boardMarkers';
-import { isFacepalmBlunder } from '@/lib/facepalm';
 import { uciToSquares } from '@/lib/sanToSquares';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +30,8 @@ import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { EvalChart } from '@/components/library/EvalChart';
 import { MoveStats } from '@/components/library/MoveStats';
 import type { MoveStatsCellRef } from '@/components/library/MoveStats';
+import { DESKTOP_BOARD_SIZE, DESKTOP_EVAL_CHART_HEIGHT_CLASS } from '@/lib/gameCardGeometry';
+import { flawMoveCategory } from '@/lib/moveStatsCounts';
 import type { MoveStatCategory, MoveStatSide } from '@/lib/moveStatsCounts';
 import { moverColorAtPly } from '@/lib/plyOwnership';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
@@ -47,6 +48,7 @@ import { gamePlatformUrl, platformPlyUrl } from '@/lib/platformLinks';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { plysToFullMoves } from '@/lib/chess';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { isSeverityNarrowed } from '@/lib/flawSeverityFilter';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
@@ -79,7 +81,6 @@ interface LibraryGameCardProps {
 }
 
 const MOBILE_BOARD_SIZE = 130;
-const DESKTOP_BOARD_SIZE = 225;
 
 // Severity-coded last-move square overlay on the hover miniboard: inaccuracy is
 // yellow; blunder/mistake get red/orange at the same alpha. The flaw itself is a
@@ -178,8 +179,8 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
   | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
-  // Move Stats (category × side) cell. category spans all 7 Move Stats rows
-  // (severities + positive tiers); side is the literal board color of the mover
+  // Move Stats (category × side) cell. category spans all 8 Move Stats rows
+  // (severities, facepalm + positive tiers); side is the literal board color of the mover
   // (moverColorAtPly), NOT user-relative — this surface deliberately shows both
   // players' cells.
   | { kind: 'category'; category: MoveStatCategory; side: MoveStatSide };
@@ -304,7 +305,7 @@ export function LibraryGameCard({
     () =>
       new Set(
         (game.flaw_markers ?? [])
-          .filter((fm) => fm.severity === 'blunder' && isFacepalmBlunder(fm.facepalm_score))
+          .filter((fm) => flawMoveCategory(fm) === 'facepalm')
           .map((fm) => fm.ply),
       ),
     [game.flaw_markers],
@@ -426,7 +427,7 @@ export function LibraryGameCard({
 
   // Move Stats (category × side) ascending ply lists,
   // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
-  // severities) and eval_series (gem/great/best/good tiers) into one map keyed
+  // severities, with facepalm blunders split out via flawMoveCategory) and eval_series (gem/great/best/good tiers) into one map keyed
   // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since this
   // surface deliberately shows both players' cells.
   const categoryPlies = useMemo(() => {
@@ -438,7 +439,7 @@ export function LibraryGameCard({
       else m.set(key, [ply]);
     };
     for (const fm of game.flaw_markers ?? []) {
-      push(fm.severity, moverColorAtPly(fm.ply), fm.ply);
+      push(flawMoveCategory(fm), moverColorAtPly(fm.ply), fm.ply);
     }
     for (const pt of game.eval_series ?? []) {
       if (pt.best_move_tier == null) continue;
@@ -616,20 +617,30 @@ export function LibraryGameCard({
     cycle && cycle.ref.kind === 'category'
       ? { kind: 'category', category: cycle.ref.category, side: cycle.ref.side }
       : null;
-  // The global filter stays user-scoped and rings ONLY the player-side cell
-  // of the matching row (never an opponent cell) — mirrors SeverityBadge's own
-  // isActive semantic (severity narrowed to exactly one of blunder/mistake;
-  // inaccuracy is not a filterable severity, so it never rings, matching
-  // SeverityBadge's existing behavior).
-  const outlinedCellRef: MoveStatsCellRef | null = useMemo(() => {
-    if (userColor == null || flawFilter.severity.length !== 1) return null;
-    const sev = flawFilter.severity[0];
-    if (sev == null) return null;
-    return { kind: 'category', category: sev, side: userColor };
-  }, [flawFilter.severity, userColor]);
+  // The global filter stays user-scoped: it rings ONLY the player-side cells, never an
+  // opponent cell (mirrors SeverityBadge). Each selected Flaws tag (Facepalm, Blunder,
+  // Mistake) rings its own row, but only while the selection narrows (nothing or all
+  // three selected rings nothing). The has gem / has great tags ring the Gem / Great
+  // cells independently of the Flaws tags and of each other. Inaccuracy is not a
+  // filterable tag, so it never rings.
+  const outlinedCellRefs: readonly MoveStatsCellRef[] = useMemo(() => {
+    if (userColor == null) return [];
+    const refs: MoveStatsCellRef[] = [];
+    if (isSeverityNarrowed(flawFilter.severity)) {
+      for (const tag of flawFilter.severity) {
+        refs.push({ kind: 'category', category: tag, side: userColor });
+      }
+    }
+    // `?? false`: partial store mocks in tests omit the Gem / Great flags.
+    if (flawFilter.hasGem ?? false) refs.push({ kind: 'category', category: 'gem', side: userColor });
+    if (flawFilter.hasGreat ?? false) {
+      refs.push({ kind: 'category', category: 'great', side: userColor });
+    }
+    return refs;
+  }, [flawFilter.severity, flawFilter.hasGem, flawFilter.hasGreat, userColor]);
   // Mobile default shows the accuracy card + the compact
   // single-line summary row (user-side counts + chevron); tapping the chevron
-  // (move-stats-expand-toggle) reveals the full two-sided 7-row table.
+  // (move-stats-expand-toggle) reveals the full two-sided 8-row table.
   const [mobileMoveStatsExpanded, setMobileMoveStatsExpanded] = useState(false);
 
   // End an active click-to-cycle highlight when the user clicks/taps anywhere that
@@ -1055,8 +1066,8 @@ export function LibraryGameCard({
   const flawContent =
     game.analysis_state === 'analyzed' ? (
       <div data-testid={`flaw-controls-${game.game_id}`} className="contents">
-        {/* Accuracy card + compact 8-column summary row; the chevron
-            (move-stats-expand-toggle) reveals the full two-sided 7-row table. */}
+        {/* Accuracy card + compact 7-column summary row; the chevron
+            (move-stats-expand-toggle) reveals the full two-sided 8-row table. */}
         <MoveStats
           game={game}
           gameId={game.game_id}
@@ -1064,7 +1075,7 @@ export function LibraryGameCard({
           showCompactRow
           onToggleCollapse={() => setMobileMoveStatsExpanded((v) => !v)}
           activeRef={activeCellRef}
-          outlinedRef={outlinedCellRef}
+          outlinedRefs={outlinedCellRefs}
           onCellActivate={handleMoveStatsCellActivate}
           onCellHover={handleMoveStatsCellHover}
         />
@@ -1233,8 +1244,9 @@ export function LibraryGameCard({
                       initialPly={initialPly}
                       commandedPly={commandedPly}
                       commandSeq={commandSeq}
-                      // Chart + 16px slider row = 104px.
-                      heightClass="h-[104px]"
+                      // Chart + 16px slider row + lane gap + tags card = the board
+                      // height (lib/gameCardGeometry.ts derives it from the table).
+                      heightClass={DESKTOP_EVAL_CHART_HEIGHT_CLASS}
                     />
                   ) : (
                     <NoAnalysisState
@@ -1267,7 +1279,7 @@ export function LibraryGameCard({
                   gameId={game.game_id}
                   className="flex-1"
                   activeRef={activeCellRef}
-                  outlinedRef={outlinedCellRef}
+                  outlinedRefs={outlinedCellRefs}
                   onCellActivate={handleMoveStatsCellActivate}
                   onCellHover={handleMoveStatsCellHover}
                 />

@@ -22,7 +22,6 @@ import type { PlayStylePreset } from '@/lib/playStyle';
 import type { DeviceSubscribeResult } from '@/lib/push';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TacticDepthPreset } from '@/lib/tacticDepth';
-import type { FacepalmPreset } from '@/lib/facepalm';
 import type {
   MatchSide,
   OpponentStrengthPreset,
@@ -32,7 +31,7 @@ import type {
   TimeControl,
 } from '@/types/api';
 import type { EndgameClass, TimeControlBucket } from '@/types/endgames';
-import type { FlawSeverity, FlawTag, TacticOrientation } from '@/types/library';
+import type { FlawSeverityFilter, FlawTag, TacticOrientation } from '@/types/library';
 import type { BlunderCheckLevel } from '@/types/train';
 
 /** The subset of an outgoing tracker payload this module rewrites. */
@@ -470,7 +469,6 @@ export const FILTER_TARGETS = [
   'tactic-family',
   'tactic-orientation',
   'tactic-depth',
-  'facepalm',
   'has-gem',
   'has-great',
   'reset',
@@ -509,12 +507,11 @@ export type FilterChangeProps =
   | { target: 'opponent-strength'; value: OpponentStrengthPreset | 'custom' }
   | { target: 'rated'; value: RatedFilterValue }
   | { target: 'endgame-type'; value: EndgameClass }
-  | { target: 'severity'; value: Extract<FlawSeverity, 'blunder' | 'mistake'> }
+  | { target: 'severity'; value: FlawSeverityFilter }
   | { target: 'flaw-tag'; value: FlawTag }
   | { target: 'tactic-family'; value: TacticFamily }
   | { target: 'tactic-orientation'; value: TacticOrientation }
   | { target: 'tactic-depth'; value: TacticDepthPreset | 'custom' }
-  | { target: 'facepalm'; value: FacepalmPreset | 'custom' }
   | { target: 'has-gem' | 'has-great'; value: OnOff }
   | { target: 'reset' | 'apply' };
 

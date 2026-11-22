@@ -319,6 +319,7 @@ async def reveal_puzzle(
         puzzle_type=result.puzzle_type,
         source=result.source,
         has_tactic_lines=result.has_tactic_lines,
+        game_move_facepalm=result.game_move_facepalm,
         motif=result.motif,
     )
 

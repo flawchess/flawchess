@@ -457,10 +457,10 @@ describe('You vs. your opponents section', () => {
     mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, SKETCH_RAPID_ENTRY]));
   });
 
-  it('renders the four cards for the selected TC, between the other sections', async () => {
+  it('renders the five cards for the selected TC, between the other sections', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    expect(section.querySelectorAll('[data-testid^="context-card-"][data-testid$="-axis"]')).toHaveLength(4);
+    expect(section.querySelectorAll('[data-testid^="context-card-"][data-testid$="-axis"]')).toHaveLength(5);
     const order = [
       screen.getByTestId('flaw-stats-section'),
       section,
@@ -489,15 +489,16 @@ describe('You vs. your opponents section', () => {
     expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the Facepalm blunders card after the Opponent errors card, with the axis count still 4', async () => {
+  it('renders the Facepalm blunders card after the Opponent errors card, with its own axis caption', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
     const cards = within(section).getByTestId('context-tag-cards');
     const errors = within(cards).getByTestId('context-card-opponent-errors');
     const facepalm = within(cards).getByTestId('context-card-facepalm');
     expect(errors.compareDocumentPosition(facepalm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(section.querySelectorAll('[data-testid$="-axis"]')).toHaveLength(4);
-    expect(facepalm.querySelector('[data-testid$="-bar-band"]')).toBeNull();
+    expect(section.querySelectorAll('[data-testid$="-axis"]')).toHaveLength(5);
+    expect(facepalm.querySelector('[data-testid="context-card-facepalm-axis"]')).not.toBeNull();
+    expect(facepalm.querySelector('[data-testid$="-bar-band"]')).not.toBeNull();
   });
 
   it('switches the facepalm popovers with the page TC, with no new request', async () => {

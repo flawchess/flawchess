@@ -16,7 +16,6 @@ from app.services.facepalm_material import (
     loss_by_depth,
 )
 from app.services.facepalm_material import decaying_mean as app_decaying_mean
-from app.services.facepalm_score import loss_feature, missed_feature
 from scripts.blunder_check.decaying_mean import (
     DECAY_DEPTHS,
     DECAY_RATIO,
@@ -93,43 +92,6 @@ def test_gain_series_unknown_slot_and_floor() -> None:
     assert gain_series(array(2, 2, 2, 2, 2), array(5, 5, 5, 5, 5), None)[3] == 3
     # A best line behind the played one is floored at 0 (the shipped missed term has no floor).
     assert gain_series(array(4, 4, 4, 4, 4), array(1, 1, 1, 1, 1), None)[3] == 0
-
-
-@pytest.mark.parametrize(
-    ("played_3", "best_3", "played_mate", "best_mate"),
-    [
-        (0, 9, None, None),
-        (-3, 0, None, None),
-        (-7, 4, None, None),
-        (2, 5, None, None),
-        (4, 1, None, None),
-        (0, 0, 3, None),
-        (0, 0, None, 2),
-        (-1, 3, None, 6),
-        (None, 3, None, None),
-        (0, None, None, None),
-    ],
-)
-def test_depth_three_parity_with_the_shipped_features(
-    played_3: int | None, best_3: int | None, played_mate: int | None, best_mate: int | None
-) -> None:
-    played = array(None, played_3, 0, 0, 0)
-    best = array(None, best_3, 0, 0, 0)
-    loss = loss_series(played, played_mate)[3]
-    shipped_loss = loss_feature(None if played_3 is None else -played_3, played_mate, loss_floor=0)
-    assert (None if loss is None else float(loss)) == shipped_loss
-
-    gain = gain_series(played, best, best_mate)[3]
-    shipped_gain = missed_feature(
-        played_3,
-        best_3,
-        best_mate,
-        missed_floor=None,
-        missed_cap=FACEPALM_MISSED_CAP,
-        missed_mate=FACEPALM_MISSED_MATE,
-    )
-    # The shipped missed term is 0.0 for an unknown slot, the series says None there.
-    assert (0.0 if gain is None else float(gain)) == max(0.0, shipped_gain)
 
 
 # The sampler shares the app's arithmetic (Phase 256): same weights, same mean, same per-depth series.

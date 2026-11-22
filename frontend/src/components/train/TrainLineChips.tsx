@@ -15,6 +15,7 @@ import { ArrowUpRight, Loader2 } from 'lucide-react';
 
 import { formatEval } from '@/components/analysis/EngineLines';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { BEST_MOVE_ARROW } from '@/lib/theme';
 import { chipArrowColor } from '@/lib/trainArrows';
 import { cn } from '@/lib/utils';
@@ -74,6 +75,7 @@ function LineChip({
   onSelect: (key: RoleKey) => void;
 }): ReactElement {
   const testid = `train-chip-${chip.key}`;
+  const facepalm = chip.quality === 'blunder' && chip.facepalm === true;
   return (
     <button
       type="button"
@@ -96,8 +98,16 @@ function LineChip({
     >
       <span className="flex w-full items-center gap-1">
         {chip.quality !== null && (
-          <span data-testid={`${testid}-quality`} data-quality={chip.quality}>
-            <MoveQualityIcon quality={chip.quality} className="h-4 w-4" />
+          <span
+            data-testid={`${testid}-quality`}
+            data-quality={chip.quality}
+            data-facepalm={facepalm ? 'true' : undefined}
+          >
+            {facepalm ? (
+              <FacepalmBlunderIcon className="h-4 w-4" />
+            ) : (
+              <MoveQualityIcon quality={chip.quality} className="h-4 w-4" />
+            )}
           </span>
         )}
         <span className="font-semibold" data-testid={`${testid}-label`}>

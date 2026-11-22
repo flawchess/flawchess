@@ -9,10 +9,11 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Mock } from 'vitest';
+import type { FlawSeverityFilter } from '@/types/library';
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup: FlawFilterControl renders
 // a ToggleGroup (via showTacticFilter) and the Radix use-size hook calls
@@ -149,7 +150,7 @@ vi.mock('@/hooks/useLibrary', () => ({
 // between tests. Instead, mock the entire module with React state.
 // Include tacticOrientation + depth range defaults.
 let mockStoreState = {
-  severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
+  severity: [] as FlawSeverityFilter[],
   tags: [] as string[],
   tacticFamilies: [] as string[],
   tacticOrientation: 'either' as const,
@@ -178,6 +179,12 @@ import { FlawsTab } from '../FlawsTab';
 
 // ── Render helper ─────────────────────────────────────────────────────────────
 
+// Exposes the router's current search string so URL-writer tests can read it.
+function SearchProbe() {
+  const { search } = useLocation();
+  return <div data-testid="probe-search">{search}</div>;
+}
+
 function renderFlawsTab(initialPath = '/library/flaws') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -185,7 +192,15 @@ function renderFlawsTab(initialPath = '/library/flaws') {
       <TooltipProvider>
         <MemoryRouter initialEntries={[initialPath]}>
           <Routes>
-            <Route path="/library/flaws" element={<FlawsTab />} />
+            <Route
+              path="/library/flaws"
+              element={
+                <>
+                  <FlawsTab />
+                  <SearchProbe />
+                </>
+              }
+            />
             <Route path="/library/import" element={<div data-testid="stub-import" />} />
           </Routes>
         </MemoryRouter>
@@ -198,7 +213,7 @@ function renderFlawsTab(initialPath = '/library/flaws') {
 
 beforeEach(() => {
   mockStoreState = {
-    severity: ['blunder', 'mistake'],
+    severity: [],
     tags: [],
     tacticFamilies: [],
     tacticOrientation: 'either',
@@ -500,6 +515,32 @@ describe('FlawsTab', () => {
     });
   });
 
+  describe('URL sync — writer', () => {
+    it('writes no severity param when all three tags are selected', () => {
+      mockStoreState = { ...mockStoreState, severity: ['facepalm', 'blunder', 'mistake'], tags: ['miss'] };
+      renderFlawsTab('/library/flaws');
+      expect(screen.getByTestId('probe-search').textContent).toBe('?tag=miss');
+    });
+
+    it('writes no severity param when nothing is selected', () => {
+      mockStoreState = { ...mockStoreState, severity: [], tags: ['miss'] };
+      renderFlawsTab('/library/flaws');
+      expect(screen.getByTestId('probe-search').textContent).toBe('?tag=miss');
+    });
+
+    it('writes both severity params for blunder + mistake (excludes facepalms)', () => {
+      mockStoreState = { ...mockStoreState, severity: ['blunder', 'mistake'], tags: [] };
+      renderFlawsTab('/library/flaws');
+      expect(screen.getByTestId('probe-search').textContent).toBe('?severity=blunder&severity=mistake');
+    });
+
+    it('writes severity=facepalm for the Facepalm tag alone', () => {
+      mockStoreState = { ...mockStoreState, severity: ['facepalm'], tags: [] };
+      renderFlawsTab('/library/flaws');
+      expect(screen.getByTestId('probe-search').textContent).toBe('?severity=facepalm');
+    });
+  });
+
   describe('URL sync — deep-link pre-population', () => {
     it('initializes the store from URL params on mount when ?tag=reversed', () => {
       // The FlawsTab reads URL params on mount and calls setFlawFilter
@@ -521,7 +562,7 @@ describe('FlawsTab', () => {
       // Set store to have a tag pre-selected (simulating deep-link result).
       // Include all FlawFilterState fields so FlawsTab doesn't crash.
       mockStoreState = {
-        severity: ['blunder', 'mistake'],
+        severity: [],
         tags: ['miss'],
         tacticFamilies: [],
         tacticOrientation: 'either',
@@ -540,6 +581,31 @@ describe('FlawsTab', () => {
       // At least one should be selected
       const selectedMiss = missBtns.find((b) => b.getAttribute('aria-pressed') === 'true');
       expect(selectedMiss).toBeTruthy();
+    });
+
+    function resolvedSeverityFromCalls(): FlawSeverityFilter[] | undefined {
+      const calls = (mockSetFlawFilter as Mock).mock.calls;
+      for (const call of calls) {
+        const arg = call[0];
+        const resolved = typeof arg === 'function' ? arg(mockStoreState) : arg;
+        if (resolved) return resolved.severity;
+      }
+      return undefined;
+    }
+
+    it('initializes the store with the facepalm tag from ?severity=facepalm', () => {
+      renderFlawsTab('/library/flaws?severity=facepalm');
+      expect(resolvedSeverityFromCalls()).toEqual(['facepalm']);
+    });
+
+    it('leaves severity empty for an unknown ?severity= value', () => {
+      renderFlawsTab('/library/flaws?severity=bogus&tag=miss');
+      expect(resolvedSeverityFromCalls()).toEqual([]);
+    });
+
+    it('drops unknown values but keeps the known ones from ?severity=', () => {
+      renderFlawsTab('/library/flaws?severity=inaccuracy&severity=blunder&severity=blunder');
+      expect(resolvedSeverityFromCalls()).toEqual(['blunder']);
     });
 
     it('does NOT call setFlawFilter from URL when no tag/severity params present', () => {
