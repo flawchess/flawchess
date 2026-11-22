@@ -778,7 +778,7 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 11/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+**Plans:** 12/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
 **Wave 1**
@@ -815,7 +815,7 @@ Plans:
 - [x] 259-11-PLAN.md — readiness gate, prod index build, refit and the D-15 owner checkpoint
 
 **Wave 12** *(blocked on Wave 11 completion)*
-- [ ] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure
+- [x] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure
 
 **Wave 13** *(blocked on Wave 12 completion)*
 - [ ] 259-13-PLAN.md — drop code: facts-only writers, scripts off the arrays, shipped rule deleted
