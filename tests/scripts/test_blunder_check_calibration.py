@@ -18,7 +18,7 @@ from typing import Any, get_args
 import chess
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -29,12 +29,15 @@ from app.models.user import User
 from app.services import maia_engine
 from app.services.blunder_check_rules import (
     FACEPALM_DRILL_LAMBDA,
+    FACEPALM_LOSS_FLOOR,
+    FACEPALM_MISSED_CAP,
+    FACEPALM_MISSED_FLOOR,
+    FACEPALM_MISSED_MATE,
     FOREIGN_RATING_BAND,
     LINE_DEPTH,
     SlotPlan,
 )
-from app.services.facepalm_material import single_depth_material
-from app.services.facepalm_score import FacepalmFacts, facepalm_score
+from app.services.facepalm_score import facepalm_expr, material_loss, material_missed
 from scripts.blunder_check.metrics import (
     HAZARD,
     EloBucket,
@@ -56,6 +59,7 @@ from scripts.blunder_check.render import (
     FAIR_LOSS_MIN,
     ReportParams,
     _loses_material,  # noqa: PLC2701
+    blunder_material_type,
     null_reason,
     pass_thresholds,
     render_report,
@@ -101,7 +105,12 @@ from scripts.blunder_check.sample import (
 
 from scripts.blunder_check_calibration import EXIT_MAIA_UNAVAILABLE
 from scripts.blunder_check_calibration import main as cli_main
-from tests.facepalm_seed import SEED_FACEPALM_MARGIN, facepalm_fact_columns
+from tests.facepalm_seed import (
+    SEED_FACEPALM_MARGIN,
+    SEED_FACEPALM_TOLERANCE,
+    facepalm_fact_columns,
+    lone_depth_line,
+)
 from tests.services.maia_fakes import fake_full_policy
 
 # Unique to this module (grep tests/ before changing).
@@ -115,19 +124,20 @@ OPPONENT_BLUNDER_PLY = 7
 USER_BLUNDER_PLY = 8
 # Drill score of the opponent row's facts: high, so only the parity gate can exclude it.
 OPPONENT_SEEDED_SCORE = 0.95
-SEEDED_PLAYED_PROB = 0.04
-SEEDED_SPREAD = 2.5
-SEEDED_PLAYED_3 = -3
-SEEDED_BEST_3 = 2
-SEEDED_BEST_PROB = 0.6
-SEEDED_PRE_SPREAD = 4.0
+# The user blunder's drill score; its stored scalar inputs (Phase 259 D-05, D-07) come from
+# `facepalm_fact_columns`, which solves them so the row scores as asked.
+USER_SEEDED_SCORE = 0.85
+# Scalars one test stores over the seeded user row (the solver seeds a missed gain of 0).
+STORED_MATERIAL_LOSS = 2.5
+STORED_MATERIAL_MISSED = 1.25
+STORED_REPLY_PROB = 0.35
 
 MakeGame = Callable[..., Awaitable[int]]
 
 
 def _line_of(value: int | None) -> tuple[int | None, ...] | None:
     """The stored array of a scalar test input: depth 3 known, the rest unknown (None stays None)."""
-    return None if value is None else single_depth_material(value)
+    return None if value is None else lone_depth_line(value)
 
 
 def _as_tuple(array: list[int | None] | None) -> tuple[int | None, ...] | None:
@@ -135,9 +145,10 @@ def _as_tuple(array: list[int | None] | None) -> tuple[int | None, ...] | None:
     return None if array is None else tuple(array)
 
 
-def _material(value: int) -> list[int | None]:
-    """A 9-slot stored material array with `value` at the odd slots and NULL at the even ones."""
-    return [value if slot % 2 == 1 else None for slot in range(1, 10)]
+USER_ROW_INPUTS = facepalm_fact_columns(USER_SEEDED_SCORE, lam=FACEPALM_DRILL_LAMBDA)
+# The opponent row carries a full scoring set too; only the owner-side parity gate in the sampler
+# keeps it out of the batch.
+OPPONENT_ROW_INPUTS = facepalm_fact_columns(OPPONENT_SEEDED_SCORE, lam=FACEPALM_DRILL_LAMBDA)
 
 
 @pytest_asyncio.fixture
@@ -224,21 +235,7 @@ async def make_game(
             await session.flush()
             for ply, is_miss in ((OPPONENT_BLUNDER_PLY, False), (USER_BLUNDER_PLY, True)):
                 is_user_ply = ply == USER_BLUNDER_PLY
-                # The opponent row carries a full scoring set of facts too (the scorer writes them
-                # since SEED-261114-iuv Part A step 4); only the owner-side parity gate in the
-                # sampler keeps it out of the batch.
-                facts: dict[str, Any] = (
-                    {
-                        "maia_played_prob": SEEDED_PLAYED_PROB,
-                        "maia_reply_spread": SEEDED_SPREAD,
-                        "played_line_material": _material(SEEDED_PLAYED_3),
-                        "best_line_material": _material(SEEDED_BEST_3),
-                        "maia_best_prob": SEEDED_BEST_PROB,
-                        "maia_pre_spread": SEEDED_PRE_SPREAD,
-                    }
-                    if is_user_ply
-                    else facepalm_fact_columns(OPPONENT_SEEDED_SCORE, lam=FACEPALM_DRILL_LAMBDA)
-                )
+                facts = USER_ROW_INPUTS if is_user_ply else OPPONENT_ROW_INPUTS
                 session.add(
                     GameFlaw(
                         user_id=user_id,
@@ -308,34 +305,28 @@ class TestTracer:
         assert blunder.ply == USER_BLUNDER_PLY
         assert blunder.case == "pure_miss"
         assert blunder.is_miss
-        assert blunder.maia_played_prob == pytest.approx(SEEDED_PLAYED_PROB)
-        assert blunder.maia_reply_spread == pytest.approx(SEEDED_SPREAD)
-        assert (blunder.played_3, blunder.best_3, blunder.line_mate_ply) == (
-            SEEDED_PLAYED_3,
-            SEEDED_BEST_3,
-            None,
-        )
-        # Phase 256: the record keeps the stored 9-slot arrays whole, not just their depth-3 slot.
-        assert blunder.played_material == tuple(_material(SEEDED_PLAYED_3))
-        assert blunder.best_material == tuple(_material(SEEDED_BEST_3))
+        assert blunder.maia_played_prob == pytest.approx(USER_ROW_INPUTS["maia_played_prob"])
+        # The seeded row stores the five scalar inputs only: no spread and no arrays.
+        assert blunder.maia_reply_spread is None
+        assert blunder.played_material is None
+        assert blunder.best_material is None
+        assert blunder.line_mate_ply is None
         assert blunder.best_mate_ply is None
-        assert blunder.maia_best_prob == pytest.approx(SEEDED_BEST_PROB)
-        assert blunder.maia_pre_spread == pytest.approx(SEEDED_PRE_SPREAD)
+        assert blunder.material_loss == pytest.approx(USER_ROW_INPUTS["material_loss"])
+        assert blunder.maia_best_prob == USER_ROW_INPUTS["maia_best_prob"]
         assert blunder.has_line
         # The score is computed from the facts (254 D-01); the stored column no longer exists.
-        expected = facepalm_score(
-            FacepalmFacts(
-                played_prob=SEEDED_PLAYED_PROB,
-                reply_spread=SEEDED_SPREAD,
-                played_material=tuple(_material(SEEDED_PLAYED_3)),
-                mate_ply=None,
-                best_material=tuple(_material(SEEDED_BEST_3)),
-                best_prob=SEEDED_BEST_PROB,
-                pre_spread=SEEDED_PRE_SPREAD,
-            ),
-            lam=FACEPALM_DRILL_LAMBDA,
-        )
-        assert blunder.facepalm_score == pytest.approx(expected)
+        # It equals the SQL expression selected for the same row, whichever inputs the twin reads.
+        async with session_factory() as session:
+            expr_score = (
+                await session.execute(
+                    select(facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
+                        GameFlaw.game_id == game_id, GameFlaw.ply == USER_BLUNDER_PLY
+                    )
+                )
+            ).scalar_one()
+        assert blunder.facepalm_score == pytest.approx(expr_score)
+        assert blunder.facepalm_score == pytest.approx(USER_SEEDED_SCORE, abs=SEED_FACEPALM_MARGIN)
 
         collection = Collection(
             meta=RunMeta(db_name="test", date="2026-11-09", games_sampled=1),
@@ -350,6 +341,56 @@ class TestTracer:
             "## Cases by Elo bucket",
         ):
             assert report.count(heading) == 1
+
+    @pytest.mark.asyncio
+    async def test_record_carries_the_stored_scalars_into_the_report(
+        self,
+        make_game: MakeGame,
+        session_factory: async_sessionmaker[AsyncSession],
+        tmp_path: Path,
+    ) -> None:
+        """259 D-05/D-15: material_loss, material_missed and the reply probability reach the report."""
+        game_id = await make_game()
+        # The seeded row has no missed gain; store a loss and a missed gain of both kinds on it.
+        async with session_factory() as session:
+            await session.execute(
+                update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == USER_BLUNDER_PLY)
+                .values(
+                    material_loss=STORED_MATERIAL_LOSS,
+                    material_missed=STORED_MATERIAL_MISSED,
+                    maia_best_reply_prob=STORED_REPLY_PROB,
+                )
+            )
+            await session.commit()
+            batch = await collect_records(session, [game_id])
+        [blunder] = batch.blunders
+        assert blunder.material_loss == pytest.approx(STORED_MATERIAL_LOSS)
+        assert blunder.material_missed == pytest.approx(STORED_MATERIAL_MISSED)
+        assert blunder.maia_best_reply_prob == pytest.approx(STORED_REPLY_PROB)
+        # Loss 2.5 and missed 1.25 (>= MIN_MISSED_GAIN): the type comes from the scalars alone.
+        assert blunder_material_type(blunder) == "loses_and_misses"
+
+        collection = Collection(
+            meta=RunMeta(db_name="test", date="2026-11-21", games_sampled=1),
+            games=batch.games,
+            blunders=batch.blunders,
+        )
+        report = render_report(collection, ReportParams())
+        pooled = _rows(report.split("## Pass shares by material type")[1].split("###")[0])
+        by_type = {row[0]: row for row in pooled}
+        assert by_type["loses_and_misses"][1] == "1"
+        # The proxy table shows the reply probability next to the spread.
+        assert "median best-reply prob" in report
+
+        path = tmp_path / "cache.json"
+        write_cache(collection, path)
+        restored = read_cache(path).blunders[0]
+        assert (
+            restored.material_loss,
+            restored.material_missed,
+            restored.maia_best_reply_prob,
+        ) == (blunder.material_loss, blunder.material_missed, blunder.maia_best_reply_prob)
 
     @pytest.mark.asyncio
     async def test_blunder_without_a_stored_line_is_recorded_as_such(
@@ -416,6 +457,35 @@ DEFAULT_PLAYED_3 = -3
 # Best-move probability of a no-loss blunder that must stay scored under best_prob_for_misses
 # (254 WR-01 / 256 D-04: a pure miss without a best-move probability is unscored).
 DEFAULT_BEST_PROB = 0.2
+# Best-reply probability of a default (losing) blunder: a scored row needs one (259 D-08). A likely
+# reply keeps the default blunder above the 0.70 test threshold even with a likely played move.
+DEFAULT_REPLY_PROB = 0.9
+
+
+def _line_material_loss(
+    played_material: tuple[int | None, ...] | None, mate_ply: int | None
+) -> float | None:
+    """The loss a stored depth-3 line gives (the write-time rule's depth-3 reading)."""
+    return material_loss(
+        played_material, mate_ply, material_input="depth_3", loss_floor=FACEPALM_LOSS_FLOOR
+    )
+
+
+def _line_material_missed(
+    played_material: tuple[int | None, ...] | None,
+    best_material: tuple[int | None, ...] | None,
+    best_mate_ply: int | None,
+) -> float:
+    """The missed gain a stored depth-3 line pair gives."""
+    return material_missed(
+        played_material,
+        best_material,
+        best_mate_ply,
+        material_input="depth_3",
+        missed_floor=FACEPALM_MISSED_FLOOR,
+        missed_cap=FACEPALM_MISSED_CAP,
+        missed_mate=FACEPALM_MISSED_MATE,
+    )
 
 
 def _blunder(
@@ -430,6 +500,9 @@ def _blunder(
     best_mate_ply: int | None = None,
     best_prob: float | None = _UNSET,
     pre_spread: float | None = None,
+    material_loss: float | None = _UNSET,
+    material_missed: float | None = _UNSET,
+    reply_prob: float | None = _UNSET,
     has_line: bool = True,
     preceding: list[MoveJudgement] | None = None,
     es_before: float | None = MID_ES,
@@ -439,31 +512,59 @@ def _blunder(
 ) -> BlunderRecord:
     """A user blunder holding facts; the defaults give a scored one that qualifies at PARAMS.
 
-    `score` seeds the facts (prob, spread, played_3) so the computed score lands within
-    SEED_FACEPALM_TOLERANCE of it (None = an unscored fact set); any fact passed explicitly
-    overrides the seeded or default one. `best_prob` defaults to the seeded one with a `score`
-    (so a seeded no-loss row stays scored) and to None otherwise; pass None to keep it unknown.
+    `score` seeds the scalar inputs (played prob, loss, missed, the key-move probability) through
+    `facepalm_fact_columns` so the computed score lands within SEED_FACEPALM_TOLERANCE of it
+    (None = an unscored fact set); any fact passed explicitly overrides the seeded or default one.
+    `best_prob` defaults to the seeded one with a `score` and to None otherwise, `reply_prob` to the
+    seeded one or DEFAULT_REPLY_PROB (a losing row reads the reply, a no-loss row the best move;
+    pass None to keep one unknown). `material_loss` / `material_missed` default to what the stored
+    depth-3 line gives (`played_3`, `best_3` and the mate plies), so a default blunder loses three
+    points; pass them to set the material type directly. The record's arrays and spread are kept
+    for the report sections that still read them.
     """
     facts: dict[str, Any] = {
         "played_prob": DEFAULT_PLAYED_PROB,
         "spread": DEFAULT_SPREAD,
-        "played_material": single_depth_material(DEFAULT_PLAYED_3),
+        "played_material": lone_depth_line(DEFAULT_PLAYED_3),
         "best_prob": None,
+        "reply_prob": DEFAULT_REPLY_PROB,
     }
+    seeded_scalars: dict[str, Any] = {}
     if score is not _UNSET:
         seeded = facepalm_fact_columns(score, lam=FACEPALM_DRILL_LAMBDA)
+        seeded_scalars = {"material_loss": seeded["material_loss"]}
+        seeded_loss = seeded["material_loss"]
         facts = {
             "played_prob": seeded["maia_played_prob"],
-            "spread": seeded["maia_reply_spread"],
-            # The seeded array is kept whole (Phase 256: the record scores the full line).
-            "played_material": _as_tuple(seeded["played_line_material"]),
+            "spread": DEFAULT_SPREAD,
+            "played_material": lone_depth_line(
+                0 if seeded_loss is None else -int(round(seeded_loss))
+            ),
             "best_prob": seeded["maia_best_prob"],
+            "reply_prob": seeded["maia_best_reply_prob"],
         }
-    for key, value in (("played_prob", played_prob), ("spread", spread), ("best_prob", best_prob)):
+    for key, value in (
+        ("played_prob", played_prob),
+        ("spread", spread),
+        ("best_prob", best_prob),
+        ("reply_prob", reply_prob),
+    ):
         if value is not _UNSET:
             facts[key] = value
     if played_3 is not _UNSET:
         facts["played_material"] = _line_of(played_3)
+    if material_loss is _UNSET:
+        if score is not _UNSET and played_3 is _UNSET:
+            material_loss = seeded_scalars["material_loss"]
+        else:
+            # No explicit or seeded loss: read it off the depth-3 line, like the write-time rule.
+            material_loss = _line_material_loss(facts["played_material"], mate_ply)
+    if material_missed is _UNSET:
+        material_missed = (
+            None
+            if material_loss is None
+            else _line_material_missed(facts["played_material"], _line_of(best_3), best_mate_ply)
+        )
     return BlunderRecord(
         game_id=1,
         ply=20,
@@ -485,6 +586,9 @@ def _blunder(
         maia_pre_spread=pre_spread,
         has_line=has_line,
         preceding=preceding or [],
+        material_loss=material_loss,
+        material_missed=material_missed,
+        maia_best_reply_prob=facts["reply_prob"],
     )
 
 
@@ -588,30 +692,13 @@ class TestBlunderRecordFacts:
     """254 D-01 / D-03: the record holds facts and scores them with the checkout's model."""
 
     def test_blunder_record_scores_from_facts(self) -> None:
-        blunder = _blunder(
-            played_prob=0.03,
-            spread=3.0,
-            played_3=-2,
-            best_3=4,
-            best_mate_ply=None,
-            best_prob=0.5,
-            pre_spread=6.0,
-        )
-        expected = facepalm_score(
-            FacepalmFacts(
-                played_prob=0.03,
-                reply_spread=3.0,
-                played_material=single_depth_material(-2),
-                mate_ply=None,
-                best_material=single_depth_material(4),
-                best_mate_ply=None,
-                best_prob=0.5,
-                pre_spread=6.0,
-            ),
-            lam=FACEPALM_DRILL_LAMBDA,
-        )
-        assert expected is not None
-        assert blunder.facepalm_score == pytest.approx(expected)
+        # Facts seeded by `facepalm_fact_columns` score the requested value on the record, so
+        # the check does not depend on which inputs the twin reads.
+        for target in (0.3, 0.6, QUALIFYING_SCORE):
+            assert _blunder(score=target).facepalm_score == pytest.approx(
+                target, abs=SEED_FACEPALM_TOLERANCE
+            )
+        assert _blunder(score=None).facepalm_score is None
 
     def test_blunder_without_a_played_line_or_mate_is_unscored(self) -> None:
         assert _blunder(played_3=None).facepalm_score is None
@@ -649,15 +736,27 @@ class TestSectionMaterialTypes:
     def _collection(self) -> Collection:
         return Collection(
             blunders=[
-                _blunder(played_3=-3),  # loses
-                _blunder(played_3=0, best_3=3, best_prob=DEFAULT_BEST_PROB),  # misses
-                _blunder(played_3=-3, best_3=2),  # loses and misses
+                _blunder(played_3=-3, material_loss=3.0, material_missed=0.0),  # loses
+                _blunder(
+                    played_3=0,
+                    best_3=3,
+                    best_prob=DEFAULT_BEST_PROB,
+                    material_loss=0.0,
+                    material_missed=3.0,
+                ),  # misses
+                _blunder(played_3=-3, best_3=2, material_loss=3.0, material_missed=2.0),
                 # neither: an easy-to-find move (high played prob, wide spread) so it stays low
                 # under the refit; the default p 0.05 / spread 2 scores 0.60 there.
                 _blunder(
-                    played_3=0, best_3=0, played_prob=0.5, spread=8.0, best_prob=DEFAULT_BEST_PROB
+                    played_3=0,
+                    best_3=0,
+                    played_prob=0.5,
+                    spread=8.0,
+                    best_prob=DEFAULT_BEST_PROB,
+                    material_loss=0.0,
+                    material_missed=0.0,
                 ),
-                _blunder(played_3=None),  # unknown: no played line, no mate
+                _blunder(played_3=None, material_loss=None, material_missed=None),  # unknown
             ]
         )
 
@@ -681,7 +780,10 @@ class TestSectionMaterialTypes:
         assert by_type["unknown"]["pass >= 0.50"] == "n/a (n=0)"
 
     def test_per_elo_bucket_table_follows_the_pooled_one(self) -> None:
-        blunders = [_blunder(played_3=-3, bucket="<800"), _blunder(played_3=0, best_3=0)]
+        blunders = [
+            _blunder(played_3=-3, bucket="<800", material_loss=3.0, material_missed=0.0),
+            _blunder(played_3=0, best_3=0, material_loss=0.0, material_missed=0.0),
+        ]
         section = section_material_types(Collection(blunders=blunders), PARAMS)
         by_bucket = section.split("### By Elo bucket")[1]
         rows = _rows(by_bucket)
@@ -1007,15 +1109,18 @@ class TestCacheRoundTrip:
         restored = read_cache(path)
         assert restored.blunders == collection.blunders
 
-    def test_cache_version_3_is_refused(self, tmp_path: Path) -> None:
-        # T-256-04: a version 3 cache holds depth-3 material only, which an aggregate model
-        # would score as depth 3 on every input; it must be re-sampled.
+    @pytest.mark.parametrize("old_version", [3, 4])
+    def test_an_older_cache_is_refused(self, tmp_path: Path, old_version: int) -> None:
+        # T-256-04 / T-259-19: a version 3 cache holds depth-3 material only and a version 4
+        # cache lacks the Phase 259 stored scalars; both must be re-sampled.
         path = tmp_path / "cache.json"
         write_cache(Collection(blunders=[_blunder()]), path)
         raw = json.loads(path.read_text())
-        raw["version"] = 3
+        raw["version"] = old_version
         path.write_text(json.dumps(raw))
-        with pytest.raises(ValueError, match=r"unsupported cache version 3.*version 4"):
+        with pytest.raises(
+            ValueError, match=rf"unsupported cache version {old_version}.*version {CACHE_VERSION}"
+        ):
             read_cache(path)
 
     def test_cache_round_trips_every_fact_and_stores_no_score(self, tmp_path: Path) -> None:
@@ -1026,6 +1131,9 @@ class TestCacheRoundTrip:
             best_mate_ply=2,
             best_prob=0.41,
             pre_spread=5.5,
+            material_loss=2.25,
+            material_missed=0.75,
+            reply_prob=0.18,
         )
         path = tmp_path / "cache.json"
         write_cache(Collection(blunders=[blunder]), path)
@@ -1035,10 +1143,13 @@ class TestCacheRoundTrip:
         assert restored == blunder
         assert (restored.played_3, restored.best_3, restored.best_mate_ply) == (-2, 3, 2)
         # Phase 256 (CACHE_VERSION 4): both full arrays come back as tuples.
-        assert restored.played_material == single_depth_material(-2)
-        assert restored.best_material == single_depth_material(3)
-        assert stored["played_material"] == list(single_depth_material(-2))
+        assert restored.played_material == lone_depth_line(-2)
+        assert restored.best_material == lone_depth_line(3)
+        assert stored["played_material"] == list(lone_depth_line(-2))
         assert (restored.maia_best_prob, restored.maia_pre_spread) == (0.41, 5.5)
+        # Phase 259 (CACHE_VERSION 5): the stored scalars come back as they were written.
+        assert (restored.material_loss, restored.material_missed) == (2.25, 0.75)
+        assert restored.maia_best_reply_prob == 0.18
 
 
 class TestUserGroupAggregates:
@@ -1528,6 +1639,9 @@ class TestRenderSpotCheck:
             spread=2.46,
             played_3=-4,
             mate_ply=None,
+            material_loss=3.5,
+            material_missed=0.0,
+            reply_prob=0.27,
         )
         assert blunder.facepalm_score is not None
         text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
@@ -1540,8 +1654,8 @@ class TestRenderSpotCheck:
             "`answerfen`",
             "**Refutation:** b5.",
             f"**Score inputs:** facepalm score {blunder.facepalm_score:.3f}, "
-            "played prob 0.031, reply spread 2.46, "
-            "played material 3 -4, mate ply n/a",
+            "played prob 0.031, material loss 3.500, material missed 0.000, "
+            "reply prob 0.270, mate ply n/a",
             "pinned Maia Elo 1500",
             "### 1200-1599",
         ):
@@ -1557,26 +1671,29 @@ class TestRenderSpotCheck:
             best_3=3,
             best_prob=0.62,
             pre_spread=4.5,
+            material_loss=1.0,
+            material_missed=2.75,
         )
         text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
-        # missed gain = best_3 - max(0, played_3) = 3.
+        # The stored missed gain is printed as is, not recomputed from the arrays.
         assert (
-            "**Missed inputs:** best material 3 3, missed gain 3, best move prob 0.620, "
+            "**Missed inputs:** missed gain 2.750, best move prob 0.620, "
             "pre-blunder spread 4.50" in text_out
         )
-        assert "played material 3 -1" in text_out
+        assert "material loss 1.000, material missed 2.750" in text_out
 
-    def test_spot_check_marks_an_unknown_best_line(self) -> None:
-        text_out = render_spot_check(
-            [_detail(_blunder(case="pure_miss", best_3=None))], SpotCheckParams(PARAMS, 20)
-        )
-        assert "best material 3 n/a, missed gain n/a" in text_out
+    def test_spot_check_marks_an_unscored_blunder(self) -> None:
+        # The NULL pair (259 D-04) prints n/a for both stored scalars.
+        blunder = _blunder(case="pure_miss", best_3=None, material_loss=None, material_missed=None)
+        text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
+        assert "**Missed inputs:** missed gain n/a" in text_out
+        assert "material loss n/a, material missed n/a" in text_out
 
     def test_pure_miss_prints_the_missed_best_move_with_its_maia_pair(self) -> None:
         blunder = _blunder(case="pure_miss", mate_ply=3, played_3=None)
         text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
         assert "**Missed best move:** d3." in text_out
-        assert "played material 3 n/a, mate ply 3" in text_out
+        assert "mate ply 3" in text_out
         assert "**Refutation:**" not in text_out
 
     def test_herring_says_all_safe(self) -> None:
@@ -1686,7 +1803,7 @@ class TestRecommendedConstants:
         section = section_recommended_constants(Collection(blunders=self._blunders()), params)
         rows = {r[0]: r for r in _rows(section)}
         # Columns: threshold, pass of scored, pass of all, median played prob, median spread,
-        # mate or >= 2 points down, median usable windows per user.
+        # median best-reply prob, mate or >= 2 points down, median usable windows per user.
         assert set(rows) == {"0.50", "0.60", "0.65", "0.70", "0.80"}
         blunders = self._blunders()
         scored = blunders[:4]
@@ -1697,7 +1814,10 @@ class TestRecommendedConstants:
         assert rows["0.80"][3] == f"{top.maia_played_prob:.3f}"
         assert rows["0.80"][4] == f"{top.maia_reply_spread:.2f}"
         punished = top.played_3 is not None and -top.played_3 >= FAIR_LOSS_MIN
-        assert rows["0.80"][5] == ("100.0% (n=1)" if punished else "0.0% (n=1)")
+        # The seeded losing blunder stores its solved reply probability, which is the median.
+        assert top.maia_best_reply_prob is not None
+        assert rows["0.80"][5] == f"{top.maia_best_reply_prob:.3f}"
+        assert rows["0.80"][6] == ("100.0% (n=1)" if punished else "0.0% (n=1)")
         assert "89%" in section  # the owner's label anchor at 0.7
 
     def test_threshold_with_no_passers_prints_na(self) -> None:
@@ -1705,4 +1825,4 @@ class TestRecommendedConstants:
         section = section_recommended_constants(Collection(blunders=self._blunders()), params)
         row = next(r for r in _rows(section) if r[0] == "0.99")
         assert row[1] == "0.0% (n=4)"
-        assert row[3:6] == ["n/a", "n/a", "n/a (n=0)"]
+        assert row[3:7] == ["n/a", "n/a", "n/a", "n/a (n=0)"]

@@ -2740,7 +2740,7 @@ class TestFacepalmBuildFlawFilterClauses:
     def test_narrowed_clause_references_the_fact_columns(self, band: tuple[int, int]) -> None:
         """A narrowed range reads the facts, never the stored score column (D-01)."""
         sql = _compile_facepalm_clauses(*band)
-        assert "played_line_material" in sql, sql
+        assert "material_loss" in sql, sql
         assert "maia_played_prob" in sql, sql
         assert "facepalm_score" not in sql, sql
 

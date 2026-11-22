@@ -26,6 +26,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Facepalm score: refitted on how a player reads the lines. An even trade in the engine's line no longer counts as a missed win, and how likely a player at your level was to see the punishing reply now enters the score. Facepalm chips, the Facepalm filter, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
 - Internal: each blunder now also stores the facepalm score's material inputs and how likely a player at the blunderer's level was to find the punishing reply, groundwork for the facepalm score refit (no visible change yet).
 - Activity dashboard: the Train sessions section is split into Personalized Puzzles and Blunder Check, and Blunder Check gets its own cards for sessions per day by outcome, sequences judged per day, score % over time and the daily mix of cleared, caught, missed and false-alarm sequences. The guest Train note is gone. (quick 261120-c1x)
 - Activity dashboard: a new Blunder Check card compares red herrings with blunder sequences, and own games with foreign games, as outcome shares over the selected range, so it is visible which kind is easier to get right.

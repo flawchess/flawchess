@@ -1002,21 +1002,18 @@ def _row_score(flaw: FlawMaiaInput, row: Mapping[str, Any]) -> float | None:
 
     Nothing stores the score any more; this only feeds the backfill report's scored count. It
     scores the row's facts with the Python twin at the drill's lambda, falling back to the stored
-    inputs for the keys a spread or line row does not write. A pre-mode row carries no line facts
-    and scores None.
+    inputs for the keys a spread or line row does not write. A pre-mode or reply-mode row carries
+    no stored material scalars and scores None.
     """
-    if "played_line_material" not in row:
+    if "material_loss" not in row:
         return None
     return facepalm_score(
         FacepalmFacts(
             played_prob=_row_value(row, "maia_played_prob", flaw.stored_played_prob),
-            reply_spread=_row_value(row, "maia_reply_spread", flaw.stored_reply_spread),
-            played_material=row["played_line_material"],
-            mate_ply=row["line_mate_ply"],
-            best_material=row["best_line_material"],
-            best_mate_ply=row["best_line_mate_ply"],
+            loss=row["material_loss"],
+            missed=row["material_missed"],
             best_prob=_row_value(row, "maia_best_prob", flaw.stored_best_prob),
-            pre_spread=_row_value(row, "maia_pre_spread", flaw.stored_pre_spread),
+            reply_prob=_row_value(row, "maia_best_reply_prob", flaw.stored_best_reply_prob),
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )

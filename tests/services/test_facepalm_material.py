@@ -7,9 +7,6 @@ Coverage:
 - stable    : first_stable (256 D-06, A1): the first confirmed odd-depth value, discounted by its onset
 - mates     : a mate within LINE_DEPTH short-circuits both inputs (A2), a later mate enters per depth
 - coverage  : D-03, every material input leaves a row without a depth-3 slot unscored
-- gate      : D-11, `loses` and its SQL twin at gate None and 1.0
-- single    : single_depth_material scores like the depth-3 scalar under every input
-The SQL builders are pinned against these functions in tests/services/test_facepalm_score.py.
 """
 
 from __future__ import annotations
@@ -17,9 +14,6 @@ from __future__ import annotations
 from typing import get_args
 
 import pytest
-from sqlalchemy import SmallInteger, column
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import ARRAY
 
 from app.services.blunder_check_rules import (
     LINE_DEPTH,
@@ -32,16 +26,9 @@ from app.services.facepalm_material import (
     MATERIAL_DECAY_WEIGHTS,
     MATERIAL_DEPTHS,
     decaying_mean,
-    decaying_mean_sql,
     first_stable,
-    first_stable_sql,
     gain_by_depth,
-    gain_by_depth_sql,
-    loses,
-    loses_sql,
     loss_by_depth,
-    loss_by_depth_sql,
-    single_depth_material,
 )
 from app.services.facepalm_score import material_loss, material_missed
 
@@ -113,15 +100,6 @@ def test_first_stable_values() -> None:
     # A None next to a value never forms a stable pair.
     assert first_stable((2, None, 2, 2, None)) == 2 * 0.25
     assert first_stable((2, None, 2, None, None)) == 2 * 0.25
-
-
-def test_first_stable_sql_is_one_scalar_expression() -> None:
-    played = column("played", ARRAY(SmallInteger))
-    mate = column("mate", SmallInteger)
-    expression = first_stable_sql(loss_by_depth_sql(played, mate, loss_floor=0))
-    compiled = str(expression.compile(dialect=postgresql.dialect())).lower()
-    assert "unnest" not in compiled
-    assert "select" not in compiled
 
 
 def test_loss_series_reads_odd_slots_caps_and_floors() -> None:
@@ -221,74 +199,3 @@ def test_coverage_requires_depth_3_for_every_input(material_input: MaterialInput
     best = array(4, 4, 4, 4, 4)
     for played in (None, short, no_depth_3):
         assert _missed(played, best, None, material_input) == 0.0
-
-
-@pytest.mark.parametrize("material_input", ALL_INPUTS)
-def test_single_depth_material_scores_like_the_depth_3_scalar(
-    material_input: MaterialInput,
-) -> None:
-    played = single_depth_material(-3)
-    best = single_depth_material(4)
-    assert played == (None, None, -3, None, None, None, None, None, None)
-    # first_stable has no stable pair on a lone depth-3 slot, so it discounts that slot by its
-    # onset index (depth 3 is index 1, weight 1/2); the other inputs read it as it is.
-    discount = MATERIAL_DECAY_WEIGHTS[1] if material_input == "first_stable" else 1.0
-    assert _loss(list(played), None, material_input) == 3.0 * discount
-    assert _missed(list(played), list(best), None, material_input) == 4.0 * discount
-    assert _loss(list(single_depth_material(None)), None, material_input) is None
-    assert single_depth_material(5, depth=1)[0] == 5
-
-
-def test_loses_is_the_gate_function() -> None:
-    assert loses(0.5, None) is True
-    assert loses(0.0, None) is False
-    assert loses(-1.0, None) is False
-    assert loses(0.5, 1.0) is False
-    assert loses(1.0, 1.0) is True
-    assert loses(2.0, 1.0) is True
-
-
-def test_loss_gate_none_counts_any_positive_loss() -> None:
-    # A decaying-mean loss of about 0.52 (one pawn at depth 1 only) loses under gate None.
-    half = _loss(array(-1, 0, 0, 0, 0), None, "decaying_mean")
-    assert half is not None and 0.0 < half < 1.0
-    assert loses(half, None) is True
-
-
-def test_loss_gate_one_needs_a_loss_of_at_least_one() -> None:
-    half = _loss(array(-1, 0, 0, 0, 0), None, "decaying_mean")
-    assert half is not None
-    assert loses(half, 1.0) is False
-    # A constant one-pawn loss averages exactly 1.0 and is losing under both gates (A4: `>=`).
-    constant = _loss(array(-1, -1, -1, -1, -1), None, "decaying_mean")
-    assert constant is not None and constant == 1.0
-    assert loses(constant, None) is True
-    assert loses(constant, 1.0) is True
-
-
-def test_loss_gate_sql_twin_compiles_both_comparisons() -> None:
-    mate = column("mate", SmallInteger)
-    assert " > " in str(loses_sql(mate, None).compile(dialect=postgresql.dialect()))
-    assert " >= " in str(loses_sql(mate, 1.0).compile(dialect=postgresql.dialect()))
-
-
-def test_sql_builders_are_unrolled_scalar_expressions() -> None:
-    # T-256-03: no unnest and no subquery, so readers bind the expression once per query.
-    played = column("played", ARRAY(SmallInteger))
-    best = column("best", ARRAY(SmallInteger))
-    mate = column("mate", SmallInteger)
-    series = loss_by_depth_sql(played, mate, loss_floor=0)
-    gains = gain_by_depth_sql(
-        played, best, mate, missed_floor=0, missed_cap=LOSS_CAP, missed_mate=MISSED_MATE_VALUE
-    )
-    assert len(series) == len(gains) == len(MATERIAL_DEPTHS)
-    expressions = (
-        decaying_mean_sql(series),
-        decaying_mean_sql(gains),
-        loses_sql(series[0], None),
-        loses_sql(series[0], 1.0),
-    )
-    for expression in expressions:
-        compiled = str(expression.compile(dialect=postgresql.dialect())).lower()
-        assert "unnest" not in compiled
-        assert "select" not in compiled

@@ -30,6 +30,7 @@ from scripts.blunder_check.metrics import (
     LEAD_IN_PLIES,
     MAX_BLUNDER_POSITION,
     MAX_MISS_SHARE,
+    MIN_MISSED_GAIN,
     WINDOW_LENGTHS,
     EloBucket,
     MaterialType,
@@ -42,7 +43,7 @@ from scripts.blunder_check.metrics import (
     estimated_user_windows,
     herring_flags,
     in_band,
-    material_type,
+    material_type_of,
     weighted_fit_share,
 )
 from scripts.blunder_check.metrics import quartiles
@@ -951,6 +952,7 @@ def _proxy_row(
     passers = qualifying_blunders(scored, at)
     probs = [b.maia_played_prob for b in passers if b.maia_played_prob is not None]
     spreads = [b.maia_reply_spread for b in passers if b.maia_reply_spread is not None]
+    reply_probs = [b.maia_best_reply_prob for b in passers if b.maia_best_reply_prob is not None]
     supply = user_supply(collection, at, None)
     windows = percentile([blunder for blunder, _ in supply], 50)
     return [
@@ -959,6 +961,7 @@ def _proxy_row(
         fmt_share(len(passers), len(blunders)),
         _median_cell(probs),
         _median_cell(spreads, 2),
+        _median_cell(reply_probs),
         fmt_share(sum(1 for b in passers if _loses_material(b)), len(passers)),
         "n/a" if windows is None else f"{windows:.1f}",
     ]
@@ -976,6 +979,7 @@ def section_recommended_constants(collection: Collection, params: ReportParams) 
         "pass of all",
         "median played prob",
         "median reply spread",
+        "median best-reply prob",
         f"mate or >= {FAIR_LOSS_MIN} points down",
         "median usable windows per user",
     ]
@@ -1026,8 +1030,13 @@ def section_recommended_constants(collection: Collection, params: ReportParams) 
 
 
 def blunder_material_type(b: BlunderRecord) -> MaterialType:
-    """What the blunder does to the material balance: loses, misses, both, neither, unknown (D-13)."""
-    return material_type(b.played_3, b.line_mate_ply, b.best_3, b.best_mate_ply)
+    """What the blunder does to the material balance: loses, misses, both, neither, unknown (D-13).
+
+    Read from the stored scalars (259 D-03, D-05). The NULL pair means loss and missed are both
+    None together, so a missing `missed` only occurs with a missing `loss` (type unknown).
+    """
+    missed = 0.0 if b.material_missed is None else b.material_missed
+    return material_type_of(b.material_loss, missed)
 
 
 def _material_row(
@@ -1083,10 +1092,10 @@ def section_material_types(collection: Collection, params: ReportParams) -> str:
             "## Pass shares by material type",
             "",
             "User-side blunders of rated, non-guest games by what they do to the material "
-            f"balance over {LINE_DEPTH} plies (D-13): *loses* = mated or ending behind on the "
-            "played line, *misses* = the best line gains material the played line did not keep "
-            "(or mates), *loses and misses* = both, *neither*, and *unknown* = the played line "
-            "is too short to tell and holds no mate. Scores use the drill lambda "
+            "balance (D-13), read from the stored decaying-mean inputs (259 D-03): *loses* = the "
+            "played line loses material or mates, *misses* = the best line gains material "
+            f"(at least {MIN_MISSED_GAIN}) or mates, *loses and misses* = both, *neither*, and "
+            "*unknown* = no loss input is stored. Scores use the drill lambda "
             f"({FACEPALM_DRILL_LAMBDA}) and the model in this checkout, computed from the stored "
             "facts. `scored` is the share of the type with a score; each `pass` column is the "
             "share of those scored blunders at or above the cut; the last column is the type's "

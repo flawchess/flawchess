@@ -88,8 +88,7 @@ PvSource = Literal["cache", "cache_none", "db", "db_none"]
 PLAYED_MAT_COLUMNS: tuple[str, ...] = tuple(f"played_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
 BEST_MAT_COLUMNS: tuple[str, ...] = tuple(f"best_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
 
-# The facts schema (Phase 254). The committed 2026-11-13 table uses the older "legacy" schema
-# (line_loss_N columns) that fit_facepalm.py still reads.
+# The facts schema (Phase 254), the leading columns of the scalar table below.
 FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
     "n",
     "set",
@@ -112,8 +111,8 @@ FACTS_FEATURE_COLUMNS: tuple[str, ...] = (
     "note",
 )
 
-# Phase 259 D-07, D-12: appended after the facts schema, so `fit_facepalm.load_features` still reads
-# the table as its "facts" schema (it picks columns by name and ignores the extras). `reply_uci` /
+# Phase 259 D-07, D-12: appended after the facts schema; `fit_facepalm.load_features` picks the
+# scalar columns (`loss`, `missed`, `reply_prob` and the probabilities) by name. `reply_uci` /
 # `reply_prob` are Maia's probability of the first token of the stored refutation line, from the same
 # post-blunder policy call as `reply_spread`; `loss` / `missed` are the stored inputs under the quiet
 # rule (`facepalm_material_inputs`), `*_shipped` the same aggregation over the shipped rule's facts;

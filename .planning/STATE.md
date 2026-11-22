@@ -4,16 +4,16 @@ milestone: v2.29
 current_phase: 259
 current_phase_name: Facepalm Score Refit on First Principles (SEED-261121-tau)
 status: executing
-stopped_at: Completed 259-05-PLAN.md
-last_updated: "2026-11-21T19:06:40.854Z"
+stopped_at: Completed 259-10-PLAN.md
+last_updated: "2026-11-22T11:41:45.892Z"
 last_activity: 2026-11-21
 last_activity_desc: Phase 259 execution started
-state_head: d3de059dd23a0752b449bb8dcd55d5483208ae09
+state_head: 6e4fbd4240b110d97980e2997dceb28bce715b9a
 progress:
   total_phases: 13
   completed_phases: 63
   total_plans: 120
-  completed_plans: 108
+  completed_plans: 113
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,7 +22,7 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 ## Current Position
 
 Phase: 259 (Facepalm Score Refit on First Principles (SEED-261121-tau)) — EXECUTING
-Plan: 7 of 15
+Plan: 12 of 15
 
 Status: Ready to execute
 
@@ -977,6 +977,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 259]: 259-02: FEATURE_COLUMNS = facts columns + ten appended quiet columns; review drift check rounds recomputed values to the TSV's 6 significant digits first
 - [Phase 259]: FULL_ROW_COLUMNS is the single statement of the full-mode key set; maia_best_reply_prob lives in FACEPALM_REPLY_COLUMNS outside FACEPALM_COLUMNS so line mode cannot null it (Pitfall 4)
 - [Phase 259]: 259-05: reply mode scope is blunders of both sides with a stored played probability; its stamp facepalm_reply_completed_at is the checkpoint and full mode sets it with the other four
+- [Phase 259]: 259-07: fit design columns follow CONSTANT_NAMES order (best_prob before reply_prob); D-12 range check compares 5-seed mean CV AUC; open question 6 retired (no legacy fit copy)
+- [Phase 259]: 259-08: _facepalm_facts keeps the old-line twin arguments for plan 09 to swap; reply probability shown as a proxy-table column; spot check score line drops reply spread and played material 3
+- [Phase 259]: 259-09: facepalm twin switched to the five stored scalars; constants fitted on the plan 03 table and proven with --check-constants (exit 0); covering-index coverage test is a strict xfail until plan 10
+- [Phase 259]: 259-10: ix_game_flaws_facepalm_inputs built from the compiled ORM index (CIC IF NOT EXISTS); operator script verifies indisvalid and exact pg_get_indexdef; old index stays until plan 14
 
 ### Pending Todos
 
@@ -1235,8 +1239,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-21T16:53:34.082Z
-**Stopped at:** Completed 259-05-PLAN.md
+**Last session:** 2026-11-21T20:42:00.233Z
+**Stopped at:** Completed 259-10-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1534,6 +1538,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 259 P02 | 35 min | 2 tasks | 4 files |
 | Phase 259 P04 | 22 min | 2 tasks | 7 files |
 | Phase 259 P05 | 20 min | 2 tasks | 8 files |
+| Phase 259 P07 | 45 min | 3 tasks | 5 files |
+| Phase 259 P08 | 8 min | 2 tasks | 8 files |
+| Phase 259 P09 | 36 min | 3 tasks | 17 files |
+| Phase 259 P10 | 25 min | 2 tasks | 10 files |
 
 ## Performance Metrics
 

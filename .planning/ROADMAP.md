@@ -778,7 +778,7 @@ seed.
 **Depends on**: Phase 256 (the current model and fit script) and Phase 252's prod line repair (finished, residual
 pass 2026-11-18). Independent of Phase 258; built in its own worktree.
 **Requirements**: TBD
-**Plans:** 6/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
+**Plans:** 11/15 plans executed (three releases: R1 dual-write, switch, human-gated drop)
 
 Plans:
 **Wave 1**
@@ -800,19 +800,19 @@ Plans:
 - [x] 259-06-PLAN.md — R1 release, prod line pass, reply pass launch; branch and checkout map
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 259-07-PLAN.md — fixed-shape fit tool on the scalar inputs (D-01), fit tests trimmed
+- [x] 259-07-PLAN.md — fixed-shape fit tool on the scalar inputs (D-01), fit tests trimmed
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 259-08-PLAN.md — calibration chain and miss labels on the stored inputs
+- [x] 259-08-PLAN.md — calibration chain and miss labels on the stored inputs
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 259-09-PLAN.md — scalar score and type twins, constants, seed helper, score tests trimmed
+- [x] 259-09-PLAN.md — scalar score and type twins, constants, seed helper, score tests trimmed
 
 **Wave 10** *(blocked on Wave 9 completion)*
-- [ ] 259-10-PLAN.md — covering index ix_game_flaws_facepalm_inputs (D-17) and the SQL builder removal
+- [x] 259-10-PLAN.md — covering index ix_game_flaws_facepalm_inputs (D-17) and the SQL builder removal
 
 **Wave 11** *(blocked on Wave 10 completion)*
-- [ ] 259-11-PLAN.md — readiness gate, prod index build, refit and the D-15 owner checkpoint
+- [x] 259-11-PLAN.md — readiness gate, prod index build, refit and the D-15 owner checkpoint
 
 **Wave 12** *(blocked on Wave 11 completion)*
 - [ ] 259-12-PLAN.md — switch release, D-16 changelog, D-18 JIT re-measure

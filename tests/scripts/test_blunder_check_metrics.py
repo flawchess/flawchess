@@ -30,7 +30,7 @@ from scripts.blunder_check.metrics import (
     blunder_fits_position,
     blunder_position_marginals,
     in_band,
-    material_type,
+    material_type_of,
     miss_case,
     user_move_judgements,
 )
@@ -245,36 +245,25 @@ class TestFlawControl:
         assert flaw_control(all_moves, {3: 2, 5: 1}) == (0, 3)
 
 
-class TestMaterialType:
-    """Phase 254 D-13: what a blunder loses on the played line and misses on the best line."""
-
-    @pytest.mark.parametrize(
-        ("played_3", "mate_ply", "best_3", "best_mate_ply", "expected"),
-        [
-            (-5, None, 0, None, "loses"),
-            (5, None, 10, None, "misses"),
-            (-5, None, 3, None, "loses_and_misses"),
-            (0, None, 0, None, "neither"),
-            (None, 2, None, None, "loses"),  # mated within LINE_DEPTH
-            (0, None, None, 1, "misses"),  # the best line mates within LINE_DEPTH
-            (None, None, 4, None, "unknown"),  # unsettled played line, no mate
-            (None, 3, 4, None, "loses"),  # without a settled played line only a mate misses
-            (0, 5, 0, None, "neither"),  # a mate beyond LINE_DEPTH settles nothing
-            (0, None, 0, 4, "neither"),
-            (2, None, 3, None, "misses"),  # missed gain 1 is the minimum
-            (2, None, 2, None, "neither"),
-            (3, None, None, None, "neither"),  # unknown best line: nothing missed (D-18)
-        ],
-    )
-    def test_classification(
-        self,
-        played_3: int | None,
-        mate_ply: int | None,
-        best_3: int | None,
-        best_mate_ply: int | None,
-        expected: str,
-    ) -> None:
-        assert material_type(played_3, mate_ply, best_3, best_mate_ply) == expected
+class TestMaterialTypeOf:
+    """Phase 259 D-03: the material type from the stored loss and missed means."""
 
     def test_the_minimum_missed_gain_is_one(self) -> None:
         assert MIN_MISSED_GAIN == 1
+
+    @pytest.mark.parametrize(
+        ("loss", "missed", "expected"),
+        [
+            (None, 0.0, "unknown"),  # no settled line tells
+            (None, 3.0, "unknown"),
+            (1.5, 0.0, "loses"),
+            (0.0, 2.0, "misses"),
+            (2.4, 1.0, "loses_and_misses"),
+            (0.0, 0.0, "neither"),
+            (0.0, 0.9, "neither"),  # below MIN_MISSED_GAIN
+            (0.0, MIN_MISSED_GAIN, "misses"),  # the minimum gain is a miss
+            (0.2, 0.0, "loses"),  # any loss above 0 loses
+        ],
+    )
+    def test_classification(self, loss: float | None, missed: float, expected: str) -> None:
+        assert material_type_of(loss, missed) == expected

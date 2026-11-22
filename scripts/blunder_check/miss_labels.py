@@ -16,6 +16,11 @@ least ``MIN_STABLE_LINE_PLIES`` plies or end in mate, so Phase 252's repair of 1
 changes their features. Games already in the existing labels are excluded and the new rows get
 set id ``MISS_SET_ID`` so the two sets pool in one fit.
 
+Line facts and the material type follow the quiet-point rule (Phase 259 D-02, D-03): the odd depths
+come from ``quiet_line_facts`` / ``quiet_best_line_facts`` and the type is ``material_type_of`` on
+the stored decaying-mean loss and missed gain (``material_inputs_from_facts``), the same inputs the
+write-time hook stores. The sets labelled under the old depth-3 rule (7 and 8) are not redrawn.
+
 Everything here only reads (``make_readonly_engine``: read-only transactions, statement timeout,
 one connection). The analysis URLs are written to the sheet and never printed.
 
@@ -122,7 +127,12 @@ from app.schemas.normalization import Platform, TimeControlBucket  # noqa: E402
 from app.services import maia_engine  # noqa: E402
 from app.services.best_move_candidates import pinned_elo_for_mover  # noqa: E402
 from app.services.blunder_check_rules import LINE_DEPTH  # noqa: E402
-from app.services.line_material import LineFacts, best_line_facts, line_facts  # noqa: E402
+from app.services.facepalm_inputs import material_inputs_from_facts  # noqa: E402
+from app.services.line_material import (  # noqa: E402
+    LineFacts,
+    quiet_best_line_facts,
+    quiet_line_facts,
+)
 from app.services.maia_flaw_scoring import best_move_uci, replay_flaw_boards  # noqa: E402
 from app.services.maia_flaw_stats import pre_blunder_spread  # noqa: E402
 from app.services.normalization import is_correspondence_time_control  # noqa: E402
@@ -140,7 +150,7 @@ from scripts.blunder_check.facepalm_features import (  # noqa: E402
     PolicyFn,
     parse_labels,
 )
-from scripts.blunder_check.metrics import MaterialType, material_type  # noqa: E402
+from scripts.blunder_check.metrics import MaterialType, material_type_of  # noqa: E402
 from scripts.blunder_check.sample import CALIBRATION_PLATFORMS, make_readonly_engine  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -477,12 +487,13 @@ def build_candidate(
     """The derived values of one blunder, or None when it is dropped or not a sampled type.
 
     `pre_board` is the position before the blunder (never mutated) and `played_uci` the blunder.
-    Both stored lines must be stable (D-15); the material type is counted in `tally`. In "misses"
+    Both stored lines must be stable (D-15); the material type (quiet rule, 259 D-03) is counted
+    in `tally`. In "misses"
     mode only pure misses and mixed rows reach the Maia policy call; in "disagreement" mode pure
     misses and rows where depth 3 and the decaying mean disagree do.
     """
-    facts = line_facts(pre_board, played_uci, raw.refutation_pv)
-    best_facts = best_line_facts(pre_board, raw.best_pv)
+    facts = quiet_line_facts(pre_board, played_uci, raw.refutation_pv)
+    best_facts = quiet_best_line_facts(pre_board, raw.best_pv)
     stable = is_stable_line(
         raw.refutation_pv, ends_in_mate=_line_ends_in_mate(facts)
     ) and is_stable_line(raw.best_pv, ends_in_mate=_line_ends_in_mate(best_facts))
@@ -491,7 +502,8 @@ def build_candidate(
         return None
     tally.stable += 1
     played_3, best_3 = facts.material_at(LINE_DEPTH), best_facts.material_at(LINE_DEPTH)
-    kind = material_type(played_3, facts.mate_ply, best_3, best_facts.opponent_mate_ply)
+    inputs = material_inputs_from_facts(facts, best_facts)
+    kind = material_type_of(inputs.loss, 0.0 if inputs.missed is None else inputs.missed)
     tally.by_type[kind] += 1
     played_material = tuple(facts.material_array())
     best_material = tuple(best_facts.material_array())
@@ -507,11 +519,9 @@ def build_candidate(
     if not keep:
         return None
     pinned_elo = _pinned_elo(raw)
-    inputs = _pre_inputs(
-        pre_board, best_move_uci(raw.best_pv, raw.best_move), pinned_elo, policy_fn
-    )
-    if isinstance(inputs, str):
-        tally.dropped[inputs] += 1
+    pre = _pre_inputs(pre_board, best_move_uci(raw.best_pv, raw.best_move), pinned_elo, policy_fn)
+    if isinstance(pre, str):
+        tally.dropped[pre] += 1
         return None
     return MissCandidate(
         game_id=raw.game_id,
@@ -524,8 +534,8 @@ def build_candidate(
         missed=_missed_gain(played_3, best_3),
         played_mate_ply=facts.mate_ply,
         best_mate_ply=best_facts.opponent_mate_ply,
-        best_prob=inputs[0],
-        pre_spread=inputs[1],
+        best_prob=pre[0],
+        pre_spread=pre[1],
         material=kind,
         played_material=played_material,
         best_material=best_material,

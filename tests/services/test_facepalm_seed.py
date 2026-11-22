@@ -40,18 +40,17 @@ TARGETS = (
     BAND_EDGES[1] + SEED_FACEPALM_MARGIN,
     0.95,
 )
-_COMBINED_MODEL = FacepalmModel(
-    intercept=-1.4193,
+_NO_BEST_MODEL = FacepalmModel(
+    intercept=-4.0,
     played_coef=-0.6629,
-    spread_coef=-0.3304,
     loss_coef=1.157,
-    loss_floor=0,
-    material_form="combined",
-    missed_floor=None,
+    missed_coef=0.0,
+    best_prob_coef=0.0,
+    reply_prob_coef=0.0,
 )
 _MODELS = (
     pytest.param(FACEPALM_MODEL, id="shipped"),
-    pytest.param(_COMBINED_MODEL, id="combined"),
+    pytest.param(_NO_BEST_MODEL, id="no_key_move_term"),
 )
 
 

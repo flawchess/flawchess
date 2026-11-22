@@ -9,8 +9,9 @@ foreign) is not meaningful in a sample of everyone's games, so it is drawn but n
 
 Each window shows a FlawChess game link, the lead-in (`LEAD_IN_PLIES`), the judged user moves with the
 opponent replies, the answer (the blunder, or "all safe"), the refutation or missed best move and,
-for a blunder, the facepalm score inputs (score, played prob, reply spread, played material 3, mate
-ply) and the missed-gain inputs (best material 3, missed gain, best move prob, pre-blunder spread). The file may be shown to GM Noel Studer, so it carries only game links, ratings, moves and
+for a blunder, the facepalm score inputs as stored (score, played prob, material loss, material
+missed, best-reply prob, mate ply) and the missed-gain inputs (missed gain, best move prob,
+pre-blunder spread). The file may be shown to GM Noel Studer, so it carries only game links, ratings, moves and
 numbers: no FlawChess user ids, usernames or emails, and no second-person claim about whose move it
 was (a window may come from anyone's game, T-248-11). FlawChess game deep links are public (owner decision,
 SEED-261108-dk0), so a game id is not personal data.
@@ -41,7 +42,6 @@ from app.services.blunder_check_rules import (
     herring_flags,
 )
 from app.services.blunder_check_selection import MAX_SHAPE_REDRAWS
-from app.services.facepalm_score import FACEPALM_MODEL, missed_feature
 from scripts.blunder_check.metrics import (
     ELO_BUCKETS,
     WINDOW_LENGTHS,
@@ -477,26 +477,10 @@ def _es_text(es: float | None) -> str:
     return "n/a" if es is None else f"{es:.2f}"
 
 
-def _missed_gain(blunder: BlunderRecord) -> int | None:
-    """The missed-gain input (254 D-05) under the checkout's model; None when the best line is unknown."""
-    if blunder.best_3 is None and blunder.best_mate_ply is None:
-        return None
-    return int(
-        missed_feature(
-            blunder.played_3,
-            blunder.best_3,
-            blunder.best_mate_ply,
-            missed_floor=FACEPALM_MODEL.missed_floor,
-            missed_cap=FACEPALM_MODEL.missed_cap,
-            missed_mate=FACEPALM_MODEL.missed_mate,
-        )
-    )
-
-
 def _missed_inputs_line(blunder: BlunderRecord) -> str:
+    """The stored missed gain (259 D-03, D-04), the best-move probability and the pre spread."""
     return (
-        f"- **Missed inputs:** best material 3 {_fmt_value(blunder.best_3)}, "
-        f"missed gain {_fmt_value(_missed_gain(blunder))}, "
+        f"- **Missed inputs:** missed gain {_fmt_value(blunder.material_missed)}, "
         f"best move prob {_fmt_value(blunder.maia_best_prob)}, "
         f"pre-blunder spread {_fmt_value(blunder.maia_pre_spread, 2)}."
     )
@@ -519,8 +503,9 @@ def _answer_lines(detail: SpotWindowDetail) -> list[str]:
     lines.append(
         f"- **Score inputs:** facepalm score {_fmt_value(blunder.facepalm_score)}, "
         f"played prob {_fmt_value(blunder.maia_played_prob)}, "
-        f"reply spread {_fmt_value(blunder.maia_reply_spread, 2)}, "
-        f"played material 3 {_fmt_value(blunder.played_3)}, "
+        f"material loss {_fmt_value(blunder.material_loss)}, "
+        f"material missed {_fmt_value(blunder.material_missed)}, "
+        f"reply prob {_fmt_value(blunder.maia_best_reply_prob)}, "
         f"mate ply {_fmt_value(blunder.line_mate_ply)}."
     )
     lines.append(_missed_inputs_line(blunder))
