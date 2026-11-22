@@ -1021,6 +1021,7 @@ async def _fill_engine_game_flaw_pvs(
     targets: Sequence[_FullPlyEvalTarget],
     dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
     is_lichess_eval_game: bool,
 ) -> list[_FullPlyEvalTarget]:
     """Targeted second engine pass for pv-less opening flaw plies (engine games).
@@ -1030,7 +1031,9 @@ async def _fill_engine_game_flaw_pvs(
     NO pv — registered but un-taggable. This classifies from the in-memory gather results,
     finds those pv-less flaw plies, runs ONE more gather over just their boards, and merges
     the pv back into engine_result_map (mutated in place) so the write-session classify
-    (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
+    (tactic tagging) and the pv write pick it up like any engine-evaluated ply. The same
+    MultiPV-2 search also yields each ply's second-best move, which is recorded in
+    second_best_map (mutated in place) for the node-0 entry of the flaw's line blob.
 
     Returns the targets whose recovered pv was merged into engine_result_map (empty on
     every early return), so the caller can feed those freshly-searched plies to the
@@ -1065,54 +1068,23 @@ async def _fill_engine_game_flaw_pvs(
     )
     recovered: list[_FullPlyEvalTarget] = []
     for t, res in zip(pv_gap_targets, pv_gap_results, strict=True):
+        # Bug fix: the second-best move of this search used to be dropped here. A
+        # separate recovery step was meant to fetch it afterwards, but it selected its
+        # plies with _missing_flaw_pv_targets, which skips every ply that has a pv, i.e.
+        # exactly the plies recovered just below. It never ran, so node 0 of an opening
+        # flaw's line blob had a best eval and no second move, and the forcing-line gate
+        # read that as "only legal move" (5-11% of opening flaw lines on prod). Keep the
+        # second-best from the search already paid for. Same validity rule as
+        # _full_drain_tick: second_uci is "" for a single legal move, None on failure.
+        second_cp, second_mate, second_uci = res[4], res[5], res[6]
+        if second_cp is not None or second_uci is not None:
+            second_best_map[t.ply] = (second_cp, second_mate, second_uci)
         # Only merge a real pv — a failed re-pass (pv None) leaves the status quo (eval
         # still served from the dedup transplant; pv stays NULL).
         if res[3] is not None:
             engine_result_map[t.ply] = (res[0], res[1], res[2], res[3])
             recovered.append(t)
     return recovered
-
-
-async def _fill_engine_game_flaw_second_best(
-    game_id: int,
-    targets: Sequence[_FullPlyEvalTarget],
-    dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
-    second_best_map: dict[int, tuple[int | None, int | None, str | None]],
-    is_lichess_eval_game: bool,
-) -> None:
-    """Recover node-0 second-best for flaw plies that used
-    the opening dedup cache (no engine second-best in second_best_map for those plies).
-
-    Mirrors _fill_engine_game_flaw_pvs: no-op for lichess games and when
-    there is no opening dedup. Reuses _missing_flaw_pv_targets to find the same
-    dedup-transplanted flaw plies. Mutates second_best_map in place. MUST be called
-    with NO session open — runs asyncio.gather (CLAUDE.md hard rule).
-    """
-    if is_lichess_eval_game:
-        return
-    has_opening_dedup = any(
-        not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
-    )
-    if not has_opening_dedup:
-        return
-    # Find flaw-ply targets in the dedup region — the same set as pv-less gap targets.
-    gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
-    if not gap_targets:
-        return
-    # Only recover plies still absent from second_best_map (avoid redundant engine calls).
-    missing = [t for t in gap_targets if t.ply not in second_best_map]
-    if not missing:
-        return
-    gap_results: Sequence[
-        tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]
-    ] = await asyncio.gather(*(engine_service.evaluate_nodes_multipv2(t.board) for t in missing))
-    for t, res in zip(missing, gap_results, strict=True):
-        second_cp, second_mate, second_uci = res[4], res[5], res[6]
-        # Include valid second-best data only (not engine failure). second_uci is str
-        # when the engine ran: "" = single-legal-move sentinel, non-empty = real second move.
-        if second_cp is not None or second_uci is not None:
-            second_best_map[t.ply] = (second_cp, second_mate, second_uci)
 
 
 def _log_path_c_attempt_cap_reached(
@@ -1637,28 +1609,22 @@ async def _full_drain_tick() -> bool:
             second_best_map[t.ply] = (second_cp, second_mate, second_uci)
 
     # Step 3b: recover pv for engine-game opening flaw plies that took a
-    # pv-less dedup transplant. Runs another gather internally — still NO session open
-    # (CLAUDE.md hard rule). Mutates engine_result_map in place; no-op for lichess games.
+    # pv-less dedup transplant, together with its node-0 second-best (those plies have
+    # no entry in second_best_map: their evals came from the dedup transplant). Runs
+    # another gather internally — still NO session open (CLAUDE.md hard rule). Mutates
+    # engine_result_map and second_best_map in place; no-op for lichess games.
     recovered_pv_targets = await _fill_engine_game_flaw_pvs(
-        game_id, targets, dedup_map, engine_result_map, is_lichess_eval_game
-    )
-
-    # Step 3c: recover node-0 second-best for flaw plies that
-    # used the opening dedup cache (their evals came from the dedup transplant and thus
-    # have no entry in second_best_map). Mutates second_best_map in place. Still NO
-    # session open (CLAUDE.md hard rule).
-    await _fill_engine_game_flaw_second_best(
         game_id, targets, dedup_map, engine_result_map, second_best_map, is_lichess_eval_game
     )
 
-    # Step 3d: build PvNode blobs for each flaw's allowed/missed lines.
+    # Step 3c: build PvNode blobs for each flaw's allowed/missed lines.
     # Opens its own read session (closes before gather), then runs ONE asyncio.gather for
     # all continuation nodes — all before the write session opens (CLAUDE.md hard rule).
     flaw_pv_blobs = await _build_flaw_multipv2_blobs(
         game_id, targets, dedup_map, engine_result_map, second_best_map
     )
 
-    # Step 3e: build best-move candidate rows. The local lane
+    # Step 3d: build best-move candidate rows. The local lane
     # already has per-ply second-best in second_best_map (whole-game MultiPV-2 pass),
     # so the builder's second-best fallback rarely fires here. Opens its own short read session
     # for rating metadata and closes it before Maia inference — still NO write

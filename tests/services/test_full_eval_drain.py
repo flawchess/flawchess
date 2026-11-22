@@ -6586,3 +6586,100 @@ class TestTier4BlobDrainTick:
             maia.assert_not_awaited()
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── Opening flaw recovery keeps the second-best move ────────────────────────
+
+
+class TestFlawPvRecoveryKeepsSecondBest:
+    """_fill_engine_game_flaw_pvs records the second-best move of its own search.
+
+    Regression: the recovery search is MultiPV-2, but its second-best move was dropped,
+    and the separate step meant to fetch it never ran (it skipped every ply that had a
+    pv, which is every ply this pass had just recovered). Node 0 of an opening flaw's
+    line blob then had no second move and the forcing-line gate treated it as an
+    only-move. No DB: the classifier and the engine are stubbed.
+    """
+
+    _FLAW_PLY = 10
+    _HASHES = {10: 0x5EED_0A11_0010, 11: 0x5EED_0A11_0011}
+
+    def _patch(
+        self, monkeypatch: pytest.MonkeyPatch, result: tuple[Any, ...]
+    ) -> tuple[Any, AsyncMock]:
+        from contextlib import asynccontextmanager
+
+        from app.services import eval_drain as drain_module
+
+        async def _fake_classify(*_args: Any, **_kwargs: Any) -> list[dict[str, int]]:
+            return [{"ply": self._FLAW_PLY}]
+
+        @asynccontextmanager
+        async def _fake_session() -> Any:
+            yield None
+
+        mock_evaluate = AsyncMock(return_value=result)
+        monkeypatch.setattr(drain_module, "_classify_with_overlay", _fake_classify)
+        monkeypatch.setattr(drain_module, "async_session_maker", _fake_session)
+        monkeypatch.setattr(drain_module, "_reconstruct_pos_eval", lambda *_a, **_k: {})
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+        return drain_module, mock_evaluate
+
+    def _targets(self) -> list[Any]:
+        # Only the attributes the recovery pass reads.
+        return [
+            MagicMock(ply=ply, is_terminal=False, full_hash=fh, board=chess.Board())
+            for ply, fh in self._HASHES.items()
+        ]
+
+    def _dedup_map(self) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
+        # Eval-only opening-cache transplants (no pv) for the flaw ply and the ply after it.
+        return {fh: (25, None, "e2e4", None) for fh in self._HASHES.values()}
+
+    async def test_second_best_recorded_for_recovered_plies(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        drain_module, mock_evaluate = self._patch(
+            monkeypatch, (30, None, "e2e4", "e2e4 e7e5 g1f3", 10, None, "d2d4")
+        )
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {}
+        second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {}
+
+        recovered = await drain_module._fill_engine_game_flaw_pvs(
+            1, self._targets(), self._dedup_map(), engine_result_map, second_best_map, False
+        )
+
+        assert sorted(t.ply for t in recovered) == [10, 11]
+        assert engine_result_map[10][3] == "e2e4 e7e5 g1f3"
+        # Core assertion: both node-0 plies (missed line at 10, allowed line at 11) carry
+        # the second-best move of the recovery search.
+        assert second_best_map == {10: (10, None, "d2d4"), 11: (10, None, "d2d4")}
+        # One search per ply; no second engine round for the second-best move.
+        assert mock_evaluate.await_count == 2
+
+    async def test_failed_search_records_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An engine failure (all None) adds neither a pv nor a second-best entry."""
+        drain_module, _ = self._patch(monkeypatch, (None,) * 7)
+        engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {}
+        second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {}
+
+        recovered = await drain_module._fill_engine_game_flaw_pvs(
+            1, self._targets(), self._dedup_map(), engine_result_map, second_best_map, False
+        )
+
+        assert recovered == []
+        assert engine_result_map == {}
+        assert second_best_map == {}
+
+    async def test_single_legal_move_sentinel_recorded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """second_uci == "" (one legal move) is real data and is recorded as such."""
+        drain_module, _ = self._patch(monkeypatch, (30, None, "e2e4", "e2e4 e7e5", None, None, ""))
+        second_best_map: dict[int, tuple[int | None, int | None, str | None]] = {}
+
+        await drain_module._fill_engine_game_flaw_pvs(
+            1, self._targets(), self._dedup_map(), {}, second_best_map, False
+        )
+
+        assert second_best_map == {10: (None, None, ""), 11: (None, None, "")}
