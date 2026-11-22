@@ -362,6 +362,23 @@ def prefilter_reason(
 # ---------------------------------------------------------------------------
 
 
+def _candidate_missed(depth_3_gain: int | None, stored_missed: float | None) -> int | None:
+    """The missed gain a candidate is bucketed on.
+
+    Bug fix (259 review WR-01): the material type comes from the stored decaying-mean inputs, the
+    bucket used the depth-3 gain alone. A row typed as a miss whose gain only shows after depth 3
+    (depth-3 gain None or below the smallest bucket) made `missed_size_bucket` raise and stopped
+    the sampler run. Such a row now takes the stored gain, rounded and floored at the smallest
+    bucket; a usable depth-3 gain is kept as before.
+    """
+    smallest = MISSED_SIZE_BUCKETS[0][0]
+    if depth_3_gain is not None and depth_3_gain >= smallest:
+        return depth_3_gain
+    if stored_missed is not None and stored_missed >= smallest:
+        return max(smallest, round(stored_missed))
+    return depth_3_gain
+
+
 def _missed_gain(played_3: int | None, best_3: int | None) -> int | None:
     """What the best line gains beyond what the played line kept (None when either is unsettled)."""
     if played_3 is None or best_3 is None:
@@ -531,7 +548,7 @@ def build_candidate(
         pinned_elo=pinned_elo,
         played_3=played_3,
         best_3=best_3,
-        missed=_missed_gain(played_3, best_3),
+        missed=_candidate_missed(_missed_gain(played_3, best_3), inputs.missed),
         played_mate_ply=facts.mate_ply,
         best_mate_ply=best_facts.opponent_mate_ply,
         best_prob=pre[0],

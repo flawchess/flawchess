@@ -886,3 +886,19 @@ def test_mode_defaults_keep_set_eight_off_set_seven_files() -> None:
     assert args.seed == DISAGREEMENT_SAMPLE_SEED == 261116
     assert args.pure_misses == PLAIN_MISS_TARGET
     assert args.key_out == Path("temp/blunder-check/set8-key.json") != miss_labels.DEFAULT_KEY_OUT
+
+
+def test_candidate_missed_takes_the_stored_gain_when_depth_3_has_none() -> None:
+    """259 review WR-01: a miss whose gain shows only after depth 3 still lands in a bucket."""
+    from scripts.blunder_check.miss_labels import _candidate_missed
+
+    # A usable depth-3 gain is kept.
+    assert _candidate_missed(3, 1.2) == 3
+    # Depth 3 unsettled or below the smallest bucket: the stored gain, rounded, floored at 1.
+    assert _candidate_missed(None, 1.4) == 1
+    assert _candidate_missed(0, 2.6) == 3
+    assert missed_size_bucket(_candidate_missed(None, 1.4), None) == 0
+    assert missed_size_bucket(_candidate_missed(0, 2.6), None) == 1
+    # Not a miss by either number: unchanged, the caller never buckets it.
+    assert _candidate_missed(None, None) is None
+    assert _candidate_missed(0, 0.5) == 0

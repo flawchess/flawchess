@@ -777,3 +777,32 @@ def test_loss_and_missed_columns_are_not_swapped(tmp_path: Path) -> None:
     assert float(record["loss"]) == pytest.approx(row.quiet.loss, rel=1e-5)
     assert float(record["missed"]) == pytest.approx(row.quiet.missed or 0.0, abs=1e-9)
     assert float(record["missed"]) != pytest.approx(float(record["loss"]))
+
+
+def test_null_score_input_follows_the_shipped_score() -> None:
+    """259 review WR-02: the summary count reads the inputs the scalar score reads."""
+    from dataclasses import replace
+
+    from app.services.facepalm_inputs import MaterialInputs
+    from scripts.blunder_check.facepalm_features import _has_null_score_input
+
+    pre_board, _ = _seed_pre_board()
+    row, _, _ = _row_with_best_line(pv=_seed_line(), best_pv=_best_line_for(pre_board))
+    losing = MaterialInputs(loss=2.0, missed=0.0)
+    level = MaterialInputs(loss=0.0, missed=3.0)
+
+    def scored(**changes: object) -> bool:
+        return not _has_null_score_input(replace(row, **changes))
+
+    full = {"played_prob": 0.1, "reply_prob": 0.4, "best_prob": 0.3, "reply_spread": 2.0}
+    # A missing reply spread no longer unscores a row: the score does not read it.
+    assert scored(**full | {"quiet": losing, "reply_spread": None})
+    # A losing row needs the reply probability, not the best-move probability.
+    assert not scored(**full | {"quiet": losing, "reply_prob": None})
+    assert scored(**full | {"quiet": losing, "best_prob": None})
+    # A row that loses nothing needs the best-move probability, not the reply probability.
+    assert not scored(**full | {"quiet": level, "best_prob": None})
+    assert scored(**full | {"quiet": level, "reply_prob": None})
+    # The played probability and the stored loss are always needed.
+    assert not scored(**full | {"quiet": losing, "played_prob": None})
+    assert not scored(**full | {"quiet": MaterialInputs(loss=None, missed=None)})
