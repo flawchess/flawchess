@@ -1,6 +1,9 @@
 ---
 id: SEED-261121-tau
-status: active
+status: closed
+closed: 2026-11-22
+closed_reason: shipped as Phase 259 (quiet-point material rule, reply probability on losing rows, refit; releases #497, #498, #499; drill cut 0.70). Successor: SEED-261122-s0j (promotions as material)
+promoted_to: Phase 259 (2026-11-21)
 planted: 2026-11-21
 planted_during: owner review of one facepalm score on prod (game 2883555, ply 47), outside any phase
 trigger_when: the next facepalm score refit, or any phase that touches the stored line material or the Maia facepalm columns. Best after the Phase 252 short-line repair has finished, since the material recompute reads the same lines
