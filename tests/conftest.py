@@ -98,6 +98,11 @@ _DB_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 # Prefix shared by every per-run DB; the orphan sweep matches on it.
 _RUN_DB_PREFIX: str = "flawchess_test_"
 
+# First id the users sequence hands out in a run DB. Must stay above every
+# hard-coded test user id below it (see _run_db); hard-coded ids go below
+# 10M or far above it (a run registers well under 10k users).
+_REGISTERED_USER_ID_START: int = 10_000_000
+
 # Characters of PYTEST_XDIST_TESTRUNUID (a uuid4 hex) kept in xdist run DB
 # names: 48 bits is plenty to keep concurrent sessions apart, and
 # prefix + uid + "_gwNNN" stays far below the 63-byte identifier limit.
@@ -395,6 +400,17 @@ async def _run_db() -> AsyncGenerator[str, None]:
     maint = _maint_dsn(settings.DATABASE_URL_TEST)
     await _ensure_template_fresh(maint)
     keeper = await _create_run_db(maint, run_db_name)
+    # Bug fix: tests hard-code user ids (1, 2, 601, ...) and call ensure_test_user,
+    # which silently reuses an existing row. Users registered through the real
+    # auth endpoint commit past the db_session rollback and took sequence ids
+    # 1..~800, so in serial CI the seeded-portfolio user (committed games) landed
+    # on a hard-coded id and its games leaked into that test (802 in
+    # test_stats_service.py, 801 in test_game_repository.py). Starting the
+    # sequence far above every hard-coded id keeps registered users out of reach.
+    await keeper.execute(
+        "SELECT setval(pg_get_serial_sequence('users', 'id'), $1, false)",
+        _REGISTERED_USER_ID_START,
+    )
     try:
         yield run_db_name
     finally:
