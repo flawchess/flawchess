@@ -89,7 +89,7 @@ export const FACEPALM_TYPE_LABEL: Record<FacepalmType, string> = {
 };
 
 /**
- * The accessible name of a facepalm popover trigger: "Facepalm N%, type" on a facepalm blunder and
+ * The accessible name of a facepalm popover trigger: "Facepalm blunder, facepalm score N%, type" on a facepalm blunder and
  * "Blunder, facepalm score N%, type" on any other scored blunder, so a screen reader never calls an
  * ordinary blunder a facepalm. Shared by the Flaws card chip and the analysis move-list glyph
  * (plan 260-09) so the two never drift.
@@ -98,7 +98,7 @@ export function facepalmScoreLabel(score: number, type: FacepalmType): string {
   const pct = toFacepalmPct(score);
   const typeName = FACEPALM_TYPE_LABEL[type].toLowerCase();
   return isFacepalmBlunder(score)
-    ? `Facepalm ${pct}%, ${typeName}`
+    ? `Facepalm blunder, facepalm score ${pct}%, ${typeName}`
     : `Blunder, facepalm score ${pct}%, ${typeName}`;
 }
 

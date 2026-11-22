@@ -502,7 +502,7 @@ describe('FlawCard', () => {
       );
       expect(popover.textContent).toContain(facepalmScoreMeaning());
       expect(trigger.getAttribute('aria-label')).toBe(
-        `Facepalm ${toFacepalmPct(ABOVE_CUT_SCORE)}%, allowed loss`,
+        `Facepalm blunder, facepalm score ${toFacepalmPct(ABOVE_CUT_SCORE)}%, allowed loss`,
       );
     });
 
