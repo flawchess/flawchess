@@ -2621,6 +2621,16 @@ def floor_cp_for_motif(motif_int: int | None) -> int | None:
     return _MOTIF_FLOOR_CP.get(motif_int)
 
 
+def is_mate_motif(motif_int: int | None) -> bool:
+    """Return True when motif_int is a mate motif (generic or named mate).
+
+    The forcing-line gate uses this to pick its mate-tie rule: for a mate tag any
+    mating move at a solver node counts, for every other tag the stricter
+    shorter-mate rule applies. None and unknown ints are not mate motifs.
+    """
+    return motif_int is not None and motif_int in _MATE_MOTIF_INTS
+
+
 def _dispatch_mate_tier(
     boards: list[chess.Board],
     moves: list[chess.Move],

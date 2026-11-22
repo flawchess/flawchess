@@ -751,6 +751,103 @@ class TestForcedMateExemptions:
 
 
 # ---------------------------------------------------------------------------
+# TestMateTieRule: for a mate motif any solver mate is forced, ties included
+# ---------------------------------------------------------------------------
+
+# Allowed blob of prod game 1461616, ply 76 (Kf2), solver black: a forced mate whose
+# stored line is capped at 12 plies, so the detector tags MATE at depth 11. Node 10 has
+# two mates in 2 (bm == sm), which used to reject the whole tag.
+_GAME_1461616_PLY_76_BLOB: list[PvNode] = [
+    PvNode(b=None, bm=-9, s=-14, sm=None, su="c2c5"),
+    PvNode(b=None, bm=-6, s=None, sm=-5, su="f2g1"),
+    PvNode(b=None, bm=-8, s=-740, sm=None, su="c2e2"),
+    PvNode(b=None, bm=-5, s=None, sm=-5, su="h4h5"),
+    PvNode(b=None, bm=-5, s=None, sm=-6, su="f5c2"),
+    PvNode(b=None, bm=-4, s=None, sm=-4, su="g3g4"),
+    PvNode(b=None, bm=-4, s=None, sm=-5, su="f5f7"),
+    PvNode(b=None, bm=-3, s=None, sm=-3, su="f3e2"),
+    PvNode(b=None, bm=-3, s=None, sm=-4, su="f6f4"),
+    PvNode(b=None, bm=-2, s=None, sm=-2, su="g4g5"),
+    PvNode(b=None, bm=-2, s=None, sm=-2, su="h4h2"),
+    PvNode(b=None, bm=-1, s=None, sm=-1, su="g2h1"),
+    PvNode(b=None, bm=-1, s=None, sm=-2, su="h6g5"),
+]
+_GAME_1461616_MATE_DEPTH = 11
+_GAME_1461616_TIED_NODE = 10
+
+
+class TestMateTieRule:
+    """A mate tag is not rejected because two moves mate equally fast.
+
+    Regression for prod game 1461616 ply 76: the tie at the last solver node rejected
+    the MATE tag, and since mates short-circuit the detector the flaw had no tag at all.
+    Non-mate motifs keep the strict shorter-mate rule.
+    """
+
+    def test_node_tie_forced_for_mate_motif_both_colors(self) -> None:
+        """bm == sm, both mating for the solver: forced when the tag is a mate motif."""
+        assert is_solver_node_forced(_mate_node(bm=5, sm=5), "white", mate_motif=True) is True
+        assert is_solver_node_forced(_mate_node(bm=-5, sm=-5), "black", mate_motif=True) is True
+
+    def test_node_tie_still_not_forced_without_mate_motif(self) -> None:
+        """Control: the default (non-mate tag) keeps rejecting a tie, both colors."""
+        assert is_solver_node_forced(_mate_node(bm=5, sm=5), "white") is False
+        assert is_solver_node_forced(_mate_node(bm=-5, sm=-5), "black") is False
+
+    def test_mate_against_solver_not_forced_for_mate_motif(self) -> None:
+        """The relaxation never credits a best move that mates the solver."""
+        assert is_solver_node_forced(_mate_node(bm=-5, sm=-5), "white", mate_motif=True) is False
+
+    def test_real_blob_has_the_tie(self) -> None:
+        """Guard the fixture: the tied node is the only solver node failing the strict rule."""
+        failing = [
+            i
+            for i, node in enumerate(_GAME_1461616_PLY_76_BLOB)
+            if i % 2 == 0 and not is_solver_node_forced(node, "black")
+        ]
+        assert failing == [_GAME_1461616_TIED_NODE]
+
+    def test_real_blob_mate_tag_credited(self) -> None:
+        """The MATE tag at depth 11 passes the gate (it was rejected before the fix)."""
+        assert (
+            apply_forcing_line_filter(
+                _GAME_1461616_PLY_76_BLOB,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=_GAME_1461616_MATE_DEPTH,
+                motif_int=int(TacticMotifInt.MATE),
+            )
+            is True
+        )
+
+    def test_named_mate_tag_credited(self) -> None:
+        """Named mates share the rule (it keys on the mate-motif set, not on MATE alone)."""
+        assert (
+            apply_forcing_line_filter(
+                _GAME_1461616_PLY_76_BLOB,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=_GAME_1461616_MATE_DEPTH,
+                motif_int=int(TacticMotifInt.BACK_RANK_MATE),
+            )
+            is True
+        )
+
+    def test_real_blob_non_mate_tag_still_rejected_on_tie(self) -> None:
+        """A non-mate motif whose path crosses the tied node is still rejected."""
+        assert (
+            apply_forcing_line_filter(
+                _GAME_1461616_PLY_76_BLOB,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=_GAME_1461616_TIED_NODE,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is False
+        )
+
+
+# ---------------------------------------------------------------------------
 # TestFloorScopedToConversionTail: floor exempts the firing node
 # ---------------------------------------------------------------------------
 
