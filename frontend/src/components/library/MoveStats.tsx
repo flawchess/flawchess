@@ -87,6 +87,9 @@ const SEVERITY_CATEGORIES: readonly FlawMoveCategory[] = [
  */
 const SIDE_ALIGNED_GRID_CLASS = 'grid grid-cols-[1fr_4rem_4rem] gap-x-2 items-center';
 
+/** Category icon size, shared by the full table rows and the mobile compact row. */
+const CATEGORY_ICON_CLASS = 'h-5 w-5';
+
 function isSeverityCategory(category: MoveStatCategory): category is FlawMoveCategory {
   return (SEVERITY_CATEGORIES as readonly string[]).includes(category);
 }
@@ -365,7 +368,7 @@ export function MoveStats({
               const inner = (
                 <>
                   <span className="text-sm font-bold tabular-nums">{count}</span>
-                  <MoveStatIcon category={category} className="h-4 w-4" />
+                  <MoveStatIcon category={category} className={CATEGORY_ICON_CLASS} />
                 </>
               );
               if (count === 0) {
@@ -440,7 +443,7 @@ export function MoveStats({
                 data-testid={tid(`move-stats-row-${category}`, gameId)}
               >
                 <div className={cn('flex items-center gap-2 py-0.5', bothZero && 'opacity-40')}>
-                  <MoveStatIcon category={category} className="h-5 w-5" />
+                  <MoveStatIcon category={category} className={CATEGORY_ICON_CLASS} />
                   <span className="text-sm">{CATEGORY_LABELS[category]}</span>
                 </div>
                 {renderCountCell(category, playerSide)}
