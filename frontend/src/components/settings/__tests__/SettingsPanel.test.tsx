@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
-import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
+import { JUMP_OWN_MOVES_STORAGE_KEY, SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { MUTE_KEY } from '@/lib/sounds';
 
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }));
@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe('SettingsPanel layout', () => {
-  it('renders the three sections in order Sound, Stockfish, FlawChess engine', () => {
+  it('renders the sections in order Sound, Stockfish, FlawChess engine, Jump, Privacy', () => {
     render(<SettingsPanel />);
     const sound = screen.getByTestId('settings-section-sound');
     const fc = screen.getByTestId('settings-section-flawchess');
@@ -37,6 +37,9 @@ describe('SettingsPanel layout', () => {
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(follows(sound, sf)).toBe(true);
     expect(follows(sf, fc)).toBe(true);
+    const jump = screen.getByTestId('settings-section-jump');
+    expect(follows(fc, jump)).toBe(true);
+    expect(follows(jump, screen.getByTestId('settings-section-privacy'))).toBe(true);
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
   });
 
@@ -80,6 +83,34 @@ describe('Sound switch (legacy mute key)', () => {
     fireEvent.click(sw);
     expect(localStorage.getItem(MUTE_KEY)).toBe('1');
     expect(trackEventMock).toHaveBeenLastCalledWith('settings-change', { setting: 'sound', value: 'off' });
+  });
+});
+
+describe('Jump button switch', () => {
+  it('defaults to off with empty storage', () => {
+    render(<SettingsPanel />);
+    expect(screen.getByTestId('settings-jump-own-moves-switch').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('reads a stored 1 as on', () => {
+    localStorage.setItem(JUMP_OWN_MOVES_STORAGE_KEY, '1');
+    render(<SettingsPanel />);
+    expect(screen.getByTestId('settings-jump-own-moves-switch').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('persists each toggle and fires one settings-change event per change', () => {
+    render(<SettingsPanel />);
+    const sw = screen.getByTestId('settings-jump-own-moves-switch');
+
+    fireEvent.click(sw);
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBe('1');
+    expect(trackEventMock).toHaveBeenCalledTimes(1);
+    expect(trackEventMock).toHaveBeenLastCalledWith('settings-change', { setting: 'jumpOwnMoves', value: 'on' });
+
+    fireEvent.click(sw);
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBe('0');
+    expect(trackEventMock).toHaveBeenCalledTimes(2);
+    expect(trackEventMock).toHaveBeenLastCalledWith('settings-change', { setting: 'jumpOwnMoves', value: 'off' });
   });
 });
 
@@ -128,6 +159,20 @@ describe('Reset to defaults', () => {
     expect(screen.getByTestId('settings-sf-arrows-2').getAttribute('data-state')).toBe('on');
     expect(screen.getByTestId('settings-sound-switch').getAttribute('aria-checked')).toBe('true');
     expect((screen.getByTestId('btn-settings-reset') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('enables Reset while the Jump switch is on and turns it back off', () => {
+    render(<SettingsPanel />);
+    const reset = screen.getByTestId('btn-settings-reset') as HTMLButtonElement;
+    expect(reset.disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('settings-jump-own-moves-switch'));
+    expect(reset.disabled).toBe(false);
+
+    fireEvent.click(reset);
+    expect(screen.getByTestId('settings-jump-own-moves-switch').getAttribute('aria-checked')).toBe('false');
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBeNull();
+    expect(reset.disabled).toBe(true);
   });
 
   it('is disabled with an untouched store', () => {

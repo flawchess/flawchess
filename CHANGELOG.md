@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Analysis: a new Jump button setting makes the Jump button stop only at your own mistakes, blunders, gem and great moves, skipping your opponent's. It is off by default.
 - Blunder check: after a caught or missed blunder, the solution now shows a short line when the engine line shows the blunder gave away material or checkmate, or missed a material win or checkmate, and a note when the blunder was hard to catch.
 - Train: a facepalm blunder (a facepalm score of 70% or more) is marked "???" instead of "??" on the board and on the Game line, on the blunder check solution and on the personalized-puzzle solution.
 - Navigation: new accounts are guided through FlawChess one feature at a time by a single red dot: Import, Train, Bots, Openings with its Played as and Filters controls and its Stats tab, Endgames, and Library Stats. The dot sits on the menu item first and moves onto the tab or button once you are in that section. A feature you leave alone for three active days is skipped, and your progress follows you across devices.
