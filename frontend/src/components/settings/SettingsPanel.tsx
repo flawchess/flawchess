@@ -196,8 +196,8 @@ export function SettingsPanel() {
             onCheckedChange={handleJumpChange}
           />
           <p className="text-sm text-muted-foreground">
-            <FastForward className="inline size-4 align-text-bottom" aria-hidden="true" /> Fast forward
-            stops only at your own key moments, not your opponent's.
+            <FastForward className="inline size-4 align-text-bottom" aria-hidden="true" /> Fast forward on
+            the analysis board stops only at your own key moments, not your opponent's.
           </p>
         </CardBody>
       </Card>
