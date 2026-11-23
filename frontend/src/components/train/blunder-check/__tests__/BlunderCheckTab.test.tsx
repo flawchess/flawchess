@@ -17,7 +17,6 @@ import type { ReactElement } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  BANK_COIN_COUNT,
   BANK_COIN_INTERVAL_MS,
   BANK_HOLD_MS,
   COIN_SOUND_MS,
@@ -891,7 +890,7 @@ describe('window loop', () => {
     await advance(50);
 
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
-      "Check out the position, you play white. It's your opponent's turn.",
+      'Check out the position: you play white, and your opponent moves next.',
     );
     expect(boardFen()).toBe(startFen);
     // The move that led to the start position is highlighted, as on any board.
@@ -948,7 +947,7 @@ describe('window loop', () => {
     expect(boardFen()).toBe(played);
     expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe(REPLY_UCI);
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
-      "Check out the position, you play white. It's your turn.",
+      'Check out the position: you play white, and your side moves next.',
     );
     expect(boardArrows()).toBe('');
     expect(screen.queryByTestId('blunder-check-timer')).toBeNull();
@@ -1627,14 +1626,13 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
     expect(screen.getByTestId('btn-train-analyze')).not.toBeNull();
 
-    // Next banks it: three overlapping coins, and the next window starts with it in the total.
+    // Next banks it: one overlapping coin per point (3 here), and the next window starts with it in the total.
     startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
     playSound.mockClear();
     fireEvent.click(screen.getByTestId('btn-train-next'));
-    await advance(BANK_COIN_COUNT * BANK_COIN_INTERVAL_MS);
-    expect(playSound.mock.calls.filter(([event]) => event === 'pot-gain')).toHaveLength(
-      BANK_COIN_COUNT,
-    );
+    const pot = 3;
+    await advance(pot * BANK_COIN_INTERVAL_MS);
+    expect(playSound.mock.calls.filter(([event]) => event === 'pot-gain')).toHaveLength(pot);
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('3 pts');
   });

@@ -1,6 +1,9 @@
 ---
 id: SEED-261122-s0j
-status: active
+status: closed
+closed: 2026-11-23
+closed_reason: shipped as Phase 262 (promotions as material, key-move gate on the type rule, refit; release #506; prod promotion pass 124,216 rows). The benchmark DB pass stays with SEED-261120-bzq
+promoted_to: Phase 262 (2026-11-23)
 planted: 2026-11-22
 planted_during: Phase 259 (facepalm first-principles refit), owner question about pawn breakthroughs
 trigger_when: after Phase 259 ships, or when the next facepalm material-rule change or material re-backfill is planned (bundle with it)

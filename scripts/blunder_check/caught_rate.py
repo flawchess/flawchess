@@ -104,7 +104,10 @@ SCORE_BANDS: tuple[tuple[str, float, float], ...] = (
 # 07 of the phase). Windows are snapshotted when their session is composed, so the version split
 # keys on blunder_check_sessions.started_at, not on ended_at. None = not deployed yet: the report is
 # unsplit. The Phase 261 snapshots are never rewritten.
-FACEPALM_262_SWITCH_AT: datetime.datetime | None = None
+# Set to the end of the Phase 262 deploy run (release PR #506, server 1d7ac168).
+FACEPALM_262_SWITCH_AT: datetime.datetime | None = datetime.datetime(
+    2026, 11, 23, 17, 47, 39, tzinfo=datetime.UTC
+)
 
 # Served-share acceptance (Claude's discretion, owner-overridable); see the module docstring.
 SHARE_ACCEPT_LOW: float = 0.18
