@@ -30,6 +30,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
+- Blunder check wording: the host now says that a hard-to-catch blunder was mixed in on purpose, names what the blunder did more plainly ("loses material", "misses a chance to win material"), tells you which side moves next before a sequence starts, and gives friendlier feedback on your better move.
 - Facepalm score: the chips, the Explain bar and the facepalm explanation now read "Facepalm score x%", and the Library eval chart tooltip shows it on its own line.
 - Internal: removed the old per-depth material columns of the facepalm score; the score reads the stored material inputs.
 - Facepalm score: refitted on how a player reads the lines. An even trade in the engine's line no longer counts as a missed win, and how likely a player at your level was to see the punishing reply now enters the score. Facepalm chips, the Facepalm tag, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
