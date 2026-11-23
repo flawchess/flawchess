@@ -17,7 +17,6 @@ import type { ReactElement } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
-  BANK_COIN_COUNT,
   BANK_COIN_INTERVAL_MS,
   BANK_HOLD_MS,
   COIN_SOUND_MS,
@@ -1627,14 +1626,13 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
     expect(screen.getByTestId('btn-train-analyze')).not.toBeNull();
 
-    // Next banks it: three overlapping coins, and the next window starts with it in the total.
+    // Next banks it: one overlapping coin per point (3 here), and the next window starts with it in the total.
     startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
     playSound.mockClear();
     fireEvent.click(screen.getByTestId('btn-train-next'));
-    await advance(BANK_COIN_COUNT * BANK_COIN_INTERVAL_MS);
-    expect(playSound.mock.calls.filter(([event]) => event === 'pot-gain')).toHaveLength(
-      BANK_COIN_COUNT,
-    );
+    const pot = 3;
+    await advance(pot * BANK_COIN_INTERVAL_MS);
+    expect(playSound.mock.calls.filter(([event]) => event === 'pot-gain')).toHaveLength(pot);
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('3 pts');
   });

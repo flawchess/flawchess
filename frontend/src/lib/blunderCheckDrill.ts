@@ -548,8 +548,7 @@ export const COIN_SOUND_MS = 500;
  */
 export const CLEARED_SOUND_DELAY_MS = POINTS_FLIGHT_LAND_MS + COIN_SOUND_MS;
 
-/** Banking the pot plays this many coins, one every BANK_COIN_INTERVAL_MS, so they overlap. */
-export const BANK_COIN_COUNT = 3;
+/** Banking the pot plays one coin per point in it, one every BANK_COIN_INTERVAL_MS, so they overlap. */
 export const BANK_COIN_INTERVAL_MS = 150;
 /**
  * How long Next waits while the pot badge slides into the banked total, the total counts
