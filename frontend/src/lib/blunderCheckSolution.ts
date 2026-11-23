@@ -232,9 +232,9 @@ function earlierCallsParts(points: number): SolutionCopyPart[] {
 
 /** What the blunder allowed or missed (Phase 261 D-09), as one sentence. */
 const TYPE_LINE_COPY: Record<BlunderTypeLine, string> = {
-  allowed_material: 'The blunder allows a material loss.',
+  allowed_material: 'The blunder loses material.',
   allowed_mate: 'The blunder allows checkmate.',
-  missed_material: 'The blunder misses a material win.',
+  missed_material: 'The blunder misses a chance to win material.',
   missed_mate: 'The blunder misses checkmate.',
 };
 

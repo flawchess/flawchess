@@ -891,7 +891,7 @@ describe('window loop', () => {
     await advance(50);
 
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
-      "Check out the position, you play white. It's your opponent's turn.",
+      'Check out the position: you play white, and your opponent moves next.',
     );
     expect(boardFen()).toBe(startFen);
     // The move that led to the start position is highlighted, as on any board.
@@ -948,7 +948,7 @@ describe('window loop', () => {
     expect(boardFen()).toBe(played);
     expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe(REPLY_UCI);
     expect(screen.getByTestId('blunder-check-ready-copy').textContent).toBe(
-      "Check out the position, you play white. It's your turn.",
+      'Check out the position: you play white, and your side moves next.',
     );
     expect(boardArrows()).toBe('');
     expect(screen.queryByTestId('blunder-check-timer')).toBeNull();

@@ -1008,16 +1008,16 @@ describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
 describe('blunderCheckReadyCopy', () => {
   it('names the side and says it is the opponent\'s turn when the opponent moves first', () => {
     expect(blunderCheckReadyCopy('white', 'black')).toBe(
-      "Check out the position, you play white. It's your opponent's turn.",
+      'Check out the position: you play white, and your opponent moves next.',
     );
     expect(blunderCheckReadyCopy('black', 'white')).toBe(
-      "Check out the position, you play black. It's your opponent's turn.",
+      'Check out the position: you play black, and your opponent moves next.',
     );
   });
 
   it('says it is the user\'s turn when the start FEN has the user to move', () => {
     expect(blunderCheckReadyCopy('white', 'white')).toBe(
-      "Check out the position, you play white. It's your turn.",
+      'Check out the position: you play white, and your side moves next.',
     );
   });
 

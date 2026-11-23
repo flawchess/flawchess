@@ -324,9 +324,9 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
   }
 
   it.each<[BlunderFeedback['type_line'] & string, string]>([
-    ['allowed_material', 'The blunder allows a material loss.'],
+    ['allowed_material', 'The blunder loses material.'],
     ['allowed_mate', 'The blunder allows checkmate.'],
-    ['missed_material', 'The blunder misses a material win.'],
+    ['missed_material', 'The blunder misses a chance to win material.'],
     ['missed_mate', 'The blunder misses checkmate.'],
   ])('type line %s reads "%s"', (typeLine, sentence) => {
     const copy = solutionCopy(solution({ feedback: feedbackOf({ type_line: typeLine }) }));

@@ -64,8 +64,8 @@ MAX_BLUNDER_POSITION: int = 5
 # blunders (median 414 usable windows per user). 262 checkpoint: after the refit with promotions as
 # material and the type gate, the owner kept 0.70 on 2026-11-23.
 FACEPALM_SCORE_MIN: float = 0.7
-# Phase 261 seed type-line floor: the drill's type line ("allows a material loss" / "misses a material
-# win") shows only for a material swing of at least this many points (piece values 1 / 3 / 3 / 5 / 9),
+# Phase 261 seed type-line floor: the drill's type line ("loses material" / "misses a chance to win material")
+# shows only for a material swing of at least this many points (piece values 1 / 3 / 3 / 5 / 9),
 # so a lost pawn gets no line and a lost exchange does. Applied at read time only, never to the stored
 # decaying means (game_flaws.material_loss / material_missed).
 TYPE_LINE_MIN_SWING: int = 2
