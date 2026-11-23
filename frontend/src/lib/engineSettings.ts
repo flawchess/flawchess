@@ -20,6 +20,9 @@
  * on/off switches (Stockfish, Maia, FlawChess), same flat-key pattern, default
  * ON. They are not panel settings, so `resetAllSettings` deliberately leaves
  * them alone: a reset that silently re-enabled heavy engines would surprise users.
+ *
+ * The Jump preference (stop only on your own key moments, default OFF) is a
+ * panel setting, so unlike the engine switches it IS covered by Reset.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -30,7 +33,7 @@ import { setMuted } from '@/lib/sounds';
 export type LineCount = 1 | 2 | 3 | 4 | 5;
 export type ArrowCount = 0 | 1 | 2 | 3;
 export type CountSettingId = 'fcLines' | 'fcArrows' | 'sfLines' | 'sfArrows';
-export type SettingId = CountSettingId | 'sound';
+export type SettingId = CountSettingId | 'sound' | 'jumpOwnMoves';
 
 export const LINE_COUNT_OPTIONS: readonly LineCount[] = [1, 2, 3, 4, 5];
 export const ARROW_COUNT_OPTIONS: readonly ArrowCount[] = [0, 1, 2, 3];
@@ -73,6 +76,9 @@ export const ENGINE_TOGGLE_STORAGE_KEYS: Readonly<Record<EngineToggleId, string>
 const TOGGLE_ON = '1';
 const TOGGLE_OFF = '0';
 const DEFAULT_ENGINE_TOGGLE = true;
+
+export const JUMP_OWN_MOVES_STORAGE_KEY = 'flawchess_settings_jump_own_moves';
+const DEFAULT_JUMP_OWN_MOVES_ONLY = false;
 
 // ─── Validation (type guards, no casts) ─────────────────────────────────────
 
@@ -164,13 +170,16 @@ export function setCountSetting(id: CountSettingId, value: number): void {
   notify();
 }
 
-/** Restores all five settings: the four counts to their defaults and sound on. */
+/** Restores the six panel settings: the four counts to their defaults, sound on
+ * and the Jump preference off. The engine on/off switches are left alone. */
 export function resetAllSettings(): void {
   try {
     COUNT_SETTING_IDS.forEach((id) => localStorage.removeItem(SETTINGS_STORAGE_KEYS[id]));
+    localStorage.removeItem(JUMP_OWN_MOVES_STORAGE_KEY);
   } catch {
     // Nothing to remove if storage is unavailable; reads already yield defaults.
   }
+  jumpOwnMovesOverride = undefined;
   setMuted(false);
   notify();
 }
@@ -217,6 +226,39 @@ export function setEngineToggle(id: EngineToggleId, on: boolean): void {
     delete sessionToggleOverrides[id];
   } catch {
     sessionToggleOverrides[id] = on;
+  }
+  notify();
+}
+
+// ─── Jump button preference ─────────────────────────────────────────────────
+
+/** In-session value when the storage write failed; same rationale as `sessionToggleOverrides`. */
+let jumpOwnMovesOverride: boolean | undefined;
+
+/** Only the exact on value enables it; absent or tampered reads as the default OFF. */
+function readJumpOwnMovesOnly(): boolean {
+  if (jumpOwnMovesOverride !== undefined) return jumpOwnMovesOverride;
+  try {
+    return localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY) === TOGGLE_ON;
+  } catch {
+    return DEFAULT_JUMP_OWN_MOVES_ONLY;
+  }
+}
+
+const getJumpOwnMovesServerSnapshot = (): boolean => DEFAULT_JUMP_OWN_MOVES_ONLY;
+
+/** True when the analysis board's Jump button should stop only on the user's own plies. */
+export function useJumpOwnMovesOnly(): boolean {
+  return useSyncExternalStore(subscribe, readJumpOwnMovesOnly, getJumpOwnMovesServerSnapshot);
+}
+
+/** Persists the Jump preference and notifies subscribers. */
+export function setJumpOwnMovesOnly(on: boolean): void {
+  try {
+    localStorage.setItem(JUMP_OWN_MOVES_STORAGE_KEY, on ? TOGGLE_ON : TOGGLE_OFF);
+    jumpOwnMovesOverride = undefined;
+  } catch {
+    jumpOwnMovesOverride = on;
   }
   notify();
 }

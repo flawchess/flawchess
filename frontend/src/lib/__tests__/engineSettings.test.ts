@@ -2,19 +2,22 @@
 /**
  * engineSettings.test.ts: store contract. Defaults with empty storage,
  * round trip with subscriber re-render, tamper-safe reads,
- * invalid writes refused, and reset of all five settings.
+ * invalid writes refused, and reset of the panel settings.
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ENGINE_TOGGLE_STORAGE_KEYS,
+  JUMP_OWN_MOVES_STORAGE_KEY,
   resetAllSettings,
   setCountSetting,
   setEngineToggle,
+  setJumpOwnMovesOnly,
   SETTINGS_STORAGE_KEYS,
   useEngineDisplaySettings,
   useEngineToggles,
+  useJumpOwnMovesOnly,
 } from '@/lib/engineSettings';
 import { MUTE_KEY, setMuted, useMuted } from '@/lib/sounds';
 
@@ -153,5 +156,74 @@ describe('useEngineToggles / setEngineToggle', () => {
     expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.maia)).toBe('0');
     const { result } = renderHook(() => useEngineToggles());
     expect(result.current.maia).toBe(false);
+  });
+});
+
+describe('useJumpOwnMovesOnly / setJumpOwnMovesOnly', () => {
+  it('defaults OFF with empty storage', () => {
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    expect(result.current).toBe(false);
+  });
+
+  it('persists on as 1 and off as 0 and re-renders a mounted subscriber', () => {
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    act(() => setJumpOwnMovesOnly(true));
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBe('1');
+    expect(result.current).toBe(true);
+    act(() => setJumpOwnMovesOnly(false));
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBe('0');
+    expect(result.current).toBe(false);
+  });
+
+  it.each(['true', 'yes', '', '0', '2'])('reads tampered or off value %j as OFF', (raw) => {
+    localStorage.setItem(JUMP_OWN_MOVES_STORAGE_KEY, raw);
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    expect(result.current).toBe(false);
+  });
+
+  it('reads exactly 1 as ON', () => {
+    localStorage.setItem(JUMP_OWN_MOVES_STORAGE_KEY, '1');
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    expect(result.current).toBe(true);
+  });
+
+  it('keeps the chosen value for the session when storage writes throw', () => {
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    act(() => setJumpOwnMovesOnly(true));
+    expect(result.current).toBe(true);
+    spy.mockRestore();
+    // A later successful write clears the override and storage is the truth again.
+    act(() => setJumpOwnMovesOnly(false));
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBe('0');
+    expect(result.current).toBe(false);
+  });
+
+  it('reads OFF when localStorage.getItem throws', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    expect(result.current).toBe(false);
+  });
+
+  it('is cleared by resetAllSettings, including a session override', () => {
+    const { result } = renderHook(() => useJumpOwnMovesOnly());
+    act(() => setJumpOwnMovesOnly(true));
+    expect(result.current).toBe(true);
+    act(() => resetAllSettings());
+    expect(localStorage.getItem(JUMP_OWN_MOVES_STORAGE_KEY)).toBeNull();
+    expect(result.current).toBe(false);
+
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    act(() => setJumpOwnMovesOnly(true));
+    spy.mockRestore();
+    expect(result.current).toBe(true);
+    act(() => resetAllSettings());
+    expect(result.current).toBe(false);
   });
 });

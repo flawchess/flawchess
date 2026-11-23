@@ -1,3 +1,4 @@
+import { FastForward } from 'lucide-react';
 import { LeaderboardPrivacyCard } from '@/components/settings/LeaderboardPrivacyCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
@@ -12,7 +13,9 @@ import {
   LINE_COUNT_OPTIONS,
   resetAllSettings,
   setCountSetting,
+  setJumpOwnMovesOnly,
   useEngineDisplaySettings,
+  useJumpOwnMovesOnly,
   type CountSettingId,
   type SettingId,
 } from '@/lib/engineSettings';
@@ -20,6 +23,7 @@ import { setMuted, useMuted } from '@/lib/sounds';
 
 /** Umami `setting` value for the sound switch; typed so the event vocabulary stays in SettingId. */
 const SOUND_SETTING_ID: SettingId = 'sound';
+const JUMP_SETTING_ID: SettingId = 'jumpOwnMoves';
 const ZERO_ARROWS_HELPER = "0 arrows hides this engine's arrows, the card stays.";
 
 interface CountToggleGroupProps {
@@ -120,9 +124,11 @@ function EngineSection({
 export function SettingsPanel() {
   const muted = useMuted();
   const { fcLines, fcArrows, sfLines, sfArrows } = useEngineDisplaySettings();
+  const jumpOwnMovesOnly = useJumpOwnMovesOnly();
 
   const isAtDefaults =
     !muted &&
+    !jumpOwnMovesOnly &&
     fcLines === DEFAULT_LINES &&
     sfLines === DEFAULT_LINES &&
     fcArrows === DEFAULT_FC_ARROWS &&
@@ -131,6 +137,11 @@ export function SettingsPanel() {
   const handleSoundChange = (on: boolean): void => {
     setMuted(!on);
     trackEvent('settings-change', { setting: SOUND_SETTING_ID, value: on ? 'on' : 'off' });
+  };
+
+  const handleJumpChange = (on: boolean): void => {
+    setJumpOwnMovesOnly(on);
+    trackEvent('settings-change', { setting: JUMP_SETTING_ID, value: on ? 'on' : 'off' });
   };
 
   const handleReset = (): void => {
@@ -174,6 +185,22 @@ export function SettingsPanel() {
         arrows={fcArrows}
         groupPrefix="settings-fc"
       />
+
+      <Card as="section" data-testid="settings-section-jump">
+        <CardHeader as="h2" size="compact">Fast forward</CardHeader>
+        <CardBody className="flex items-center gap-2">
+          <Switch
+            data-testid="settings-jump-own-moves-switch"
+            aria-label="Fast forward to your own moves only"
+            checked={jumpOwnMovesOnly}
+            onCheckedChange={handleJumpChange}
+          />
+          <p className="text-sm text-muted-foreground">
+            <FastForward className="inline size-4 align-text-bottom" aria-hidden="true" /> Fast forward on
+            the analysis board stops only at your own key moments, not your opponent's.
+          </p>
+        </CardBody>
+      </Card>
 
       {/* Server-persisted privacy choice, deliberately outside
           isAtDefaults and Reset, which only cover localStorage display
