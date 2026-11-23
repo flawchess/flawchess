@@ -1,3 +1,4 @@
+import { FastForward } from 'lucide-react';
 import { LeaderboardPrivacyCard } from '@/components/settings/LeaderboardPrivacyCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
@@ -186,16 +187,17 @@ export function SettingsPanel() {
       />
 
       <Card as="section" data-testid="settings-section-jump">
-        <CardHeader as="h2" size="compact">Jump button</CardHeader>
+        <CardHeader as="h2" size="compact">Fast forward</CardHeader>
         <CardBody className="flex items-center gap-2">
           <Switch
             data-testid="settings-jump-own-moves-switch"
-            aria-label="Jump to your own moves only"
+            aria-label="Fast forward to your own moves only"
             checked={jumpOwnMovesOnly}
             onCheckedChange={handleJumpChange}
           />
           <p className="text-sm text-muted-foreground">
-            Stop only at your own key moments, not your opponent's.
+            <FastForward className="inline size-4 align-text-bottom" aria-hidden="true" /> Fast forward
+            stops only at your own key moments, not your opponent's.
           </p>
         </CardBody>
       </Card>
