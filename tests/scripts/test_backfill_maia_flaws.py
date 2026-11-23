@@ -2191,11 +2191,13 @@ async def test_reply_status_counts_and_residues(
     game_id = await _reply_game(session_factory, make_game)
     await _run(session_factory, tmp_path, mode="reply")
     # After the pass plies 2 and 5 hold a reply probability and ply 8 (no refutation line) does not.
-    # Ply 2: no material inputs yet. Ply 5: a pure miss (no loss) without a best-move probability.
-    # Ply 8: a losing blunder still without a reply probability (the losing residue).
+    # Ply 2: no material inputs yet. Ply 5: a mixed row (loss 1.0 below missed 3.0, so a missed win
+    # by the type rule, 262 D-04) without a best-move probability: the old loss-only filter would
+    # have skipped it. Ply 8 (seeded loss 2.0 over missed 1.0): an allowed loss still without a reply
+    # probability (the losing residue).
     await _set_flaw(session_factory, game_id, 2, material_loss=None, material_missed=None)
     await _set_flaw(
-        session_factory, game_id, 5, material_loss=0.0, material_missed=0.0, maia_best_prob=None
+        session_factory, game_id, 5, material_loss=1.0, material_missed=3.0, maia_best_prob=None
     )
 
     counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "reply")

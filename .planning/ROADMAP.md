@@ -947,6 +947,71 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 261-07-PLAN.md — release gate: changelog, full and serial suites, D-10 prod EXPLAIN and browser check (orchestrator checkpoints)
 
+### Phase 262: Facepalm Promotions as Material and Key-Move Gate (SEED-261122-s0j)
+
+**Goal**: Make the facepalm score see pawn breakthroughs and score every blunder on the move that matches its
+type, in one refit. Two changes share the refit and the owner checkpoint. Evidence, the replay numbers and the
+example rows are in the seed (refined 2026-11-23); the probe is in the phase directory under `spike/`.
+
+- **Promotions count as material:** a promotion credits the promoting side with the promoted piece minus the
+  pawn (+8 for a queen) at the promoting ply, in `app/services/line_material.py`. Adding the gain inside
+  `_victim_value` is enough: the quiet walk then continues through a recapture, the first move is covered and a
+  line that ends on a promotion is settled by the static exchange. It also fixes the captured promoted queen
+  that is credited as 9 today. The 9-ply horizon stays.
+- **Desperado test:** the capture of a freshly promoted piece on its promotion square must count. Today's
+  desperado exclusion would ignore it once the promotion itself is credited.
+- **Key-move gate follows the type rule:** the score reads the opponent's reply only for an allowed loss
+  (`loss > 0 and loss >= missed`) and the best move otherwise. Today the gate is `loss > 0`, so any loss above
+  zero swaps the best-move term (coefficient 2.08) for the reply term (0.91): 1,728 of 21,147 dev rows (8.2%)
+  are typed missed win but scored on the reply, and 40% of them pass 0.7 against 10% of pure missed wins. Both
+  twins (Python and SQL) and the type rule then share one condition.
+- **Refit and owner checkpoint:** one refit on label sets 1 to 8 with the new inputs and the new gate, the AUC
+  as a range check only (259 D-01, D-12), new `FACEPALM_*` constants, and the blocking checkpoint where the
+  owner confirms the model and the cuts. At least 13 of the 291 labelled rows have a promotion as the best move
+  or the reply (6 labelled facepalm, 7 not). The checkpoint includes a spot-check of about 20 rows that newly
+  pass 0.7.
+- **Targeted material pass:** only rows with a promotion token in the refutation line, the best line or the
+  played move can change (797 of 21,147 on dev, 3.8%), so the prod recompute covers those rows, not all 4.7M.
+  The gate change is a constants deploy with no pass (254 D-01). New material values and the new expression
+  switch in one release, so users never see half-converted scores (259 D-11).
+- **First step in discuss-phase:** re-run the probe on prod lines, with the gate change added, and report how
+  many rows enter and leave the 0.7 cut per type and the size of the drill pool. The numbers above are from the
+  dev DB and cover the promotion rule only.
+- **Open for discuss and planning:** whether the gate needs a minimum loss on top of the type rule (a pawn at
+  depth 9 gives a loss of 0.03); whether `LOSS_CAP` 5 is right for a queen promotion (it scores like a mate);
+  the covering index `ix_game_flaws_facepalm_inputs` under the new expression; how the snapshots on
+  `blunder_check_windows` (Phase 261) and the provisional bands in `app/services/facepalm_zones.py` are treated
+  after the refit.
+- **Downstream:** run before the benchmark backfill and zones of SEED-261120-bzq, so the benchmark DB is filled
+  once with the final rule. The caught-rate calibration of Phase 261 reads snapshotted scores, so answers from
+  before and after the switch are on different score versions.
+- **Out of scope:** an eval term or a longer horizon for blunders with no material in either line (3,180 dev
+  rows, 15%, a known limit); draw blunders such as stalemate or threefold (29 dev rows, 0.14%); a fit on user
+  blunder-check answers; the benchmark DB backfill; new label sets.
+
+**Depends on**: Phase 259 (quiet-point rule, stored `material_loss` / `material_missed`, the fit tool) and
+Phase 257 (the type rule). Phases 260 and 261 read the score and are live on prod.
+**Requirements**: TBD
+**Plans:** 6/7 plans executed
+
+Plans:
+**Wave 1**
+- [x] 262-01-PLAN.md — promotions count as material in the line walk and the static exchange (D-01 to D-03)
+- [x] 262-02-PLAN.md — key-move gate follows the type rule in both twins, the fit tool and the status counters (D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 262-03-PLAN.md — offline refit inputs on the new rule, D-05 old-gate line, Phase 259 baseline, fit report
+- [x] 262-04-PLAN.md — targeted promotion pass script with dry run, sample check and undo log, dev rehearsal (D-06, D-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 262-05-PLAN.md — checkpoint tooling (refit_shift), caught-rate score-version split and --rescore, D-08 bands note
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 262-06-PLAN.md — prod checkpoint facts and the blocking owner decision on the model and cuts (259 D-15)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 262-07-PLAN.md — release: constants, changelog, gate, prod dry run, deploy, prod pass, caught-rate switch
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

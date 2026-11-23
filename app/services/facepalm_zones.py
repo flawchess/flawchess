@@ -8,7 +8,10 @@ PROVISIONAL and prod-derived, not benchmark-derived: the benchmark DB carries li
 only 18% of blunders until the Phase 252 re-walk, prod on about 94%. SEED-261120-bzq replaces
 these bands with benchmark-DB zones per Elo x TC. Regenerate after a facepalm refit, a change
 of the stored material rule or a stats-cut change. Current numbers: the Phase 259 model
-(FACEPALM_MODEL on the stored scalar inputs), measured 2026-11-22.
+(FACEPALM_MODEL on the stored scalar inputs), measured 2026-11-22. Phase 262 (D-08) changed the
+score (promotions count as material, the key-move gate is the type rule, refitted constants).
+These bands were deliberately not re-derived: they stay the Phase 259 model's until Phase 252
+concludes and the benchmark zones of SEED-261120-bzq replace them.
 
 Basis: prod, non-guest users, human opponents, chess.com + lichess, the most recent 1000
 games per user x TC within 36 months (RECENT_GAMES_PER_TC_CAP, RECENCY_WINDOW_MONTHS, the

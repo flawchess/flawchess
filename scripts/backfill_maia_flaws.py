@@ -135,7 +135,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import sentry_sdk
-from sqlalchemy import ColumnElement, Select, func, literal_column, not_, select, text
+from sqlalchemy import ColumnElement, Select, func, literal, literal_column, not_, select, text
 from sqlalchemy.dialects.postgresql import asyncpg as asyncpg_dialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -158,7 +158,7 @@ from app.services.blunder_check_rules import (  # noqa: E402
     FACEPALM_DRILL_LAMBDA,
     FACEPALM_SCORE_MIN,
 )
-from app.services.facepalm_score import facepalm_expr  # noqa: E402
+from app.services.facepalm_score import facepalm_expr, facepalm_type_expr  # noqa: E402
 from app.services.maia_flaw_scoring import (  # noqa: E402
     MAX_GAMES_PER_WRITE_TXN,
     GameMaiaScore,
@@ -1057,24 +1057,26 @@ async def _fetch_reply_status(session: AsyncSession, user_id: int | None) -> dic
 
     The stamp counts, then blunders of both sides in total and with a best-reply probability, then
     the residues a finished pass leaves (each restricted to rows the hook scored, played probability
-    set): `reply_residue_losing` (a losing blunder, material_loss > 0, still without a reply
+    set): `reply_residue_losing` (an allowed loss, the type rule of 262 D-04, still without a reply
     probability: no refutation line or a reply outside the policy), `unscored_pure_miss_no_best`
-    (no material loss and no best-move probability: the score cannot be computed) and
-    `blunders_without_material_inputs` (the line pass has not filled the scalars).
+    (a row that is not an allowed loss and has no best-move probability: the score cannot be
+    computed) and `blunders_without_material_inputs` (the line pass has not filled the scalars).
     """
     counts = await _stamp_counts(session, user_id, _REPLY_STATUS_QUERIES)
     scored = GameFlaw.maia_played_prob.is_not(None)
     value_filters: dict[str, Sequence[ColumnElement[bool]]] = {
         "blunders_total": (),
         "blunders_with_reply_prob": [GameFlaw.maia_best_reply_prob.is_not(None)],
+        # The type twin of the score's key-move gate (262 D-04); it is NULL for a NULL loss, so those
+        # rows drop out of both residues as before.
         "reply_residue_losing": [
             scored,
-            GameFlaw.material_loss > 0,
+            facepalm_type_expr() == literal("allowed_loss"),
             GameFlaw.maia_best_reply_prob.is_(None),
         ],
         "unscored_pure_miss_no_best": [
             scored,
-            GameFlaw.material_loss <= 0,
+            facepalm_type_expr() == literal("missed_win"),
             GameFlaw.maia_best_prob.is_(None),
         ],
         "blunders_without_material_inputs": [scored, GameFlaw.material_loss.is_(None)],

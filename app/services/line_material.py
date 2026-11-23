@@ -7,17 +7,24 @@ the ply at which the blunderer is mated, if ever. ``quiet_best_line_facts`` runs
 the BEST line (the best move is the first move, the rest of ``game_positions.pv`` at the flaw ply
 is its line) and finds the ply at which the opponent is mated.
 
-Counting rules, the semantics the owner's label study was run with:
+Counting rules, the semantics the owner's label study was run with, plus promotions (262 D-01):
 
-- piece values 1 / 3 / 3 / 5 / 9, only captures count, promotions are not material;
+- piece values 1 / 3 / 3 / 5 / 9; captures count, and a promotion credits the promoting side with
+  the promoted piece minus the pawn (queen 8, rook 4, bishop or knight 2), a capture-promotion adds
+  the captured piece on top (262 D-01); the first move, the quiet walk and the static exchange all
+  read this one rule through ``_victim_value``;
 - the first move's own capture counts in the mover's favour (the baseline is the position before
   the blunder);
 - an opponent capture of a piece that the blunderer's previous line move placed on that square
-  without capturing is ignored (engine desperado or spite check in a lost position);
+  without capturing is ignored (engine desperado or spite check in a lost position); a promotion
+  is a gain, so the capture of a freshly promoted piece on its promotion square counts (262 D-03),
+  while an opponent capture-promotion onto the quiet square is skipped as a whole, promotion gain
+  included (one dev occurrence, accepted);
 - each odd depth is read at the first quiet point at or after it: the walk takes ``depth`` plies,
-  then keeps going while the next line move is a capture, so an equal exchange of any length nets
-  to zero instead of being cut mid-trade; a stored line that ends inside an exchange is settled by
-  a static exchange on the last capture's square.
+  then keeps going while the next line move is a capture or a promotion, so an equal exchange of any
+  length nets to zero instead of being cut mid-trade; a stored line that ends inside an exchange
+  or on a promotion is settled by a static exchange on the last move's square, so a short line
+  ending on a promotion is no longer None.
 
 NULL rule: a depth the stored line does not reach is None ("line too short to tell"), not 0,
 unless the blunderer or the opponent is mated within the walked line or the static exchange settled
@@ -125,12 +132,24 @@ class _Step:
     opponent_mated: bool
 
 
+def _promotion_gain(move: chess.Move) -> int:
+    """Material a promotion credits the promoting side: the promoted piece minus the pawn (262 D-01).
+
+    Queen 8, rook 4, bishop or knight 2; 0 for a move that does not promote.
+    """
+    if move.promotion is None:
+        return 0
+    return PIECE_VALUES[move.promotion] - PIECE_VALUES[chess.PAWN]
+
+
 def _victim_value(board: chess.Board, move: chess.Move) -> int:
-    """Material value of the piece `move` captures on `board` (0 for a non-capture)."""
+    """Material `move` wins on `board`: the captured piece plus the promotion gain (0 for a quiet non-promotion)."""
     if board.is_en_passant(move):
+        # An en passant capture is never a promotion.
         return EN_PASSANT_VALUE
     piece = board.piece_at(move.to_square)
-    return PIECE_VALUES[piece.piece_type] if piece else 0
+    captured = PIECE_VALUES[piece.piece_type] if piece else 0
+    return captured + _promotion_gain(move)
 
 
 def _best_recapture(board: chess.Board, square: int) -> int:
@@ -146,11 +165,11 @@ def _best_recapture(board: chess.Board, square: int) -> int:
 
 def _exchange_value(board: chess.Board, capture: chess.Move) -> int:
     """Static exchange value of `capture` for the side making it (pawn units, may be negative)."""
-    victim = board.piece_at(capture.to_square)
-    if victim is not None:
-        gain = _SEE_VALUES[victim.piece_type]
-    else:
-        gain = EN_PASSANT_VALUE if board.is_en_passant(capture) else 0
+    # Bug fix (262 D-01): before Phase 262 this priced its own victim from _SEE_VALUES, so a
+    # capture-promotion made inside the exchange gained no promotion. A victim is never a king,
+    # so non-promotion captures price exactly as before; _best_recapture still orders attackers
+    # by _SEE_VALUES.
+    gain = _victim_value(board, capture)
     after = board.copy(stack=False)
     after.push(capture)
     return gain - _best_recapture(after, capture.to_square)

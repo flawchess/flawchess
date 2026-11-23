@@ -5,19 +5,27 @@ cache, no database, no Maia. The model shape is fixed by first principles, not c
 (D-01)::
 
     z = intercept + played_coef * ln(played_prob + 0.01) + loss_coef * loss + missed_coef * missed
-        + (loss > 0 ? reply_prob_coef * ln(reply_prob + 0.01) : best_prob_coef * ln(best_prob + 0.01))
+        + (loss > 0 and loss >= missed ? reply_prob_coef * ln(reply_prob + 0.01)
+                                       : best_prob_coef * ln(best_prob + 0.01))
 
 ``loss`` and ``missed`` are the stored quiet-rule decaying means (D-03), the missed term is fitted at
 lambda 1.0, and the best-reply probability replaces the reply spread on blunders that lose
-material (D-08). Only the six coefficients are fitted: Newton-Raphson (IRLS) logistic regression
+material (D-08). The key-move term follows the type rule (262 D-04, ``--gate type``, the default):
+the reply on an allowed loss, the best move on every other row. ``--gate loss`` is the Phase 259
+gate (the reply on any loss above zero); it only reproduces the 2026-11-22 constants and gives the
+D-05 reference line, it never chooses the model. Only the six coefficients are fitted: Newton-Raphson (IRLS) logistic regression
 on the decided labels (1 = fair, 0 = unfair), seeded K-fold cross-validation, a fair / unfair table
 among passers at the D-15 cuts from out-of-fold predictions, the label-set 8 hold-out, and a
 ready-to-paste constants block.
 
-An information-only section (D-12) fits the shipped rule and shape from the table's
-``loss_shipped`` / ``missed_shipped`` columns, quiet + spread, quiet + spread + reply probability and
-the chosen shape on the same rows, and prints how far the chosen shape's AUC is from the shipped
-one against the 0.02 range. It never decides the constants.
+An information-only section (D-12) fits the Phase 259 rule and shape (the reply probability when
+``loss > 0``, read from the table's ``loss_shipped`` / ``missed_shipped`` columns), quiet + spread,
+quiet + spread + reply probability, the chosen shape and the D-05 old-gate reference (the chosen
+columns on the new inputs, read with the Phase 259 gate) on the same rows, and prints how far the
+chosen shape's AUC is from the Phase 259 one against the 0.02 range. A second section prints the old
+gate's CV AUC and out-of-fold fair / unfair at 0.70 next to the chosen model's (262 D-05), and a
+third lists the rows whose (loss, missed) pair moved from the Phase 259 pair. None of them decides
+the constants.
 
 A ranking, not a probability (250 D-01): the labels are mostly rule passers, so the fitted values
 are not calibrated to all blunders.
@@ -47,6 +55,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from app.services import blunder_check_rules  # noqa: E402
 from app.services.blunder_check_rules import PLAYED_PROB_OFFSET  # noqa: E402
+from app.services.facepalm_score import is_allowed_loss  # noqa: E402
 from scripts.blunder_check.metrics import MaterialType, material_type_of  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -98,8 +107,8 @@ REASON_UNDECIDED: str = "label 0.5 (undecided)"
 REASON_NO_LABEL: str = "no label (extra row)"
 REASON_NO_PLAYED: str = "NULL played_prob"
 REASON_NO_LOSS: str = "NULL loss (no settled line)"
-REASON_NO_REPLY_PROB: str = "NULL reply_prob on a row that loses material (D-08)"
-REASON_NO_BEST_PROB: str = "NULL best_prob on a row that does not lose material (256 D-04)"
+REASON_NO_REPLY_PROB: str = "NULL reply_prob on an allowed loss (262 D-04)"
+REASON_NO_BEST_PROB: str = "NULL best_prob on a row that is not an allowed loss (262 D-04)"
 EXCLUSION_REASONS: tuple[str, ...] = (
     REASON_UNDECIDED,
     REASON_NO_LABEL,
@@ -109,7 +118,7 @@ EXCLUSION_REASONS: tuple[str, ...] = (
     REASON_NO_BEST_PROB,
 )
 # Only the alternatives read the reply spread; a NULL one drops the row from that section alone.
-REASON_NO_SPREAD: str = "NULL reply_spread on a row that loses material"
+REASON_NO_SPREAD: str = "NULL reply_spread on an allowed loss"
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "n",
@@ -134,18 +143,27 @@ CONSTANT_NAMES: tuple[str, ...] = (
     "FACEPALM_REPLY_PROB_COEF",
 )
 
-ShapeName = Literal["shipped_baseline", "quiet_spread", "quiet_spread_reply", "chosen"]
+ShapeName = Literal["shipped_baseline", "quiet_spread", "quiet_spread_reply", "chosen", "old_gate"]
 SHAPES: tuple[ShapeName, ...] = get_args(ShapeName)
 SHAPE_WORDS: dict[ShapeName, str] = {
-    "shipped_baseline": "shipped rule and shape (loss_shipped / missed_shipped, spread on losing rows)",
+    "shipped_baseline": (
+        "shipped rule and shape (Phase 259: loss_shipped / missed_shipped, reply probability "
+        "when loss > 0)"
+    ),
     "quiet_spread": "quiet rule, spread on losing rows",
     "quiet_spread_reply": "quiet rule, spread and reply probability on losing rows",
-    "chosen": "quiet rule, reply probability on losing rows (the shape that ships)",
+    "chosen": "new inputs, reply probability on allowed losses (the type rule, the shape that ships)",
+    "old_gate": (
+        "new inputs with the Phase 259 gate (reply probability when loss > 0), the D-05 reference"
+    ),
 }
 # The design columns of each shape, intercept first (the chosen shape's order is CONSTANT_NAMES').
 SHAPE_COLUMNS: dict[ShapeName, tuple[str, ...]] = {
     "chosen": ("intercept", "played", "loss", "missed", "best_prob", "reply_prob"),
-    "shipped_baseline": ("intercept", "played", "loss", "missed", "best_prob", "spread"),
+    # The Phase 259 shape and the D-05 reference have the chosen columns; they differ in the inputs
+    # they read (`_shape_material`) and the gate they apply (`SHAPE_GATES`).
+    "shipped_baseline": ("intercept", "played", "loss", "missed", "best_prob", "reply_prob"),
+    "old_gate": ("intercept", "played", "loss", "missed", "best_prob", "reply_prob"),
     "quiet_spread": ("intercept", "played", "loss", "missed", "best_prob", "spread"),
     "quiet_spread_reply": (
         "intercept",
@@ -158,6 +176,28 @@ SHAPE_COLUMNS: dict[ShapeName, tuple[str, ...]] = {
     ),
 }
 MATERIAL_TYPES: tuple[MaterialType, ...] = get_args(MaterialType)
+
+# The key-move gate (262 D-04): "type" is the 257 type rule, "loss" the Phase 259 loss-only gate.
+GateName = Literal["type", "loss"]
+GATES: tuple[GateName, ...] = get_args(GateName)
+DEFAULT_GATE: GateName = "type"
+# The shapes that pin their own gate (the Phase 259 loss gate); None = the run's gate.
+SHAPE_GATES: dict[ShapeName, GateName | None] = {
+    "shipped_baseline": "loss",
+    "old_gate": "loss",
+    "quiet_spread": None,
+    "quiet_spread_reply": None,
+    "chosen": None,
+}
+# Which key-move terms a shape reads: the reply probability (chosen columns and quiet_spread_reply)
+# and the reply spread (the two spread shapes).
+REPLY_PROB_SHAPES: tuple[ShapeName, ...] = (
+    "chosen",
+    "quiet_spread_reply",
+    "shipped_baseline",
+    "old_gate",
+)
+SPREAD_SHAPES: tuple[ShapeName, ...] = ("quiet_spread", "quiet_spread_reply")
 
 REPORT_HEADER: str = (
     "A ranking, not a probability (250 D-01): the labels are mostly rule passers, so the fitted "
@@ -355,25 +395,46 @@ def _shape_material(row: ScalarFitRow, shape: ShapeName) -> tuple[float | None, 
     return row.loss, row.missed
 
 
-def missing_reason(row: ScalarFitRow, shape: ShapeName) -> str | None:
+def _shape_gate(shape: ShapeName, gate: GateName) -> GateName:
+    """The gate `shape` is read with: its own when it pins one (Phase 259 shapes), else the run's `gate`."""
+    pinned = SHAPE_GATES[shape]
+    return gate if pinned is None else pinned
+
+
+def _reads_reply(loss: float, missed: float, gate: GateName) -> bool:
+    """Whether the key-move term of a row is the reply (True) or the best move (False).
+
+    "type": the 257 type rule, `is_allowed_loss` of the app twin (262 D-04). "loss": the Phase 259
+    gate, any loss above zero. The loss gate exists only to reproduce the Phase 259 constants and
+    for the D-05 reference line, never for the chosen model.
+    """
+    if gate == "type":
+        return is_allowed_loss(loss, missed)
+    return loss > 0
+
+
+def missing_reason(
+    row: ScalarFitRow, shape: ShapeName, gate: GateName = DEFAULT_GATE
+) -> str | None:
     """Why `shape` cannot score `row` (a decided, played-prob row), or None when it can.
 
     Mirrors what the twin reads: the reply probability (or, for the spread shapes, the reply
-    spread) on rows that lose material, the best-move probability on the others (256 D-04 mirrored).
+    spread) on rows that read the reply under `gate`, the best-move probability on the others
+    (256 D-04 mirrored, 262 D-04 gate).
     """
-    loss, _ = _shape_material(row, shape)
+    loss, missed = _shape_material(row, shape)
     if loss is None:
         return REASON_NO_LOSS
-    if loss > 0:
-        if shape in ("chosen", "quiet_spread_reply") and row.reply_prob is None:
+    if _reads_reply(loss, missed, _shape_gate(shape, gate)):
+        if shape in REPLY_PROB_SHAPES and row.reply_prob is None:
             return REASON_NO_REPLY_PROB
-        if shape != "chosen" and row.reply_spread is None:
+        if shape in SPREAD_SHAPES and row.reply_spread is None:
             return REASON_NO_SPREAD
         return None
     return REASON_NO_BEST_PROB if row.best_prob is None else None
 
 
-def _exclusion_reason(row: ScalarFitRow) -> str | None:
+def _exclusion_reason(row: ScalarFitRow, gate: GateName) -> str | None:
     """The first reason `row` cannot enter the chosen-shape fit, or None when it can."""
     if row.label is None:
         return REASON_NO_LABEL
@@ -381,15 +442,17 @@ def _exclusion_reason(row: ScalarFitRow) -> str | None:
         return REASON_UNDECIDED
     if row.played_prob is None:
         return REASON_NO_PLAYED
-    return missing_reason(row, "chosen")
+    return missing_reason(row, "chosen", gate)
 
 
-def split_usable(rows: Sequence[ScalarFitRow]) -> tuple[list[ScalarFitRow], dict[str, int]]:
+def split_usable(
+    rows: Sequence[ScalarFitRow], gate: GateName = DEFAULT_GATE
+) -> tuple[list[ScalarFitRow], dict[str, int]]:
     """Rows the chosen shape can fit, and how many were excluded per reason."""
     counts = dict.fromkeys(EXCLUSION_REASONS, 0)
     usable: list[ScalarFitRow] = []
     for row in rows:
-        reason = _exclusion_reason(row)
+        reason = _exclusion_reason(row, gate)
         if reason is None:
             usable.append(row)
         else:
@@ -412,47 +475,51 @@ def _log_term(prob: float | None) -> float:
     return math.log(_require(prob) + PLAYED_PROB_OFFSET)
 
 
-def design_row(row: ScalarFitRow, shape: ShapeName) -> list[float]:
+def design_row(row: ScalarFitRow, shape: ShapeName, gate: GateName = DEFAULT_GATE) -> list[float]:
     """The design values of one usable row for `shape`, in SHAPE_COLUMNS order (intercept first).
 
-    The best-move term is on non-losing rows only and the reply term (reply probability, or the raw
-    reply spread for the spread shapes) on losing rows only, each 0 elsewhere. The missed term is
-    the raw `missed` (lambda 1.0).
+    The best-move term is on rows that do not read the reply under `gate` only, and the reply term
+    (reply probability, or the raw reply spread for the spread shapes) on rows that do, each 0
+    elsewhere. The missed term is the raw `missed` (lambda 1.0).
     """
     loss_value, missed = _shape_material(row, shape)
     loss = _require(loss_value)
-    losing = loss > 0
+    reads_reply = _reads_reply(loss, missed, _shape_gate(shape, gate))
     values = [
         1.0,
         _log_term(row.played_prob),
         loss,
         missed,
-        0.0 if losing else _log_term(row.best_prob),
+        0.0 if reads_reply else _log_term(row.best_prob),
     ]
-    spread = _require(row.reply_spread) if losing else 0.0
-    reply = _log_term(row.reply_prob) if losing else 0.0
-    if shape == "chosen":
+    reply = _log_term(row.reply_prob) if reads_reply and shape in REPLY_PROB_SHAPES else 0.0
+    if shape not in SPREAD_SHAPES:
         return [*values, reply]
+    spread = _require(row.reply_spread) if reads_reply else 0.0
     if shape == "quiet_spread_reply":
         return [*values, reply, spread]
     return [*values, spread]
 
 
-def design_matrix(rows: Sequence[ScalarFitRow], shape: ShapeName) -> np.ndarray:
+def design_matrix(
+    rows: Sequence[ScalarFitRow], shape: ShapeName, gate: GateName = DEFAULT_GATE
+) -> np.ndarray:
     """Design matrix of usable rows for `shape`."""
-    return np.array([design_row(row, shape) for row in rows], dtype=float)
+    return np.array([design_row(row, shape, gate) for row in rows], dtype=float)
 
 
-def scalar_score(row: ScalarFitRow, coefs: ScalarCoefs) -> float | None:
+def scalar_score(
+    row: ScalarFitRow, coefs: ScalarCoefs, gate: GateName = DEFAULT_GATE
+) -> float | None:
     """The score of one features row under `coefs` (None when an input the row needs is NULL).
 
     The function plan 09 pins against the app twin: the logistic of the chosen shape's linear term.
     """
     if row.played_prob is None or row.loss is None:
         return None
-    if missing_reason(row, "chosen") is not None:
+    if missing_reason(row, "chosen", gate) is not None:
         return None
-    vector = design_row(row, "chosen")
+    vector = design_row(row, "chosen", gate)
     z = sum(c * v for c, v in zip(coefs.by_name().values(), vector, strict=True))
     return float(sigmoid(np.array(z)))
 
@@ -605,11 +672,21 @@ class FitOutcome:
     alternatives_note: str
     split: SplitResult
     extras: list[ExtraScore]
+    # The key-move gate the run was fitted and scored with (262 D-04).
+    gate: GateName
+    # Whether the table carries loss_shipped / missed_shipped (the Phase 259 pair).
+    has_shipped: bool
 
 
-def fit_shape(rows: Sequence[ScalarFitRow], shape: ShapeName, folds: int, seed: int) -> ShapeFit:
+def fit_shape(
+    rows: Sequence[ScalarFitRow],
+    shape: ShapeName,
+    folds: int,
+    seed: int,
+    gate: GateName = DEFAULT_GATE,
+) -> ShapeFit:
     """Fit one shape on all rows and cross-validate it (repeated over REPEAT_SEEDS fold assignments)."""
-    x = design_matrix(rows, shape)
+    x = design_matrix(rows, shape, gate)
     y = labels_of(rows)
     coef = fit_logistic(x, y)
     oof = cv_predictions(x, y, folds, seed)
@@ -630,16 +707,18 @@ def fit_shape(rows: Sequence[ScalarFitRow], shape: ShapeName, folds: int, seed: 
 HOLDOUT_EMPTY_NOTE: str = "train or holdout set is empty"
 
 
-def holdout_split(usable: Sequence[ScalarFitRow], threshold: float) -> SplitResult:
+def holdout_split(
+    usable: Sequence[ScalarFitRow], threshold: float, gate: GateName = DEFAULT_GATE
+) -> SplitResult:
     """Fit the chosen shape on sets 1-7, report AUC and the passer table on set 8."""
     train = [row for row in usable if row.set_id in TRAIN_SETS]
     test = [row for row in usable if row.set_id == TEST_SET]
     if not train or not test:
         return SplitResult(len(train), len(test), None, [], HOLDOUT_EMPTY_NOTE)
     try:
-        coef = fit_logistic(design_matrix(train, "chosen"), labels_of(train))
+        coef = fit_logistic(design_matrix(train, "chosen", gate), labels_of(train))
         y_test = labels_of(test)
-        scores = sigmoid(design_matrix(test, "chosen") @ coef)
+        scores = sigmoid(design_matrix(test, "chosen", gate) @ coef)
         table = passer_table(scores, y_test, cuts_for(threshold))
         return SplitResult(len(train), len(test), auc(scores, y_test), table, "")
     except FitError as exc:
@@ -651,35 +730,56 @@ def _alternative_shapes(has_shipped: bool) -> tuple[ShapeName, ...]:
 
 
 def fit_alternatives(
-    usable: Sequence[ScalarFitRow], has_shipped: bool, folds: int, seed: int
+    usable: Sequence[ScalarFitRow],
+    has_shipped: bool,
+    folds: int,
+    seed: int,
+    gate: GateName = DEFAULT_GATE,
 ) -> tuple[list[ShapeFit], str]:
-    """Every shape fitted on the rows usable for all of them (D-12); the second item is a note."""
+    """Every shape fitted on the rows usable for all of them (D-12); the second item is a note.
+
+    The Phase 259 baseline and the D-05 old-gate reference read the loss gate (`SHAPE_GATES`), the
+    other shapes the run's `gate`.
+    """
     shapes = _alternative_shapes(has_shipped)
-    rows = [row for row in usable if all(missing_reason(row, shape) is None for shape in shapes)]
+    rows = [
+        row for row in usable if all(missing_reason(row, shape, gate) is None for shape in shapes)
+    ]
     note = "" if has_shipped else "the features table has no loss_shipped / missed_shipped columns"
     if len(rows) < folds:
         return [], f"too few rows usable for every shape ({len(rows)})"
     try:
-        return [fit_shape(rows, shape, folds, seed) for shape in shapes], note
+        return [fit_shape(rows, shape, folds, seed, gate) for shape in shapes], note
     except FitError as exc:
         return [], f"alternatives not fitted: {exc}"
 
 
-def score_extras(rows: Sequence[ScalarFitRow], coefs: ScalarCoefs) -> list[ExtraScore]:
+def score_extras(
+    rows: Sequence[ScalarFitRow], coefs: ScalarCoefs, gate: GateName = DEFAULT_GATE
+) -> list[ExtraScore]:
     """Score the unlabelled rows with the fitted model (None when an input is NULL)."""
     return [
-        ExtraScore(row=row, score=scalar_score(row, coefs)) for row in rows if row.label is None
+        ExtraScore(row=row, score=scalar_score(row, coefs, gate))
+        for row in rows
+        if row.label is None
     ]
 
 
-def run_fit(table: FeatureTable, *, threshold: float, folds: int, seed: int) -> FitOutcome:
-    """Run every comparison on the table's rows."""
-    usable, excluded = split_usable(table.rows)
+def run_fit(
+    table: FeatureTable,
+    *,
+    threshold: float,
+    folds: int,
+    seed: int,
+    gate: GateName = DEFAULT_GATE,
+) -> FitOutcome:
+    """Run every comparison on the table's rows under the key-move `gate`."""
+    usable, excluded = split_usable(table.rows, gate)
     if not usable:
         raise FitError("no usable rows")
-    chosen = fit_shape(usable, "chosen", folds, seed)
+    chosen = fit_shape(usable, "chosen", folds, seed, gate)
     coefs = ScalarCoefs.from_vector(chosen.coef.tolist())
-    alternatives, note = fit_alternatives(usable, table.has_shipped, folds, seed)
+    alternatives, note = fit_alternatives(usable, table.has_shipped, folds, seed, gate)
     return FitOutcome(
         rows=table.rows,
         usable=usable,
@@ -688,8 +788,10 @@ def run_fit(table: FeatureTable, *, threshold: float, folds: int, seed: int) -> 
         coefs=coefs,
         alternatives=alternatives,
         alternatives_note=note,
-        split=holdout_split(usable, threshold),
-        extras=score_extras(table.rows, coefs),
+        split=holdout_split(usable, threshold, gate),
+        extras=score_extras(table.rows, coefs, gate),
+        gate=gate,
+        has_shipped=table.has_shipped,
     )
 
 
@@ -840,6 +942,75 @@ def _range_check_lines(outcome: FitOutcome) -> list[str]:
     ]
 
 
+def _fair_unfair_at_threshold(fit: ShapeFit) -> str:
+    """Out-of-fold fair / unfair among rows scoring at or above FIT_SELECTION_THRESHOLD."""
+    entry = passer_table(fit.oof, labels_of(fit.rows), [FIT_SELECTION_THRESHOLD])[0]
+    return f"{entry.fair} / {entry.unfair}"
+
+
+def _old_gate_section(outcome: FitOutcome) -> list[str]:
+    """D-05: the chosen fit and the old-gate fit side by side on the same rows (information only)."""
+    lines = [
+        "## Old gate reference (D-05, information only)",
+        "",
+        "The model is fitted with the type-rule gate (262 D-04). This line fits the same shape on the "
+        "same rows and inputs with the Phase 259 gate (the reply probability whenever loss > 0) and "
+        "only informs (259 D-01): it never chooses the constants.",
+        "",
+    ]
+    fits = {fit.shape: fit for fit in outcome.alternatives}
+    chosen, old = fits.get("chosen"), fits.get("old_gate")
+    if chosen is None or old is None:
+        return [*lines, "Not available.", ""]
+    cut = f"{FIT_SELECTION_THRESHOLD:.2f}"
+    return [
+        *lines,
+        f"| gate | rows | CV AUC mean | fair / unfair at {cut} (out of fold) |",
+        "|---|---|---|---|",
+        f"| {outcome.gate} (chosen) | {len(chosen.rows)} | {chosen.auc_mean:.3f} "
+        f"| {_fair_unfair_at_threshold(chosen)} |",
+        f"| loss (old gate) | {len(old.rows)} | {old.auc_mean:.3f} | {_fair_unfair_at_threshold(old)} |",
+        "",
+    ]
+
+
+def _pair(loss: float | None, missed: float | None) -> str:
+    return f"{_fmt(loss)} / {_fmt(missed)}"
+
+
+def _changed_inputs_section(outcome: FitOutcome) -> list[str]:
+    """The rows whose (loss, missed) pair differs from the Phase 259 pair, both pairs shown."""
+    if not outcome.has_shipped:
+        return []
+    lines = [
+        "## Rows whose inputs changed",
+        "",
+        "Rows whose (loss, missed) pair under the current material rule differs from the Phase 259 "
+        "pair (loss_shipped, missed_shipped).",
+        "",
+    ]
+    moved = [
+        row
+        for row in outcome.rows
+        if (row.loss, row.missed) != (row.loss_shipped, row.missed_shipped)
+    ]
+    if not moved:
+        return [*lines, "None.", ""]
+    lines.extend(
+        [
+            "| n | set | label | loss_shipped / missed_shipped | loss / missed |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for row in moved:
+        label = "n/a" if row.label is None else f"{row.label:g}"
+        lines.append(
+            f"| {row.n} | {row.set_id} | {label} "
+            f"| {_pair(row.loss_shipped, row.missed_shipped)} | {_pair(row.loss, row.missed)} |"
+        )
+    return [*lines, ""]
+
+
 # The decided rows of set 8 (the blind set): its AUC moves by several hundredths between samples.
 SET_EIGHT_SIZE_NOTE: str = (
     "Set 8 has about 55 decided rows, so its AUC moves by several hundredths between samples: "
@@ -883,13 +1054,15 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _note_row(note: LabelNote, row: ScalarFitRow | None, coefs: ScalarCoefs) -> str:
+def _note_row(
+    note: LabelNote, row: ScalarFitRow | None, coefs: ScalarCoefs, gate: GateName = DEFAULT_GATE
+) -> str:
     """One commented label row: its label, comment and its score under the chosen coefficients."""
     if row is None:
         label, score = "n/a", OWNER_NOT_IN_FEATURES
     else:
         label = "n/a" if row.label is None else f"{row.label:g}"
-        value = scalar_score(row, coefs)
+        value = scalar_score(row, coefs, gate)
         score = OWNER_NO_SCORE if value is None else _fmt(value)
     return f"| {note.n} | {note.set_id} | {label} | {note.link} | {_cell(note.comment)} | {score} |"
 
@@ -908,7 +1081,9 @@ def _commented_rows_lines(outcome: FitOutcome, notes: dict[str, LabelNote] | Non
             "|---|---|---|---|---|---|",
         ]
     )
-    lines.extend(_note_row(note, by_n.get(n), outcome.coefs) for n, note in notes.items())
+    lines.extend(
+        _note_row(note, by_n.get(n), outcome.coefs, outcome.gate) for n, note in notes.items()
+    )
     return [*lines, ""]
 
 
@@ -1016,6 +1191,8 @@ def render_report(
         *_chosen_section(outcome, folds),
         *_d15_section(outcome, threshold),
         *_alternatives_section(outcome, folds),
+        *_old_gate_section(outcome),
+        *_changed_inputs_section(outcome),
         *_split_section(outcome.split),
         *_owner_section(outcome, notes, threshold),
         *_extra_section(outcome, threshold),
@@ -1069,6 +1246,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             f"exit {EXIT_CONSTANTS_MISMATCH} with a shipped-vs-refit table when they differ"
         ),
     )
+    parser.add_argument(
+        "--gate",
+        choices=GATES,
+        default=DEFAULT_GATE,
+        help=(
+            "key-move gate of the chosen shape: type = the 257 type rule (262 D-04); "
+            "loss = the Phase 259 gate, reproduces the 2026-11-22 constants"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1088,7 +1274,9 @@ def _fit_and_render(table: FeatureTable, args: argparse.Namespace) -> tuple[str,
     """Run the fit; the markdown report and the refit coefficients."""
     # Read first: a bad labels file fails before the fit.
     notes = None if args.labels is None else load_label_notes(args.labels)
-    outcome = run_fit(table, threshold=args.threshold, folds=args.folds, seed=args.seed)
+    outcome = run_fit(
+        table, threshold=args.threshold, folds=args.folds, seed=args.seed, gate=args.gate
+    )
     report = render_report(
         outcome,
         features_name=args.features.name,

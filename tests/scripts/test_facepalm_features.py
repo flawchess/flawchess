@@ -790,6 +790,8 @@ def test_null_score_input_follows_the_shipped_score() -> None:
     row, _, _ = _row_with_best_line(pv=_seed_line(), best_pv=_best_line_for(pre_board))
     losing = MaterialInputs(loss=2.0, missed=0.0)
     level = MaterialInputs(loss=0.0, missed=3.0)
+    # 262 D-04: a mixed row (loses material but misses more) reads the best move, like a missed win.
+    mixed = MaterialInputs(loss=1.0, missed=3.0)
 
     def scored(**changes: object) -> bool:
         return not _has_null_score_input(replace(row, **changes))
@@ -803,6 +805,8 @@ def test_null_score_input_follows_the_shipped_score() -> None:
     # A row that loses nothing needs the best-move probability, not the reply probability.
     assert not scored(**full | {"quiet": level, "best_prob": None})
     assert scored(**full | {"quiet": level, "reply_prob": None})
+    assert not scored(**full | {"quiet": mixed, "best_prob": None})
+    assert scored(**full | {"quiet": mixed, "reply_prob": None})
     # The played probability and the stored loss are always needed.
     assert not scored(**full | {"quiet": losing, "played_prob": None})
     assert not scored(**full | {"quiet": MaterialInputs(loss=None, missed=None)})

@@ -67,6 +67,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Eval chart: facepalm blunders are drawn in dark red and the tooltip names them Facepalm.
 - Library filters: the Flaws filter has three tags, Facepalm, Blunder and Mistake. Blunder now lists the blunders that are not facepalms (select Blunder and Facepalm for all blunders), and the selected tags, Gem and Great too, are ringed in the move quality table on game cards.
 - Facepalm score: the score of your opponents' blunders now shows on the game card and on the analysis page too.
+- Facepalm score: pawn promotions now count as material, so a blunder that lets the opponent promote, or misses your own promotion, counts like losing or missing that piece. Each blunder is also judged on the move that matters for its type: how likely the punishing reply was when material is given away, how likely the best move was when a win is missed. The score is refitted on the same labels, so facepalm chips, the Facepalm filter, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
 - Game cards: the mobile summary row shows Gem, Great, Best, Mistake, Blunder and Facepalm, and desktop cards are a little taller so the board lines up with the table.
 
 ### Removed

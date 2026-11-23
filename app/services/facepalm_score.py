@@ -10,11 +10,13 @@ present the score as a share of peers.
                       + loss_coef * loss + missed_coef * lam * missed + key-move term
     score = 1 / (1 + exp(-z))
 
-The key-move term reads the opponent's reply on a losing row and the best move on a row that
-loses nothing:
+The key-move term reads the opponent's reply on an allowed loss and the best move on every other
+row (the type rule, 262 D-04):
 
-    key-move term = reply_prob_coef * ln(reply_prob + PLAYED_PROB_OFFSET)   when loss > 0
+    key-move term = reply_prob_coef * ln(reply_prob + PLAYED_PROB_OFFSET)   when loss > 0 and loss >= missed
                   = best_prob_coef  * ln(best_prob  + PLAYED_PROB_OFFSET)   otherwise
+
+A NULL missed reads as 0.0 in the condition. There is no minimum loss: the gate is exactly the type.
 
 Inputs, all stored scalars on game_flaws (no engine and no line arrays at scoring time):
 - ``played_prob``: Maia's probability for the played move (``maia_played_prob``);
@@ -27,8 +29,9 @@ Inputs, all stored scalars on game_flaws (no engine and no line arrays at scorin
 Term rules (identical in both twins):
 - A NULL played probability or a NULL loss leaves the row unscored (the SQL twin has an explicit
   first CASE branch for it, so a NULL loss never reaches the ELSE branch).
-- A losing row (loss > 0) with a NULL reply probability, and a row that loses nothing with a
-  NULL best-move probability, are unscored (256 D-04, mirrored for the reply).
+- An allowed loss with a NULL reply probability, and any other row with a NULL best-move
+  probability, are unscored (256 D-04, mirrored for the reply; 262 D-04 moves the gate to the
+  type rule, so a mixed row with loss 1.0, missed 3.0 and no best-move probability is unscored).
 - Lambda (D-03, D-04) multiplies the missed term only, so lam 0 is the loss-only score. The
   stored pair is NULL together (ck_game_flaws_material_pair), so a scored row has a missed value.
 - A coefficient that is exactly 0.0 (and a zero lambda weight) omits its term at build time in both
@@ -41,6 +44,8 @@ material in either line is a missed win). The type is NULL / None exactly when t
 unknown. It takes no lambda and no fitted coefficient: the model weights lost material about twice
 as much as a missed gain, so the types are only ever compared with the same type of the opponents
 (257 D-04). Twins: ``facepalm_type`` (Python) and ``facepalm_type_sql`` / ``facepalm_type_expr`` (SQL).
+The type and the key-move gate share one condition (262 D-04): ``is_allowed_loss`` (Python) and
+``_allowed_loss_sql`` (SQL).
 
 The formula exists twice: ``facepalm_score`` (Python) and ``facepalm_score_sql`` (SQLAlchemy
 expression, so selection stays a plain SQL filter on game_flaws). If either side changes,
@@ -94,6 +99,7 @@ __all__ = [
     "facepalm_type_from_sql",
     "facepalm_type_of",
     "facepalm_type_sql",
+    "is_allowed_loss",
     "material_loss",
     "material_missed",
 ]
@@ -215,9 +221,19 @@ def _log_term(coef: float, prob: float | None) -> float | None:
     return coef * math.log(prob + PLAYED_PROB_OFFSET)
 
 
+def is_allowed_loss(loss: float, missed: float | None) -> bool:
+    """The allowed-loss condition: ``loss > 0 and loss >= missed`` (a NULL missed reads as 0.0).
+
+    One condition for the facepalm type (257 D-02) and the key-move gate (262 D-04): the type is
+    "allowed_loss" and the score reads the opponent's reply exactly when this holds. The raw missed
+    is compared, never lambda times missed. SQL twin: `_allowed_loss_sql`.
+    """
+    return loss > 0 and loss >= (0.0 if missed is None else missed)
+
+
 def _key_move_term(model: FacepalmModel, facts: FacepalmFacts, loss: float) -> float | None:
-    """The key-move term: the reply on a losing row, the best move otherwise (None = unscored)."""
-    if loss > 0:
+    """The key-move term: the reply on an allowed loss, the best move otherwise (None = unscored)."""
+    if is_allowed_loss(loss, facts.missed):
         return _log_term(model.reply_prob_coef, facts.reply_prob)
     return _log_term(model.best_prob_coef, facts.best_prob)
 
@@ -258,15 +274,21 @@ def _log_term_sql(coef: float, prob: Any) -> ColumnElement[Any]:
     return case((prob.is_(None), null()), else_=coef * func.ln(prob + PLAYED_PROB_OFFSET))
 
 
+def _allowed_loss_sql(columns: FacepalmColumns) -> ColumnElement[bool]:
+    """SQL twin of `is_allowed_loss`: ``loss > 0 and loss >= coalesce(missed, 0.0)``."""
+    return and_(columns.loss > 0, columns.loss >= func.coalesce(columns.missed, literal(0.0)))
+
+
 def _key_move_sql(columns: FacepalmColumns, model: FacepalmModel) -> ColumnElement[Any]:
     """SQL twin of `_key_move_term` as an explicit CASE.
 
-    The first branch is the NULL guard: without it a NULL loss makes `loss > 0` NULL and falls
-    through to the best-move ELSE branch, which scores a row the Python twin leaves unscored.
+    The first branch is the NULL guard: without it a NULL loss makes the allowed-loss condition
+    NULL and falls through to the best-move ELSE branch, which scores a row the Python twin
+    leaves unscored.
     """
     return case(
         (columns.played_prob.is_(None) | columns.loss.is_(None), null()),
-        (columns.loss > 0, _log_term_sql(model.reply_prob_coef, columns.reply_prob)),
+        (_allowed_loss_sql(columns), _log_term_sql(model.reply_prob_coef, columns.reply_prob)),
         else_=_log_term_sql(model.best_prob_coef, columns.best_prob),
     )
 
@@ -323,13 +345,13 @@ def facepalm_expr(lam: float, model: FacepalmModel = FACEPALM_MODEL) -> ColumnEl
 def facepalm_type_of(loss: float | None, missed: float) -> FacepalmType | None:
     """257 D-02: the type of a blunder from its material inputs, None when the loss is unknown.
 
-    Allowed loss when ``loss > 0 and loss >= missed`` (a tie is an allowed loss), missed win
-    otherwise, so a row with no material in either line is a missed win. The fitted coefficients
-    are never used. Shared rule of both type twins.
+    Allowed loss when `is_allowed_loss` holds (``loss > 0 and loss >= missed``, a tie is an
+    allowed loss), missed win otherwise, so a row with no material in either line is a missed
+    win. The fitted coefficients are never used. Shared rule of both type twins.
     """
     if loss is None:
         return None
-    return "allowed_loss" if loss > 0 and loss >= missed else "missed_win"
+    return "allowed_loss" if is_allowed_loss(loss, missed) else "missed_win"
 
 
 def facepalm_type(facts: FacepalmFacts) -> FacepalmType | None:
@@ -343,15 +365,14 @@ def facepalm_type(facts: FacepalmFacts) -> FacepalmType | None:
 def facepalm_type_sql(columns: FacepalmColumns) -> ColumnElement[str]:
     """SQL twin of `facepalm_type` (257 D-02): NULL when the loss is unknown.
 
-    Allowed loss when loss > 0 and loss >= missed, missed win otherwise; the same rule as
+    Allowed loss when `_allowed_loss_sql` holds, missed win otherwise; the same rule as
     `facepalm_type_of`. Its Python twin is `facepalm_type`: if either side changes, update the other.
     """
-    missed = func.coalesce(columns.missed, literal(0.0))
     # type_coerce only retypes the CASE for the checker (its branches are string literals).
     return type_coerce(
         case(
             (columns.loss.is_(None), null()),
-            (and_(columns.loss > 0, columns.loss >= missed), literal("allowed_loss")),
+            (_allowed_loss_sql(columns), literal("allowed_loss")),
             else_=literal("missed_win"),
         ),
         String(),
