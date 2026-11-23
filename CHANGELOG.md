@@ -73,6 +73,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Library: the eval chart tooltip background is translucent again, and the move-quality icons in the mobile move stats row are the same size as in the full table.
 - Tactic tags: a blunder that allows (or misses) a forced checkmate no longer loses its checkmate tag when two moves mate equally fast somewhere along the line. Existing games pick the tag up after the next re-tagging run. (quick 261122-jsf)
 - Tactic tags: long forced checkmates (about seven moves or more) are now tagged as checkmate reliably. Before, the tag depended on what the opponent happened to play next, and a missed long mate was usually not tagged at all. A mate in one is also no longer left untagged in some opening positions. Existing games pick the tags up after the next re-tagging run. (quick 261122-kos)
 - Tactic tags: for mistakes in the opening, the analysis now always records the second-best move at the start of the engine line. It was missing for 5 to 11% of opening mistakes, which let some tactic tags through unchecked and dropped others. Games analysed from now on are correct; older games are repaired with the ongoing engine-line repair. (quick 261122-l3u)
