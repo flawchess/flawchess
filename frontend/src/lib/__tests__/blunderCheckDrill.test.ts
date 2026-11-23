@@ -445,7 +445,7 @@ describe('answering', () => {
     expect(drillProgress(nextPrompt)).toMatchObject({ banked: 4, pot: 1, potEvent: null });
   });
 
-  it('a lost pot busts without lowering the banked total', () => {
+  it('a timeout on the blunder busts the pot without lowering the banked total', () => {
     const start = run(
       [
         { type: 'ANSWER_SUBMITTED', answer: 'safe' },
@@ -463,7 +463,7 @@ describe('answering', () => {
         {
           type: 'ANSWER_GRADED',
           response: graded({
-            result: 'missed',
+            result: 'timeout_blunder',
             points_awarded: 0,
             points_forfeited: 2,
             window_points: 0,
@@ -490,21 +490,62 @@ describe('answering', () => {
     expect(loading && bankingProgress(loading)).toMatchObject({ banked: 4, potEvent: null });
   });
 
+  it('a missed call keeps the pot: no bust, the pot stays as it was', () => {
+    const start = run(
+      [
+        { type: 'ANSWER_SUBMITTED', answer: 'safe' },
+        { type: 'ANSWER_GRADED', response: graded({ window_points: 2, session_points: 6 }) },
+        { type: 'FEEDBACK_DONE' },
+        { type: 'ADVANCE_TICK' },
+        { type: 'ADVANCE_TICK' },
+      ],
+      atPrompt(),
+    );
+    const missed = run(
+      [
+        { type: 'ANSWER_SUBMITTED', answer: 'safe' },
+        {
+          type: 'ANSWER_GRADED',
+          response: graded({
+            result: 'missed',
+            points_awarded: 0,
+            points_forfeited: 0,
+            window_points: 2,
+            session_points: 6,
+            window_ended: true,
+            outcome: 'missed',
+            reply_uci: null,
+            next_prompt: null,
+            timer_remaining_ms: null,
+            better_move: { fen: START_FEN, key_uci: 'd2d4', server_graded_moves: [] },
+          }),
+        },
+      ],
+      start,
+    );
+    expect(drillProgress(missed)).toMatchObject({
+      banked: 4,
+      pot: 2,
+      potEvent: null,
+      windowOver: false,
+    });
+  });
+
   it('a forfeit flashes the forfeited amount and lowers the server session total', () => {
     const feedback = asPhase(
       run(
         [
-          { type: 'ANSWER_SUBMITTED', answer: 'blunder' },
+          { type: 'ANSWER_SUBMITTED', answer: 'safe' },
           {
             type: 'ANSWER_GRADED',
             response: graded({
-              result: 'false_alarm',
+              result: 'timeout_blunder',
               points_awarded: 0,
               points_forfeited: 2,
               window_points: 0,
               session_points: 2,
               window_ended: true,
-              outcome: 'false_alarm',
+              outcome: 'missed',
               next_prompt: null,
               timer_remaining_ms: null,
             }),
@@ -523,6 +564,15 @@ describe('answering', () => {
     expect(flashFor(penalised)).toEqual({ amount: 1, variant: 'forfeit' });
     const response = graded({ result: 'timeout_safe', points_awarded: 0, points_forfeited: 0 });
     expect(flashFor(response)).toEqual({ amount: 0, variant: 'neutral' });
+  });
+
+  it('a missed blunder that forfeits nothing flashes a neutral +0, a timeout on it forfeits the pot', () => {
+    for (const result of ['missed', 'timeout_blunder'] as const) {
+      const kept = graded({ result, points_awarded: 0, points_forfeited: 0 });
+      expect(flashFor(kept)).toEqual({ amount: 0, variant: 'neutral' });
+    }
+    const lost = graded({ result: 'timeout_blunder', points_awarded: 0, points_forfeited: 4 });
+    expect(flashFor(lost)).toEqual({ amount: 4, variant: 'forfeit' });
   });
 
   it('ignores a grade that arrives outside the grading phase', () => {
@@ -771,8 +821,33 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(next.sessionPoints).toBe(9);
   });
 
+  it('a missed blunder with a task goes feedback -> better_move -> grading -> feedback -> solution_loading', () => {
+    const feedback = asPhase(
+      answered({ result: 'missed', outcome: 'missed', better_move: TASK }),
+      'feedback',
+    );
+    const ask = asPhase(drillReducer(feedback, { type: 'FEEDBACK_DONE' }), 'better_move');
+    expect(ask.task).toBe(TASK);
+    expect(ask.outcome).toBe('missed');
+    expect(ask.graded.result).toBe('missed');
+    const grading = asPhase(
+      drillReducer(ask, { type: 'BETTER_MOVE_SUBMITTED', playedUci: 'd2d4' }),
+      'better_move_grading',
+    );
+    const gradedState = asPhase(
+      drillReducer(grading, { type: 'BETTER_MOVE_GRADED', response: BETTER_GRADED }),
+      'better_move_feedback',
+    );
+    // The solution is only requested once the better move is graded.
+    const loading = asPhase(
+      drillReducer(gradedState, { type: 'FEEDBACK_DONE' }),
+      'solution_loading',
+    );
+    expect(loading.outcome).toBe('missed');
+  });
+
   it.each([
-    ['missed', { result: 'missed', outcome: 'missed' }],
+    ['missed without a task (defensive: the server always sends one)', { result: 'missed', outcome: 'missed' }],
     ['cleared', { result: 'correct_safe', outcome: 'cleared' }],
     ['false alarm', { result: 'false_alarm', outcome: 'false_alarm' }],
   ] as const)('a %s window goes from feedback straight to solution_loading', (_name, overrides) => {
@@ -986,6 +1061,16 @@ describe('mid-sequence Ready gate and ended resume (quick 261119-x7t)', () => {
     );
     const next = asPhase(drillReducer(solution, { type: 'NEXT_WINDOW' }), 'loading_window');
     expect(next.position).toBe(1);
+  });
+
+  it('a better-move resume after a miss lands on the better-move step with outcome missed', () => {
+    const task = { fen: START_FEN, key_uci: 'e2e4', server_graded_moves: [] };
+    const state = asPhase(
+      loaded(windowStart({ outcome: 'missed', better_move: task, answered: [MOVE_ONE] })),
+      'better_move',
+    );
+    expect(state.outcome).toBe('missed');
+    expect(state.window.shownUcis).toEqual(LEAD_IN);
   });
 
   it('a better-move resume still lands on the better-move step', () => {

@@ -70,8 +70,8 @@ export interface WindowStartResponse {
   window_points: number;
   session_points: number;
   /**
-   * Set only on a reload after a caught blunder whose better move is still open: `answered`
-   * then ends with the caught move and `prompt` repeats it.
+   * Set only on a reload after a caught or missed blunder whose better move is still open:
+   * `answered` then ends with the blunder move and `prompt` repeats it.
    */
   better_move: BetterMoveTask | null;
   /**
@@ -84,8 +84,8 @@ export interface WindowStartResponse {
   awaiting_ready: boolean;
   /**
    * The window's outcome when this response describes an ended window: a stale timeout that
-   * ended it gives 'missed' or 'cleared', a caught window waiting for its better move gives
-   * 'caught'. Null otherwise.
+   * ended it gives 'missed' or 'cleared', a caught or missed window waiting for its better
+   * move gives 'caught' or 'missed'. Null otherwise.
    */
   outcome: WindowOutcome | null;
 }
@@ -97,7 +97,7 @@ export interface AnswerRequest {
   client_elapsed_ms: number;
 }
 
-/** The better-move task, handed out only when the blunder was caught. */
+/** The better-move task, handed out when a blunder window ends on the blunder, caught or missed. */
 export interface BetterMoveTask {
   fen: string;
   key_uci: string;
@@ -146,7 +146,7 @@ export interface BetterMoveRequest {
   client_tier: BetterMoveTier;
 }
 
-/** The server's grade of the better move: the tier decides the points (+2 / +1 / +0). */
+/** The server's grade of the better move: the tier decides the points (+1 / +1 / +0: an inaccuracy counts in full). */
 export interface BetterMoveResponse {
   tier: BetterMoveTier;
   points_awarded: number;

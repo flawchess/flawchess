@@ -24,10 +24,17 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.dev_clock import dev_now_utc
 from app.main import app
-from app.models.blunder_check import WindowArm
+from app.models.blunder_check import (
+    AnswerResult,
+    BlunderCheckAnswer,
+    BlunderCheckWindow,
+    WindowArm,
+    WindowOutcome,
+)
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.repositories.blunder_check_repository import WindowSelectionRecord, insert_session
+from app.services.blunder_check_rules import BETTER_MOVE_POINTS, BLUNDER_POINTS, SAFE_POINTS
 from tests.blunder_check_seed import delete_blunder_check_sessions, delete_games, register_user
 from tests.routers.test_blunder_check_drill import (
     _BASE,
@@ -111,10 +118,34 @@ async def test_reload_before_the_better_move_hands_the_task_out_again(test_engin
         assert resumed["better_move"] == caught["better_move"]
         assert resumed["prompt"] == {"move_index": 1, "move_uci": mainline[_BLUNDER_PLY]}
         assert [(m["move_index"], m["result"]) for m in resumed["answered"]] == [(1, "caught")]
-        assert resumed["window_points"] == 3
+        assert resumed["window_points"] == BLUNDER_POINTS
 
         # Once the better move is played the window is done: the session moves on.
         played = await _better_move(s, 0, caught["better_move"]["key_uci"])
+        assert played.status_code == 200, played.text
+        assert (await _open_session(s.token))["current_position"] == 1
+        restart = await _call(s.token, f"{_BASE}/{s.session_id}/windows/0/start")
+    assert restart.status_code == 409 and restart.json()["detail"] == "window_ended"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("miss", ["safe", "timeout"])
+async def test_reload_after_a_miss_hands_the_task_out_again(test_engine, clock, miss: str) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_ONE, _BLUNDER_AT_ONE]) as s:
+        await _started(s)
+        missed = await _ok(s, 1, miss)
+
+        # The missed window stays the current one, and starting it again resumes the task.
+        assert (await _open_session(s.token))["current_position"] == 0
+        resumed = await _started(s)
+        assert resumed["better_move"] == missed["better_move"]
+        assert resumed["outcome"] == "missed" and resumed["awaiting_ready"] is False
+        assert [(m["move_index"], m["result"]) for m in resumed["answered"]] == [
+            (1, "missed" if miss == "safe" else "timeout_blunder")
+        ]
+
+        # Once the better move is played the window is done: the session moves on.
+        played = await _better_move(s, 0, missed["better_move"]["key_uci"])
         assert played.status_code == 200, played.text
         assert (await _open_session(s.token))["current_position"] == 1
         restart = await _call(s.token, f"{_BASE}/{s.session_id}/windows/0/start")
@@ -140,9 +171,9 @@ async def test_tracer_better_move_earns_two_and_the_solution_is_served(test_engi
         assert set(body) == _BETTER_KEYS
         # The key is good whatever the client asserts (server override).
         assert body["tier"] == "good"
-        assert body["points_awarded"] == 2
-        assert body["window_points"] == 5
-        assert body["session_points"] == 5
+        assert body["points_awarded"] == BETTER_MOVE_POINTS
+        assert body["window_points"] == BLUNDER_POINTS + BETTER_MOVE_POINTS
+        assert body["session_points"] == BLUNDER_POINTS + BETTER_MOVE_POINTS
 
         solution = await _solution(s.token, s.session_id, 0)
         assert solution.status_code == 200, solution.text
@@ -153,12 +184,12 @@ async def test_tracer_better_move_earns_two_and_the_solution_is_served(test_engi
         assert data["key_uci"] == key == window.key_uci
         assert data["blunder_uci"] == mainline[_BLUNDER_PLY]
         assert data["better_move_tier"] == "good" and data["better_move_uci"] == key
-        assert data["window_points"] == 5
+        assert data["window_points"] == BLUNDER_POINTS + BETTER_MOVE_POINTS
         # The breakdown behind the verdict's point badges adds up to the window's points.
         assert (data["safe_points"], data["blunder_points"], data["better_move_points"]) == (
             0,
-            3,
-            2,
+            BLUNDER_POINTS,
+            BETTER_MOVE_POINTS,
         )
 
 
@@ -216,9 +247,9 @@ _WITHHELD_KEYS = {"game_id", "is_own", "window_case", "blunder_uci", "key_uci", 
 _IDENTITY_KEY_PARTS = ("username", "email", "user_id")
 _HERRING_3 = _Spec(first_ply=30, length=3, blunder_position=None)
 _BLUNDER_AT_THREE = _Spec(first_ply=36, length=4, blunder_position=3)  # blunder ply 40
+_BLUNDER_AT_THREE_PLY = 40
 _FALSE_ALARM_PLY = 38  # the second judged move of _BLUNDER_AT_THREE
 _HERRING_ALARM_PLY = 32  # the second judged move of _HERRING_3
-_OWN_BLUNDER_POINTS = 3
 _RATING = 1500
 _ILLEGAL_UCI = "e1e5"
 
@@ -257,7 +288,7 @@ async def test_precedence_the_users_own_blunder_is_wrong_whatever_the_client_say
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["tier"] == "wrong" and body["points_awarded"] == 0
-    assert body["window_points"] == _OWN_BLUNDER_POINTS
+    assert body["window_points"] == BLUNDER_POINTS
 
 
 @pytest.mark.asyncio
@@ -278,11 +309,11 @@ async def test_precedence_a_server_graded_move_overrides_the_client_tier(
         )
         resp = await _better_move(s, 0, runner_up, client_tier="wrong")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["tier"] == "good" and resp.json()["points_awarded"] == 2
+    assert resp.json()["tier"] == "good" and resp.json()["points_awarded"] == BETTER_MOVE_POINTS
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("client_tier", "points"), [("good", 2), ("inaccuracy", 1), ("wrong", 0)])
+@pytest.mark.parametrize(("client_tier", "points"), [("good", 1), ("inaccuracy", 1), ("wrong", 0)])
 async def test_precedence_an_ungraded_off_key_move_takes_the_client_tier(
     test_engine, clock, client_tier: str, points: int
 ) -> None:
@@ -293,7 +324,7 @@ async def test_precedence_an_ungraded_off_key_move_takes_the_client_tier(
         window = await _window_row(test_engine, s.session_id, 0)
     assert resp.status_code == 200, resp.text
     assert resp.json()["tier"] == client_tier and resp.json()["points_awarded"] == points
-    assert window.points_scored == _OWN_BLUNDER_POINTS + points
+    assert window.points_scored == BLUNDER_POINTS + points
     assert window.better_move_uci == off_key
 
 
@@ -307,7 +338,7 @@ async def test_better_move_twice_is_rejected_and_awards_nothing_more(test_engine
         window = await _window_row(test_engine, s.session_id, 0)
     assert first.status_code == 200
     assert second.status_code == 409 and second.json()["detail"] == "better_move_done"
-    assert window.points_scored == 5
+    assert window.points_scored == BLUNDER_POINTS + BETTER_MOVE_POINTS
 
 
 @pytest.mark.asyncio
@@ -318,36 +349,60 @@ async def test_better_move_concurrent_submits_award_once(test_engine, clock) -> 
         first, second = await asyncio.gather(_better_move(s, 0, key), _better_move(s, 0, key))
         window = await _window_row(test_engine, s.session_id, 0)
     assert sorted([first.status_code, second.status_code]) == [200, 409]
-    assert window.points_scored == 5
+    assert window.points_scored == BLUNDER_POINTS + BETTER_MOVE_POINTS
 
 
 @pytest.mark.asyncio
-async def test_better_move_not_caught_on_missed_cleared_and_false_alarm(test_engine, clock) -> None:
+async def test_better_move_refused_on_cleared_and_false_alarm(test_engine, clock) -> None:
     # Any legal-looking move: the window-state guard fires before the legality check.
     key = _mainline_ucis()[_BLUNDER_PLY]
-    specs = [_BLUNDER_AT_ONE, _HERRING_3, _BLUNDER_AT_THREE]
+    specs = [_HERRING_3, _BLUNDER_AT_THREE]
     async with _setup(test_engine, specs) as s:
         await _started(s, 0)
-        await _ok(s, 1, "safe", position=0)  # missed
-        await _started(s, 1)
         for index in (1, 2, 3):
-            await _ok(s, index, "safe", position=1)  # cleared
-        await _started(s, 2)
-        await _ok(s, 1, "safe", position=2)
-        await _ok(s, 2, "blunder", position=2)  # false alarm
-        results = [await _better_move(s, position, key) for position in range(3)]
-        rows = [await _window_row(test_engine, s.session_id, position) for position in range(3)]
-    assert [r.status_code for r in results] == [409, 409, 409]
-    assert {r.json()["detail"] for r in results} == {"not_caught"}
+            await _ok(s, index, "safe", position=0)  # cleared
+        await _started(s, 1)
+        await _ok(s, 1, "safe", position=1)
+        await _ok(s, 2, "blunder", position=1)  # false alarm
+        results = [await _better_move(s, position, key) for position in range(2)]
+        rows = [await _window_row(test_engine, s.session_id, position) for position in range(2)]
+    assert [r.status_code for r in results] == [409, 409]
+    assert {r.json()["detail"] for r in results} == {"no_better_move"}
     assert all(row.better_move_tier is None for row in rows)
 
 
 @pytest.mark.asyncio
-async def test_better_move_on_a_window_that_has_not_ended_is_not_caught(test_engine, clock) -> None:
+@pytest.mark.parametrize("miss", ["safe", "timeout"])
+async def test_better_move_after_a_miss_is_graded_and_scored_like_after_a_catch(
+    test_engine, clock, miss: str
+) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        await _ok(s, 2, "safe")
+        missed = await _ok(s, 3, miss)
+        key = missed["better_move"]["key_uci"]
+        # A timeout on the blunder forfeits the pot, a "safe" call keeps it.
+        kept = 2 * SAFE_POINTS if miss == "safe" else 0
+        resp = await _better_move(s, 0, key, client_tier="wrong")
+        again = await _better_move(s, 0, key)
+        window = await _window_row(test_engine, s.session_id, 0)
+    assert missed["outcome"] == "missed" and missed["window_points"] == kept
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["tier"] == "good" and body["points_awarded"] == BETTER_MOVE_POINTS
+    assert body["window_points"] == kept + BETTER_MOVE_POINTS
+    assert again.status_code == 409 and again.json()["detail"] == "better_move_done"
+    assert window.outcome == int(WindowOutcome.MISSED)
+    assert window.points_scored == kept + BETTER_MOVE_POINTS
+
+
+@pytest.mark.asyncio
+async def test_better_move_on_a_window_that_has_not_ended_is_refused(test_engine, clock) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
         await _started(s)
         resp = await _better_move(s, 0, _mainline_ucis()[_BLUNDER_PLY])
-    assert resp.status_code == 409 and resp.json()["detail"] == "not_caught"
+    assert resp.status_code == 409 and resp.json()["detail"] == "no_better_move"
 
 
 @pytest.mark.asyncio
@@ -359,7 +414,7 @@ async def test_better_move_on_a_finished_session_is_session_closed(test_engine, 
         window = await _window_row(test_engine, s.session_id, 0)
     assert finished.status_code == 200, finished.text
     assert resp.status_code == 409 and resp.json()["detail"] == "session_closed"
-    assert window.better_move_tier is None and window.points_scored == _OWN_BLUNDER_POINTS
+    assert window.better_move_tier is None and window.points_scored == BLUNDER_POINTS
 
 
 @pytest.mark.asyncio
@@ -374,7 +429,7 @@ async def test_better_move_illegal_uci_is_422_and_awards_nothing(
         window = await _window_row(test_engine, s.session_id, 0)
     assert resp.status_code == 422 and resp.json()["detail"] == "Illegal move"
     assert malformed.status_code == 422
-    assert window.better_move_tier is None and window.points_scored == _OWN_BLUNDER_POINTS
+    assert window.better_move_tier is None and window.points_scored == BLUNDER_POINTS
 
 
 @pytest.mark.asyncio
@@ -425,30 +480,94 @@ async def test_solution_window_open_is_409_before_and_during_the_window(test_eng
 
 
 @pytest.mark.asyncio
-async def test_solution_missed_window_has_no_better_move(test_engine, clock) -> None:
+async def test_solution_missed_window_before_and_after_the_better_move(test_engine, clock) -> None:
     mainline = _mainline_ucis()
-    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         await _started(s)
         await _ok(s, 1, "safe")
-        resp = await _solution(s.token, s.session_id, 0)
+        await _ok(s, 2, "safe")
+        missed = await _ok(s, 3, "safe")
+        before = await _solution(s.token, s.session_id, 0)
+        played = await _better_move(s, 0, missed["better_move"]["key_uci"])
+        after = await _solution(s.token, s.session_id, 0)
         window = await _window_row(test_engine, s.session_id, 0)
-    assert resp.status_code == 200, resp.text
-    data = resp.json()
+    assert before.status_code == 200, before.text
+    data = before.json()
     assert set(data) == _BLUNDER_KEYS
     assert data["kind"] == "blunder" and data["outcome"] == "missed"
     assert data["better_move_uci"] is None and data["better_move_tier"] is None
     assert data["game_id"] == window.game_id and data["is_own"] is True
+    # A "safe" call kept the pot, so it is all safe points; the miss itself earned nothing.
     assert (data["safe_points"], data["blunder_points"], data["better_move_points"]) == (
-        0,
+        2 * SAFE_POINTS,
         0,
         None,
     )
     # No blob on the flaw row: no graded alternative beyond the key.
     assert [m["uci"] for m in data["server_graded_moves"] if m["uci"] != window.key_uci] == []
     assert data["window_case"] == "allowed"
-    assert data["blunder_uci"] == mainline[_BLUNDER_PLY] and data["key_uci"] == window.key_uci
-    assert data["fen"] == _board_before(_BLUNDER_PLY).fen()
+    assert data["blunder_uci"] == mainline[_BLUNDER_AT_THREE_PLY]
+    assert data["key_uci"] == window.key_uci
+    assert data["fen"] == _board_before(_BLUNDER_AT_THREE_PLY).fen()
     assert data["game_info"] is None
+    assert played.status_code == 200, played.text
+    done = after.json()
+    assert done["better_move_tier"] == "good" and done["better_move_uci"] == window.key_uci
+    assert (done["safe_points"], done["blunder_points"], done["better_move_points"]) == (
+        2 * SAFE_POINTS,
+        0,
+        BETTER_MOVE_POINTS,
+    )
+    assert done["window_points"] == 2 * SAFE_POINTS + BETTER_MOVE_POINTS
+
+
+@pytest.mark.asyncio
+async def test_solution_missed_after_a_timeout_has_no_safe_points(test_engine, clock) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
+        await _started(s)
+        await _ok(s, 1, "safe")
+        await _ok(s, 2, "safe")
+        missed = await _ok(s, 3, "timeout")
+        await _better_move(s, 0, missed["better_move"]["key_uci"])
+        resp = await _solution(s.token, s.session_id, 0)
+    data = resp.json()
+    assert (data["safe_points"], data["blunder_points"], data["better_move_points"]) == (
+        0,
+        0,
+        BETTER_MOVE_POINTS,
+    )
+    assert data["window_points"] == BETTER_MOVE_POINTS
+
+
+@pytest.mark.asyncio
+async def test_solution_of_a_window_caught_before_the_rebalance_keeps_its_old_points(
+    test_engine, clock
+) -> None:
+    """A catch that earned 3 (pre quick 261123-lb8) reports 3, not the constant 2."""
+    old_catch_points = 3
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _caught_at_one(s)
+        window = await _window_row(test_engine, s.session_id, 0)
+        maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with maker() as session:
+            async with session.begin():
+                await session.execute(
+                    update(BlunderCheckAnswer)
+                    .where(
+                        BlunderCheckAnswer.window_id == window.id,
+                        BlunderCheckAnswer.result == int(AnswerResult.CAUGHT),
+                    )
+                    .values(points_awarded=old_catch_points)
+                )
+                await session.execute(
+                    update(BlunderCheckWindow)
+                    .where(BlunderCheckWindow.id == window.id)
+                    .values(points_scored=old_catch_points)
+                )
+        resp = await _solution(s.token, s.session_id, 0)
+    data = resp.json()
+    assert data["blunder_points"] == old_catch_points
+    assert data["safe_points"] == 0 and data["window_points"] == old_catch_points
 
 
 @pytest.mark.asyncio
@@ -461,8 +580,8 @@ async def test_solution_caught_window_before_the_better_move_has_null_better_fie
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["outcome"] == "caught" and data["better_move_tier"] is None
-    assert data["window_points"] == _OWN_BLUNDER_POINTS
-    assert data["blunder_points"] == _OWN_BLUNDER_POINTS and data["better_move_points"] is None
+    assert data["window_points"] == BLUNDER_POINTS
+    assert data["blunder_points"] == BLUNDER_POINTS and data["better_move_points"] is None
 
 
 @pytest.mark.asyncio
@@ -483,7 +602,7 @@ async def test_solution_herring_cleared_has_exactly_the_herring_keys(test_engine
     assert data["analysis_ply"] == _HERRING_3.first_ply
     assert data["fen"] == _board_before(_HERRING_3.first_ply).fen()
     assert data["game_id"] == window.game_id and data["is_own"] is True
-    assert data["game_info"] is None and data["window_points"] == 3
+    assert data["game_info"] is None and data["window_points"] == 3 * SAFE_POINTS
 
 
 async def _false_alarm_solution(
@@ -510,7 +629,7 @@ async def test_solution_false_alarm_in_a_blunder_window_withholds_the_blunder(
     assert data["kind"] == "false_alarm" and data["outcome"] == "false_alarm"
     assert data["flagged_uci"] == _mainline_ucis()[_FALSE_ALARM_PLY]
     assert data["fen"] == _board_before(_FALSE_ALARM_PLY).fen()
-    assert data["window_points"] == 1
+    assert data["window_points"] == SAFE_POINTS
     # Phase 249 UAT: the flagged move's game and ply are served for the lines and Analyze,
     # the ply being the flagged move's, never the unreached blunder's.
     assert data["is_own"] is True and data["game_id"] is not None

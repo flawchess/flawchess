@@ -121,8 +121,9 @@ function showsPromptArrow(state: InWindowState): boolean {
 
 /**
  * The server's grade as a sound (D-12). A catch gets the Train full-score sound; a lost pot
- * (a blunder let through) gets the pot's own tumble; a wrong answer where no points moved
- * and a timeout on a good move (the pot survives it), the 0-points sound. A "Good" call is silent here: its sound is
+ * (a timeout on the blunder with a pot) gets the pot's own tumble; a wrong answer where no points
+ * moved (a "safe" call on the blunder keeps the pot) and a timeout on a good move (the pot
+ * survives it), the 0-points sound. A "Good" call is silent here: its sound is
  * the coin, played as its point lands in the pot (BlunderCheckScore), like every gain's. The
  * "Good" call that clears a herring (every move called good) gets the full-score sound too, but
  * only once that last point's coin has sounded (Phase 249 UAT): the two used to play over

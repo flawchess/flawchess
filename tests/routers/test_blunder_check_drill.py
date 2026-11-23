@@ -5,7 +5,7 @@ deterministic (no composer randomness). The dev clock is driven through
 `app.dependency_overrides[dev_now_utc]` with a mutable clock.
 
 Coverage (this module grows task by task):
-- test_tracer_*  : start a window and catch a position-1 blunder (+3 and the better-move task)
+- test_tracer_*  : start a window and catch a position-1 blunder (+4 and the better-move task)
 """
 
 from __future__ import annotations
@@ -46,7 +46,14 @@ from app.services.blunder_check_grading import (
     MS_PER_SECOND,
     judged_ply,
 )
-from app.services.blunder_check_rules import LEAD_IN_PLIES, SlotPlan, WindowShape
+from app.services.blunder_check_rules import (
+    BLUNDER_POINTS,
+    LEAD_IN_PLIES,
+    SAFE_POINTS,
+    SAFE_TIMEOUT_PENALTY_POINTS,
+    SlotPlan,
+    WindowShape,
+)
 from app.services.blunder_check_selection import build_snapshot
 from tests.blunder_check_seed import (
     SEED_PGN,
@@ -339,7 +346,7 @@ async def test_tracer_start_and_catch_position_one_blunder(test_engine, clock) -
         answer = resp.json()
         assert set(answer) == _ANSWER_KEYS
         assert answer["result"] == "caught"
-        assert answer["points_awarded"] == 3
+        assert answer["points_awarded"] == BLUNDER_POINTS
         assert answer["window_ended"] is True
         assert answer["outcome"] == "caught"
         assert answer["reply_uci"] is None
@@ -357,7 +364,7 @@ async def test_tracer_start_and_catch_position_one_blunder(test_engine, clock) -
         assert [(r.move_index, r.result) for r in rows] == [(1, int(AnswerResult.CAUGHT))]
         assert rows[0].answered_at is not None
         assert window.outcome == int(WindowOutcome.CAUGHT)
-        assert window.points_scored == 3
+        assert window.points_scored == BLUNDER_POINTS
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +437,7 @@ async def test_herring_window_all_safe_clears_with_replies(test_engine, clock) -
         second = await _ok(s, 2, "safe")
         third = await _ok(s, 3, "safe")
         window = await _window_row(test_engine, s.session_id, 0)
-    assert first["result"] == "correct_safe" and first["points_awarded"] == 1
+    assert first["result"] == "correct_safe" and first["points_awarded"] == SAFE_POINTS
     assert first["reply_uci"] == mainline[31]
     assert first["next_prompt"] == {"move_index": 2, "move_uci": mainline[32]}
     assert first["window_ended"] is False and first["outcome"] is None
@@ -438,50 +445,64 @@ async def test_herring_window_all_safe_clears_with_replies(test_engine, clock) -
     assert second["next_prompt"] == {"move_index": 3, "move_uci": mainline[34]}
     assert third["window_ended"] is True and third["outcome"] == "cleared"
     assert third["next_prompt"] is None and third["timer_remaining_ms"] is None
-    assert third["window_points"] == 3 and third["session_points"] == 3
-    assert window.outcome == int(WindowOutcome.CLEARED) and window.points_scored == 3
+    assert third["window_points"] == 3 * SAFE_POINTS and third["session_points"] == 3 * SAFE_POINTS
+    assert window.outcome == int(WindowOutcome.CLEARED)
+    assert window.points_scored == 3 * SAFE_POINTS
 
 
 @pytest.mark.asyncio
-async def test_missed_blunder_forfeits_the_window_safe_points(test_engine, clock) -> None:
+async def test_missed_blunder_keeps_the_pot_and_offers_the_better_move(test_engine, clock) -> None:
+    """Quick 261123-lb8 D-02/D-03: a "safe" call on the blunder forfeits nothing, task offered."""
     async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         await _started(s)
         await _ok(s, 1, "safe")
         await _ok(s, 2, "safe")
         missed = await _ok(s, 3, "safe")
         window = await _window_row(test_engine, s.session_id, 0)
+    pot = 2 * SAFE_POINTS
+    assert set(missed) == _ANSWER_KEYS and not (_all_keys(missed) & _FORBIDDEN_KEYS)
     assert missed["result"] == "missed"
-    assert missed["points_forfeited"] == 2 and missed["points_awarded"] == 0
-    assert missed["window_points"] == 0 and missed["session_points"] == 0
+    assert missed["points_forfeited"] == 0 and missed["points_awarded"] == 0
+    assert missed["window_points"] == pot and missed["session_points"] == pot
     assert missed["window_ended"] is True and missed["outcome"] == "missed"
-    assert missed["reply_uci"] is None and missed["better_move"] is None
-    assert window.outcome == int(WindowOutcome.MISSED) and window.points_scored == 0
+    # The reply stays hidden until the solution, exactly like after a catch.
+    assert missed["reply_uci"] is None
+    assert missed["better_move"]["key_uci"] == window.key_uci
+    assert window.outcome == int(WindowOutcome.MISSED) and window.points_scored == pot
 
 
 @pytest.mark.asyncio
-async def test_timeout_on_safe_costs_one_point_and_the_window_continues(test_engine, clock) -> None:
+async def test_timeout_on_safe_costs_the_penalty_and_the_window_continues(
+    test_engine, clock
+) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         await _started(s)
         await _ok(s, 1, "safe")
         timed_out = await _ok(s, 2, "timeout")
         caught = await _ok(s, 3, "blunder")
     assert timed_out["result"] == "timeout_safe"
-    assert timed_out["points_awarded"] == 0 and timed_out["points_forfeited"] == 1
+    assert timed_out["points_awarded"] == 0
+    assert timed_out["points_forfeited"] == SAFE_TIMEOUT_PENALTY_POINTS
     assert timed_out["window_points"] == 0
     assert timed_out["window_ended"] is False and timed_out["next_prompt"]["move_index"] == 3
-    assert caught["result"] == "caught" and caught["points_awarded"] == 3
-    assert caught["window_points"] == 3
+    assert caught["result"] == "caught" and caught["points_awarded"] == BLUNDER_POINTS
+    assert caught["window_points"] == BLUNDER_POINTS
     assert caught["better_move"]["key_uci"] is not None
 
 
 @pytest.mark.asyncio
 async def test_timeout_on_the_blunder_counts_as_missed(test_engine, clock) -> None:
-    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         await _started(s)
-        result = await _ok(s, 1, "timeout")
+        await _ok(s, 1, "safe")
+        await _ok(s, 2, "safe")
+        result = await _ok(s, 3, "timeout")
+        window = await _window_row(test_engine, s.session_id, 0)
+    # A timeout on the blunder still forfeits the pot (stalling must cost) and offers the task.
     assert result["result"] == "timeout_blunder"
     assert result["outcome"] == "missed" and result["window_ended"] is True
-    assert result["better_move"] is None
+    assert result["points_forfeited"] == 2 * SAFE_POINTS and result["window_points"] == 0
+    assert result["better_move"]["key_uci"] == window.key_uci
 
 
 @pytest.mark.asyncio
@@ -495,10 +516,11 @@ async def test_false_alarm_keeps_safe_points_and_the_blunder_is_never_served_aga
         window = await _window_row(test_engine, s.session_id, 0)
         rows = await _answer_rows(test_engine, window.id)
         assert alarm["result"] == "false_alarm" and alarm["points_awarded"] == 0
-        assert alarm["window_points"] == 1 and alarm["points_forfeited"] == 0
+        assert alarm["window_points"] == SAFE_POINTS and alarm["points_forfeited"] == 0
         assert alarm["window_ended"] is True and alarm["outcome"] == "false_alarm"
         assert alarm["reply_uci"] is None
-        assert window.outcome == int(WindowOutcome.FALSE_ALARM) and window.points_scored == 1
+        assert window.outcome == int(WindowOutcome.FALSE_ALARM)
+        assert window.points_scored == SAFE_POINTS
         # The blunder ply was never prompted, so no answer row exists for it ...
         assert _BLUNDER_AT_THREE_PLY not in {row.ply for row in rows}
         # ... yet 250 D-17 counts it as served (the window carrying it was served), so the
@@ -564,13 +586,13 @@ async def test_ceiling_reload_after_answers_returns_answered_moves_and_real_time
             "move_uci": mainline[30],
             "reply_uci": mainline[31],
             "result": "correct_safe",
-            "points_awarded": 1,
+            "points_awarded": SAFE_POINTS,
             "points_forfeited": 0,
         }
     ]
     assert reload_body["prompt"] == {"move_index": 2, "move_uci": mainline[32]}
     assert reload_body["timer_remaining_ms"] == _RELOAD_REMAINING_MS
-    assert reload_body["window_points"] == 1
+    assert reload_body["window_points"] == SAFE_POINTS
 
 
 @pytest.mark.asyncio
@@ -600,7 +622,7 @@ async def test_double_submit_is_rejected_and_awards_nothing_twice(test_engine, c
         again = await _answer(s.token, s.session_id, 0, 1, "safe")
         window = await _window_row(test_engine, s.session_id, 0)
     assert again.status_code == 409 and again.json()["detail"] == "stale_prompt"
-    assert window.points_scored == 1
+    assert window.points_scored == SAFE_POINTS
 
 
 @pytest.mark.asyncio
@@ -613,7 +635,7 @@ async def test_double_submit_concurrent_yields_one_award(test_engine, clock) -> 
         )
         window = await _window_row(test_engine, s.session_id, 0)
     assert sorted([first.status_code, second.status_code]) == [200, 409]
-    assert window.points_scored == 1
+    assert window.points_scored == SAFE_POINTS
 
 
 @pytest.mark.asyncio
@@ -640,12 +662,14 @@ async def test_order_windows_must_end_before_the_next_starts(test_engine, clock)
 
 @pytest.mark.asyncio
 async def test_order_answer_before_start_and_after_end_are_rejected(test_engine, clock) -> None:
-    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
         early = await _answer(s.token, s.session_id, 0, 1, "blunder")
         await _started(s)
-        # A missed blunder ends the window for good (a caught one stays open for its better move).
+        # A false alarm ends the window for good (a caught or missed blunder stays open for its
+        # better move).
         await _ok(s, 1, "safe")
-        late = await _answer(s.token, s.session_id, 0, 1, "blunder")
+        await _ok(s, 2, "blunder")
+        late = await _answer(s.token, s.session_id, 0, 2, "blunder")
         restart = await _start(s.token, s.session_id, 0)
     assert early.status_code == 409 and early.json()["detail"] == "not_started"
     assert late.status_code == 409 and late.json()["detail"] == "window_ended"
@@ -716,13 +740,13 @@ async def test_finish_session_reports_points_possible_and_score_pct(test_engine,
         again = await _finish(s.token, s.session_id)
     assert set(body) == _SESSION_RESULT_KEYS
     assert all(set(w) == _WINDOW_RESULT_KEYS for w in body["windows"])
-    # 3 of 3 plus 1 of (2 safe + 3 blunder + 2 better move): the unreached 3 + 2 still count.
+    # 3 of 3 plus 1 of (2 safe + 2 blunder + 1 better move): the unreached 2 + 1 still count.
     assert body["session_points"] == 4
-    assert body["points_possible"] == 10
-    assert body["score_pct"] == 40
+    assert body["points_possible"] == 8
+    assert body["score_pct"] == 50
     assert [(w["outcome"], w["points_scored"], w["points_possible"]) for w in body["windows"]] == [
         ("cleared", 3, 3),
-        ("false_alarm", 1, 7),
+        ("false_alarm", 1, 5),
     ]
     assert again.status_code == 200 and again.json() == body
 
@@ -924,7 +948,7 @@ async def test_ready_gate_answer_and_begin_out_of_order_are_rejected(test_engine
         window = await _window_row(test_engine, s.session_id, 0)
         gate_rows = await _answer_rows(test_engine, window.id)
         await _begin(s.token, s.session_id, 0)
-        # A missed blunder ends the window for good.
+        # A missed blunder ends the window (it waits for its better move).
         await _ok(s, 1, "safe")
         after_end = await _begin(s.token, s.session_id, 0)
     assert before_start.status_code == 409 and before_start.json()["detail"] == "not_started"
@@ -937,7 +961,7 @@ async def test_ready_gate_answer_and_begin_out_of_order_are_rejected(test_engine
 async def test_ready_gate_every_window_opens_on_the_gate(test_engine, clock) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_ONE, _HERRING_3]) as s:
         await _started(s, 0)
-        await _ok(s, 1, "safe")  # a missed blunder ends window 0
+        await _ok(s, 1, "safe")  # a missed blunder ends window 0 (it waits for its better move)
         second = await _start(s.token, s.session_id, 1)
         second_window = await _window_row(test_engine, s.session_id, 1)
         second_rows = await _answer_rows(test_engine, second_window.id)
@@ -976,7 +1000,7 @@ async def test_stale_resume_settles_the_prompt_and_reopens_on_a_gate(test_engine
             "move_uci": mainline[30],
             "reply_uci": mainline[31],
             "result": "correct_safe",
-            "points_awarded": 1,
+            "points_awarded": SAFE_POINTS,
             "points_forfeited": 0,
         },
         {
@@ -985,7 +1009,7 @@ async def test_stale_resume_settles_the_prompt_and_reopens_on_a_gate(test_engine
             "reply_uci": mainline[33],
             "result": "timeout_safe",
             "points_awarded": 0,
-            "points_forfeited": 1,
+            "points_forfeited": SAFE_TIMEOUT_PENALTY_POINTS,
         },
     ]
     # No row for move 3 yet: its absence is the gate.
@@ -993,7 +1017,7 @@ async def test_stale_resume_settles_the_prompt_and_reopens_on_a_gate(test_engine
     settled = rows[1]
     assert settled.answer == int(AnswerKind.TIMEOUT)
     assert settled.result == int(AnswerResult.TIMEOUT_SAFE)
-    assert settled.points_forfeited == 1
+    assert settled.points_forfeited == SAFE_TIMEOUT_PENALTY_POINTS
     assert settled.client_elapsed_ms is None
     assert settled.server_elapsed_ms == _ABANDON_S * MS_PER_SECOND
     assert window.outcome is None and window.points_scored == 0
@@ -1023,7 +1047,7 @@ async def test_stale_resume_ready_issues_the_next_move_with_a_full_clock(
     assert rows[2].prompted_at == _T0 + datetime.timedelta(seconds=_ABANDON_S + _GATE_STUDY_S)
     # Graded on its merits: the clock started at Ready, not at the abandoned prompt.
     assert final["result"] == "correct_safe" and final["outcome"] == "cleared"
-    assert final["window_points"] == 1
+    assert final["window_points"] == SAFE_POINTS
 
 
 @pytest.mark.asyncio
@@ -1042,16 +1066,20 @@ async def test_stale_timeout_on_the_blunder_ends_the_window(test_engine, clock) 
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["awaiting_ready"] is False and body["outcome"] == "missed"
-    assert body["better_move"] is None and body["timer_remaining_ms"] == 0
+    # Quick 261123-lb8 D-03: a stale timeout on the blunder hands out the better-move task too.
+    assert body["better_move"]["key_uci"] == window.key_uci and body["timer_remaining_ms"] == 0
     assert body["prompt"] == {"move_index": 3, "move_uci": mainline[40]}
     assert body["answered"][-1]["result"] == "timeout_blunder"
-    assert body["answered"][-1]["points_forfeited"] == 2
+    assert body["answered"][-1]["points_forfeited"] == 2 * SAFE_POINTS
     assert len(body["answered"]) == 3
     assert body["window_points"] == 0 and body["session_points"] == 0
     assert window.outcome == int(WindowOutcome.MISSED) and window.points_scored == 0
     assert rows[2].answer == int(AnswerKind.TIMEOUT)
-    for later in (again, begin_again):
-        assert later.status_code == 409 and later.json()["detail"] == "window_ended"
+    # A second start resumes the same task; begin stays 409 window_ended.
+    assert again.status_code == 200, again.text
+    assert again.json()["better_move"] == body["better_move"]
+    assert again.json()["outcome"] == "missed"
+    assert begin_again.status_code == 409 and begin_again.json()["detail"] == "window_ended"
 
 
 @pytest.mark.asyncio
@@ -1115,9 +1143,18 @@ async def test_stale_timeout_on_a_herrings_last_move_clears_the_window(test_engi
     body = resp.json()
     assert body["awaiting_ready"] is False and body["outcome"] == "cleared"
     assert body["answered"][-1]["result"] == "timeout_safe"
-    assert body["answered"][-1]["points_forfeited"] == 1
-    assert body["window_points"] == 1 and body["better_move"] is None
-    assert window.outcome == int(WindowOutcome.CLEARED) and window.points_scored == 1
+    assert body["answered"][-1]["points_forfeited"] == SAFE_TIMEOUT_PENALTY_POINTS
+    assert body["window_points"] == SAFE_POINTS and body["better_move"] is None
+    assert window.outcome == int(WindowOutcome.CLEARED) and window.points_scored == SAFE_POINTS
+
+
+async def _current_position(token: str) -> int | None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get(f"{_BASE}/open", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["current_position"]
 
 
 @pytest.mark.asyncio
@@ -1126,8 +1163,20 @@ async def test_stale_ended_window_lets_the_session_move_on(test_engine, clock) -
         await _started(s, 0)
         clock.advance(_ABANDON_S)
         ended = await _start(s.token, s.session_id, 0)
+        # The stale timeout on the blunder ended the window, which now waits for its better move.
+        waiting = await _current_position(s.token)
+        key = ended.json()["better_move"]["key_uci"]
+        played = await _call(
+            s.token,
+            f"{_BASE}/{s.session_id}/windows/0/better-move",
+            {"played_uci": key, "client_tier": "wrong"},
+        )
+        moved_on = await _current_position(s.token)
         next_window = await _start(s.token, s.session_id, 1)
     assert ended.json()["outcome"] == "missed"
+    assert waiting == 0
+    assert played.status_code == 200, played.text
+    assert moved_on == 1
     assert next_window.status_code == 200, next_window.text
     assert next_window.json()["awaiting_ready"] is True
     assert next_window.json()["answered"] == []
@@ -1185,6 +1234,18 @@ async def test_better_move_resume_reports_the_caught_outcome(test_engine, clock)
     body = resp.json()
     assert resp.status_code == 200, resp.text
     assert body["better_move"] is not None and body["outcome"] == "caught"
+    assert body["awaiting_ready"] is False
+
+
+@pytest.mark.asyncio
+async def test_better_move_resume_reports_the_missed_outcome(test_engine, clock) -> None:
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _started(s)
+        answered = await _ok(s, 1, "safe")
+        resp = await _start(s.token, s.session_id, 0)
+    body = resp.json()
+    assert resp.status_code == 200, resp.text
+    assert body["better_move"] == answered["better_move"] and body["outcome"] == "missed"
     assert body["awaiting_ready"] is False
 
 

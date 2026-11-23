@@ -5,10 +5,10 @@ current_phase: 261
 current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
 status: completed
 stopped_at: Phase 260 complete — all phases complete
-last_updated: "2026-11-23T05:55:56.226Z"
-last_activity: 2026-11-22
+last_updated: "2026-11-23T15:18:19.732Z"
+last_activity: 2026-11-23
 last_activity_desc: Phase 260 complete
-state_head: 344df62cfd78b6f5c6632d8e05fbd0198f196b31
+state_head: cc0b2cc7c5b2866ffde2e2cf65ed8549805439e5
 progress:
   total_phases: 15
   completed_phases: 63
@@ -27,7 +27,7 @@ Plan: 7
 
 Status: All phases complete
 
-Last activity: 2026-11-23 - Completed quick task 261123-9cw: Settings toggle: Jump button stops only on your own highlights (default off)
+Last activity: 2026-11-23 - Completed quick task 261123-lb8: Blunder check scoring rebalance
 
 Open threads carried forward (not blockers):
 
@@ -1204,6 +1204,7 @@ None active.
 | 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
 | 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
 | 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
+| 261123-lb8 | Blunder check scoring rebalance: safe 1 / blunder 2 / better move 1, no forfeit on a miss, better move after a miss | 2026-11-23 | cc0b2cc7c | [261123-lb8-blunder-check-scoring-rebalance](./quick/261123-lb8-blunder-check-scoring-rebalance/) |
 
 ## Deferred Items
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Final, Literal
 
 from app.repositories.query_utils import mover_is_white_at_ply
@@ -35,7 +36,7 @@ from app.services.train_pool import (
     HERRING_MIN_PLY,
     HERRING_OPENING_PHASE,
 )
-from app.services.train_score import MOVE_TIER_POINTS
+from app.services.train_score import MoveTier
 
 # ---------------------------------------------------------------------------
 # Named constants (no magic numbers)
@@ -158,13 +159,21 @@ HERRING_OWN_SHARE: float = OWN_BLUNDER_SHARE / (OWN_BLUNDER_SHARE + FOREIGN_BLUN
 FOREIGN_RATING_BAND: int = 150
 # 249 D-02 windows per session.
 BLUNDER_CHECK_SESSION_WINDOWS: int = 6
-# 249 D-14 points: 1 per correctly judged safe move, 3 for flagging the blunder, plus the better
-# move graded like personalized puzzles (249 D-17), so its full value is the good tier's points.
+# 249 D-14 points, rebalanced by quick 261123-lb8 (owner decision 2026-11-23): a correct Good call
+# 1, catching the blunder 2, the better move up to 1 (ratio 1 : 2 : 1). The old 1 / 3 / 2 let the
+# catch plus the better move carry 5 of about 6 points in a blunder window, so Score % was roughly
+# the catch rate; replaying 86 prod sessions under the new rules gives mean 63%.
 SAFE_POINTS: int = 1
-BLUNDER_POINTS: int = 3
+BLUNDER_POINTS: int = 2
 # A timeout on a good move takes this many points out of the sequence's pot (never below 0).
 SAFE_TIMEOUT_PENALTY_POINTS: int = 1
-BETTER_MOVE_POINTS: int = MOVE_TIER_POINTS["good"]
+# The better move is graded like a personalized puzzle (249 D-17: good / inaccuracy / wrong), but
+# worth at most 1 point here, not the puzzle's 2 / 1 / 0 (train_score.MOVE_TIER_POINTS stays for
+# puzzles). An inaccuracy gets full credit to keep the points integer at a 1 : 2 : 1 ratio.
+BETTER_MOVE_TIER_POINTS: Final[Mapping[MoveTier, int]] = MappingProxyType(
+    {"good": 1, "inaccuracy": 1, "wrong": 0}
+)
+BETTER_MOVE_POINTS: int = BETTER_MOVE_TIER_POINTS["good"]
 
 MissCase = Literal["allowed", "pure_miss", "mixed", "unclassified"]
 SlotOrigin = Literal["own", "foreign"]

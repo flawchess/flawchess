@@ -8,7 +8,9 @@ the app-owned selection rules to the expected case and window fit.
 from __future__ import annotations
 
 import random
+import re
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +18,7 @@ from app.models.game_position import GamePosition
 from app.services import blunder_check_rules as rules
 from app.services.blunder_check_rules import (
     BETTER_MOVE_POINTS,
+    BETTER_MOVE_TIER_POINTS,
     BLUNDER_CHECK_SESSION_WINDOWS,
     BLUNDER_POINTS,
     EXPLORATION_SHARE,
@@ -30,6 +33,7 @@ from app.services.blunder_check_rules import (
     MAX_BLUNDER_POSITION,
     OWN_BLUNDER_SHARE,
     SAFE_POINTS,
+    SAFE_TIMEOUT_PENALTY_POINTS,
     WINDOW_LENGTHS,
     MoveJudgement,
     blunder_es,
@@ -88,9 +92,12 @@ class TestSharedImplementation:
 
 class TestConstants:
     def test_named_constants(self) -> None:
-        assert BETTER_MOVE_POINTS == 2
+        assert BETTER_MOVE_POINTS == 1
         assert BLUNDER_CHECK_SESSION_WINDOWS == 6
-        assert (SAFE_POINTS, BLUNDER_POINTS) == (1, 3)
+        assert (SAFE_POINTS, BLUNDER_POINTS, SAFE_TIMEOUT_PENALTY_POINTS) == (1, 2, 1)
+        # The better move is graded like a puzzle but worth at most 1 point; an inaccuracy gets
+        # full credit. The puzzle scale (train_score.MOVE_TIER_POINTS) is separate.
+        assert dict(BETTER_MOVE_TIER_POINTS) == {"good": 1, "inaccuracy": 1, "wrong": 0}
         assert (ES_BAND_LOW, ES_BAND_HIGH) == (0.10, 0.90)
 
 
@@ -239,3 +246,21 @@ class TestBlunderPositionWeights:
         total = sum(raw)
         assert sum(weights.values()) == pytest.approx(1.0)
         assert [weights[k] for k in (1, 2, 3)] == pytest.approx([r / total for r in raw])
+
+
+# Quick 261123-lb8: the frontend's rules copy mirrors the point constants (the server is the only
+# grader). Parsed from the file so the copy cannot drift from the backend unnoticed
+# (parity-test precedent: tests/services/test_facepalm_score.py).
+_TRAIN_BOT_COPY_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/trainBotCopy.ts"
+
+
+def _frontend_copy_points(name: str) -> int:
+    match = re.search(rf"const {name} = (\d+);", _TRAIN_BOT_COPY_TS.read_text())
+    assert match is not None, f"{name} declaration not found in frontend/src/lib/trainBotCopy.ts"
+    return int(match.group(1))
+
+
+def test_frontend_rules_copy_matches_the_point_constants() -> None:
+    assert _frontend_copy_points("BLUNDER_CHECK_SAFE_POINTS") == SAFE_POINTS
+    assert _frontend_copy_points("BLUNDER_CHECK_CATCH_POINTS") == BLUNDER_POINTS
+    assert _frontend_copy_points("BLUNDER_CHECK_BETTER_MOVE_POINTS") == BETTER_MOVE_POINTS

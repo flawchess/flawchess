@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime
 from enum import IntEnum
+from typing import Final
 
 from sqlalchemy import (
     BigInteger,
@@ -67,6 +68,13 @@ class WindowOutcome(IntEnum):
     CAUGHT = 1  # blunder window, the user flagged the blunder
     MISSED = 2  # blunder window, the user let the blunder pass
     FALSE_ALARM = 3  # the user flagged a safe move
+
+
+# A blunder window that ended on the blunder offers the better-move task, caught or missed
+# (quick 261123-lb8). The single rule the service and the repository both read.
+BETTER_MOVE_OUTCOMES: Final[frozenset[WindowOutcome]] = frozenset(
+    {WindowOutcome.CAUGHT, WindowOutcome.MISSED}
+)
 
 
 class WindowArm(IntEnum):
