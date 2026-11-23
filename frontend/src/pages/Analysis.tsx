@@ -70,9 +70,14 @@ import type { PasteParseResult, PastedGameHeaders } from '@/lib/pastedGame';
 import { buildAnalysisPgn, gamePgnHeaders } from '@/lib/pgn';
 import { takePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/lib/engineSettings';
+import {
+  setEngineToggle,
+  useEngineDisplaySettings,
+  useEngineToggles,
+  useJumpOwnMovesOnly,
+} from '@/lib/engineSettings';
+import { computeFastForwardStops } from '@/lib/fastForwardStops';
 import type { FlawSeverity } from '@/types/library';
-import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
 import { lineHasVisibleMotif } from '@/lib/tacticOrientation';
 import { TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
@@ -1108,25 +1113,20 @@ export default function Analysis() {
     return { white, black };
   }, [isGameMode, gameData?.eval_series, evalChartPly]);
 
-  // Fast-forward stop set: main-line plies whose
-  // FlawMarker.severity is blunder/mistake, plus plies whose
-  // EvalPoint.best_move_tier is gem/great. Deliberately BOTH-SIDES — no
-  // is_user / user_color filter — matching the analysis board's existing
-  // both-sides gem display. Derived from eval_series directly rather
-  // than reusing the nearby storedGemGreatByPly map: that map additionally
-  // requires maia_prob != null, a TypeScript-narrowing artifact of its own
-  // purpose that could silently drop a legitimate fast-forward stop here.
+  // Fast-forward stop set: blunder/mistake and gem/great plies. Both sides by
+  // default, matching the board's both-sides highlight display; narrowed to the
+  // user's plies when the Jump setting is on. Highlight display is untouched,
+  // only the Jump stops are filtered (see computeFastForwardStops).
+  const jumpOwnMovesOnly = useJumpOwnMovesOnly();
   const fastForwardStopPlies = useMemo<Set<number>>(() => {
-    const stops = new Set<number>();
-    if (!isGameMode) return stops;
-    for (const fm of gameData?.flaw_markers ?? []) {
-      if (fm.severity === 'blunder' || fm.severity === 'mistake') stops.add(fm.ply);
-    }
-    for (const point of gameData?.eval_series ?? []) {
-      if (isRareMoveTier(point.best_move_tier)) stops.add(point.ply);
-    }
-    return stops;
-  }, [isGameMode, gameData?.flaw_markers, gameData?.eval_series]);
+    if (!isGameMode) return new Set<number>();
+    return computeFastForwardStops({
+      flawMarkers: gameData?.flaw_markers,
+      evalSeries: gameData?.eval_series,
+      userColor: gameData?.user_color,
+      ownMovesOnly: jumpOwnMovesOnly,
+    });
+  }, [isGameMode, gameData?.flaw_markers, gameData?.eval_series, gameData?.user_color, jumpOwnMovesOnly]);
 
   // evalChartPly (not a raw currentPly) is deliberate: from a sideline it
   // resolves to the fork point, so a fast-forward started from a sideline
