@@ -992,7 +992,7 @@ example rows are in the seed (refined 2026-11-23); the probe is in the phase dir
 **Depends on**: Phase 259 (quiet-point rule, stored `material_loss` / `material_missed`, the fit tool) and
 Phase 257 (the type rule). Phases 260 and 261 read the score and are live on prod.
 **Requirements**: TBD
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
