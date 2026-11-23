@@ -341,10 +341,10 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
   it('the hard-to-catch line differs after a catch and after a miss, and is absent when false', () => {
     const hard = feedbackOf({ hard_to_catch: true });
     expect(solutionCopy(solution({ outcome: 'caught', feedback: hard })).feedback?.lines).toEqual([
-      'Well spotted, this one was hard to catch.',
+      'Well spotted! This was one of the tough ones we mix in on purpose.',
     ]);
     expect(solutionCopy(solution({ outcome: 'missed', feedback: hard })).feedback?.lines).toEqual([
-      'This one was hard to catch.',
+      'This one was hard to catch. We mix in a few tough ones on purpose.',
     ]);
     expect(
       solutionCopy(solution({ feedback: feedbackOf({ type_line: 'allowed_mate' }) })).feedback?.lines,
@@ -359,7 +359,7 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
       }),
     );
     expect(copy.feedback).toEqual({
-      lines: ['The blunder misses checkmate.', 'This one was hard to catch.'],
+      lines: ['The blunder misses checkmate.', 'This one was hard to catch. We mix in a few tough ones on purpose.'],
     });
   });
 

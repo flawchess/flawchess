@@ -240,8 +240,8 @@ const TYPE_LINE_COPY: Record<BlunderTypeLine, string> = {
 
 /** The fairness line for a subtle blunder (D-07), by whether the user called it. */
 const HARD_TO_CATCH_COPY: Record<'caught' | 'missed', string> = {
-  caught: 'Well spotted, this one was hard to catch.',
-  missed: 'This one was hard to catch.',
+  caught: 'Well spotted! This was one of the tough ones we mix in on purpose.',
+  missed: 'This one was hard to catch. We mix in a few tough ones on purpose.',
 };
 
 /** The feedback paragraph of a blunder solution: type line, then the hard-to-catch line. */

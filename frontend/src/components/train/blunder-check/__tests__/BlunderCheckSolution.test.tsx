@@ -460,7 +460,7 @@ describe('avatar feedback paragraph (Phase 261 D-03)', () => {
     expect(summary.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // UAT: the score chip is gone; the paragraph is the two lines only.
     expect(screen.queryByTestId('blunder-check-facepalm-badge')).toBeNull();
-    expect(feedback.textContent).toBe('The blunder allows a material loss. This one was hard to catch.');
+    expect(feedback.textContent).toBe('The blunder allows a material loss. This one was hard to catch. We mix in a few tough ones on purpose.');
   });
 
   it('shows on the phone and tablet strip after unfolding, below the summary', () => {
@@ -487,7 +487,7 @@ describe('avatar feedback paragraph (Phase 261 D-03)', () => {
       scriptedEngine(),
     );
     expect(screen.getByTestId('blunder-check-solution-feedback').textContent).toContain(
-      'Well spotted, this one was hard to catch.',
+      'Well spotted! This was one of the tough ones we mix in on purpose.',
     );
   });
 
