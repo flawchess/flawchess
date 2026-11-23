@@ -409,7 +409,7 @@ export const blunderCheckApi = {
     apiClient
       .post<AnswerResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/answers`, data)
       .then(r => r.data),
-  /** Grades the better move after a caught blunder; 409 `better_move_done` / `not_caught` / `session_closed`. */
+  /** Grades the better move after a caught or missed blunder; 409 `better_move_done` / `no_better_move` / `session_closed`. */
   submitBetterMove: (sessionId: number, position: number, data: BetterMoveRequest) =>
     apiClient
       .post<BetterMoveResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/better-move`, data)

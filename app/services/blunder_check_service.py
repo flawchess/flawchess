@@ -16,6 +16,7 @@ from typing import Final, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.blunder_check import (
+    BETTER_MOVE_OUTCOMES,
     AnswerResult,
     BlunderCheckAnswer,
     BlunderCheckSession,
@@ -29,6 +30,7 @@ from app.repositories.blunder_check_repository import GameInfoRow, SessionProgre
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services import blunder_check_selection
 from app.services.blunder_check_feedback import BlunderFeedbackData, blunder_feedback
+from app.services.blunder_check_rules import BETTER_MOVE_TIER_POINTS
 from app.services.blunder_check_grading import (
     ANSWER_KIND_BY_NAME,
     MOVE_QUALITY_BY_TIER,
@@ -65,8 +67,7 @@ from app.services.train_scheduler import (
     local_today,
     session_window,
 )
-from app.services.blunder_check_rules import BLUNDER_POINTS
-from app.services.train_score import MOVE_QUALITY_TIER, MOVE_TIER_POINTS
+from app.services.train_score import MOVE_QUALITY_TIER
 
 ConflictReason = Literal[
     "window_ended",
@@ -75,7 +76,7 @@ ConflictReason = Literal[
     "not_started",
     "stale_prompt",
     "windows_open",
-    "not_caught",
+    "no_better_move",
     "better_move_done",
     "window_open",
 ]
@@ -151,12 +152,12 @@ class WindowStart:
     timer_remaining_ms: int
     window_points: int
     session_points: int
-    # The still-open better-move task of a caught window (a reload during that step), else None.
+    # The still-open better-move task of a caught or missed window (a reload during that step), else None.
     better_move: BetterMoveData | None = None
     # True while the window sits on its Ready gate (no open prompt row): no clock runs.
     awaiting_ready: bool = False
-    # The window's outcome when the payload describes an ended window (a caught window waiting
-    # for its better move, or a stale timeout that ended the window), else None.
+    # The window's outcome when the payload describes an ended window (a caught or missed window
+    # waiting for its better move, or a stale timeout that ended the window), else None.
     outcome: OutcomeName | None = None
     # The game move that led to `start_fen` (the Ready gate's last-move highlight), else None.
     prior_uci: str | None = None
@@ -398,7 +399,11 @@ def _check_startable(header: BlunderCheckSession, window: BlunderCheckWindow) ->
 
 
 def _better_move_pending(window: BlunderCheckWindow) -> bool:
-    return window.outcome == int(WindowOutcome.CAUGHT) and window.better_move_tier is None
+    return (
+        window.outcome is not None
+        and WindowOutcome(window.outcome) in BETTER_MOVE_OUTCOMES
+        and window.better_move_tier is None
+    )
 
 
 def _next_move_index(window: BlunderCheckWindow, rows: list[BlunderCheckAnswer]) -> int:
@@ -424,7 +429,7 @@ async def _ended_window_start(
     """The payload for a window that already ended: every answered move, the last one as the prompt.
 
     No clock runs and no Ready gate shows. The client routes it to the better-move step (a caught
-    window) or to the window's solution (a missed or cleared one).
+    or missed blunder window) or to the window's solution (a cleared or false-alarm one).
     """
     answered = [row for row in rows if row.answered_at is not None]
     if not answered:
@@ -457,13 +462,15 @@ async def _resume_better_move(
     points stayed in `points_possible` but could never be earned.
     """
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
+    # A pending better move implies an ended window (quick 261123-lb8: caught or missed).
+    assert window.outcome is not None
     return await _ended_window_start(
         session,
         window,
         session_id=session_id,
         rows=rows,
         window_points=window.points_scored,
-        outcome="caught",
+        outcome=OUTCOME_NAME_BY_VALUE[WindowOutcome(window.outcome)],
         better_move=await _better_move_task(session, window),
     )
 
@@ -520,7 +527,8 @@ async def _resume_after_settle(
     window_points = window.points_scored + grade.points_awarded - grade.points_forfeited
     rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
     if grade.window_ends and grade.outcome is not None:
-        # A timeout never catches, so there is no better-move task (L-04).
+        # A stale timeout on the blunder gets the better-move task too (quick 261123-lb8 D-03):
+        # grade.better_move is set for every window that ended on the blunder.
         return await _ended_window_start(
             session,
             window,
@@ -528,7 +536,7 @@ async def _resume_after_settle(
             rows=rows,
             window_points=window_points,
             outcome=grade.outcome,
-            better_move=None,
+            better_move=await _better_move_task(session, window) if grade.better_move else None,
         )
     return await _window_start(
         session,
@@ -768,7 +776,7 @@ async def _better_move_task(session: AsyncSession, window: BlunderCheckWindow) -
     """Pre-blunder FEN plus the key and graded set (derived the same way for every case, D-17)."""
     blunder_ply = window.blunder_ply
     key_uci = window.key_uci
-    assert blunder_ply is not None and key_uci is not None  # a caught window has both
+    assert blunder_ply is not None and key_uci is not None  # a blunder window has both
     fen = _fen_before(window, blunder_ply)
     moves = await _graded_moves(session, window, blunder_ply=blunder_ply, key_uci=key_uci, fen=fen)
     return BetterMoveData(fen=fen, key_uci=key_uci, server_graded_moves=moves)
@@ -802,7 +810,7 @@ async def _build_outcome(
     window_points: int,
     now_utc: datetime.datetime,
 ) -> AnswerOutcome:
-    """Assemble the response: reply only when the window goes on (or cleared), better move on caught."""
+    """Assemble the response: reply only when the window goes on (or cleared), better move after a blunder."""
     next_prompt: PromptData | None = None
     timer_ms: int | None = None
     if not grade.window_ends:
@@ -944,11 +952,13 @@ class BetterMoveResult:
 
 
 def _check_better_move_claimable(header: BlunderCheckSession, window: BlunderCheckWindow) -> None:
-    """409 unless the session is open, the window was caught and its better move is still free."""
+    """409 unless the session is open, the window ended on its blunder and its better move is free."""
     if header.status != "open":
         raise BlunderCheckConflictError("session_closed")
-    if window.outcome != int(WindowOutcome.CAUGHT):
-        raise BlunderCheckConflictError("not_caught")
+    if window.outcome is None or WindowOutcome(window.outcome) not in BETTER_MOVE_OUTCOMES:
+        # Quick 261123-lb8: caught and missed windows both offer the better move; a cleared herring,
+        # a false alarm and a window that has not ended offer none.
+        raise BlunderCheckConflictError("no_better_move")
     if window.better_move_tier is not None:
         raise BlunderCheckConflictError("better_move_done")
 
@@ -964,7 +974,7 @@ async def _resolve_window_tier(
     """Resolve the tier with the live blob's graded set (empty when the game is gone)."""
     blunder_ply = window.blunder_ply
     key_uci = window.key_uci
-    assert blunder_ply is not None and key_uci is not None  # a caught window has both
+    assert blunder_ply is not None and key_uci is not None  # a blunder window has both
     graded = await _graded_moves(session, window, blunder_ply=blunder_ply, key_uci=key_uci, fen=fen)
     return resolve_better_move_tier(
         played_uci=played_uci,
@@ -985,7 +995,7 @@ async def submit_better_move(
     client_tier: MoveTierName,
     now_utc: datetime.datetime,
 ) -> BetterMoveResult:
-    """Grade and score the one better move of a caught window (server-only points, D-17).
+    """Grade and score the one better move of a caught or missed window (server-only points, D-17).
 
     The window row is locked like the answer path, so two concurrent submits serialize and
     the claiming UPDATE is the second line of defence against a double award (T-249-15).
@@ -998,14 +1008,14 @@ async def submit_better_move(
     header, window = found
     _check_better_move_claimable(header, window)
     blunder_ply = window.blunder_ply
-    assert blunder_ply is not None  # a caught window has a blunder ply
+    assert blunder_ply is not None  # a blunder window has a blunder ply
     fen = _fen_before(window, blunder_ply)
     if not is_legal_uci(fen, played_uci):
         raise BlunderCheckIllegalMoveError
     tier = await _resolve_window_tier(
         session, window=window, fen=fen, played_uci=played_uci, client_tier=client_tier
     )
-    points = MOVE_TIER_POINTS[tier]
+    points = BETTER_MOVE_TIER_POINTS[tier]
     claimed = await blunder_check_repository.claim_better_move(
         session,
         window_id=window.id,
@@ -1138,8 +1148,14 @@ async def _blunder_solution(
     )
     fen = _fen_before(window, blunder_ply)
     caught = window.outcome == int(WindowOutcome.CAUGHT)
-    blunder_points = BLUNDER_POINTS if caught else 0
-    better_move_points = None if tier is None else MOVE_TIER_POINTS[tier]
+    # Read from the caught answer row, not the BLUNDER_POINTS constant: a window caught before the
+    # quick 261123-lb8 rebalance earned 3 while the constant now says 2, so the constant would
+    # misreport its breakdown (safe_points would be off by one).
+    answer_rows = await blunder_check_repository.answers_for_window(session, window_id=window.id)
+    blunder_points = sum(
+        row.points_awarded for row in answer_rows if row.result == int(AnswerResult.CAUGHT)
+    )
+    better_move_points = None if tier is None else BETTER_MOVE_TIER_POINTS[tier]
     return BlunderSolutionData(
         outcome="caught" if caught else "missed",
         is_own=window.is_own,

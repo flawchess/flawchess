@@ -68,6 +68,7 @@ from app.services.facepalm_inputs import (  # noqa: E402
     MaterialInputs,
     material_inputs_from_facts,
 )
+from app.services.facepalm_score import is_allowed_loss  # noqa: E402
 from app.services.line_material import (  # noqa: E402
     LineFacts,
     quiet_best_line_facts,
@@ -620,15 +621,18 @@ async def collect_rows(
 
 def _has_null_score_input(row: FeatureRow) -> bool:
     """A row the shipped score cannot score: it reads the played probability, the stored loss, and
-    the reply probability on a losing row or the best-move probability otherwise.
+    the reply probability on an allowed loss or the best-move probability otherwise.
 
     Bug fix (259 review WR-02): this still tested the reply spread and the depth-3 loss, the
     inputs of the score before Phase 259, so the summary count was wrong in both directions.
+    262 D-04: the gate is the type rule (`is_allowed_loss`), not the loss alone.
     """
     loss = row.quiet.loss
     if row.played_prob is None or loss is None:
         return True
-    return row.reply_prob is None if loss > 0 else row.best_prob is None
+    if is_allowed_loss(loss, row.quiet.missed):
+        return row.reply_prob is None
+    return row.best_prob is None
 
 
 def _best_line_unknown(row: FeatureRow) -> bool:

@@ -6,7 +6,7 @@
  * issues the gate's prompt and starts its clock only at begin (L-05). The gate stands before
  * move 1 on a fresh window, or mid-sequence on the position reached so far when the server
  * settled a stale prompt on resume; a stale timeout that ended the window resumes straight onto
- * its solution (quick 261119-x7t). A caught blunder then asks
+ * its solution (quick 261119-x7t). A blunder, caught or missed, then asks
  * for a better move (better_move -> grading -> feedback); every ended window ends on its
  * solution screen (solution_loading -> solution). After the last window the session is
  * finished. The reducer is pure: no timers, no I/O. The component that hosts it
@@ -116,7 +116,8 @@ export interface DrillWindow {
 
 /**
  * The points flash after a graded answer: a forfeit when points were taken away, a neutral
- * "+0" for a timeout on a good move with nothing in the pot to take, else a gain.
+ * "+0" when nothing moved but the answer still counts (a missed blunder keeps the pot; a timeout
+ * on a good move with nothing in the pot to take), else a gain.
  */
 export interface FeedbackFlash {
   amount: number;
@@ -248,15 +249,16 @@ function answeredUcis(answered: readonly AnsweredMove[]): string[] {
 }
 
 /**
- * A reload onto a window that already ended: the better-move step for a caught blunder, else the
- * window's solution. The ending answer's grade is rebuilt from the last answered row, and the
+ * A reload onto a window that already ended: the better-move step for a caught or missed blunder,
+ * else the window's solution. The ending answer's grade is rebuilt from the last answered row, and the
  * ending move itself was never played on the board (as after an in-session ending answer).
  *
  * Bug fix (Phase 249 review): the drill used to skip to the next sequence on a better-move
  * reload, so the better move's points could never be earned.
  * Bug fix (quick 261119-x7t): a stale prompt the server settled as a window-ending timeout
  * (missed on the blunder ply, cleared on a herring's last move) resumes onto the window's
- * solution instead of an error or a dead clock.
+ * solution instead of an error or a dead clock. Since quick 261123-lb8 a stale timeout on the
+ * blunder resumes into the better-move step instead, like any other missed blunder.
  */
 function endedWindowResumed(
   session: DrillSession,
@@ -317,7 +319,9 @@ function windowFromServer(
   forceResume: boolean,
 ): DrillState {
   if (response.better_move !== null) {
-    return endedWindowResumed(session, response, 'caught', response.better_move);
+    // The server names the outcome: 'caught', or 'missed' for a blunder let through (quick
+    // 261123-lb8). The fallback keeps an older payload working.
+    return endedWindowResumed(session, response, response.outcome ?? 'caught', response.better_move);
   }
   if (response.outcome !== null) {
     return endedWindowResumed(session, response, response.outcome, null);
@@ -393,9 +397,15 @@ export function flashFor(response: AnswerResponse): FeedbackFlash {
   if (response.points_forfeited > 0) {
     return { amount: response.points_forfeited, variant: 'forfeit' };
   }
-  // A timeout on a good move with an empty pot moves no points: it is still shown, so the
-  // move does not pass silently.
-  if (response.result === 'timeout_safe') return { amount: 0, variant: 'neutral' };
+  // A timeout on a good move with an empty pot moves no points, and a missed blunder keeps the
+  // pot (quick 261123-lb8): both are still shown, so the answer does not pass silently.
+  if (
+    response.result === 'timeout_safe' ||
+    response.result === 'missed' ||
+    response.result === 'timeout_blunder'
+  ) {
+    return { amount: 0, variant: 'neutral' };
+  }
   return { amount: response.points_awarded, variant: 'gain' };
 }
 
@@ -414,8 +424,8 @@ function answerGraded(state: DrillState, response: AnswerResponse): DrillState {
 
 /**
  * The answer feedback is over. An open window plays the move and reply; an ended one goes to
- * the better-move step after a catch (the server hands out the task only then) or straight to
- * its solution (missed, cleared, false alarm).
+ * the better-move step after a blunder, caught or missed (the server hands out the task only
+ * then) or straight to its solution (cleared, false alarm).
  */
 function answerFeedbackDone(state: Extract<DrillState, { phase: 'feedback' }>): DrillState {
   const { session, sessionPoints, window, prompt, graded } = state;
@@ -549,7 +559,7 @@ export const BANK_HOLD_MS = 1200;
 
 /**
  * What just happened to the pot, for the progress row's animation: points dropped in, the
- * pot lost points (all of them for a blunder let through, one for a timeout on a good move),
+ * pot lost points (all of them for a timeout on the blunder, one for a timeout on a good move),
  * or the pot was banked into the total (on Next, see `bankingProgress`).
  */
 export interface PotEvent {
@@ -599,7 +609,7 @@ function potEventOf(state: Extract<DrillState, { window: DrillWindow }>): PotEve
  * The progress of the running session, or null on the start, error and end screens.
  *
  * The server's session total already counts the open window's points (a forfeit lowers it).
- * The row shows them apart instead: the pot is what a missed blunder would take away, the
+ * The row shows them apart instead: the pot is what a timeout on the blunder would take away, the
  * banked total is safe. The pot stays on screen through the solution, so the user sees what
  * the window was worth, and is banked on Next (`bankingProgress`).
  */

@@ -572,10 +572,10 @@ const BLUNDER_SOLUTION: BlunderSolution = {
   better_move_tier: 'good',
   server_graded_moves: [],
   game_info: null,
-  window_points: 5,
+  window_points: 3,
   safe_points: 0,
-  blunder_points: 3,
-  better_move_points: 2,
+  blunder_points: 2,
+  better_move_points: 1,
   feedback: null,
 };
 const TWO_WINDOW_SESSION: BlunderCheckSessionResponse = {
@@ -761,21 +761,33 @@ describe('window loop', () => {
   });
 
   it('a window-ending answer without a better-move task lands on the solution, and Next starts the next window', async () => {
+    // A false alarm is a real no-task ending: a missed blunder now gets the better-move step.
     answer.mockImplementation(async () =>
       gradedAnswer({
-        result: 'missed',
+        result: 'false_alarm',
         points_awarded: 0,
-        points_forfeited: 1,
+        points_forfeited: 0,
         window_points: 0,
         session_points: 3,
         window_ended: true,
-        outcome: 'missed',
+        outcome: 'false_alarm',
         reply_uci: null,
         next_prompt: null,
         timer_remaining_ms: null,
       }),
     );
-    getSolution.mockImplementation(async () => ({ ...BLUNDER_SOLUTION, outcome: 'missed' }));
+    getSolution.mockImplementation(async () => ({
+      kind: 'false_alarm',
+      outcome: 'false_alarm',
+      is_own: true,
+      game_id: ANALYSIS_GAME_ID,
+      analysis_ply: ANALYSIS_PLY,
+      flagged_uci: PROMPT_UCI,
+      fen: PRE_BLUNDER_FEN,
+      key_uci: KEY_UCI,
+      game_info: null,
+      window_points: 0,
+    }));
     await reachFirstPrompt();
 
     fireEvent.click(screen.getByTestId('blunder-check-btn-safe'));
@@ -783,12 +795,12 @@ describe('window loop', () => {
     await advance(FEEDBACK_DISPLAY_MS);
     await advance(50);
 
-    // A missed blunder skips the better-move step.
+    // A false alarm skips the better-move step.
     expect(screen.queryByTestId('blunder-check-better-move')).toBeNull();
     expect(getSolution).toHaveBeenCalledWith(7, 0);
-    expect(screen.getByTestId('blunder-check-solution-heading').textContent).toBe('Missed blunder');
+    expect(screen.getByTestId('blunder-check-solution-heading')).not.toBeNull();
     expect(screen.queryByTestId('blunder-check-btn-safe')).toBeNull();
-    // The lost pot stays up on the solution as a red +0.
+    // An empty pot stays up on the solution as a red +0.
     expect(screen.getByTestId('blunder-check-pot').getAttribute('data-pot-state')).toBe('lost');
     expect(screen.getByTestId('blunder-check-pot').textContent).toBe('+0');
 
@@ -1468,9 +1480,9 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
   const CAUGHT = (): AnswerResponse =>
     gradedAnswer({
       result: 'caught',
-      points_awarded: 3,
-      window_points: 3,
-      session_points: 3,
+      points_awarded: 2,
+      window_points: 2,
+      session_points: 2,
       window_ended: true,
       outcome: 'caught',
       reply_uci: null,
@@ -1480,9 +1492,9 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     });
   const GRADED_GOOD: BetterMoveResponse = {
     tier: 'good',
-    points_awarded: 2,
-    window_points: 5,
-    session_points: 5,
+    points_awarded: 1,
+    window_points: 3,
+    session_points: 3,
   };
 
   beforeEach(() => {
@@ -1515,20 +1527,80 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     await reachBetterMove();
 
     expect(screen.getByTestId('blunder-check-better-move-prompt').textContent).toBe(
-      'Good call! +3 Now find a better move.',
+      'Good call! +2 Now find a better move.',
     );
     expect(boardFen()).toBe(PRE_BLUNDER_FEN);
     // The move that led here keeps its squares lit (the caught blunder was never played).
     expect(screen.getByTestId('board-mock').getAttribute('data-last-move')).toBe('e7e5');
     expect(engine.startGrading).toHaveBeenCalledWith(PRE_BLUNDER_FEN, KEY_UCI);
     // The header still shows the server's points for the caught blunder, in the pot.
-    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+3');
+    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+2');
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
     // Its badge landed there during the feedback, with the coin.
     expect(playSound).toHaveBeenCalledWith('pot-gain');
   });
 
-  it('the key move posts at once as good, shows +2 with the full-score sound, then the solution opens', async () => {
+  /** A "safe" call (or a timeout) on the blunder: the pot is kept, the better move is offered. */
+  const MISSED = (result: 'missed' | 'timeout_blunder', forfeited: number): AnswerResponse =>
+    gradedAnswer({
+      result,
+      points_awarded: 0,
+      points_forfeited: forfeited,
+      window_points: 2 - forfeited,
+      session_points: 2 - forfeited,
+      window_ended: true,
+      outcome: 'missed',
+      reply_uci: null,
+      next_prompt: null,
+      timer_remaining_ms: null,
+      better_move: BETTER_MOVE_TASK,
+    });
+
+  it('a missed blunder shows the better-move board with the missed copy, and the solution loads only after the better move is graded', async () => {
+    answer.mockImplementation(async () => MISSED('missed', 0));
+    await reachFirstPrompt();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-safe'));
+    await advance(0);
+    await advance(FEEDBACK_DISPLAY_MS);
+
+    expect(screen.getByTestId('blunder-check-better-move-prompt').textContent).toBe(
+      'That was a blunder. Now find a better move.',
+    );
+    expect(screen.queryByTestId('blunder-check-pill-catch')).toBeNull();
+    expect(boardFen()).toBe(PRE_BLUNDER_FEN);
+    expect(engine.startGrading).toHaveBeenCalledWith(PRE_BLUNDER_FEN, KEY_UCI);
+    // The solution (and its key) is not requested before the better move is graded.
+    expect(getSolution).not.toHaveBeenCalled();
+
+    submitBetterMove.mockImplementation(async () => ({
+      tier: 'good',
+      points_awarded: 1,
+      window_points: 3,
+      session_points: 3,
+    }));
+    await playBoardMove('d2', 'd4');
+    await advance(0);
+    expect(getSolution).not.toHaveBeenCalled();
+    await advance(FEEDBACK_DISPLAY_MS);
+    await advance(50);
+
+    expect(getSolution).toHaveBeenCalledWith(7, 0);
+  });
+
+  it('a timeout on the blunder names it a blunder before asking for the better move', async () => {
+    answer.mockImplementation(async () => MISSED('timeout_blunder', 2));
+    await reachFirstPrompt();
+    fireEvent.click(screen.getByTestId('blunder-check-btn-safe'));
+    await advance(0);
+    await advance(FEEDBACK_DISPLAY_MS);
+
+    expect(screen.getByTestId('blunder-check-better-move-prompt').textContent).toBe(
+      "Time's up, and that was a blunder. Now find a better move.",
+    );
+    expect(screen.queryByTestId('blunder-check-pill-catch')).toBeNull();
+  });
+
+  it('the key move posts at once as good, shows +1 with the full-score sound, then the solution opens', async () => {
     await reachBetterMove();
 
     await playBoardMove('d2', 'd4');
@@ -1537,11 +1609,11 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(engine.gradeMove).not.toHaveBeenCalled();
     expect(submitBetterMove).toHaveBeenCalledTimes(1);
     expect(submitBetterMove).toHaveBeenCalledWith(7, 0, { played_uci: KEY_UCI, client_tier: 'good' });
-    expect(screen.getByTestId('blunder-check-points-flash').textContent).toBe('+2');
+    expect(screen.getByTestId('blunder-check-points-flash').textContent).toBe('+1');
     expect(playSound).toHaveBeenCalledWith('score-full');
     // The server's totals replace the client's: the +2 lands in the pot, nothing is banked yet.
     await advance(1);
-    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+5');
+    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+3');
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
 
     await advance(FEEDBACK_DISPLAY_MS);
@@ -1551,12 +1623,12 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     expect(screen.getByTestId('blunder-check-solution-heading').textContent).toBe('Blunder caught');
     // The solution keeps the pot up, so the user sees what the window was worth.
     expect(screen.getByTestId('blunder-check-pot').getAttribute('data-pot-state')).toBe('open');
-    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+5');
+    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+3');
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
     expect(screen.getByTestId('btn-train-analyze')).not.toBeNull();
 
     // Next banks it: three overlapping coins, and the next window starts with it in the total.
-    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 5 }));
+    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
     playSound.mockClear();
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await advance(BANK_COIN_COUNT * BANK_COIN_INTERVAL_MS);
@@ -1564,7 +1636,7 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
       BANK_COIN_COUNT,
     );
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
-    expect(screen.getByTestId('blunder-check-points').textContent).toBe('5 pts');
+    expect(screen.getByTestId('blunder-check-points').textContent).toBe('3 pts');
   });
 
   it('with motion, Next holds the solution while the pot is banked, and a second click is ignored', async () => {
@@ -1574,8 +1646,8 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
       await playBoardMove('d2', 'd4');
       await advance(FEEDBACK_DISPLAY_MS);
       await advance(50);
-      expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+5');
-      startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 5 }));
+      expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+3');
+      startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
       const startsBefore = startWindow.mock.calls.length;
 
       playSound.mockClear();
@@ -1594,7 +1666,7 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
       await advance(50);
       expect(startWindow).toHaveBeenCalledTimes(startsBefore + 1);
       expect(startWindow).toHaveBeenLastCalledWith(7, 1);
-      expect(screen.getByTestId('blunder-check-points').textContent).toBe('5 pts');
+      expect(screen.getByTestId('blunder-check-points').textContent).toBe('3 pts');
     } finally {
       reducedMotion.current = true;
     }
@@ -1654,12 +1726,12 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     await advance(50);
     expect(screen.getByTestId('blunder-check-solution-heading').textContent).toBe('Blunder caught');
     // The restored solution still holds its pot: Next banks it.
-    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+5');
+    expect(screen.getByTestId('blunder-check-pot-amount').textContent).toBe('+3');
     expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
     expect(getSolution).toHaveBeenCalledTimes(1);
 
     // Next still continues the session from the restored solution.
-    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 5 }));
+    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await advance(50);
     expect(startWindow).toHaveBeenLastCalledWith(7, 1);
@@ -1725,7 +1797,7 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     await playBoardMove('d2', 'd4');
     await advance(FEEDBACK_DISPLAY_MS);
     await advance(50);
-    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 5 }));
+    startWindow.mockImplementation(async () => windowStart({ position: 1, session_points: 3 }));
 
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await advance(50);
@@ -1767,8 +1839,8 @@ describe('better move and solution (D-12, D-14, D-17)', () => {
     submitBetterMove.mockImplementation(async () => ({
       tier: 'wrong',
       points_awarded: 0,
-      window_points: 3,
-      session_points: 3,
+      window_points: 2,
+      session_points: 2,
     }));
     await reachBetterMove();
 
@@ -1870,7 +1942,7 @@ describe('session end screen (D-14)', () => {
     answer.mockImplementation(async () =>
       gradedAnswer({
         result: 'caught',
-        points_awarded: 3,
+        points_awarded: 2,
         window_ended: true,
         outcome: 'caught',
         reply_uci: null,

@@ -7,6 +7,8 @@ as UCI, and the stored refutation line exactly as it was at label time. Game lin
 the label study, no usernames. The expected values are the independent spike values of the quiet-point rule at depths
 1 / 3 / 5 / 7 / 9, checked against these exact strings before they were committed.
 
+Phase 262 (D-01): fixtures 35, 170, 177 and 162 carry a promotion and were re-derived with promotions counted.
+
 The tests never read the caches: they are gitignored and exist on one machine only.
 """
 
@@ -45,9 +47,9 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         pre_fen="8/6pk/1R3pp1/1p6/2Pp1PP1/p2P2B1/PP4B1/5K2 w - - 0 33",
         played_uci="c4b5",
         line="a3b2 g2e4 b2b1q f1g2 b1d1 b6c6 d1e2 g2h3 h7h8 b5b6 f6f5 g4f5",
-        expected_quiet_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(0, 8, 8, 8, 8),
         expected_mate_ply=None,
-        note="fair position the refinements dropped: the blunder captures a pawn and the count stays at zero",
+        note="the blunder captures a pawn and the count stays at zero until the opponent queens at ply 3 (262 D-01: the promotion is worth 8)",
     ),
     LineFixture(
         label_n=153,
@@ -90,9 +92,9 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         pre_fen="6r1/1r4P1/7p/2k5/2P2R2/p1K2P2/P4P2/6R1 b - - 1 34",
         played_uci="b7b2",
         line="g1g6 b2c2 c3c2 c5b4 f4f5 g8d8 g7g8q d8g8 g6g8 h6h5 c2d3 h5h4",
-        expected_quiet_loss=(0, 0, 0, -4, -4),
+        expected_quiet_loss=(0, 0, 0, 4, 4),
         expected_mate_ply=None,
-        note="unfair passer removed by the desperado rule (spite capture in a lost position)",
+        note="unfair passer removed by the desperado rule (spite capture in a lost position); the old -4 credited the captured promoted queen as 9, with promotions counted the opponent queens at ply 7 (+8), the blunderer takes the queen (-9) and the rook recaptures (+5), net 4",
     ),
     LineFixture(
         label_n=176,
@@ -108,9 +110,9 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         pre_fen="8/P1N1k3/7p/2KbN3/1P4pr/8/2P2p2/8 w - - 0 54",
         played_uci="c5d5",
         line="f2f1q e5c6 e7f6 c7e8 f6g5 a7a8q g4g3 a8d8 g5g4 d8d7 g4f3 d7f5",
-        expected_quiet_loss=(-3, -3, -3, -3, -3),
+        expected_quiet_loss=(5, 5, -3, -3, -3),
         expected_mate_ply=None,
-        note="unfair passer removed: the opponent 'material' is a promotion in an endgame race",
+        note="endgame race: the opponent queens at ply 1 (+8 for them, 5 net of the bishop the blunder took), White queens back at ply 6 and the line settles at -3 once that promotion is consumed at depth 5 (262 D-01)",
     ),
     LineFixture(
         label_n=184,
@@ -153,9 +155,9 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         pre_fen="5r1k/QP4p1/7p/3B1q2/3p4/5PP1/8/6RK w - - 1 36",
         played_uci="b7b8q",
         line="f5h3",
-        expected_quiet_loss=(0, 0, 0, 0, 0),
+        expected_quiet_loss=(-8, -8, -8, -8, -8),
         expected_mate_ply=1,
-        note="1-ply mate line after a promotion blunder",
+        note="1-ply mate line after a promotion blunder (262 D-01: the played promotion is worth 8 to the blunderer, mate ply 1 unchanged)",
     ),
     LineFixture(
         label_n=168,

@@ -394,7 +394,8 @@ def assign_windows(
 
 
 def points_possible(shape: WindowShape) -> int:
-    """D-14: 1 per judged safe move, plus 3 for flagging the blunder and 2 for the better move."""
+    """D-14: SAFE_POINTS per judged safe move, plus BLUNDER_POINTS for flagging the blunder and
+    BETTER_MOVE_POINTS for the better move (the better move is offered after a catch or a miss)."""
     if shape.blunder_position is None:
         return shape.length * SAFE_POINTS
     return (shape.blunder_position - 1) * SAFE_POINTS + BLUNDER_POINTS + BETTER_MOVE_POINTS

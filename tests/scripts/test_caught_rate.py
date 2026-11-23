@@ -8,6 +8,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.models.blunder_check import WindowOutcome
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
+from app.services.facepalm_score import FacepalmFacts, facepalm_score
 from app.services.score_confidence import wilson_bounds
 from scripts.blunder_check.caught_rate import (
     SHARE_ACCEPT_HIGH,
@@ -16,6 +18,8 @@ from scripts.blunder_check.caught_rate import (
     ArmLabel,
     BandRow,
     OutcomeLabel,
+    ScoreVersion,
+    SnapshotInputs,
     WindowRow,
     aggregate_caught_rate,
     band_of,
@@ -23,10 +27,13 @@ from scripts.blunder_check.caught_rate import (
     count_unscored,
     exploration_share,
     render_report,
+    version_of,
     window_row,
 )
 
 TODAY = datetime.date(2026, 11, 22)
+SWITCH_AT = datetime.datetime(2026, 11, 25, 12, 0, tzinfo=datetime.UTC)
+BEFORE_SWITCH = SWITCH_AT - datetime.timedelta(seconds=1)
 
 
 def _rows(
@@ -185,3 +192,100 @@ def test_report_never_holds_ids() -> None:
     report = render_report(rows, target="prod", since=TODAY, today=TODAY).lower()
     for forbidden in ("user_id", "game_id", "username", "window_id"):
         assert forbidden not in report
+
+
+def test_statement_reads_the_session_start_without_a_join() -> None:
+    compiled = str(build_statement(None).compile(dialect=postgresql.dialect()))
+    assert "blunder_check_sessions.started_at" in compiled
+    assert "blunder_check_windows.session_id" in compiled
+    assert "JOIN" not in compiled.upper()
+    for column in ("facepalm_played_prob", "facepalm_loss", "facepalm_missed"):
+        assert f"blunder_check_windows.{column}" in compiled
+    assert "ended_at" not in compiled
+
+
+def test_version_of_splits_on_session_start() -> None:
+    # Switch not set: the report is not split.
+    assert version_of(BEFORE_SWITCH, has_snapshot=True, switch_at=None) == "unsplit"
+    # A snapshotted window is keyed on when its session was composed.
+    assert version_of(BEFORE_SWITCH, has_snapshot=True, switch_at=SWITCH_AT) == "phase_259"
+    assert version_of(SWITCH_AT, has_snapshot=True, switch_at=SWITCH_AT) == "phase_262"
+    later = SWITCH_AT + datetime.timedelta(days=1)
+    assert version_of(later, has_snapshot=True, switch_at=SWITCH_AT) == "phase_262"
+    # A legacy window carries the live score, which is the deployed model.
+    assert version_of(BEFORE_SWITCH, has_snapshot=False, switch_at=SWITCH_AT) == "phase_262"
+
+
+def test_window_row_carries_the_version() -> None:
+    row = window_row(
+        0, True, 0.8, None, WindowOutcome.CAUGHT, started_at=BEFORE_SWITCH, switch_at=SWITCH_AT
+    )
+    assert row.version == "phase_259"
+    assert _rows("main", "caught", 1)[0].version == "unsplit"
+
+
+def test_rescore_scores_the_snapshot_inputs_with_the_current_model() -> None:
+    inputs = SnapshotInputs(played_prob=0.1, loss=2.0, missed=0.0, best_prob=0.5, reply_prob=0.3)
+    expected = facepalm_score(
+        FacepalmFacts(played_prob=0.1, loss=2.0, missed=0.0, best_prob=0.5, reply_prob=0.3),
+        lam=FACEPALM_DRILL_LAMBDA,
+    )
+    assert expected is not None
+    row = window_row(
+        1,
+        True,
+        0.11,  # the stored snapshot score is not used
+        None,
+        WindowOutcome.MISSED,
+        inputs=inputs,
+        started_at=BEFORE_SWITCH,
+        rescore=True,
+        switch_at=SWITCH_AT,
+    )
+    assert row.score == pytest.approx(expected)
+    assert row.version == "unsplit"
+    # A snapshotted window the old model left unscored is scored by the current one when it can.
+    unscored = window_row(1, True, None, None, WindowOutcome.CAUGHT, inputs=inputs, rescore=True)
+    assert unscored.score == pytest.approx(expected)
+    # A legacy window has no snapshot inputs: it keeps the live score.
+    legacy = window_row(None, True, None, 0.42, WindowOutcome.CAUGHT, rescore=True)
+    assert (legacy.arm, legacy.score, legacy.version) == ("legacy", 0.42, "unsplit")
+
+
+def _versioned(version: ScoreVersion, outcome: OutcomeLabel, count: int) -> list[WindowRow]:
+    return [WindowRow("main", True, 0.75, outcome, version) for _ in range(count)]
+
+
+def test_report_splits_tables_by_version_when_the_switch_is_set() -> None:
+    rows = _versioned("phase_259", "caught", 3) + _versioned("phase_262", "missed", 2)
+    report = render_report(rows, target="prod", since=None, today=TODAY, switch_at=SWITCH_AT)
+    assert "Score version: phase_259" in report
+    assert "Score version: phase_262" in report
+    assert "not split" not in report
+    # One table per version and arm, each counting only its own windows.
+    assert report.count("### Arm: main") == 2
+    assert report.index("Score version: phase_259") < report.index("Score version: phase_262")
+    first, second = report.split("### Score version: phase_262")
+    assert "| 0.7-0.8 | all | 3 | 3 |" in first  # the phase_259 windows: 3 caught of 3 reached
+    assert "| 0.7-0.8 | all | 2 | 0 |" in second  # the phase_262 windows: 0 caught of 2 reached
+
+
+def test_report_is_unsplit_and_says_so_when_the_switch_is_not_set() -> None:
+    report = render_report(_rows("main", "caught", 2, 0.75), target="dev", since=None, today=TODAY)
+    assert "Score versions: not split (FACEPALM_262_SWITCH_AT is not set)" in report
+    assert report.count("### Arm: main") == 1
+    assert "Score version:" not in report
+
+
+def test_rescored_report_names_its_score_source_and_is_not_split() -> None:
+    report = render_report(
+        _rows("main", "caught", 2, 0.75),
+        target="dev",
+        since=None,
+        today=TODAY,
+        switch_at=SWITCH_AT,
+        rescored=True,
+    )
+    assert "rescored" in report.lower()
+    assert "Score version:" not in report
+    assert report.count("### Arm: main") == 1

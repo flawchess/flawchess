@@ -6,9 +6,9 @@
  * row, which adds it up as it lands (BlunderCheckScore). The flight's end point is measured
  * at mount, from this badge's own resting place to the pot badge. Without a pot badge to fly
  * to, or under prefers-reduced-motion, the gain falls back to Train's points pop in place.
- * A forfeit (the pot taken away by a blunder let through, or the one point a timeout on a
- * good move costs) is a red badge that drops and fades. A timeout on a good move with an
- * empty pot is a gray "+0" that pops in place and fades. All of them end invisible, so no
+ * A forfeit (the pot taken away by a timeout on the blunder, or the point a timeout on a
+ * good move costs) is a red badge that drops and fades. A gray "+0" pops in place and fades for
+ * a missed blunder (the pot is kept) and for a timeout on a good move with an empty pot. All of them end invisible, so no
  * unmount timer is needed. The amount is always the server's number.
  */
 

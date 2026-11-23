@@ -27,6 +27,7 @@ from app.services.line_material import (
     LINE_LOSS_DEPTHS,
     LINE_MATERIAL_SLOTS,
     LineFacts,
+    _promotion_gain,  # noqa: PLC2701 - the promotion rule is pinned directly (262 D-01)
     material_at_depth,
     quiet_best_line_facts,
     quiet_line_facts,
@@ -225,6 +226,68 @@ def test_quiet_synthetic_rules(
     assert _losses(facts) == expected_loss
     assert facts.mate_ply == expected_mate
     assert all(facts.loss_at(depth) is None for depth in _EVEN_DEPTHS)
+
+
+@pytest.mark.parametrize(
+    ("uci", "expected"),
+    [("c2c1q", 8), ("c2c1r", 4), ("c2c1b", 2), ("c2c1n", 2), ("c2c1", 0), ("b1b3", 0)],
+    ids=["queen", "rook", "bishop", "knight", "pawn_push_no_promotion", "rook_move"],
+)
+def test_promotion_gain_per_piece(uci: str, expected: int) -> None:
+    """262 D-01: the promoted piece minus the pawn, 0 when the move does not promote."""
+    assert _promotion_gain(chess.Move.from_uci(uci)) == expected
+
+
+_PROMOTION_FEN = "6k1/8/8/8/8/8/2p5/1R4K1 w - - 0 1"
+
+
+@pytest.mark.parametrize(
+    ("line", "expected_loss"),
+    [
+        # The opponent queens at ply 5 and the queen stays: every depth from 5 reads 8.
+        ("g8f7 h1g2 f7e6 b1b3 c2c1q b3b8 e6d5 b8b5 d5c4 b5b8", (0, 0, 8, 8, 8)),
+        # The queen is taken at once, so the net is the lost pawn (-1 for the blunderer).
+        ("g8f7 h1g2 f7e6 b1a1 c2c1q a1c1 e6d5 c1c8 d5d4 c8c1", (0, 0, -1, -1, -1)),
+        # A short line ending on a promotion is settled by the static exchange, no longer None.
+        ("c2c1q", (-1, -1, -1, -1, -1)),
+    ],
+    ids=["queen_stays", "queen_taken_at_once", "short_line_ends_on_promotion"],
+)
+def test_quiet_promotion_rules(line: str, expected_loss: tuple[int | None, ...]) -> None:
+    """262 D-01: a promotion is non-quiet, so the walk consumes it right after the depth and a
+    short line ending on a promotion is settled by the static exchange."""
+    facts = quiet_line_facts(chess.Board(_PROMOTION_FEN), "g1h1", line)
+    assert _losses(facts) == expected_loss
+
+
+def test_see_prices_a_capture_promotion() -> None:
+    """262 D-01 correction (a): the static exchange takes its gain from _victim_value, so the
+    a2xb1=N capture-promotion inside the exchange gains its promotion too.
+
+    The rook takes the knight (-3 for the blunderer), the a2 pawn recaptures it with promotion
+    (the rook 5 plus the promotion 8 = 13), so the line reads 13 - 3 = 10. Before the fix the
+    exchange priced the recapture at 5 and the line read 2.
+    """
+    facts = quiet_line_facts(chess.Board("6k1/1R6/8/8/8/8/p7/1n4K1 w - - 0 1"), "g1f2", "g8f8 b7b1")
+    assert _losses(facts) == (10, 10, 10, 10, 10)
+
+
+def test_desperado_exclusion_counts_a_freshly_promoted_piece() -> None:
+    """262 D-03: the capture of a freshly promoted piece on its promotion square counts, the
+    desperado exclusion only skips captures of a piece the blunderer's move merely placed.
+
+    White (the blunderer) promotes on a8 (-8 on the loss scale), Black takes the queen (+9), so
+    the loss is 1; before D-01 the promotion was not counted and every depth read 0.
+    """
+    facts = quiet_line_facts(
+        chess.Board("1r4k1/P7/8/8/8/8/8/6K1 w - - 0 1"),
+        "g1h1",
+        "g8f7 a7a8q b8a8 h1g1 f7e6 g1f2 e6d5 f2e3 d5c4 e3d2",
+    )
+    assert _losses(facts) == (1, 1, 1, 1, 1)
+    # The existing desperado case still reads zero loss.
+    desperado = quiet_line_facts(chess.Board(_DESPERADO_FEN), "g1h1", "e8e7 a1a2 b2a2")
+    assert _losses(desperado) == _ZERO_LOSS
 
 
 def test_quiet_mate_settles_short_line() -> None:

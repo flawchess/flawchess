@@ -108,12 +108,16 @@ class AnswerGrade:
 
 
 def _grade_blunder_move(answer: AnswerKindName, window_points: int) -> AnswerGrade:
-    """The prompt on the blunder itself: flagging it is the only way to keep the window."""
+    """The prompt on the blunder itself: flagging it is the only way to earn the catch points."""
     if answer == "blunder":
         return AnswerGrade("caught", BLUNDER_POINTS, 0, True, "caught", True)
-    # "safe" or a timeout on the blunder both let it through: the safe points are forfeited.
-    result: AnswerResultName = "missed" if answer == "safe" else "timeout_blunder"
-    return AnswerGrade(result, 0, window_points, True, "missed", False)
+    if answer == "safe":
+        # Fix (quick 261123-lb8 D-02): a "safe" call on the blunder used to forfeit the window's
+        # accumulated safe points, which made Score % roughly the catch rate. It forfeits nothing
+        # now; only a timeout on the blunder does (stalling must cost). Both misses get the
+        # better-move task (D-03), graded exactly like after a catch.
+        return AnswerGrade("missed", 0, 0, True, "missed", True)
+    return AnswerGrade("timeout_blunder", 0, window_points, True, "missed", True)
 
 
 def grade_answer(
@@ -127,8 +131,8 @@ def grade_answer(
 
     A false alarm ends the window and keeps the safe points; a timeout on a safe move
     scores 0, takes `SAFE_TIMEOUT_PENALTY_POINTS` out of the accumulated safe points (never
-    below 0) and lets the window continue (D-13, revised). Only a blunder let through (a
-    "safe" call or a timeout on it) forfeits all of them.
+    below 0) and lets the window continue (D-13, revised). A "safe" call on the blunder keeps the
+    safe points; only a timeout on the blunder forfeits all of them (quick 261123-lb8).
     The window clears only when the last judged move of a herring is answered.
     """
     if is_blunder_move:

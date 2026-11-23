@@ -12,6 +12,16 @@ window (``selection_arm`` NULL, composed before Phase 261) has no snapshot, so t
 ``facepalm_expr(FACEPALM_DRILL_LAMBDA)`` of its ``game_flaws`` row is used while the game still
 exists; otherwise the window is counted as unscored.
 
+Score versions (Phase 262): the release changed the score and the snapshots are never rewritten, so
+windows served before and after it sit on different score versions. ``FACEPALM_262_SWITCH_AT``
+(None until set to the deploy time right after the release) splits the caught-rate tables by the
+version of the score a window carries: a snapshotted window by when its session was composed
+(``blunder_check_sessions.started_at``, the moment the snapshot was taken, not ``ended_at``), a
+legacy window by the live score, which is the deployed model. Unset, the report is unsplit and says
+so. ``--rescore`` bands every snapshotted window by the CURRENT model over its stored snapshot
+inputs instead (legacy windows keep the live score), so ``HARD_TO_CATCH_SCORE_BELOW`` (Phase 259
+score units) can be re-read on the new score; the report is then one unsplit table.
+
 Share check (the phase's post-release acceptance): exploration windows over ended blunder
 windows with a recorded arm, its 95% Wilson interval and a verdict. The rule is insufficient
 below SHARE_MIN_WINDOWS windows, accept when the interval overlaps
@@ -45,7 +55,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -59,6 +69,7 @@ from app.core.config import db_url_for_target  # noqa: E402
 # Game.user_id has a FK to users.id and User declares a relationship to OAuthAccount, so the
 # mapped classes must all be imported before any select() against them compiles.
 from app.models.blunder_check import (  # noqa: E402
+    BlunderCheckSession,
     BlunderCheckWindow,
     WindowArm,
     WindowCase,
@@ -68,7 +79,7 @@ from app.models.game_flaw import GameFlaw  # noqa: E402
 from app.models.oauth_account import OAuthAccount  # noqa: E402, F401
 from app.models.user import User  # noqa: E402, F401
 from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA  # noqa: E402
-from app.services.facepalm_score import facepalm_expr  # noqa: E402
+from app.services.facepalm_score import FacepalmFacts, facepalm_expr, facepalm_score  # noqa: E402
 from app.services.score_confidence import wilson_bounds  # noqa: E402
 from scripts.blunder_check.sample import BLUNDER_SEVERITY, make_readonly_engine  # noqa: E402
 
@@ -89,6 +100,12 @@ SCORE_BANDS: tuple[tuple[str, float, float], ...] = (
     ("0.9-1.0", 0.9, 1.0),
 )
 
+# The deploy time of the Phase 262 score (timezone-aware UTC). Set it right after the release (plan
+# 07 of the phase). Windows are snapshotted when their session is composed, so the version split
+# keys on blunder_check_sessions.started_at, not on ended_at. None = not deployed yet: the report is
+# unsplit. The Phase 261 snapshots are never rewritten.
+FACEPALM_262_SWITCH_AT: datetime.datetime | None = None
+
 # Served-share acceptance (Claude's discretion, owner-overridable); see the module docstring.
 SHARE_ACCEPT_LOW: float = 0.18
 SHARE_ACCEPT_HIGH: float = 0.26
@@ -98,9 +115,12 @@ ArmLabel = Literal["exploration", "main", "legacy"]
 OriginLabel = Literal["own", "foreign", "all"]
 OutcomeLabel = Literal["caught", "missed", "false_alarm"]
 ShareVerdict = Literal["accept", "fail", "insufficient"]
+# The score version of a window: the Phase 259 model, the Phase 262 model, or not split.
+ScoreVersion = Literal["phase_259", "phase_262", "unsplit"]
 
 ARMS: tuple[ArmLabel, ...] = ("exploration", "main", "legacy")
 ORIGINS: tuple[OriginLabel, ...] = ("own", "foreign", "all")
+VERSIONS: tuple[ScoreVersion, ...] = ("phase_259", "phase_262", "unsplit")
 
 _OUTCOME_LABELS: dict[int, OutcomeLabel] = {
     WindowOutcome.CAUGHT: "caught",
@@ -129,6 +149,17 @@ class WindowRow:
     is_own: bool
     score: float | None
     outcome: OutcomeLabel
+    version: ScoreVersion = "unsplit"
+
+
+class SnapshotInputs(NamedTuple):
+    """The five facepalm inputs snapshotted on a window at serve time (NULL on a legacy window)."""
+
+    played_prob: float | None
+    loss: float | None
+    missed: float | None
+    best_prob: float | None
+    reply_prob: float | None
 
 
 @dataclass(frozen=True)
@@ -173,17 +204,66 @@ def band_of(score: float | None) -> str | None:
     return SCORE_BANDS[-1][0]
 
 
+def version_of(
+    started_at: datetime.datetime | None,
+    *,
+    has_snapshot: bool,
+    switch_at: datetime.datetime | None,
+) -> ScoreVersion:
+    """The score version of a window (Phase 262 split); "unsplit" while the switch is not set.
+
+    A snapshotted window carries the score of the model live when its session was composed
+    (`started_at`); a legacy window (no snapshot) carries the live expression, the deployed model.
+    """
+    if switch_at is None:
+        return "unsplit"
+    if not has_snapshot:
+        return "phase_262"
+    if started_at is None:
+        return "unsplit"
+    return "phase_259" if started_at < switch_at else "phase_262"
+
+
+def _rescored(inputs: SnapshotInputs | None) -> float | None:
+    """The CURRENT model's score over the snapshot inputs (None when an input it needs is NULL)."""
+    if inputs is None:
+        return None
+    facts = FacepalmFacts(
+        played_prob=inputs.played_prob,
+        loss=inputs.loss,
+        missed=inputs.missed,
+        best_prob=inputs.best_prob,
+        reply_prob=inputs.reply_prob,
+    )
+    return facepalm_score(facts, lam=FACEPALM_DRILL_LAMBDA)
+
+
 def window_row(
     arm: int | None,
     is_own: bool,
     snapshot: float | None,
     live: float | None,
     outcome: int,
+    *,
+    inputs: SnapshotInputs | None = None,
+    started_at: datetime.datetime | None = None,
+    rescore: bool = False,
+    switch_at: datetime.datetime | None = None,
 ) -> WindowRow:
-    """Map one SQL row to a WindowRow: NULL arm is legacy, the snapshot wins over the live score."""
+    """Map one SQL row to a WindowRow: NULL arm is legacy, the snapshot wins over the live score.
+
+    With `rescore` a snapshotted window is scored by the current model over its snapshot inputs
+    (the stored snapshot score is not used) and the version is "unsplit"; a legacy window keeps the
+    live score. Otherwise the version comes from `version_of`.
+    """
     arm_label: ArmLabel = "legacy" if arm is None else _ARM_LABELS[arm]
+    outcome_label = _OUTCOME_LABELS[outcome]
+    if rescore:
+        score = live if arm is None else _rescored(inputs)
+        return WindowRow(arm_label, is_own, score, outcome_label, "unsplit")
     score = snapshot if snapshot is not None else live
-    return WindowRow(arm=arm_label, is_own=is_own, score=score, outcome=_OUTCOME_LABELS[outcome])
+    version = version_of(started_at, has_snapshot=arm is not None, switch_at=switch_at)
+    return WindowRow(arm_label, is_own, score, outcome_label, version)
 
 
 def _origins_of(row: WindowRow) -> tuple[OriginLabel, OriginLabel]:
@@ -272,9 +352,11 @@ def _share_section(share: ShareResult) -> list[str]:
     return ["## Exploration share", "", counts, "", f"Verdict: **{share.verdict}**. {rule}", ""]
 
 
-def _arm_table(arm: ArmLabel, rows: Sequence[BandRow], unscored: int) -> list[str]:
+def _arm_table(
+    arm: ArmLabel, rows: Sequence[BandRow], unscored: int, heading: str = "###"
+) -> list[str]:
     lines = [
-        f"### Arm: {arm}",
+        f"{heading} Arm: {arm}",
         "",
         "| Band | Origin | Reached | Caught | Rate | 95% CI | False alarms |",
         "|---|---|---|---|---|---|---|",
@@ -290,22 +372,56 @@ def _arm_table(arm: ArmLabel, rows: Sequence[BandRow], unscored: int) -> list[st
     return lines
 
 
+def _version_note(*, switch_at: datetime.datetime | None, rescored: bool) -> str:
+    if rescored:
+        return (
+            "Score versions: not split (--rescore bands every snapshotted window by the current "
+            "model, so there is one version)."
+        )
+    if switch_at is None:
+        return "Score versions: not split (FACEPALM_262_SWITCH_AT is not set)."
+    return (
+        f"Score versions: split at {switch_at.isoformat()} on the session start. phase_259 = "
+        "session composed before it, phase_262 = at or after it (legacy windows carry the live "
+        "score, the deployed model)."
+    )
+
+
+def _arm_tables(rows: Sequence[WindowRow], heading: str) -> list[str]:
+    band_rows = aggregate_caught_rate(rows)
+    unscored = count_unscored(rows)
+    lines: list[str] = []
+    for arm in ARMS:
+        lines += _arm_table(arm, band_rows, unscored[arm], heading)
+    return lines
+
+
 def render_report(
     rows: Sequence[WindowRow],
     *,
     target: str,
     since: datetime.date | None,
     today: datetime.date,
+    switch_at: datetime.datetime | None = None,
+    rescored: bool = False,
 ) -> str:
-    """The markdown report: share section, then one caught-rate table per arm."""
-    band_rows = aggregate_caught_rate(rows)
-    unscored = count_unscored(rows)
+    """The markdown report: share section, then the caught-rate tables per arm.
+
+    With `switch_at` set (and scores not rescored) the tables repeat once per score version.
+    """
     since_text = since.isoformat() if since else "all time"
+    source = (
+        "rescored by the current FACEPALM_* model over the snapshot inputs (legacy windows: live score)"
+        if rescored
+        else "the serve-time snapshot (legacy windows: live score)"
+    )
     lines = [
         "# Blunder check caught rate by facepalm-score band",
         "",
         f"Target: {target}; since: {since_text}; generated: {today.isoformat()}; "
         f"windows: {len(rows)}",
+        f"Score source: {source}.",
+        _version_note(switch_at=switch_at, rescored=rescored),
         "",
         *_share_section(exploration_share(rows)),
         "## Caught rate by score band",
@@ -314,8 +430,14 @@ def render_report(
         "and are listed beside each row, never in the denominator.",
         "",
     ]
-    for arm in ARMS:
-        lines += _arm_table(arm, band_rows, unscored[arm])
+    if switch_at is None or rescored:
+        return "\n".join(lines + _arm_tables(rows, "###"))
+    for version in VERSIONS:
+        version_rows = [r for r in rows if r.version == version]
+        if not version_rows and version == "unsplit":
+            continue
+        lines += [f"### Score version: {version} ({len(version_rows)} windows)", ""]
+        lines += _arm_tables(version_rows, "####")
     return "\n".join(lines)
 
 
@@ -344,12 +466,26 @@ def build_statement(
         .scalar_subquery()
         .label("live_score")
     )
+    # When the window's snapshot was taken: the session start, as a correlated scalar subquery
+    # (the id is the session's primary key, so at most one row; no join).
+    session_started_at = (
+        select(BlunderCheckSession.started_at)
+        .where(BlunderCheckSession.id == BlunderCheckWindow.session_id)
+        .scalar_subquery()
+        .label("session_started_at")
+    )
     stmt = select(
         BlunderCheckWindow.selection_arm,
         BlunderCheckWindow.is_own,
         BlunderCheckWindow.facepalm_score,
         live_score,
         BlunderCheckWindow.outcome,
+        session_started_at,
+        BlunderCheckWindow.facepalm_played_prob,
+        BlunderCheckWindow.facepalm_loss,
+        BlunderCheckWindow.facepalm_missed,
+        BlunderCheckWindow.facepalm_best_prob,
+        BlunderCheckWindow.facepalm_reply_prob,
     ).where(
         BlunderCheckWindow.window_case != WindowCase.HERRING,
         BlunderCheckWindow.outcome.in_(
@@ -361,12 +497,28 @@ def build_statement(
     return stmt
 
 
-async def fetch_rows(conn: AsyncConnection, since: datetime.date | None) -> list[WindowRow]:
+async def fetch_rows(
+    conn: AsyncConnection,
+    since: datetime.date | None,
+    *,
+    rescore: bool = False,
+    switch_at: datetime.datetime | None = None,
+) -> list[WindowRow]:
     """Run the statement and map each row; ids are never selected."""
     result = await conn.execute(build_statement(since))
     return [
-        window_row(arm, is_own, snapshot, live, outcome)
-        for arm, is_own, snapshot, live, outcome in result.all()
+        window_row(
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            row[4],
+            started_at=row[5],
+            inputs=SnapshotInputs(*row[6:11]),
+            rescore=rescore,
+            switch_at=switch_at,
+        )
+        for row in result.all()
     ]
 
 
@@ -386,6 +538,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=None,
         help="only windows ended on or after this date (YYYY-MM-DD)",
     )
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help=(
+            "band by the current FACEPALM_* model over the snapshot inputs instead of the stored "
+            "snapshot score; used at the 262 checkpoint to re-check HARD_TO_CATCH_SCORE_BELOW, "
+            "which is in Phase 259 score units"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=None, help="also write the report here")
     return parser.parse_args(argv)
 
@@ -394,11 +555,18 @@ async def _run(args: argparse.Namespace) -> int:
     engine = make_readonly_engine(db_url_for_target(args.db))
     try:
         async with engine.connect() as conn:
-            rows = await fetch_rows(conn, args.since)
+            rows = await fetch_rows(
+                conn, args.since, rescore=args.rescore, switch_at=FACEPALM_262_SWITCH_AT
+            )
     finally:
         await engine.dispose()
     report = render_report(
-        rows, target=args.db, since=args.since, today=datetime.datetime.now(datetime.UTC).date()
+        rows,
+        target=args.db,
+        since=args.since,
+        today=datetime.datetime.now(datetime.UTC).date(),
+        switch_at=FACEPALM_262_SWITCH_AT,
+        rescored=args.rescore,
     )
     print(report)
     if args.out is not None:

@@ -1,5 +1,6 @@
 /**
- * BlunderCheckBetterMove: the "Find a better move" step after a caught blunder (Phase 249, D-12, D-17).
+ * BlunderCheckBetterMove: the "Find a better move" step after a caught or missed blunder (Phase 249,
+ * D-12, D-17; the missed case is quick 261123-lb8).
  *
  * The board returns to the pre-blunder position and the user plays a better move (drag-drop or
  * click-click). The move is graded like a personalized puzzle: the key move and the moves the
@@ -11,9 +12,6 @@
  * A grading failure never leaves a silent spinner: "Couldn't check your move." with a Retry
  * that re-grades the same move (TrainSolveScreen precedent: restart a dead engine first and
  * re-issue the anchor search only once it is back).
- *
- * Known behavior: a reload during this step resumes on the next window, so this better move
- * earns nothing (the same spirit as D-18's "a slow reload usually counts as a timeout").
  *
  * No Umami event is added for blunder check (D-19).
  */
@@ -233,6 +231,15 @@ function betterMoveBubble(
       copy: <p data-testid="blunder-check-better-move-checking">Checking your move...</p>,
     };
   }
+  if (state.outcome === 'missed') {
+    // A blunder let through (a "safe" call or a timeout) is named a blunder before the user is
+    // asked for more; the board already marks it with the white arrow and badge.
+    const copy =
+      state.graded.result === 'timeout_blunder'
+        ? "Time's up, and that was a blunder. Now find a better move."
+        : 'That was a blunder. Now find a better move.';
+    return { copy: <p data-testid="blunder-check-better-move-prompt">{copy}</p> };
+  }
   // The catch is acknowledged with the server's points for it, the same "+N" pill as the
   // solution verdict, before the user is asked for more (Phase 249 UAT).
   return {
@@ -271,11 +278,11 @@ export function BlunderCheckBetterMove({
     setPlayed,
   );
   // Before the user moves, the squares of the move that led here are lit as on any board.
-  // The caught blunder was never played, so that is the last move the window showed.
+  // The blunder was never played, so that is the last move the window showed.
   const previousMove = uciToSquares(
     state.window.shownUcis[state.window.shownUcis.length - 1] ?? null,
   );
-  // The caught blunder stays marked while the user looks for a better move, drawn exactly as
+  // The blunder stays marked while the user looks for a better move, drawn exactly as
   // the solution screen draws the game move: the thin white arrow with the blunder badge.
   const blunderUci = state.prompt.move_uci;
   const blunderOverlay = useMemo(

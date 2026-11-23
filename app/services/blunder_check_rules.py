@@ -22,6 +22,7 @@ from __future__ import annotations
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Final, Literal
 
 from app.repositories.query_utils import mover_is_white_at_ply
@@ -35,7 +36,7 @@ from app.services.train_pool import (
     HERRING_MIN_PLY,
     HERRING_OPENING_PHASE,
 )
-from app.services.train_score import MOVE_TIER_POINTS
+from app.services.train_score import MoveTier
 
 # ---------------------------------------------------------------------------
 # Named constants (no magic numbers)
@@ -60,7 +61,8 @@ MAX_BLUNDER_POSITION: int = 5
 # 259 D-15: after the first-principles refit (reports/blunder-check/facepalm-fit-2026-11-22.md) the
 # owner decided on 2026-11-22 to raise the drill cut to 0.70: among the label passers 98 are fair
 # and 11 unfair at 0.70 (118 / 25 at 0.50), and the prod drill pool stays about 33% of user
-# blunders (median 414 usable windows per user).
+# blunders (median 414 usable windows per user). 262 checkpoint: after the refit with promotions as
+# material and the type gate, the owner kept 0.70 on 2026-11-23.
 FACEPALM_SCORE_MIN: float = 0.7
 # Phase 261 seed type-line floor: the drill's type line ("allows a material loss" / "misses a material
 # win") shows only for a material swing of at least this many points (piece values 1 / 3 / 3 / 5 / 9),
@@ -69,31 +71,35 @@ FACEPALM_SCORE_MIN: float = 0.7
 TYPE_LINE_MIN_SWING: int = 2
 # Phase 261 D-06: the "hard to catch" line shows when the snapshotted score is below this, in Phase 259
 # score units. Tied to the score, never to the arm. Re-checked on 2026-11-22: the caught rate drops
-# clearly only below 0.5.
+# clearly only below 0.5. 262 checkpoint: kept at 0.5 after the refit (owner, 2026-11-23).
 HARD_TO_CATCH_SCORE_BELOW: float = 0.5
 # 257 D-01: the library stats cut, the label meaning of a facepalm blunder (253 D-23: "should
 # score above 70%"). Separate from the drill's FACEPALM_SCORE_MIN on purpose. It equals the
 # frontend FACEPALM_HIGH_CUTOFF (70 percent, pinned by a test that reads the frontend file), so a
 # stats row counts exactly the blunders the Facepalm tag lists (257 research Pitfall 7).
+# 262 checkpoint: kept at 0.70 after the refit (owner, 2026-11-23), so the frontend cutoff is unchanged.
 FACEPALM_STATS_MIN: float = 0.7
 # Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
 PLAYED_PROB_OFFSET: float = 0.01
-# 259 D-05 fitted facepalm model: the output of scripts/blunder_check/fit_facepalm.py on the Phase 259
-# plan 11 table (a fit on label sets 1-8), confirmed by the owner at D-15 on 2026-11-22 and pasted
-# as printed, never hand-adjusted:
-# `fit_facepalm.py --features reports/blunder-check/facepalm-features-2026-11-22.tsv
-# --labels reports/blunder-check/facepalm-labels.tsv --out reports/blunder-check/facepalm-fit-2026-11-22.md`
-# ("## Constants" block);
+# 262 fitted facepalm model: refit with promotions as material (D-01) and the key-move gate equal to
+# the type rule (D-04), confirmed by the owner at the 262 checkpoint on 2026-11-23. The output of
+# scripts/blunder_check/fit_facepalm.py, pasted as printed, never hand-adjusted:
+# `fit_facepalm.py --features reports/blunder-check/facepalm-features-2026-11-23.tsv
+# --labels reports/blunder-check/facepalm-labels.tsv --out reports/blunder-check/facepalm-fit-2026-11-23.md`
+# (default `--gate type`, "## Constants" block);
 # `--check-constants` proves they still equal the refit (tests/scripts/test_fit_facepalm.py).
+# 259 history: the first-principles refit of 2026-11-22 (loss-only gate) preceded this one.
 # z = intercept + played_coef * ln(played_prob + PLAYED_PROB_OFFSET) + loss_coef * loss
 #     + missed_coef * lam * missed
-#     + (loss > 0 ? reply_prob_coef * ln(reply_prob + OFFSET) : best_prob_coef * ln(best_prob + OFFSET))
-FACEPALM_INTERCEPT: float = -1.4308
-FACEPALM_PLAYED_COEF: float = -0.6065
-FACEPALM_LOSS_COEF: float = 0.8379
-FACEPALM_MISSED_COEF: float = 0.4971
-FACEPALM_BEST_PROB_COEF: float = 2.0786
-FACEPALM_REPLY_PROB_COEF: float = 0.9133
+#     + (loss > 0 and loss >= missed ? reply_prob_coef * ln(reply_prob + OFFSET)
+#        : best_prob_coef * ln(best_prob + OFFSET))
+# (262 D-04: the gate is the type rule)
+FACEPALM_INTERCEPT: float = -1.7891
+FACEPALM_PLAYED_COEF: float = -0.6193
+FACEPALM_LOSS_COEF: float = 0.8879
+FACEPALM_MISSED_COEF: float = 0.3993
+FACEPALM_BEST_PROB_COEF: float = 1.1635
+FACEPALM_REPLY_PROB_COEF: float = 0.8057
 # Write-time material rule (259 D-05). These constants decide what the write-time hook and the line
 # pass STORE in game_flaws.material_loss / material_missed. Changing any of them changes the stored
 # numbers, so it needs a prod line pass with a new cutoff before the score reads them.
@@ -158,13 +164,21 @@ HERRING_OWN_SHARE: float = OWN_BLUNDER_SHARE / (OWN_BLUNDER_SHARE + FOREIGN_BLUN
 FOREIGN_RATING_BAND: int = 150
 # 249 D-02 windows per session.
 BLUNDER_CHECK_SESSION_WINDOWS: int = 6
-# 249 D-14 points: 1 per correctly judged safe move, 3 for flagging the blunder, plus the better
-# move graded like personalized puzzles (249 D-17), so its full value is the good tier's points.
+# 249 D-14 points, rebalanced by quick 261123-lb8 (owner decision 2026-11-23): a correct Good call
+# 1, catching the blunder 2, the better move up to 1 (ratio 1 : 2 : 1). The old 1 / 3 / 2 let the
+# catch plus the better move carry 5 of about 6 points in a blunder window, so Score % was roughly
+# the catch rate; replaying 86 prod sessions under the new rules gives mean 63%.
 SAFE_POINTS: int = 1
-BLUNDER_POINTS: int = 3
+BLUNDER_POINTS: int = 2
 # A timeout on a good move takes this many points out of the sequence's pot (never below 0).
 SAFE_TIMEOUT_PENALTY_POINTS: int = 1
-BETTER_MOVE_POINTS: int = MOVE_TIER_POINTS["good"]
+# The better move is graded like a personalized puzzle (249 D-17: good / inaccuracy / wrong), but
+# worth at most 1 point here, not the puzzle's 2 / 1 / 0 (train_score.MOVE_TIER_POINTS stays for
+# puzzles). An inaccuracy gets full credit to keep the points integer at a 1 : 2 : 1 ratio.
+BETTER_MOVE_TIER_POINTS: Final[Mapping[MoveTier, int]] = MappingProxyType(
+    {"good": 1, "inaccuracy": 1, "wrong": 0}
+)
+BETTER_MOVE_POINTS: int = BETTER_MOVE_TIER_POINTS["good"]
 
 MissCase = Literal["allowed", "pure_miss", "mixed", "unclassified"]
 SlotOrigin = Literal["own", "foreign"]

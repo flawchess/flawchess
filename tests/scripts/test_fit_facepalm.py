@@ -22,9 +22,9 @@ from scripts.blunder_check import fit_facepalm
 from scripts.blunder_check.fit_facepalm import ScalarCoefs, ScalarFitRow
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# The Phase 259 plan 11 prod pull (D-15), the table the shipped constants were confirmed on. It is
-# byte-identical to the plan 03 pull of 2026-11-21.
-COMMITTED_FEATURES = REPO_ROOT / "reports/blunder-check/facepalm-features-2026-11-22.tsv"
+# The Phase 262 plan 03 prod pull, the table the shipped constants were refitted and confirmed on
+# (2026-11-23): promotions counted as material, the key-move gate equal to the type rule.
+COMMITTED_FEATURES = REPO_ROOT / "reports/blunder-check/facepalm-features-2026-11-23.tsv"
 COMMITTED_LABELS = REPO_ROOT / "reports/blunder-check/facepalm-labels.tsv"
 # The pre-259 table (old-rule arrays, no loss / missed / reply_prob columns).
 PRE_259_FEATURES = REPO_ROOT / "reports/blunder-check/facepalm-features-2026-11-16.tsv"
@@ -75,13 +75,16 @@ def synthetic_rows(
     losing = rng.uniform(0.0, 1.0, rows) < LOSING_SHARE
     loss = np.where(losing, rng.uniform(0.2, 4.0, rows), 0.0)
     missed = rng.uniform(0.0, 3.0, rows)
+    # 262 D-04: the reply and spread terms are on allowed losses (loss > 0 and loss >= missed), the
+    # best-move term elsewhere, so a losing row with a larger missed reads the best move.
+    reads_reply = (loss > 0) & (loss >= missed)
     intercept, played_c, loss_c, missed_c, best_c, reply_c = TRUE_COEFS
     z = (
         intercept
         + played_c * _log(played)
         + loss_c * loss
         + missed_c * missed
-        + np.where(losing, reply_c * _log(reply) + spread_coef * spread, best_c * _log(best))
+        + np.where(reads_reply, reply_c * _log(reply) + spread_coef * spread, best_c * _log(best))
     )
     draws = rng.uniform(0.0, 1.0, rows)
     labels = (draws < 1.0 / (1.0 + np.exp(-z))).astype(int)
@@ -237,7 +240,7 @@ def test_separable_labels_exit_2_and_write_no_report(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_design_row_gates_reply_and_best_terms_by_loss() -> None:
+def test_design_row_gates_reply_and_best_terms_by_type() -> None:
     off = PLAYED_PROB_OFFSET
     losing = fit_facepalm.design_row(_row(loss=1.5, missed=0.5), "chosen")
     quiet = fit_facepalm.design_row(_row(loss=0.0, missed=0.5), "chosen")
@@ -250,6 +253,26 @@ def test_design_row_gates_reply_and_best_terms_by_loss() -> None:
     # The shipped baseline reads the old-rule pair, not the quiet one.
     shipped = _row(loss=0.0, loss_shipped=2.0, missed_shipped=1.0)
     assert fit_facepalm.design_row(shipped, "shipped_baseline")[2:4] == [2.0, 1.0]
+
+
+def test_design_row_mixed_row_follows_the_gate() -> None:
+    """262 D-04: loss 1.0 with missed 2.0 reads the best move under the type gate, the reply under the loss gate."""
+    off = PLAYED_PROB_OFFSET
+    mixed = _row(loss=1.0, missed=2.0)
+
+    by_type = fit_facepalm.design_row(mixed, "chosen", "type")
+    by_loss = fit_facepalm.design_row(mixed, "chosen", "loss")
+
+    # [intercept, ln(played), loss, missed, best term, reply term]
+    assert by_type == pytest.approx([1.0, math.log(0.1 + off), 1.0, 2.0, math.log(0.4 + off), 0.0])
+    assert by_loss == pytest.approx([1.0, math.log(0.1 + off), 1.0, 2.0, 0.0, math.log(0.2 + off)])
+    # The default gate is the type rule.
+    assert fit_facepalm.design_row(mixed, "chosen") == by_type
+    # A tie is an allowed loss under both gates.
+    tie = _row(loss=2.0, missed=2.0)
+    assert fit_facepalm.design_row(tie, "chosen", "type") == fit_facepalm.design_row(
+        tie, "chosen", "loss"
+    )
 
 
 def test_fit_scoring_equals_the_app_twin() -> None:
@@ -307,19 +330,26 @@ def test_exclusions_are_counted_per_reason() -> None:
         _row(loss=1.0, reply_prob=None),  # a losing row needs the reply probability
         _row(loss=1.0, best_prob=None),  # a losing row does not read the best-move probability
         _row(loss=0.0, best_prob=None),  # a non-losing row needs the best-move probability
+        # 262 D-04: a mixed row (loss below missed) reads the best move, not the reply.
+        _row(loss=1.0, missed=2.0, best_prob=None),
+        _row(loss=1.0, missed=2.0, reply_prob=None),
     ]
 
     usable, excluded = fit_facepalm.split_usable(rows)
 
-    assert len(usable) == 2
+    assert len(usable) == 3
     assert excluded == {
         fit_facepalm.REASON_UNDECIDED: 1,
         fit_facepalm.REASON_NO_LABEL: 1,
         fit_facepalm.REASON_NO_PLAYED: 1,
         fit_facepalm.REASON_NO_LOSS: 1,
         fit_facepalm.REASON_NO_REPLY_PROB: 1,
-        fit_facepalm.REASON_NO_BEST_PROB: 1,
+        fit_facepalm.REASON_NO_BEST_PROB: 2,
     }
+    # Under the Phase 259 loss gate the same mixed rows swap places: the reply is the missing input.
+    _, by_loss = fit_facepalm.split_usable(rows, "loss")
+    assert by_loss[fit_facepalm.REASON_NO_BEST_PROB] == 1
+    assert by_loss[fit_facepalm.REASON_NO_REPLY_PROB] == 2
 
 
 def test_load_features_rejects_foreign_and_pre_259_tables(tmp_path: Path) -> None:
@@ -337,7 +367,7 @@ def test_help_lists_the_documented_flags() -> None:
     for script, flags in (
         (
             "scripts/blunder_check/fit_facepalm.py",
-            ("--features", "--labels", "--threshold", "--check-constants"),
+            ("--features", "--labels", "--threshold", "--check-constants", "--gate"),
         ),
         ("scripts/blunder_check/facepalm_features.py", ("--pv-cache", "--extra", "--skip-missing")),
     ):
@@ -386,7 +416,7 @@ def test_check_constants_exits_0_when_the_app_constants_are_the_refit(
 
 
 def test_shipped_constants_reproduce_from_the_committed_features(tmp_path: Path) -> None:
-    """259 D-15 / 250 D-04: the app's FACEPALM_* constants are the refit on the committed plan 11 table."""
+    """262 D-04 / 250 D-04: the app's FACEPALM_* constants are the type-gate refit of the committed 262 table."""
     code = fit_facepalm.main(
         [
             "--features",
@@ -612,6 +642,83 @@ def test_alternatives_section_is_information_only(tmp_path: Path) -> None:
     assert len(printed) == len(constants)
     for name, value in printed.items():
         assert constants[name] == pytest.approx(value, abs=1e-4)
+
+
+def test_shipped_baseline_reads_the_old_pair_with_the_old_gate() -> None:
+    """262 D-05 / 259 D-12: the baseline is the Phase 259 rule and shape (reply when loss > 0), the chosen shape the type rule."""
+    off = PLAYED_PROB_OFFSET
+    # loss 1.0 with missed 2.0 is a mixed row: the type rule reads the best move, the loss gate the reply.
+    row = _row(loss=1.0, missed=2.0, loss_shipped=1.0, missed_shipped=2.0)
+
+    baseline = fit_facepalm.design_row(row, "shipped_baseline", "type")
+    chosen = fit_facepalm.design_row(row, "chosen", "type")
+
+    # [intercept, ln(played), loss, missed, best term, reply term]
+    assert baseline == pytest.approx([1.0, math.log(0.1 + off), 1.0, 2.0, 0.0, math.log(0.2 + off)])
+    assert chosen == pytest.approx([1.0, math.log(0.1 + off), 1.0, 2.0, math.log(0.4 + off), 0.0])
+    # The old_gate shape reads the new pair with the same loss gate as the baseline.
+    old_gate = fit_facepalm.design_row(_row(loss=1.0, missed=2.0), "old_gate", "type")
+    assert old_gate == baseline
+    # The baseline's NULL inputs follow its own pair and gate: a NULL shipped loss is unscored.
+    assert fit_facepalm.missing_reason(_row(loss_shipped=None), "shipped_baseline") == (
+        fit_facepalm.REASON_NO_LOSS
+    )
+
+
+def _section(report: str, heading: str) -> str:
+    return report.split(heading, 1)[1].split("\n## ", 1)[0]
+
+
+def test_old_gate_reference_section(tmp_path: Path) -> None:
+    """D-05: one line per gate with its CV AUC and out-of-fold fair / unfair at 0.70; the constants stay the chosen fit."""
+    features = write_table(tmp_path / "features.tsv", synthetic_rows())
+    out = tmp_path / "report.md"
+
+    assert fit_facepalm.main(["--features", str(features), "--out", str(out)]) == 0
+
+    report = out.read_text()
+    section = _section(report, "## Old gate reference (D-05, information only)")
+    for gate in fit_facepalm.GATES:
+        assert re.search(rf"^\| {gate} .*\| \d+ \| \d\.\d{{3}} \| \d+ / \d+ \|$", section, re.M), (
+            gate
+        )
+    # The model is fitted with the type gate: the constants equal the "Chosen shape" coefficients.
+    chosen_section = _section(report, "## Chosen shape")
+    constants = constants_of(report)
+    for name, label in zip(
+        fit_facepalm.CONSTANT_NAMES,
+        ("intercept", "played", "loss", "missed", "best_prob", "reply_prob"),
+        strict=True,
+    ):
+        match = re.search(rf"^- {label}: (\S+)$", chosen_section, flags=re.MULTILINE)
+        assert match is not None, label
+        assert constants[name] == pytest.approx(float(match.group(1)), abs=1e-4)
+
+
+def test_changed_inputs_section_lists_rows_whose_pair_moved(tmp_path: Path) -> None:
+    rows = synthetic_rows(rows=400)
+    rows[2].update(loss_shipped="0.500000", missed_shipped="0.250000")
+    features = write_table(tmp_path / "features.tsv", rows)
+    out = tmp_path / "report.md"
+
+    assert fit_facepalm.main(["--features", str(features), "--out", str(out)]) == 0
+
+    section = _section(out.read_text(), "## Rows whose inputs changed")
+    moved = [line for line in section.splitlines() if line.startswith("| 3 |")]
+    assert len(moved) == 1
+    assert "0.500 / 0.250" in moved[0]
+    # An unchanged row (loss_shipped equals loss) is not listed.
+    assert not [line for line in section.splitlines() if line.startswith("| 1 |")]
+
+
+def test_changed_inputs_section_is_absent_without_the_shipped_columns(tmp_path: Path) -> None:
+    columns = tuple(c for c in SYNTHETIC_COLUMNS if not c.endswith("_shipped"))
+    features = write_table(tmp_path / "features.tsv", synthetic_rows(rows=400), columns)
+    out = tmp_path / "report.md"
+
+    assert fit_facepalm.main(["--features", str(features), "--out", str(out)]) == 0
+
+    assert "## Rows whose inputs changed" not in out.read_text()
 
 
 def test_d15_cut_table_lists_every_cut(scalar_run: ScalarRun) -> None:

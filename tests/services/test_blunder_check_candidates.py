@@ -473,11 +473,11 @@ class TestPointsAndLeadIn:
     def test_points_possible_herring_is_one_per_move(self) -> None:
         assert points_possible(WindowShape(4, None)) == 4
 
-    def test_points_possible_blunder_at_three_is_seven(self) -> None:
-        assert points_possible(WindowShape(5, 3)) == 2 + 3 + 2
+    def test_points_possible_blunder_at_three_is_five(self) -> None:
+        assert points_possible(WindowShape(5, 3)) == 2 + 2 + 1
 
     def test_points_possible_blunder_at_position_one_has_no_safe_moves(self) -> None:
-        assert points_possible(WindowShape(3, 1)) == 3 + 2
+        assert points_possible(WindowShape(3, 1)) == 2 + 1
 
     def test_judged_plies_for_takes_the_last_preceding_plies(self) -> None:
         candidate = _candidate(1, ply=14, max_position=5)

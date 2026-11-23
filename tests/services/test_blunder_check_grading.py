@@ -69,14 +69,14 @@ def test_grade_caught_awards_blunder_points_and_ends() -> None:
     assert grade == AnswerGrade("caught", BLUNDER_POINTS, 0, True, "caught", True)
 
 
-def test_grade_missed_forfeits_window_points() -> None:
+def test_grade_missed_keeps_the_pot_and_offers_the_better_move() -> None:
     grade = _grade("safe", blunder=True)
-    assert grade == AnswerGrade("missed", 0, _WINDOW_POINTS, True, "missed", False)
+    assert grade == AnswerGrade("missed", 0, 0, True, "missed", True)
 
 
-def test_grade_timeout_on_blunder_counts_as_missed() -> None:
+def test_grade_timeout_on_blunder_forfeits_the_pot_and_offers_the_better_move() -> None:
     grade = _grade("timeout", blunder=True)
-    assert grade == AnswerGrade("timeout_blunder", 0, _WINDOW_POINTS, True, "missed", False)
+    assert grade == AnswerGrade("timeout_blunder", 0, _WINDOW_POINTS, True, "missed", True)
 
 
 def test_grade_false_alarm_keeps_safe_points_and_ends() -> None:
@@ -111,9 +111,10 @@ def test_grade_timeout_on_safe_never_takes_the_pot_below_zero() -> None:
 
 
 def test_grade_forfeit_equals_the_points_passed_in() -> None:
-    assert _grade("safe", blunder=True, points=5).points_forfeited == 5
-    assert _grade("timeout", blunder=True, points=5).points_forfeited == 5
-    assert _grade("timeout", blunder=False, points=5).points_forfeited == (
+    # Only a timeout on the blunder forfeits the pot; a "safe" call on it keeps it.
+    assert _grade("safe", blunder=True, points=3).points_forfeited == 0
+    assert _grade("timeout", blunder=True, points=3).points_forfeited == 3
+    assert _grade("timeout", blunder=False, points=3).points_forfeited == (
         SAFE_TIMEOUT_PENALTY_POINTS
     )
 

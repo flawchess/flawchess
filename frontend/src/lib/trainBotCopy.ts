@@ -834,12 +834,19 @@ export const BLUNDER_CHECK_RATIONALES: readonly string[] = [
   'Spotting the blunder here is easy to do slowly, and the reps are what make it fast enough for a real game.',
 ];
 
+// The blunder-check point values, mirroring SAFE_POINTS / BLUNDER_POINTS / BETTER_MOVE_POINTS in
+// app/services/blunder_check_rules.py (the server is the only grader). A backend test
+// (tests/services/test_blunder_check_rules.py) pins these to the backend constants.
+const BLUNDER_CHECK_SAFE_POINTS = 1;
+const BLUNDER_CHECK_CATCH_POINTS = 2;
+const BLUNDER_CHECK_BETTER_MOVE_POINTS = 1;
+
 /** The blunder-check scoring rules, shown under "Why and how it works" in the mode's settings row. */
 export const BLUNDER_CHECK_RULES: readonly string[] = [
   'Some sequences have no blunder at all, so you can never tell when one is coming.',
-  "Every correct Good call adds a point to the sequence's pot.",
-  'Catch the blunder for bonus points, then find a better move for more.',
-  'Miss the blunder and the pot is lost. A false alarm ends the sequence, but you keep the pot.',
+  `Every correct Good call adds ${BLUNDER_CHECK_SAFE_POINTS} point to the sequence's pot.`,
+  `Catch the blunder for ${BLUNDER_CHECK_CATCH_POINTS} points. Caught or missed, you then get to find a better move for ${BLUNDER_CHECK_BETTER_MOVE_POINTS} more.`,
+  'Miss the blunder and you keep the pot, but run out of time on it and the pot is lost. A false alarm ends the sequence, and you keep the pot.',
 ];
 
 /** What happens in a blunder-check sequence, listed on the Ready gate of a user's very first
@@ -849,7 +856,7 @@ export function blunderCheckIntroSteps(moveTimerSeconds: number): readonly strin
   return [
     'Sequences of moves are replayed on the board. Some may come from your own games.',
     `Before each of your side's moves is played, an arrow shows it. Call it: Good or Blunder? You have ${moveTimerSeconds} seconds.`,
-    'If you catch a blunder, you get to find a better move. Then the solution shows what was going on.',
+    'After a blunder, caught or missed, you get to find a better move. Then the solution shows what was going on.',
     'Not every sequence has a blunder, so stay alert on every move.',
   ];
 }

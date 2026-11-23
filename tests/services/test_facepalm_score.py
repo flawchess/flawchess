@@ -73,6 +73,7 @@ from app.services.facepalm_score import (
     facepalm_type_expr,
     facepalm_type_of,
     facepalm_type_sql,
+    is_allowed_loss,
     material_loss,
     material_missed,
 )
@@ -102,7 +103,7 @@ _MODEL = FacepalmModel(
 )
 
 # Window 14 (game 2099808, ply 23), copied from the extra row of the committed plan 11 features
-# file reports/blunder-check/facepalm-features-2026-11-22.tsv (scalar schema). No loss and no
+# file reports/blunder-check/facepalm-features-2026-11-23.tsv (scalar schema). No loss and no
 # missed gain under the quiet rule.
 WINDOW_14_GAME_ID = 2099808
 WINDOW_14_PLY = 23
@@ -115,7 +116,7 @@ _FEATURES_TSV = (
     Path(__file__).resolve().parents[2]
     / "reports"
     / "blunder-check"
-    / "facepalm-features-2026-11-22.tsv"
+    / "facepalm-features-2026-11-23.tsv"
 )
 
 # Parity grid of the SQL twin: NULL in every input, both key-move branches, a mate-valued loss
@@ -246,6 +247,38 @@ def test_missing_input_gives_none() -> None:
     assert _score(missed=None, lam=0.0) is not None
 
 
+@pytest.mark.parametrize(
+    ("loss", "missed", "expected"),
+    [
+        (2.0, 2.0, True),  # a tie is an allowed loss
+        (3.0, 2.0, True),
+        (1.0, 2.0, False),  # a mixed row: loses something, but misses more
+        (0.0, 0.0, False),
+        (1.0, None, True),  # a NULL missed reads as 0.0
+    ],
+)
+def test_is_allowed_loss_rule(loss: float, missed: float | None, expected: bool) -> None:
+    assert is_allowed_loss(loss, missed) is expected
+
+
+def test_mixed_row_reads_the_best_move_term() -> None:
+    # 262 D-04: loss 1.0 with missed 2.0 is a missed win, so the key-move term is the best move's,
+    # not the reply's (the Phase 259 gate read the reply on any loss above zero).
+    z = (
+        1.0
+        - 0.7 * math.log(0.1 + PLAYED_PROB_OFFSET)
+        + 0.3 * 1.0
+        + 0.5 * 2.0
+        + 0.4 * math.log(0.4 + PLAYED_PROB_OFFSET)
+    )
+    assert _score(loss=1.0, missed=2.0) == pytest.approx(
+        1 / (1 + math.exp(-z)), abs=FORMULA_TOLERANCE
+    )
+    # NULL rule: the best-move probability decides the mixed row, the reply probability does not.
+    assert _score(loss=1.0, missed=2.0, best_prob=None) is None
+    assert _score(loss=1.0, missed=2.0, reply_prob=None) is not None
+
+
 def test_missed_term_is_unknown_best_line_neutral() -> None:
     # D-18: an unknown best line stores missed 0, so the row keeps its loss-only score at any lambda.
     assert _score(missed=0.0, lam=1.0) == _score(missed=0.0, lam=0.0)
@@ -327,9 +360,19 @@ def test_zero_coefficient_omits_its_term() -> None:
     assert "maia_best_prob" not in _compiled(
         facepalm_score_sql(_game_flaw_columns(), lam=1.0, model=no_best)
     )
-    # lam 0 drops the missed term.
-    assert "material_missed" not in _compiled(
-        facepalm_score_sql(_game_flaw_columns(), lam=0.0, model=_MODEL)
+    # lam 0 drops the missed term; the allowed-loss gate (262 D-04) still reads the column once
+    # (NULL-safe through the coalesce), so a NULL missed never unscores a row at lam 0.
+    assert (
+        _compiled(facepalm_score_sql(_game_flaw_columns(), lam=0.0, model=_MODEL)).count(
+            "game_flaws.material_missed"
+        )
+        == 1
+    )
+    assert (
+        _compiled(facepalm_score_sql(_game_flaw_columns(), lam=1.0, model=_MODEL)).count(
+            "game_flaws.material_missed"
+        )
+        == 2
     )
     # The Python twin agrees: the omitted term's NULL input no longer unscores the row.
     assert _score(loss=3.0, reply_prob=None, model=no_reply) is not None
@@ -358,8 +401,9 @@ def test_score_and_type_expressions_are_small() -> None:
 # ---------------------------------------------------------------------------
 
 # One row of stored scalars per seeded flaw: a losing row, a non-losing miss, a losing row without a
-# reply probability, a non-losing row without a best-move probability, a NULL played probability and
-# an unscored row (the loss and missed pair is NULL together, ck_game_flaws_material_pair).
+# reply probability, a non-losing row without a best-move probability, a NULL played probability, an
+# unscored row (the loss and missed pair is NULL together, ck_game_flaws_material_pair) and a mixed
+# row (loss 1.0 below missed 3.0, a missed win typed row, scored on the best move even without a reply).
 _STORED_FACT_ROWS: tuple[dict[str, Any], ...] = (
     {
         "maia_played_prob": 0.05,
@@ -402,6 +446,13 @@ _STORED_FACT_ROWS: tuple[dict[str, Any], ...] = (
         "material_missed": None,
         "maia_best_prob": 0.3,
         "maia_best_reply_prob": 0.2,
+    },
+    {
+        "maia_played_prob": 0.08,
+        "material_loss": 1.0,
+        "material_missed": 3.0,
+        "maia_best_prob": 0.3,
+        "maia_best_reply_prob": None,
     },
 )
 
@@ -449,6 +500,9 @@ async def test_expr_matches_python_twin_over_stored_facts(
             assert scores[flaw.ply] == pytest.approx(expected, abs=PARITY_TOLERANCE), flaw.ply
             saw_value = True
     assert saw_none and saw_value
+    # 262 D-04: the mixed row (loss 1.0, missed 3.0, reply NULL) is scored on its best-move term.
+    mixed = flaws[-1]
+    assert mixed.maia_best_reply_prob is None and scores[mixed.ply] is not None
 
 
 async def test_expr_unscores_losing_row_without_reply_prob(db_session: AsyncSession) -> None:
@@ -741,6 +795,7 @@ def test_facepalm_stats_min_is_the_frontend_facepalm_cut() -> None:
         (0.0, 0.0, "missed_win"),
         (0.0, 3.0, "missed_win"),
         (1.0, 2.0, "missed_win"),
+        (1.0, 3.0, "missed_win"),  # the mixed row of 262 D-04
         (2.0, 0.0, "allowed_loss"),
         (2.0, 2.0, "allowed_loss"),
     ],

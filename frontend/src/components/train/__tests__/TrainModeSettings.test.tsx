@@ -433,7 +433,8 @@ describe('How it works (Phase 251 UAT)', () => {
 
     const how = screen.getByTestId('train-mode-how-blunder-check');
     expect(screen.queryByTestId('btn-train-mode-how-blunder-check')).toBeNull();
-    expect(how.textContent).toContain('A false alarm ends the sequence, but you keep the pot.');
+    expect(how.textContent).toContain('A false alarm ends the sequence, and you keep the pot.');
+    expect(how.textContent).toContain('run out of time on it and the pot is lost');
     // The motivation line sits above the rules and links GM Noël Studer's video, tracked as outbound.
     const video = screen.getByTestId('train-mode-blunder-check-video-link');
     expect(video.getAttribute('href')).toBe('https://www.youtube.com/watch?v=K9vKzNJAp3U&t=1s');

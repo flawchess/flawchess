@@ -32,6 +32,7 @@ from sqlalchemy.orm import load_only
 from sqlalchemy.sql.expression import SQLColumnExpression
 
 from app.models.blunder_check import (
+    BETTER_MOVE_OUTCOMES,
     AnswerKind,
     AnswerResult,
     BlunderCheckAnswer,
@@ -70,7 +71,7 @@ class WindowProgressRow:
     outcome: WindowOutcome | None
     started_at: datetime.datetime | None
     points_scored: int
-    # A caught blunder whose better move was not played yet (the window is ended but not done).
+    # A caught or missed blunder whose better move was not played yet (the window is ended but not done).
     better_move_pending: bool
 
 
@@ -110,7 +111,9 @@ async def _progress_for_header(
             started_at=row.started_at,
             points_scored=row.points_scored,
             better_move_pending=(
-                row.outcome == int(WindowOutcome.CAUGHT) and row.better_move_tier is None
+                row.outcome is not None
+                and WindowOutcome(row.outcome) in BETTER_MOVE_OUTCOMES
+                and row.better_move_tier is None
             ),
         )
         for row in rows
@@ -1241,17 +1244,17 @@ async def claim_better_move(
     points: int,
     now_utc: datetime.datetime,
 ) -> bool:
-    """Claim the one better move of a caught window: True when this call stored it.
+    """Claim the one better move of a caught or missed window: True when this call stored it.
 
-    The `outcome = CAUGHT AND better_move_tier IS NULL` guard makes a double submit (or a
-    submit on a missed/cleared/false-alarm window) award nothing (T-249-15). Points are added
+    The `outcome IN (CAUGHT, MISSED) AND better_move_tier IS NULL` guard makes a double submit
+    (or a submit on a cleared/false-alarm window) award nothing (T-249-15). Points are added
     in SQL, never from a client value.
     """
     stmt = (
         update(BlunderCheckWindow)
         .where(
             BlunderCheckWindow.id == window_id,
-            BlunderCheckWindow.outcome == int(WindowOutcome.CAUGHT),
+            BlunderCheckWindow.outcome.in_([int(outcome) for outcome in BETTER_MOVE_OUTCOMES]),
             BlunderCheckWindow.better_move_tier.is_(None),
         )
         .values(

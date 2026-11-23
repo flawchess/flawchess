@@ -171,9 +171,10 @@ async def test_open_session_beta_no_session_null(test_engine) -> None:
 async def test_open_session_beta_returns_progress(test_engine) -> None:
     user_id, token = await _register("bc-beta-progress", beta=True, test_engine=test_engine)
     session_id = await _insert_session(
-        test_engine, user_id, [WindowOutcome.MISSED, None], points=[3, 0]
+        test_engine, user_id, [WindowOutcome.FALSE_ALARM, None], points=[3, 0]
     )
-    # A missed window is done; a caught one would stay current until its better move is played.
+    # A false-alarm window is done; a caught or missed one stays current until its better move
+    # is played (covered by the solution-router tests).
     try:
         resp = await _get(token)
     finally:
@@ -189,7 +190,7 @@ async def test_open_session_beta_returns_progress(test_engine) -> None:
     assert body["windows"][0] == {
         "position": 0,
         "state": "ended",
-        "outcome": "missed",
+        "outcome": "false_alarm",
         "points_scored": 3,
     }
     assert body["windows"][1]["state"] == "pending"

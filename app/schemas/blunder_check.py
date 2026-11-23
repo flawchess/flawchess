@@ -74,7 +74,7 @@ class AnsweredMove(BaseModel):
 
 
 class BetterMoveTask(BaseModel):
-    """The better-move task handed out only when the blunder was caught (D-17)."""
+    """The better-move task handed out when a blunder window ends on the blunder, caught or missed (D-17)."""
 
     fen: str
     key_uci: str
@@ -97,8 +97,8 @@ class WindowStartResponse(BaseModel):
     move_timer_seconds: int
     window_points: int
     session_points: int
-    # Set only on a reload after a caught blunder whose better move is still open: `answered`
-    # then ends with the caught move, `prompt` repeats it and no prompt timer runs.
+    # Set only on a reload after a caught or missed blunder whose better move is still open:
+    # `answered` then ends with the blunder move, `prompt` repeats it and no prompt timer runs.
     better_move: BetterMoveTask | None
     # True while the window sits on its Ready gate (no open prompt row, so no clock runs):
     # `prompt` is then the gate's judged move (the first on a fresh window, the next one after a
@@ -106,9 +106,9 @@ class WindowStartResponse(BaseModel):
     # is the full countdown the prompt will get. False on every begin response and on any reload
     # after Ready.
     awaiting_ready: bool
-    # The window's outcome when this payload describes an ended window: a caught window waiting
-    # for its better move ("caught"), or a stale timeout that ended the window ("missed" or
-    # "cleared"). None otherwise.
+    # The window's outcome when this payload describes an ended window: a caught or missed window
+    # waiting for its better move ("caught" or "missed"), or a stale timeout that ended the window
+    # ("missed" or "cleared"). None otherwise.
     outcome: WindowOutcomeWire | None
     # The game move that led to `start_fen`, for the last-move highlight before any window move
     # is shown. None at the game's first position and on windows composed before it was stored.
@@ -170,7 +170,7 @@ BlunderTypeLineWire = Literal["allowed_material", "allowed_mate", "missed_materi
 
 
 class BetterMoveRequest(BaseModel):
-    """The better move a user played after a caught blunder, with the browser engine's tier.
+    """The better move a user played after a caught or missed blunder, with the browser engine's tier.
 
     The tier is only used for an off-key move the server cannot grade itself (D-17).
     """

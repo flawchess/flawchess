@@ -1,20 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 261
-current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
-status: completed
-stopped_at: Phase 260 complete — all phases complete
-last_updated: "2026-11-23T05:55:56.226Z"
-last_activity: 2026-11-22
-last_activity_desc: Phase 260 complete
-state_head: 344df62cfd78b6f5c6632d8e05fbd0198f196b31
+current_phase: 262
+current_phase_name: Facepalm Promotions as Material and Key-Move Gate (SEED-261122-s0j)
+status: executing
+stopped_at: Phase 262 context gathered
+last_updated: "2026-11-23T14:42:36.041Z"
+last_activity: 2026-11-23
+last_activity_desc: Phase 262 execution started
+state_head: 71ac0fcc3f854333cab4c765b7927b457f7a46d9
 progress:
-  total_phases: 15
+  total_phases: 16
   completed_phases: 63
-  total_plans: 137
+  total_plans: 144
   completed_plans: 133
-  percent: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -22,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 261 — Blunder-Check Exploration Arm (SEED-261121-t50)
-Plan: 7
+Phase: 262 (Facepalm Promotions as Material and Key-Move Gate (SEED-261122-s0j)) — EXECUTING
+Plan: 1 of 7
 
-Status: All phases complete
+Status: Executing Phase 262
 
-Last activity: 2026-11-23 - Completed quick task 261123-9cw: Settings toggle: Jump button stops only on your own highlights (default off)
+Last activity: 2026-11-23 — Phase 262 execution started
 
 Open threads carried forward (not blockers):
 
@@ -210,6 +209,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 262 added 2026-11-23 (explicit user request, "let's fix the gate in the same phase. Add a phase", after a readiness review of the seed with a replay of all 21,147 scored dev blunders): **Facepalm Promotions as Material and Key-Move Gate** (SEED-261122-s0j). Promotions credited as material in `line_material.py` (fixes the captured promoted queen too), the key-move term gated on the type rule instead of `loss > 0`, one refit with the owner checkpoint, and a prod material pass limited to rows with a promotion token. Written by hand as 262 (known mature-ROADMAP behavior). Standalone phase, no open milestone; `current_phase` stays 261. Next: `/gsd-discuss-phase 262`.
 - Phase 261 added 2026-11-22 (explicit user request, "can we add a new phase for" the seed, after Phase 259 merged and its switch and drop releases went live): **Blunder-Check Exploration Arm** (SEED-261121-t50). About 20% of blunder windows from a random draw with no facepalm-score cut, a serve-time record of the arm and the score inputs on `blunder_check_windows`, avatar feedback (score, type line, "hard to catch" line) and a calibration script. Written by hand as 261 because Phase 260 exists only on its worktree branch (`gsd/phase-260-facepalm-first-class-move-quality`) and `phase.add` on `main` would have reused 260. Expect a keep-both conflict in ROADMAP.md and here when Phase 260 squash-merges. Standalone phase, no open milestone; `current_phase` stays 259. Next: `/gsd-discuss-phase 261`.
 - Phase 259 added 2026-11-21 (explicit user request, "add phase 259 and start the discuss phase", after the owner reviewed the facepalm score of prod game 2883555 ply 47 and the seed was planted the same day): **Facepalm Score Refit on First Principles** (SEED-261121-tau). A stored best-reply Maia probability and a quiet-point material input replacing `decaying_mean`, one refit; the input is chosen by first principles, the AUC only has to stay in a similar range. Built in its own worktree in parallel with Phase 258; `current_phase` stays 258. Standalone phase, no open milestone.
 - Phase 258 added 2026-11-21 (explicit user request, "add it as a phase to the roadmap", after the `/gsd-explore` session that planted the seed the same day): **Library Stats Recent Sample for Snapshot Charts** (SEED-261121-3ou). Timelines keep full history; the flaw, facepalm and tactic comparisons always use the most recent 1000 games per time control within 36 months, taken from the filtered games. No filter-default changes, no "all games" switch. Standalone phase, no open milestone.
@@ -1204,6 +1204,7 @@ None active.
 | 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
 | 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
 | 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
+| 261123-lb8 | Blunder check scoring rebalance: safe 1 / blunder 2 / better move 1, no forfeit on a miss, better move after a miss | 2026-11-23 | cc0b2cc7c | [261123-lb8-blunder-check-scoring-rebalance](./quick/261123-lb8-blunder-check-scoring-rebalance/) |
 
 ## Deferred Items
 
@@ -1256,9 +1257,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-22T14:17:09.813Z
-**Stopped at:** Phase 260 complete — all phases complete
-**Resume file:** .planning/phases/261-blunder-check-exploration-arm/261-CONTEXT.md
+**Last session:** 2026-11-23T13:09:45.276Z
+**Stopped at:** Phase 262 context gathered
+**Resume file:** .planning/phases/262-facepalm-promotions-and-key-move-gate/262-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

@@ -14,7 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Blunder check: after a caught or missed blunder, the solution now shows a short line when the engine line shows the blunder gave away material or checkmate, or missed a material win or checkmate, and a note when the blunder was hard to catch.
 - Train: a facepalm blunder (a facepalm score of 70% or more) is marked "???" instead of "??" on the board and on the Game line, on the blunder check solution and on the personalized-puzzle solution.
 - Navigation: new accounts are guided through FlawChess one feature at a time by a single red dot: Import, Train, Bots, Openings with its Played as and Filters controls and its Stats tab, Endgames, and Library Stats. The dot sits on the menu item first and moves onto the tab or button once you are in that section. A feature you leave alone for three active days is skipped, and your progress follows you across devices.
-- Blunder check for everyone, guests included: short sequences from real games ask, before each move is played, whether it is a good move or a blunder, with a 12-second timer, a points pot you lose on a missed blunder, a better-move follow-up when you catch one, and a solution screen with the engine lines. Start it from the Train Today page. Guests play on other players' games.
+- Blunder check for everyone, guests included: short sequences from real games ask, before each move is played, whether it is a good move or a blunder, with a 12-second timer, a points pot you lose when the timer runs out on a blunder, a better-move follow-up after a caught or missed blunder, and a solution screen with the engine lines. Start it from the Train Today page. Guests play on other players' games.
 - Blunder check leaderboards: weekly Points and Score % boards with medals, behind a Puzzles / Blunder check switch on the Train leaderboard. The card remembers the side you looked at last, and the blunder check score screen links straight to its boards.
 - Blunder check level: if you have no rated games yet, your first Start asks once for a level (Beginner, Intermediate or Advanced), which you can change later in the Blunder check settings.
 - Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
@@ -29,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
 - Facepalm score: the chips, the Explain bar and the facepalm explanation now read "Facepalm score x%", and the Library eval chart tooltip shows it on its own line.
 - Internal: removed the old per-depth material columns of the facepalm score; the score reads the stored material inputs.
 - Facepalm score: refitted on how a player reads the lines. An even trade in the engine's line no longer counts as a missed win, and how likely a player at your level was to see the punishing reply now enters the score. Facepalm chips, the Facepalm tag, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
@@ -66,6 +67,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Eval chart: facepalm blunders are drawn in dark red and the tooltip names them Facepalm.
 - Library filters: the Flaws filter has three tags, Facepalm, Blunder and Mistake. Blunder now lists the blunders that are not facepalms (select Blunder and Facepalm for all blunders), and the selected tags, Gem and Great too, are ringed in the move quality table on game cards.
 - Facepalm score: the score of your opponents' blunders now shows on the game card and on the analysis page too.
+- Facepalm score: pawn promotions now count as material, so a blunder that lets the opponent promote, or misses your own promotion, counts like losing or missing that piece. Each blunder is also judged on the move that matters for its type: how likely the punishing reply was when material is given away, how likely the best move was when a win is missed. The score is refitted on the same labels, so facepalm chips, the Facepalm filter, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
 - Game cards: the mobile summary row shows Gem, Great, Best, Mistake, Blunder and Facepalm, and desktop cards are a little taller so the board lines up with the table.
 
 ### Removed

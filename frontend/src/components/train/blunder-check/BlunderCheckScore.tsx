@@ -3,8 +3,8 @@
  * (Phase 249 UAT).
  *
  * The rule the row has to teach: points for "Good" calls pile up in the open window's pot
- * and are lost when the blunder is missed (or a move times out); they are only safe once
- * the window is over. So the row shows two numbers. The pot is a green "+N" badge, the
+ * and are lost when the timer runs out on the blunder (a timeout on a good move takes 1); a
+ * missed blunder keeps them. They are only safe once the window is over. So the row shows two numbers. The pot is a green "+N" badge, the
  * same badge that pops up over the board: every gain flies from the board into it
  * (BlunderCheckPointsFlash) and is added up as it lands, with a coin sound. A lost pot
  * turns red and shakes. The badge stays up on the solution (a red "+0" for a lost pot), so

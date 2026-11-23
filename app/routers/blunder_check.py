@@ -93,10 +93,10 @@ def _window_state(row: blunder_check_repository.WindowProgressRow) -> WindowStat
 def _pending_better_move_position(
     windows: Sequence[blunder_check_repository.WindowProgressRow],
 ) -> int | None:
-    """The latest started window, when it is a caught blunder still waiting for its better move.
+    """The latest started window, when it is a caught or missed blunder waiting for its better move.
 
     Bug fix (Phase 249 review): a reload during the better-move step skipped to the next window,
-    because the caught window already had an outcome, and its better-move points could never be
+    because the ended window already had an outcome, and its better-move points could never be
     earned. Such a window stays the session's current one until the better move is played.
     """
     started = [row for row in windows if row.started_at is not None]
@@ -473,7 +473,7 @@ async def submit_better_move(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> BetterMoveResponse:
-    """Grade and score the one better move after a caught blunder (server-only points)."""
+    """Grade and score the one better move after a caught or missed blunder (server-only points)."""
     result = await _guarded(
         session,
         blunder_check_service.submit_better_move(
