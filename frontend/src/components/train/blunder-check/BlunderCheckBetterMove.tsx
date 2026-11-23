@@ -53,9 +53,9 @@ const SOUND_BY_TIER: Record<BetterMoveTier, SoundEvent> = {
 
 /** What the user is told about the graded better move (neutral: own and foreign windows alike). */
 const TIER_FEEDBACK_COPY: Record<BetterMoveTier, string> = {
-  good: 'Good move',
-  inaccuracy: 'Decent move',
-  wrong: 'Not a better move',
+  good: 'Well played.',
+  inaccuracy: 'Decent move.',
+  wrong: "That one doesn't work either.",
 };
 
 interface PlayedMove {

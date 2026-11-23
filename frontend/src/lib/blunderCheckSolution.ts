@@ -232,16 +232,16 @@ function earlierCallsParts(points: number): SolutionCopyPart[] {
 
 /** What the blunder allowed or missed (Phase 261 D-09), as one sentence. */
 const TYPE_LINE_COPY: Record<BlunderTypeLine, string> = {
-  allowed_material: 'The blunder allows a material loss.',
+  allowed_material: 'The blunder loses material.',
   allowed_mate: 'The blunder allows checkmate.',
-  missed_material: 'The blunder misses a material win.',
+  missed_material: 'The blunder misses a chance to win material.',
   missed_mate: 'The blunder misses checkmate.',
 };
 
 /** The fairness line for a subtle blunder (D-07), by whether the user called it. */
 const HARD_TO_CATCH_COPY: Record<'caught' | 'missed', string> = {
-  caught: 'Well spotted, this one was hard to catch.',
-  missed: 'This one was hard to catch.',
+  caught: 'Well spotted! This was one of the tough ones we mix in on purpose.',
+  missed: 'This one was hard to catch. We mix in a few tough ones on purpose.',
 };
 
 /** The feedback paragraph of a blunder solution: type line, then the hard-to-catch line. */

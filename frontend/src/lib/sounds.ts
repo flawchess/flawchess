@@ -124,8 +124,8 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   // reveal does not jump in loudness.
   'score-full': 'FullScore',
   // The blunder-check pot (the open window's points, still at risk): points
-  // landing in it (a coin; banking the pot into the session total plays a few
-  // of them, overlapping), and the pot being lost, synthesized by
+  // landing in it (a coin; banking the pot into the session total plays one
+  // per point, overlapping), and the pot being lost, synthesized by
   // `scripts/synth_pot_sounds.py`.
   'pot-gain': 'Coin',
   'pot-bust': 'PotBust',

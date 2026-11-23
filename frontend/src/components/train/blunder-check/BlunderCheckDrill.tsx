@@ -37,7 +37,6 @@ import { useMoveTimer } from '@/hooks/useMoveTimer';
 import type { TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import {
-  BANK_COIN_COUNT,
   BANK_COIN_INTERVAL_MS,
   BANK_HOLD_MS,
   CLEARED_SOUND_DELAY_MS,
@@ -142,9 +141,9 @@ function playAnswerSound(response: AnswerResponse): void {
   } else playSound('game-loss');
 }
 
-/** The pot being banked: a few coins dropping into the total, each overlapping the last. */
-function playBankCoins(): void {
-  for (let coin = 0; coin < BANK_COIN_COUNT; coin += 1) {
+/** The pot being banked: one coin per point dropping into the total, each overlapping the last. */
+function playBankCoins(points: number): void {
+  for (let coin = 0; coin < points; coin += 1) {
     setTimeout(() => playSound('pot-gain'), coin * BANK_COIN_INTERVAL_MS);
   }
 }
@@ -175,7 +174,7 @@ function useBankOnNext(
   const handleNext = useCallback((): void => {
     // A second click during the hold must not skip a window.
     if (position === null || banking) return;
-    if (pot > 0) playBankCoins();
+    if (pot > 0) playBankCoins(pot);
     if (pot <= 0 || prefersReducedMotion()) {
       dispatch({ type: 'NEXT_WINDOW' });
       return;

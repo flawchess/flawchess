@@ -829,9 +829,9 @@ export const BLUNDER_CHECK_RATIONALES: readonly string[] = [
   'A blunder check takes seconds at the board and saves the whole game, which is why it is worth drilling.',
   'Strong players are not blunder-free because they calculate more, but because they check every move before playing it.',
   'Knowing a good move from a blunder matters more than finding the best move, since avoiding the bad one is usually enough.',
-  'Every position here asks what your opponent does next, which is the question that catches most blunders.',
+  'Asking what your opponent does next catches most blunders, and this drill makes you ask it on every move.',
   'Trusting a good move is a skill too: this drill also trains you not to see ghosts.',
-  'Spotting the blunder here is easy to do slowly, and the reps are what make it fast enough for a real game.',
+  'Spotting a blunder is easier with time to think, and the reps are what make it fast enough for a real game.',
 ];
 
 // The blunder-check point values, mirroring SAFE_POINTS / BLUNDER_POINTS / BETTER_MOVE_POINTS in
@@ -871,8 +871,9 @@ export function blunderCheckReadyCopy(
   side: 'white' | 'black',
   sideToMove: 'white' | 'black',
 ): string {
-  const turn = sideToMove === side ? "It's your turn." : "It's your opponent's turn.";
-  return `Check out the position, you play ${side}. ${turn}`;
+  // "It's your turn" read as a request to move, but the user only judges a move the arrow shows.
+  const mover = sideToMove === side ? 'your side' : 'your opponent';
+  return `Check out the position: you play ${side}, and ${mover} moves next.`;
 }
 
 /** The blunder-check end screen's bubble: the band opener and a random training
