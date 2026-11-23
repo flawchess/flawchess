@@ -5,10 +5,10 @@ current_phase: 261
 current_phase_name: Blunder-Check Exploration Arm (SEED-261121-t50)
 status: completed
 stopped_at: Phase 260 complete — all phases complete
-last_updated: "2026-11-22T22:08:44.469Z"
+last_updated: "2026-11-23T05:55:56.226Z"
 last_activity: 2026-11-22
 last_activity_desc: Phase 260 complete
-state_head: b9fc7daab5eba4dcb049eee1cde14bf82bd25661
+state_head: 344df62cfd78b6f5c6632d8e05fbd0198f196b31
 progress:
   total_phases: 15
   completed_phases: 63
@@ -27,7 +27,7 @@ Plan: 7
 
 Status: All phases complete
 
-Last activity: 2026-11-22 — Phase 260 complete (Phase 261 completed earlier the same day)
+Last activity: 2026-11-23 - Completed quick task 261123-9cw: Settings toggle: Jump button stops only on your own highlights (default off)
 
 Open threads carried forward (not blockers):
 
@@ -1203,6 +1203,7 @@ None active.
 | 261122-kos | Tactic tags: forced-mate flag reads the right eval row; mate in 1 survives the only-move strip | 2026-11-22 | fa3462b81 | [261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s](./quick/261122-kos-fix-forced-mate-eval-row-and-mate-in-1-s/) |
 | 261122-l3u | Drain: keep the second-best move of the opening flaw re-search (node 0 of the line blob) | 2026-11-22 | 2f43ec19a | [261122-l3u-keep-the-second-best-move-in-the-drain-o](./quick/261122-l3u-keep-the-second-best-move-in-the-drain-o/) |
 | 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
+| 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
 
 ## Deferred Items
 
