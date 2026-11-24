@@ -1655,7 +1655,7 @@ async def test_fetch_puzzle_difficulty_splits_by_source(test_engine):
 
     Values are [solves, good, inaccuracy, correct_guess]. Seeded on 2031-03-10:
     SR good + SR inaccuracy + SR wrong + a legacy SR row (move_quality NULL,
-    correct_move True -> good); herring good; sharp filler wrong. Excluded: an
+    correct_move True -> good); herring good; sharp filler wrong; foreign blunder good. Excluded: an
     unsolved row and one solved before the window start (this query takes the
     window start, not the lead-in).
     """
@@ -1664,10 +1664,11 @@ async def test_fetch_puzzle_difficulty_splits_by_source(test_engine):
     utc = datetime.timezone.utc
     solved_day = datetime.datetime.combine(_OUTCOME_DAY, noon, tzinfo=utc)
     solved_before = datetime.datetime.combine(datetime.date(2031, 3, 4), noon, tzinfo=utc)
-    sr, herring, sharp = (
+    sr, herring, sharp, foreign = (
         int(DrillSource.SR_ITEM),
         int(DrillSource.RED_HERRING),
-        int(DrillSource.SHARP_FILLER),
+        int(DrillSource.LEGACY_SHARP_FILLER),
+        int(DrillSource.FOREIGN_BLUNDER),
     )
     good, inaccuracy, wrong = (
         int(DrillMoveQuality.GOOD),
@@ -1682,6 +1683,7 @@ async def test_fetch_puzzle_difficulty_splits_by_source(test_engine):
         (sr, None, True, False, solved_day),  # legacy row: counts as good
         (herring, good, True, True, solved_day),
         (sharp, wrong, False, True, solved_day),
+        (foreign, good, True, False, solved_day),
         (sr, None, None, None, None),  # unsolved: excluded
         (herring, good, True, True, solved_before),  # before the window: excluded
     ]
@@ -1727,7 +1729,12 @@ async def test_fetch_puzzle_difficulty_splits_by_source(test_engine):
         )
 
     delta = {k: [a - b for a, b in zip(after[k], baseline[k], strict=True)] for k in after}
-    assert delta == {sr: [4, 2, 1, 2], herring: [1, 1, 0, 1], sharp: [1, 0, 0, 1]}
+    assert delta == {
+        sr: [4, 2, 1, 2],
+        herring: [1, 1, 0, 1],
+        sharp: [1, 0, 0, 1],
+        foreign: [1, 1, 0, 0],
+    }
 
 
 def _bc_difficulty(rows: list[list[typing.Any]]) -> dict[tuple[int, int], list[int]]:

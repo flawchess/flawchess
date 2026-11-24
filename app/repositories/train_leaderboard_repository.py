@@ -23,11 +23,11 @@ from app.services.train_score import GUESS_POINTS, MOVE_QUALITY_TIER, MOVE_TIER_
 
 @dataclass(frozen=True)
 class SolveTotals:
-    """Summed points and puzzle counts, all solves and non-filler solves."""
+    """Summed points and puzzle counts, all solves and accuracy-board solves."""
 
     points: int
     puzzles: int
-    non_filler_points: int  # non-filler (source != SHARP_FILLER)
+    non_filler_points: int  # source in (own puzzle, red herring), see _ACCURACY_SOURCES
     non_filler_puzzles: int
 
 
@@ -79,7 +79,12 @@ _MOVE_POINTS_EXPR: ColumnElement[int] = case(
     else_=0,
 )
 _POINTS_EXPR: ColumnElement[int] = _GUESS_POINTS_EXPR + _MOVE_POINTS_EXPR
-_NON_FILLER: ColumnElement[bool] = DrillSolve.source != int(DrillSource.SHARP_FILLER)
+# D-18: the Accuracy board counts own puzzles and red herrings only. A positive list, so a
+# similar player's blunder (FOREIGN_BLUNDER), the retired lichess filler (history rows) and any future source
+# earn points but stay off the Accuracy board until someone adds them on purpose.
+_ACCURACY_SOURCES: ColumnElement[bool] = DrillSolve.source.in_(
+    [int(DrillSource.SR_ITEM), int(DrillSource.RED_HERRING)]
+)
 
 
 async def fetch_week_aggregates(
@@ -95,8 +100,8 @@ async def fetch_week_aggregates(
             DrillSolve.user_id,
             func.coalesce(func.sum(_POINTS_EXPR), 0),
             func.count(),
-            func.coalesce(func.sum(_POINTS_EXPR).filter(_NON_FILLER), 0),
-            func.count().filter(_NON_FILLER),
+            func.coalesce(func.sum(_POINTS_EXPR).filter(_ACCURACY_SOURCES), 0),
+            func.count().filter(_ACCURACY_SOURCES),
             User.lichess_username,
             User.chess_com_username,
             User.is_guest,
@@ -191,8 +196,8 @@ async def fetch_session_contribution(
     stmt = select(
         func.coalesce(func.sum(_POINTS_EXPR), 0),
         func.count(),
-        func.coalesce(func.sum(_POINTS_EXPR).filter(_NON_FILLER), 0),
-        func.count().filter(_NON_FILLER),
+        func.coalesce(func.sum(_POINTS_EXPR).filter(_ACCURACY_SOURCES), 0),
+        func.count().filter(_ACCURACY_SOURCES),
     ).where(
         DrillSolve.user_id == user_id,
         DrillSolve.session_id == session_id,

@@ -148,7 +148,7 @@ const SESSION_RESPONSE: TrainSessionResponse = {
     { position: 1, game_id: 100, ply: 20, fen: START_FEN, side_to_move: 'white', last_move_uci: 'd7d5' },
   ],
   solved_results: [],
-  is_warmup: false,
+  own_puzzle_count: 5,
 };
 
 const SETTINGS_RESPONSE: TrainSettingsResponse = {
@@ -568,7 +568,7 @@ const RESTORE_SESSION: TrainSessionResponse = {
   solved_results: [
     { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
   ],
-  is_warmup: false,
+  own_puzzle_count: 5,
 };
 
 /** Holds the next session compose open until `resolve` is called. */

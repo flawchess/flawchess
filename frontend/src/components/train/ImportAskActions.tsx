@@ -7,12 +7,12 @@ import { trackEvent } from '@/lib/analytics';
 /**
  * ImportAskActions: the "Import games" action rendered into
  * `TrainBotBubble`'s `actions` slot for a REGISTERED account with zero
- * imported games, on the Train landing bubble and the warm-up score bubble.
+ * imported games, on the Train landing bubble and the score bubble of a session with no own puzzles.
  *
  * Why it exists: every zero-game Train surface says "Import your games", but
  * the only other clickable import button lives in the `no_material` empty
- * state, which a zero-game account never reaches (sharp fillers always
- * compose a session).
+ * state, which a zero-game account never reaches (herrings and similarly
+ * rated players' blunders compose a session without the user's games).
  *
  * Guests keep `SignupAskActions` instead: sign-up is their funnel lever.
  *

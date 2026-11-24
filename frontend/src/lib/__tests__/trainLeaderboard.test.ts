@@ -182,7 +182,7 @@ describe('viewerHint', () => {
   it('accuracy: a specific not-on-this-board line when only the points viewer exists', () => {
     const hint = viewerHint('accuracy', response({ viewer: VIEWER }, {}));
     expect(hint?.id).toBe('accuracy-not-entered');
-    expect(hint?.text).toContain("tactics puzzles don't count");
+    expect(hint?.text).toContain("similarly rated players' blunders don't count");
     expect(hint?.text).not.toMatch(/\d/);
   });
 
@@ -334,7 +334,7 @@ describe('scoreRankLines, not-entered and hidden rules', () => {
       {
         id: 'accuracy',
         text: 'Accuracy: not ranked',
-        info: "You're not on this board yet: tactics puzzles don't count here.",
+        info: "You're not on this board yet: similarly rated players' blunders don't count here.",
       },
     ]);
     expect(ACCURACY_NOT_ENTERED_LINE).toBe('Accuracy: not ranked');

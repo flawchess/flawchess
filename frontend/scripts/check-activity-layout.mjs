@@ -480,7 +480,7 @@ function buildCases(fc) {
         fc.stackRows(host, {
           rows: [
             {
-              label: "Sharp filler · lichess",
+              label: "Sharp filler (retired)",
               value: "100% good",
               sub: "123,456 puzzles · small sample",
               dim: true,
@@ -491,7 +491,23 @@ function buildCases(fc) {
               ],
             },
             {
+              label: "Similar player's blunder",
+              value: "100% good",
+              sub: "123,456 puzzles",
+              segments: [
+                { value: 1234, color: "#0F8A7A" },
+                { value: 1234, color: "#B44A8E" },
+                { value: 1234, color: "#3C63D8" },
+              ],
+            },
+            {
               label: "Herring · foreign",
+              value: "—",
+              sub: "No puzzles solved yet.",
+              segments: [],
+            },
+            {
+              label: "Own flaw · own",
               value: "—",
               sub: "No puzzles solved yet.",
               segments: [],

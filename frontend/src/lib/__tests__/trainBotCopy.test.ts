@@ -238,45 +238,48 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
 });
 
 const SIDES = ['white', 'black'] as const;
-const WARMUP_FLAGS = [false, true] as const;
+const NO_OWN_FLAGS = [false, true] as const;
 
 describe('introCopy / introSteps (two bubbles)', () => {
-  it('is exactly INTRO_STEP_COUNT (2) steps for every side and warm-up flag', () => {
+  it('is exactly INTRO_STEP_COUNT (2) steps for every side and no-own-puzzles flag', () => {
     expect(INTRO_STEP_COUNT).toBe(2);
     for (const side of SIDES) {
-      for (const isWarmup of WARMUP_FLAGS) {
-        expect(introSteps(side, isWarmup)).toHaveLength(INTRO_STEP_COUNT);
+      for (const noOwnPuzzles of NO_OWN_FLAGS) {
+        expect(introSteps(side, noOwnPuzzles)).toHaveLength(INTRO_STEP_COUNT);
       }
     }
   });
 
-  it('step 0 is Hilda and the welcome, verbatim, per warm-up flag', () => {
-    const regular = introCopy(0, 'white', false);
-    expect(regular.personaId).toBe(HILDA_ID);
-    expect(regular.copy).toBe(
+  it('step 0 is Hilda and the welcome, verbatim, per no-own-puzzles flag', () => {
+    const own = introCopy(0, 'white', false);
+    expect(own.personaId).toBe(HILDA_ID);
+    expect(own.copy).toBe(
       'Hi there! You will improve by solving puzzles created from your own games.',
     );
-    const warmup = introCopy(0, 'white', true);
-    expect(warmup.personaId).toBe(HILDA_ID);
-    expect(warmup.copy).toBe(
-      "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.",
+    const noOwn = introCopy(0, 'white', true);
+    expect(noOwn.personaId).toBe(HILDA_ID);
+    expect(noOwn.copy).toBe(
+      'Hi there! These puzzles come from games of players at your level. Once some of your games ' +
+        'are imported and analyzed, puzzles will come from your own games.',
     );
+    expect(introSteps('black', true)[0]?.copy).toBe(noOwn.copy);
+    expect(introSteps('black', false)[0]?.copy).toBe(own.copy);
   });
 
   // No import or sign-up ask before the first puzzle (it would
-  // send a new user away); the score screen makes that ask.
-  it('the welcome never asks to import or sign up', () => {
-    for (const isWarmup of WARMUP_FLAGS) {
-      const copy = introCopy(0, 'white', isWarmup).copy;
-      expect(copy).not.toMatch(/import|sign up/i);
-      expect(copy).not.toContain('Welcome');
-    }
+  // send a new user away); the score screen makes that ask. The no-own welcome
+  // only says imported games will become the puzzle source.
+  it('the own-games welcome never asks to import or sign up', () => {
+    const copy = introCopy(0, 'white', false).copy;
+    expect(copy).not.toMatch(/import|sign up/i);
+    expect(copy).not.toContain('Welcome');
+    expect(introCopy(0, 'white', true).copy).not.toMatch(/sign up/i);
   });
 
   it('step 1 is Hilda and the closing prompt for the puzzle side', () => {
     for (const side of SIDES) {
-      for (const isWarmup of WARMUP_FLAGS) {
-        const step = introCopy(1, side, isWarmup);
+      for (const noOwnPuzzles of NO_OWN_FLAGS) {
+        const step = introCopy(1, side, noOwnPuzzles);
         expect(step.personaId).toBe(HILDA_ID);
         expect(step.copy).toBe(
           `Decide first, then play. You play ${side}. Only one: a single move works, ` +
@@ -286,20 +289,17 @@ describe('introCopy / introSteps (two bubbles)', () => {
     }
   });
 
-  it('only the closing step defines the vocabulary; no rationale; only a warm-up mentions warm-up', () => {
+  it('only the closing step defines the vocabulary; no rationale', () => {
     for (const side of SIDES) {
-      for (const step of introSteps(side, false)) {
-        expect(step.copy).not.toMatch(/warm-up/i);
-      }
-      for (const isWarmup of WARMUP_FLAGS) {
-        const [welcome, closing] = introSteps(side, isWarmup);
+      for (const noOwnPuzzles of NO_OWN_FLAGS) {
+        const [welcome, closing] = introSteps(side, noOwnPuzzles);
         expect(welcome?.copy).not.toContain('Only one:');
         expect(closing?.copy).toContain('Only one:');
         expect(closing?.copy).toContain('Several:');
-      }
-      for (const step of introSteps(side, true)) {
-        expect(step.copy).not.toMatch(/practice/i);
-        expect(step.copy).not.toContain('Every puzzle starts');
+        for (const step of introSteps(side, noOwnPuzzles)) {
+          expect(step.copy).not.toMatch(/practice/i);
+          expect(step.copy).not.toContain('Every puzzle starts');
+        }
       }
     }
   });
@@ -311,12 +311,20 @@ describe('introCopy / introSteps (two bubbles)', () => {
 
   // No internal scrolling in bubbles, every stepper step must
   // fit the calibrated phone budget (see STEPPER_COPY_MAX_CHARS).
-  it('every intro step, for every side and warm-up flag, fits the phone copy budget', () => {
+  // The owner's no-own welcome wording (D-12) is 155 chars, over the 145-char
+  // guard. Seven 24px lines is the calibrated phone maximum (~24 chars a line, see
+  // STEPPER_COPY_MAX_CHARS), so it is held to that bound instead; it still needs
+  // the 375x667 device measurement the budget's doc comment asks for.
+  const NO_OWN_WELCOME_MAX_CHARS = 7 * 24;
+
+  it('every intro step fits the phone copy budget; the no-own welcome fits seven lines', () => {
     for (const side of SIDES) {
-      for (const isWarmup of WARMUP_FLAGS) {
-        for (const step of introSteps(side, isWarmup)) {
-          expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
-        }
+      for (const noOwnPuzzles of NO_OWN_FLAGS) {
+        const [welcome, closing] = introSteps(side, noOwnPuzzles);
+        expect(closing?.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+        expect(welcome?.copy.length).toBeLessThanOrEqual(
+          noOwnPuzzles ? NO_OWN_WELCOME_MAX_CHARS : STEPPER_COPY_MAX_CHARS,
+        );
       }
     }
   });
@@ -337,6 +345,7 @@ describe('verdictClauseParts / verdictStripLine', () => {
     moveTier: 'good',
     isBest: true,
     fromOwnBlunder: false,
+    fromForeignGame: false,
     disagreement: false,
     keySan: null,
   };
@@ -391,6 +400,16 @@ describe('verdictClauseParts / verdictStripLine', () => {
     expect(verdictClauseParts({ ...base, fromOwnBlunder: true }).fact).toBe('Only one move works here.');
   });
 
+  // D-20: a foreign puzzle's game move is a stranger's, so the sentence never says "your".
+  it('a several-move fact on a foreign game says "the game move"; a herring keeps the plain fact', () => {
+    const foreign = { ...base, puzzleType: 'soft' as const, fromForeignGame: true };
+    expect(verdictClauseParts(foreign).fact).toBe('Several moves work here, just not the game move.');
+    expect(verdictClauseParts({ ...base, puzzleType: 'herring' as const }).fact).toBe(
+      'Several moves work here.',
+    );
+    expect(verdictClauseParts({ ...base, fromForeignGame: true }).fact).toBe('Only one move works here.');
+  });
+
   it('a credited disagreement names the key and credits either call', () => {
     const input = { ...base, isBest: false, disagreement: true, keySan: 'Qh4' };
     expect(sentence(input)).toBe(
@@ -438,63 +457,44 @@ describe('verdictCopy', () => {
 });
 
 describe('returnPhrase (truth table)', () => {
-  // A warm-up herring/filler gets no tail. The per-puzzle
-  // "That one was a warm-up ... your own positions will." line repeated the
-  // import/sign-up ask on every warm-up puzzle.
-  it('a red_herring source in a warm-up session returns no tail, regardless of due_date', () => {
-    const phrase = returnPhrase({
-      source: 'red_herring',
-      is_warmup: true,
-      due_date: '2020-01-01', // arbitrary, must be ignored
-      session_date: '2026-09-13',
-      expires_on: '2026-09-14',
-    });
-    expect(phrase).toBe('');
-  });
-
-  it('a sharp_filler source in a warm-up session with a non-null due_date returns no tail', () => {
-    const phrase = returnPhrase({
-      source: 'sharp_filler',
-      is_warmup: true,
-      due_date: '2026-12-25',
-      session_date: '2026-09-13',
-      expires_on: '2026-09-14',
-    });
-    expect(phrase).toBe('');
-  });
-
-  // A red herring is a regular part of every session. A
-  // user with plenty of SR items was told a routine herring "was a warm-up"
-  // and that "your own positions will" come — warm-up is a SESSION property.
-  it.each(['red_herring', 'sharp_filler'] as const)(
-    'a %s source in a REGULAR session gets a neutral non-return line, never the warm-up tail',
-    (source) => {
-      const phrase = returnPhrase({
-        source,
-        is_warmup: false,
+  // The tail is per puzzle: no session input exists any more, so a foreign
+  // blunder shows the same neutral line in an all-foreign session and in a mixed one.
+  it('a foreign_blunder source returns the neutral foreign line, whatever its dates say', () => {
+    expect(
+      returnPhrase({
+        source: 'foreign_blunder',
         due_date: '2020-01-01', // arbitrary, must be ignored
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
-      });
-      expect(phrase).toContain("won't come back");
-      expect(phrase).not.toContain('warm-up');
-      expect(phrase).not.toContain('own positions');
-    },
-  );
-
-  it('a red_herring names itself; a sharp_filler is not from your games', () => {
-    expect(
-      returnPhrase({ source: 'red_herring', is_warmup: false }),
-    ).toContain('red herring');
-    expect(
-      returnPhrase({ source: 'sharp_filler', is_warmup: false }),
-    ).toContain('Not from your games');
+      }),
+    ).toBe("From a similarly rated player's game, so it won't come back.");
+    expect(returnPhrase({ source: 'foreign_blunder' })).toBe(
+      "From a similarly rated player's game, so it won't come back.",
+    );
   });
 
-  it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {
-    expect(returnPhrase({ source: 'red_herring' })).not.toContain(
-      'warm-up',
-    );
+  it('a red_herring source always names itself, whatever its dates say', () => {
+    expect(
+      returnPhrase({
+        source: 'red_herring',
+        due_date: '2020-01-01', // arbitrary, must be ignored
+        session_date: '2026-09-13',
+        expires_on: '2026-09-14',
+      }),
+    ).toBe("A red herring, so it won't come back.");
+  });
+
+  // A cached verdict or an old solved result from before the lichess fillers were
+  // retired still reports 'sharp_filler'; it shows no tail.
+  it('a legacy sharp_filler source returns no tail, even with a due_date', () => {
+    expect(
+      returnPhrase({
+        source: 'sharp_filler',
+        due_date: '2026-12-25',
+        session_date: '2026-09-13',
+        expires_on: '2026-09-14',
+      }),
+    ).toBe('');
   });
 
   it("item_status 'mastered' returns the mastered tail even when due_date is <= expires_on (stale-date trap)", () => {
@@ -626,7 +626,7 @@ describe('reveal tour parts', () => {
   it('chips, stepping, sidelines and understand are one string each, whatever the device or chip set', () => {
     const { back, forward, rewind } = TOUR_ICON_TOKEN;
     expect(tourStepCopy('chips', BASE_CTX).copy).toBe(
-      "Each chip is a line: your Move, the engine's Best, and your Game move if known. Same moves share a chip. Tap or click a chip to show its line.",
+      "Each chip is a line: your Move, the engine's Best, and the Game move if known. Same moves share a chip. Tap or click a chip to show its line.",
     );
     expect(tourStepCopy('stepping', BASE_CTX).copy).toBe(
       `Step through the line with ${back} ${forward}, or tap or click a move in the list.`,
@@ -701,7 +701,7 @@ describe('scoreBubbleCopy', () => {
       'and turn on reminders.',
     none: 'Yours are already on, so the next session will find you.',
   } as const;
-  const WARM_ASK = {
+  const NO_OWN_ASK = {
     remind_me: 'Turn on Remind me so the habit is there when they arrive.',
     scan_qr:
       'Scan the code below to install FlawChess on your phone and turn on reminders, so ' +
@@ -713,9 +713,10 @@ describe('scoreBubbleCopy', () => {
     yellow: 'Solid session, with a few that got away.',
     red: 'Tough session. That is exactly what Train is for.',
   } as const;
-  // Registered audiences only: a guest's opening skips the warm-up note (its
-  // sign-up line already says "instead of warm-ups"), covered separately below.
-  const WARM_CLAUSE = [
+  const NOTE_FIRST = 'Those puzzles came from games of players at your level.';
+  const NOTE_LATER = 'Those came from games of players at your level, so nothing comes back yet.';
+  // Registered audiences; the guest audiences are covered separately below.
+  const NO_OWN_CLAUSE = [
     [AUDIENCE_HAS_GAMES, 'Once your games are analyzed, your own mistakes take over.'],
     [AUDIENCE_NO_GAMES, 'Import your games and your own mistakes take over.'],
   ] as const;
@@ -724,7 +725,7 @@ describe('scoreBubbleCopy', () => {
   const BASE: ScoreBubbleInput = {
     missedCount: 0,
     isFirstCompletedSession: false,
-    isWarmup: false,
+    noOwnPuzzles: false,
     reminderAsk: 'remind_me',
     band: 'yellow',
     audience: AUDIENCE_HAS_GAMES,
@@ -798,68 +799,71 @@ describe('scoreBubbleCopy', () => {
     ]);
   });
 
-  it('warm-up first session: rationale in line 1 before "Those were warm-ups.", the audience clause after', () => {
-    for (const [audience, clause] of WARM_CLAUSE) {
+  it('no-own first session: rationale and the first note in line 1, the audience clause after', () => {
+    for (const [audience, clause] of NO_OWN_CLAUSE) {
       const copy = scoreBubbleCopy({
         ...BASE,
-        isWarmup: true,
+        noOwnPuzzles: true,
         isFirstCompletedSession: true,
         band: 'red',
         audience,
       });
-      expect(copy.lines[0]).toBe(
-        `${OPENER.red} ${RATIONALE} Those were warm-ups. ${clause}`,
-      );
+      expect(copy.lines[0]).toBe(`${OPENER.red} ${RATIONALE} ${NOTE_FIRST} ${clause}`);
+      expect(copy.lines[0]).toContain('Those puzzles came from games of players at your level.');
     }
   });
 
-  it('warm-up later session: the unchanged "nothing to bring back yet" line 1, no rationale', () => {
-    for (const [audience, clause] of WARM_CLAUSE) {
-      const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, band: 'green', audience });
-      expect(copy.lines[0]).toBe(
-        `${OPENER.green} Those were warm-ups, nothing to bring back yet. ${clause}`,
-      );
+  it('no-own later session: the later note in line 1, no rationale', () => {
+    for (const [audience, clause] of NO_OWN_CLAUSE) {
+      const copy = scoreBubbleCopy({ ...BASE, noOwnPuzzles: true, band: 'green', audience });
+      expect(copy.lines[0]).toBe(`${OPENER.green} ${NOTE_LATER} ${clause}`);
       expect(copy.lines[0]).not.toContain(RATIONALE);
     }
   });
 
-  it('a guest warm-up opening skips the warm-up note; a zero-game guest gets no clause', () => {
+  it('a guest gets the note too, then the sign-up ask; a zero-game guest gets no clause', () => {
     const firstNoGames = scoreBubbleCopy({
       ...BASE,
-      isWarmup: true,
+      noOwnPuzzles: true,
       isFirstCompletedSession: true,
       band: 'yellow',
       audience: AUDIENCE_NO_GAMES_GUEST,
     });
-    expect(firstNoGames.lines).toEqual([`${OPENER.yellow} ${RATIONALE}`, GUEST_SIGNUP_ASK_SCORE]);
+    expect(firstNoGames.lines).toEqual([
+      `${OPENER.yellow} ${RATIONALE} ${NOTE_FIRST}`,
+      GUEST_SIGNUP_ASK_SCORE,
+    ]);
     const laterNoGames = scoreBubbleCopy({
       ...BASE,
-      isWarmup: true,
+      noOwnPuzzles: true,
       band: 'green',
       audience: AUDIENCE_NO_GAMES_GUEST,
     });
-    expect(laterNoGames.lines).toEqual([OPENER.green, GUEST_SIGNUP_ASK_SCORE]);
+    expect(laterNoGames.lines).toEqual([`${OPENER.green} ${NOTE_LATER}`, GUEST_SIGNUP_ASK_SCORE]);
     const firstWithGames = scoreBubbleCopy({
       ...BASE,
-      isWarmup: true,
+      noOwnPuzzles: true,
       isFirstCompletedSession: true,
       band: 'red',
       audience: AUDIENCE_GUEST_WITH_GAMES,
     });
-    expect(firstWithGames.lines[0]).toBe(`${OPENER.red} ${RATIONALE} ${GUEST_WITH_GAMES_CLAUSE}`);
-    for (const audience of [AUDIENCE_NO_GAMES_GUEST, AUDIENCE_GUEST_WITH_GAMES]) {
-      for (const isFirstCompletedSession of [true, false]) {
-        const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, isFirstCompletedSession, audience });
-        expect(copy.lines[0]).not.toContain('warm-ups');
-      }
-    }
+    expect(firstWithGames.lines[0]).toBe(
+      `${OPENER.red} ${RATIONALE} ${NOTE_FIRST} ${GUEST_WITH_GAMES_CLAUSE}`,
+    );
   });
 
-  it('warm-up line 2 is unchanged in first and later sessions: guest sign-up ask, has_games reminder ask, nothing for no_games', () => {
+  it('the guest sign-up ask is the new line and no longer mentions where the puzzles came from', () => {
+    expect(GUEST_SIGNUP_ASK_SCORE).toBe(
+      'Sign up free and your own blunders become your puzzles. Your streak and everything you ' +
+        'have solved stay exactly where they are.',
+    );
+  });
+
+  it('no-own line 2: guest sign-up ask, has_games reminder ask, nothing for no_games', () => {
     for (const isFirstCompletedSession of [true, false]) {
-      const input = { ...BASE, isWarmup: true, isFirstCompletedSession };
+      const input = { ...BASE, noOwnPuzzles: true, isFirstCompletedSession };
       for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
-        expect(scoreBubbleCopy({ ...input, reminderAsk }).lines[1]).toBe(WARM_ASK[reminderAsk]);
+        expect(scoreBubbleCopy({ ...input, reminderAsk }).lines[1]).toBe(NO_OWN_ASK[reminderAsk]);
       }
       expect(scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST }).lines[1]).toBe(
         GUEST_SIGNUP_ASK_SCORE,
@@ -873,12 +877,12 @@ describe('scoreBubbleCopy', () => {
 
   // Whatever the branch, the bubble is at most two lines and
   // never says how many puzzles come back or when.
-  it('matrix: at most 2 lines and no returning text in any branch, band, audience and reminder ask', () => {
+  it('matrix: at most 2 lines and no returning counts in any branch, band, audience and reminder ask', () => {
     const RETURN_TEXT = /come back|comes back|coming back|in \d+ days|next session\./i;
     const bands = ['green', 'yellow', 'red', null] as const;
     const asks = ['remind_me', 'scan_qr', 'none'] as const;
     const flags = [false, true];
-    const inputs: ScoreBubbleInput[] = flags.flatMap((isWarmup) =>
+    const inputs: ScoreBubbleInput[] = flags.flatMap((noOwnPuzzles) =>
       flags.flatMap((isFirstCompletedSession) =>
         [0, 1].flatMap((missedCount) =>
           bands.flatMap((band) =>
@@ -889,7 +893,7 @@ describe('scoreBubbleCopy', () => {
                 AUDIENCE_NO_GAMES,
                 AUDIENCE_NO_GAMES_GUEST,
               ].map((audience) => ({
-                isWarmup,
+                noOwnPuzzles,
                 isFirstCompletedSession,
                 missedCount,
                 band,
@@ -906,19 +910,18 @@ describe('scoreBubbleCopy', () => {
       const { lines } = scoreBubbleCopy(input);
       expect(lines.length).toBeGreaterThanOrEqual(1);
       expect(lines.length).toBeLessThanOrEqual(2);
-      // The guest sign-up ask is a fixed, unchanged line that says
-      // "your own blunders come back": it is not a returning-counts
-      // sentence, so it is the one allowed match.
-      const checked = lines.filter((line) => line !== GUEST_SIGNUP_ASK_SCORE);
+      // The no-own later note says that nothing comes back yet: it is not a
+      // returning-counts sentence, so it is the one allowed match.
+      const checked = lines.map((line) => line.replace(NOTE_LATER, ''));
       for (const line of checked) expect(line).not.toMatch(RETURN_TEXT);
     }
   });
 
   it('the rationale appears in line 1 only on a first completed session', () => {
-    for (const isWarmup of [false, true]) {
+    for (const noOwnPuzzles of [false, true]) {
       for (const missedCount of [0, 1]) {
-        const first = scoreBubbleCopy({ ...BASE, isWarmup, missedCount, isFirstCompletedSession: true });
-        const later = scoreBubbleCopy({ ...BASE, isWarmup, missedCount, isFirstCompletedSession: false });
+        const first = scoreBubbleCopy({ ...BASE, noOwnPuzzles, missedCount, isFirstCompletedSession: true });
+        const later = scoreBubbleCopy({ ...BASE, noOwnPuzzles, missedCount, isFirstCompletedSession: false });
         expect(first.lines[0]).toContain(RATIONALE);
         expect(later.lines.join(' ')).not.toContain(RATIONALE);
       }
@@ -926,45 +929,46 @@ describe('scoreBubbleCopy', () => {
   });
 });
 
-describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
-  const WARM: ScoreBubbleInput = {
+describe('scoreBubbleCopy, games-less no-own-puzzles audience branch', () => {
+  const NO_OWN: ScoreBubbleInput = {
     missedCount: 0,
     isFirstCompletedSession: false,
-    isWarmup: true,
+    noOwnPuzzles: true,
     reminderAsk: 'remind_me',
     band: 'yellow',
     audience: AUDIENCE_HAS_GAMES,
+    nextSessionSeeYou: 'tomorrow',
   };
   const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
 
   it('a guest sees GUEST_SIGNUP_ASK_SCORE as the second line whenever isGuest is true, for both hasGames values', () => {
-    const guestNoGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
-    const guestWithGames = scoreBubbleCopy({ ...WARM, audience: { hasGames: true, isGuest: true } });
+    const guestNoGames = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_NO_GAMES_GUEST });
+    const guestWithGames = scoreBubbleCopy({ ...NO_OWN, audience: { hasGames: true, isGuest: true } });
     expect(guestNoGames.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
     expect(guestWithGames.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
   });
 
-  it('a registered account with games keeps the WARMUP_REMINDER_ASK_COPY entry, never the sign-up ask', () => {
-    const registeredWithGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
+  it('a registered account with games keeps its reminder ask, never the sign-up ask', () => {
+    const registeredWithGames = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_HAS_GAMES });
     expect(registeredWithGames.lines[1]).not.toBe(GUEST_SIGNUP_ASK_SCORE);
     expect(registeredWithGames.lines[1]).toContain('Turn on Remind me');
   });
 
   it('a registered zero-game account gets the opener only, no reminder or sign-up line', () => {
     for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
-      const copy = scoreBubbleCopy({ ...WARM, reminderAsk, audience: AUDIENCE_NO_GAMES });
+      const copy = scoreBubbleCopy({ ...NO_OWN, reminderAsk, audience: AUDIENCE_NO_GAMES });
       expect(copy.lines).toHaveLength(1);
       expect(copy.lines[0]).toContain('Import your games');
     }
   });
 
-  it('the has_games audience is byte-identical to today\'s warm-up opener clause', () => {
-    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
+  it('the has_games audience is unchanged in the opener clause', () => {
+    const copy = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_HAS_GAMES });
     expect(copy.lines[0]).toContain('Once your games are analyzed, your own mistakes take over.');
   });
 
   it('a guest with games is never told its games will be analyzed', () => {
-    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_GUEST_WITH_GAMES });
+    const copy = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_GUEST_WITH_GAMES });
     expect(copy.lines[0]).not.toMatch(NEVER_ANALYZED);
     expect(copy.lines[0]).not.toContain('Once your games are analyzed');
     expect(copy.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
@@ -972,30 +976,30 @@ describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
 
   it('no zero-game audience is told its games are being analyzed', () => {
     for (const audience of [AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
-      const copy = scoreBubbleCopy({ ...WARM, audience });
+      const copy = scoreBubbleCopy({ ...NO_OWN, audience });
       expect(copy.lines[0]).not.toMatch(NEVER_ANALYZED);
     }
   });
 
   it('a registered zero-game account reads import-only copy in the opener clause', () => {
-    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES });
+    const copy = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_NO_GAMES });
     expect(copy.lines[0]).not.toContain('sign up');
     expect(copy.lines[0]).toContain('Import your games');
   });
 
   it('a zero-game guest opener never repeats the sign-up ask of line 2', () => {
-    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
+    const copy = scoreBubbleCopy({ ...NO_OWN, audience: AUDIENCE_NO_GAMES_GUEST });
     expect(copy.lines[0].toLowerCase()).not.toContain('sign up');
     expect(copy.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
   });
 
-  it('the non-warm-up scoreBubbleCopy variants are audience-independent', () => {
-    const nonWarmupInputs: ScoreBubbleInput[] = [
-      { ...WARM, isWarmup: false, missedCount: 0 },
-      { ...WARM, isWarmup: false, missedCount: 1, isFirstCompletedSession: true },
-      { ...WARM, isWarmup: false, missedCount: 1, isFirstCompletedSession: false },
+  it('the own-puzzles scoreBubbleCopy variants are audience-independent', () => {
+    const ownPuzzlesInputs: ScoreBubbleInput[] = [
+      { ...NO_OWN, noOwnPuzzles: false, missedCount: 0 },
+      { ...NO_OWN, noOwnPuzzles: false, missedCount: 1, isFirstCompletedSession: true },
+      { ...NO_OWN, noOwnPuzzles: false, missedCount: 1, isFirstCompletedSession: false },
     ];
-    for (const input of nonWarmupInputs) {
+    for (const input of ownPuzzlesInputs) {
       const hasGames = scoreBubbleCopy({ ...input, audience: AUDIENCE_HAS_GAMES });
       const noGames = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES });
       const noGamesGuest = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST });

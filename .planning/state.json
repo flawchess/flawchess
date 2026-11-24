@@ -320,9 +320,9 @@
     }
   ],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 17 of 17 · ready to verify"
   },
-  "updated_at": "2026-11-23T20:17:59.241Z"
+  "updated_at": "2026-11-23T22:20:22.377Z"
 }

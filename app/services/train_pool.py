@@ -46,19 +46,25 @@ from sqlalchemy import (
     literal,
     or_,
     select,
+    tablesample,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import undefer
 from sqlalchemy.sql.elements import ColumnElement
-from sqlalchemy.sql.selectable import LateralFromClause
+from sqlalchemy.sql.selectable import CTE, LateralFromClause
 
 from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
-from app.repositories.query_utils import mover_color_expr, player_only_gate
+from app.models.user import User
+from app.repositories.query_utils import (
+    ANALYTICS_INCLUDED_PLATFORMS,
+    mover_color_expr,
+    player_only_gate,
+)
 from app.services.best_move_candidates import mover_color_for_ply
 from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.flaws_service import (
@@ -90,8 +96,8 @@ SHARP_GAP_ES: float = MISTAKE_DROP
 # material, and the sharp share rises 31.9% -> 38.9%. 14,704 of the removed
 # candidates have a runner-up that is outright mating for the mover.
 # Starvation is negligible (median distinct games 462 -> 403; 2 users drop to
-# zero, both already effectively empty and covered by the herring / sharp-
-# filler cross-backfill). The seed's one open question — +2 vs +3 — is
+# zero, both already effectively empty and covered by the herring / foreign-
+# blunder backfill). The seed's one open question — +2 vs +3 — is
 # RESOLVED by the operator in favour of +2.
 #
 # `forcing_line_gate.STILL_WINNING_FLOOR_CP` is numerically identical (also
@@ -199,7 +205,7 @@ HERRING_DEGENERATE_MIN_GAP_ES: float = 0.02
 PuzzleType = Literal["sharp", "soft"]
 
 # The WIRE puzzle type on the pre-attempt payload —
-# PuzzleType plus the red-herring source. A sharp filler reads "sharp".
+# PuzzleType plus the red-herring source.
 TrainPuzzleType = Literal["sharp", "soft", "herring"]
 
 
@@ -374,26 +380,25 @@ def answer_key_for(
     missed_pv_lines: list[Any] | None,
     best_move: str | None,
     ladder: list[Any] | None,
-    filler_solution_uci: str | None,
 ) -> PuzzleAnswerKey:
     """Derive `(key, puzzle_type, runner_up)` for one puzzle from the data the server owns.
 
     Pure, never raises. Per source: a red herring's key is the top of its
-    stored ladder (type "herring"); a sharp filler's key is its CSV
-    `solution_uci` (type "sharp"); an SR item's key is
-    `game_positions.best_move` at the flaw ply, its type is
+    stored ladder (type "herring"); an SR item's or a foreign blunder's key is
+    `game_positions.best_move` at the flaw ply (a foreign blunder reads the game
+    owner's rows, the caller passes them), its type is
     `classify_puzzle_type(live blob, ply-parity mover)` (never a stored color,
     matching `_classify_and_certify_solve`), and its runner-up is the blob's
     `su` only when the type is "sharp".
 
-    Callers pass `missed_pv_lines`/`best_move` only for an SR item and
-    `ladder` only for a herring — a herring row can share (user, game, ply)
+    Callers pass `missed_pv_lines`/`best_move` only for an SR item or a foreign blunder and
+    `ladder` only for a herring. Any other source, including the retired
+    lichess filler (`LEGACY_SHARP_FILLER`, never served now), takes the SR
+    branch on whatever it is given. A herring row can share (user, game, ply)
     with the user's own `game_flaws` row and must not be read as an SR blob.
     """
     if source == DrillSource.RED_HERRING:
         return PuzzleAnswerKey(_herring_key(ladder), "herring", None)
-    if source == DrillSource.SHARP_FILLER:
-        return PuzzleAnswerKey(_non_empty_str(filler_solution_uci), "sharp", None)
     puzzle_type = classify_puzzle_type(missed_pv_lines, mover_color_for_ply(ply))
     runner_up = _sharp_runner_up(missed_pv_lines) if puzzle_type == "sharp" else None
     return PuzzleAnswerKey(_non_empty_str(best_move), puzzle_type, runner_up)
@@ -660,8 +665,8 @@ def server_graded_moves_for(
     cannot drift. Pure, never raises.
 
     Per source: a herring grades its stored ladder's good band (needs the
-    STORED `herring_mover_color`, never ply parity; None gives `[]`); a sharp
-    filler has no graded set; an SR item grades its blob's vetted entries
+    STORED `herring_mover_color`, never ply parity; None gives `[]`); an SR item
+    or a foreign blunder grades its blob's vetted entries
     (ply-parity mover) plus, for a sharp key, the runner-up appended AFTER them
     so the key wins a UCI tie. A None/empty blob gives `[]`.
 
@@ -675,7 +680,7 @@ def server_graded_moves_for(
         if herring_mover_color is None:
             return []
         return graded_moves_from_vetted(vetted_moves_from_ladder(ladder, herring_mover_color))
-    if source == DrillSource.SHARP_FILLER or not missed_pv_lines:
+    if not missed_pv_lines:
         return []
     mover = mover_color_for_ply(ply)
     node = missed_pv_lines[0]
@@ -1001,6 +1006,32 @@ def _prior_position_lateral(
     )
 
 
+def servable_blunder_predicates(
+    expected_score: ColumnElement[float],
+) -> tuple[ColumnElement[bool], ...]:
+    """The six predicates that make a blunder servable as a Train puzzle (Phase 263 D-06).
+
+    Blunder severity, the mover is the game's owner (`player_only_gate`, never a hand-rolled
+    `ply % 2`), a non-empty `missed_pv_lines` answer key, the dead band, second best not winning,
+    and the PRE-flaw-move winnability floor on `expected_score`. One definition shared by the own
+    pool (`pool_entry_stmt`) and the foreign draw (`foreign_band_candidates_stmt`), so a foreign
+    blunder can never pass a looser test than an own one. The caller scopes the rows (the owner's
+    `GameFlaw.user_id`); `GameFlaw` and `Game` must be in the FROM clause.
+
+    Args:
+        expected_score: The mover's expected score before the flaw move, from
+            `expected_score_sql` over the `_prior_position_lateral` row.
+    """
+    return (
+        GameFlaw.severity == _SEVERITY_BLUNDER,
+        player_only_gate(GameFlaw.ply, Game.user_color),
+        answer_key_present(GameFlaw.missed_pv_lines),
+        dead_band_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+        second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
+        expected_score >= WINNABILITY_FLOOR_ES,
+    )
+
+
 def pool_entry_stmt(user_id: int) -> Select[tuple[GameFlaw, Game]]:
     """Own-blunder pool-entry candidates for `user_id`.
 
@@ -1009,7 +1040,9 @@ def pool_entry_stmt(user_id: int) -> Select[tuple[GameFlaw, Game]]:
     == blunder, a non-empty `missed_pv_lines` answer-key blob, and the
     PRE-flaw-move position (a correlated LATERAL lookup,
     `_prior_position_lateral`, on `ply - 1`, LEFT-joined since a ply-0 flaw has
-    no `ply - 1` row to match) clearing `WINNABILITY_FLOOR_ES`.
+    no `ply - 1` row to match) clearing `WINNABILITY_FLOOR_ES`. The six
+    servability predicates live in `servable_blunder_predicates`, shared with
+    the foreign draw.
 
     `.options(undefer(GameFlaw.missed_pv_lines))` is mandatory here —
     `missed_pv_lines` is `deferred=True` by design (structural leak guard,
@@ -1041,14 +1074,140 @@ def pool_entry_stmt(user_id: int) -> Select[tuple[GameFlaw, Game]]:
         .options(undefer(GameFlaw.missed_pv_lines))
         .where(
             GameFlaw.user_id == user_id,
-            GameFlaw.severity == _SEVERITY_BLUNDER,
-            player_only_gate(GameFlaw.ply, Game.user_color),
-            answer_key_present(GameFlaw.missed_pv_lines),
-            dead_band_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
-            second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
-            expected_score >= WINNABILITY_FLOOR_ES,
+            *servable_blunder_predicates(expected_score),
         )
     )
+
+
+# Row shape of the foreign draw statements: game id, ply, answer-key blob, platform, time control
+# bucket and string, and the game owner's raw rating.
+ForeignCandidateSelect = Select[
+    tuple[int, int, list[Any] | None, str, str | None, str | None, int | None]
+]
+
+
+def _foreign_sample_cte(
+    solver_id: int,
+    *,
+    sample_percent: float,
+    raw_low: int | None,
+    raw_high: int | None,
+    level: float | None,
+    game_limit: int,
+) -> CTE:
+    """A small TABLESAMPLE of other users' games, one row per game with the owner's raw rating.
+
+    The foreign draw's stage one (Phase 263 D-01, D-05). Only games of other, non-guest users
+    qualify (`user_id != solver_id`, `users.is_guest` false), restricted to the platforms whose
+    rating can be pinned (`ANALYTICS_INCLUDED_PLATFORMS`, the pinned Elo needs a chess.com or
+    lichess rating; this is the foreign prefilter, not a servability predicate).
+
+    Band mode (`raw_low` / `raw_high` set): the owner's raw rating lies in the range, rows come
+    in random order and `game_limit` of them are kept. The explicit `ORDER BY random()` matters:
+    without it the LIMIT keeps the first physical pages of the sample, a clustered, biased slice.
+    Nearest mode (`level` set): rows with a rating, nearest to `level` first, `game_limit` kept.
+    """
+    sampled = tablesample(Game.__table__, func.system(sample_percent), name="foreign_sample")
+    owner_rating = case(
+        (sampled.c.user_color == "white", sampled.c.white_rating),
+        else_=sampled.c.black_rating,
+    )
+    stmt = (
+        select(sampled.c.id.label("id"), owner_rating.label("owner_rating"))
+        .join(User, User.id == sampled.c.user_id)
+        .where(
+            sampled.c.user_id != solver_id,
+            User.is_guest.is_(False),
+            sampled.c.platform.in_(ANALYTICS_INCLUDED_PLATFORMS),
+        )
+    )
+    if level is not None:
+        stmt = stmt.where(owner_rating.isnot(None)).order_by(func.abs(owner_rating - level))
+    else:
+        stmt = stmt.where(owner_rating.between(raw_low, raw_high)).order_by(func.random())
+    return stmt.limit(game_limit).cte("foreign_games")
+
+
+def _foreign_servable_blunders_stmt(
+    games: CTE,
+) -> ForeignCandidateSelect:
+    """Stage two of the foreign draw: servable blunders of the sampled games.
+
+    Joins each sampled game to its OWNER's `game_flaws` rows (`GameFlaw.user_id == Game.user_id`)
+    and applies `servable_blunder_predicates`, the same six predicates `pool_entry_stmt` uses
+    (D-06, no extra servability predicate: no `full_evals_completed_at`, no facepalm cut, D-14).
+    Selects light columns only: no PGN, no user id, no username (D-21), so nothing that
+    identifies the owner leaves the statement.
+    """
+    prior_position = _prior_position_lateral(
+        name="foreign_prior_position",
+        user_id_col=GameFlaw.user_id,
+        game_id_col=GameFlaw.game_id,
+        ply_expr=GameFlaw.ply - 1,
+    )
+    expected_score = expected_score_sql(
+        prior_position.c.eval_cp, prior_position.c.eval_mate, Game.user_color
+    )
+    return (
+        select(
+            GameFlaw.game_id,
+            GameFlaw.ply,
+            GameFlaw.missed_pv_lines,
+            Game.platform,
+            Game.time_control_bucket,
+            Game.time_control_str,
+            games.c.owner_rating,
+        )
+        .select_from(games)
+        .join(Game, Game.id == games.c.id)
+        .join(
+            GameFlaw,
+            and_(GameFlaw.game_id == Game.id, GameFlaw.user_id == Game.user_id),
+        )
+        .outerjoin(prior_position, true())
+        .where(*servable_blunder_predicates(expected_score))
+    )
+
+
+def foreign_band_candidates_stmt(
+    solver_id: int, *, sample_percent: float, raw_low: int, raw_high: int, game_limit: int
+) -> ForeignCandidateSelect:
+    """Servable blunders from a random sample of other users' games inside a raw rating band.
+
+    Phase 263 D-01, D-05, D-06: other users' non-guest games whose owner rating at game time is
+    in `[raw_low, raw_high]` (the caller widens the band by `FOREIGN_RAW_PREFILTER_MARGIN` and
+    checks the exact band on the pinned Elo in Python). See `_foreign_sample_cte` and
+    `_foreign_servable_blunders_stmt`.
+    """
+    games = _foreign_sample_cte(
+        solver_id,
+        sample_percent=sample_percent,
+        raw_low=raw_low,
+        raw_high=raw_high,
+        level=None,
+        game_limit=game_limit,
+    )
+    return _foreign_servable_blunders_stmt(games)
+
+
+def foreign_nearest_candidates_stmt(
+    solver_id: int, *, sample_percent: float, level: float, game_limit: int
+) -> ForeignCandidateSelect:
+    """Servable blunders from the sampled games nearest to `level` (the band's thin-tail fallback).
+
+    Same filters as `foreign_band_candidates_stmt` with no rating range: the `game_limit` sampled
+    games whose owner rating is closest to `level` are kept (a very low or very high level, or a
+    thin sample, where the band holds too little).
+    """
+    games = _foreign_sample_cte(
+        solver_id,
+        sample_percent=sample_percent,
+        raw_low=None,
+        raw_high=None,
+        level=level,
+        game_limit=game_limit,
+    )
+    return _foreign_servable_blunders_stmt(games)
 
 
 # The 5-move ladder's first/last index — named rather than bare `0`/`4` so

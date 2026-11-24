@@ -95,7 +95,7 @@ const PUZZLE_SESSION: TrainSessionResponse = {
     { position: 1, game_id: 100, ply: 20, fen: START_FEN, side_to_move: 'white', last_move_uci: 'd7d5' },
   ],
   solved_results: [],
-  is_warmup: false,
+  own_puzzle_count: 5,
 };
 
 const SETTINGS: TrainSettingsResponse = {

@@ -68,9 +68,15 @@ export const LEADERBOARD_INFO_BLUNDER_CHECK_SCORE_COPY =
   'Score % is your share of the points on offer this week. At equal Score %, more sequences ranks higher.';
 export const LEADERBOARD_INFO_MEDALS_COPY =
   "The top 3 on each board win a medal every week. The icons next to a name show that player's medals on this board.";
-/** Viewer has Points entries but no Accuracy entry: never a misleading count. */
+/**
+ * Viewer has Points entries but no Accuracy entry: never a misleading count.
+ *
+ * Bug fix (Phase 263 review WR-04): this read "tactics puzzles don't count here", the name of
+ * the lichess fillers Phase 263 deleted. The puzzles that earn points but stay off Accuracy
+ * are now similarly rated players' blunders (own puzzles and red herrings count).
+ */
 export const ACCURACY_NOT_ENTERED_COPY =
-  "You're not on this board yet: tactics puzzles don't count here.";
+  "You're not on this board yet: similarly rated players' blunders don't count here.";
 export const ACCURACY_EMPTY_COPY = 'No accuracy entries yet this week.';
 export const EMPTY_WEEK_COPY = 'No one has trained yet this week. Be the first.';
 export const ENTER_BOARD_HINT_COPY = "Solve a puzzle to enter this week's board.";
@@ -242,7 +248,7 @@ export function viewerHint(
 ): { id: ViewerHintId; text: string } | null {
   // The response keys are the board kinds, so data[kind] is the active board.
   if (data[kind].viewer !== null) return null;
-  // On the Points board but not on Accuracy: only tactics puzzles so far.
+  // On the Points board but not on Accuracy: only similarly rated players' blunders so far.
   if (kind === 'accuracy' && data.points.viewer !== null) {
     return { id: 'accuracy-not-entered', text: ACCURACY_NOT_ENTERED_COPY };
   }
@@ -348,7 +354,7 @@ export interface ScoreRankLine {
 
 /**
  * The score screen's rank lines: one per board the viewer is on, the specific
- * not-entered line when only tactics puzzles kept them off Accuracy,
+ * not-entered line when only similarly rated players' blunders kept them off Accuracy,
  * and a closing "Hidden from others" for an opted-out viewer.
  */
 export function scoreRankLines(data: TrainLeaderboardResponse): ScoreRankLine[] {

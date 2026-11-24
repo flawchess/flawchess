@@ -1012,6 +1012,75 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 262-07-PLAN.md — release: constants, changelog, gate, prod dry run, deploy, prod pass, caught-rate switch
 
+### Phase 263: Similarly Rated Players' Blunders Replace the Lichess Fillers (SEED-261120-jnw)
+
+**Goal**: When a personalized-puzzle session is short of own material, fill it with blunders from similarly
+rated players' games and delete the lichess filler serving path. The 208 committed lichess puzzles are rated
+1004 to 1399 for every user and are a different puzzle type from the product (always sharp, one solution, no
+vetted alternatives), so a new user's first session misrepresents what follows. A foreign blunder carries the
+same answer-key blob as an own puzzle and grades on the normal path. Owner decisions of 2026-11-20 and
+2026-11-23, the prod measurements and the code check are in the seed.
+
+- **Swap the supply:** blunders from non-guest users near the solver's rating replace the lichess fillers.
+  Never a guest's game, never the solver's own. Rating comes from blunder check's `user_level_elo` (median
+  pinned Elo, else the stored level, else 1500), with its rating band, TABLESAMPLE prefilter and nearest-first
+  fallback as the pattern. `train_pool.pool_entry_stmt`'s predicates define a servable foreign blunder.
+- **Pure filler only:** served only when own supply is short, the same trigger as today's
+  `_backfill_sharp_fillers`. Not a standing share of every session; `HERRING_SHARE` is unchanged.
+- **A third source stays:** a foreign blunder has no SR state, no `drill_items` row and no open-game link, and
+  stays off the Accuracy board. It needs its own per-user no-repeat key and respects the one-puzzle-per-game
+  session cap.
+- **Delete the serving path, keep the history:** drop `app/data/sharp_filler_puzzles.csv`,
+  `app/services/sharp_filler.py`, `scripts/gen_sharp_filler_set.py` and every composition, grading and reveal
+  branch for a lichess filler. The ~795 solved `source = 2` rows stay as inert history, so session counts,
+  points-board totals, frozen weekly standings and streaks are untouched. An unsolved filler row in a session
+  open at deploy must not pin that session open; a reveal on an old filler returns `not_found`.
+- **Retire the warm-up concept:** remove `drill_sessions.is_warmup`, `TrainSessionResponse.is_warmup` and every
+  `isWarmup` branch in the frontend. The welcome line must stay truthful for a user with no own puzzles, and the
+  "from a similarly rated player's game" label must not repeat on every puzzle of an all-foreign session.
+- **First step in discuss-phase:** measure on prod how many blunders per rating band clear `pool_entry_stmt`'s
+  predicates. The seed counts games, not servable blunders; 2400+ comes from 21 accounts.
+- **Open for discuss and planning:** snapshot or live join for a foreign puzzle (a foreign game can be deleted
+  mid-session or later; session review and Activity must survive it), first-session ordering now that a filler
+  can be soft (`_first_session_order` moves the first sharp puzzle to slot 0), pool eligibility and short
+  sessions on an empty foreign pool (fresh dev DB, tests; `sharp_filler_available()` is always true today),
+  whether to drop `drill_solves.sharp_puzzle_id`, and acceptance criteria.
+- **Out of scope:** a standing foreign share in every session, any change to the herring pool or
+  `HERRING_SHARE`, changes to blunder check's own selection, deleting or rewriting the old filler solves.
+
+**Depends on**: nothing unbuilt. Reuses blunder check's rating helpers (Phases 250 and 251) and the Train pool
+predicates. Independent of Phase 262 (merged to `main` 2026-11-23; this branch is rebased onto it).
+**Requirements**: none mapped; the contract is the seed decisions and 263-CONTEXT.md once written
+**Plans:** 10/10 plans executed
+
+Plans:
+
+Execution note: the phase runs in a single worktree, so plans in the same wave execute one after another.
+
+**Wave 1**
+- [x] 263-01-PLAN.md — draw read path with the suite stub, then the tracer: a short session gets a similarly rated player's blunder, keyed and graded from the owner's rows (D-01, D-02, D-05, D-06, D-07, D-14, D-15, D-17)
+- [x] 263-02-PLAN.md — client: own_puzzle_count contract, D-11 tail, D-12 welcome, D-13 start sentence, no-own score copy, no warm-up branch left (D-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 263-03-PLAN.md — owner-keyed resume, completion and composition types; D-16 sharp preference; draw decisions under test (D-07, D-08, D-16)
+- [x] 263-04-PLAN.md — client foreign reveal: neutral game line from game_info, neutral move labels, Analyze opens the position only (D-10, D-20, D-21)
+- [x] 263-05-PLAN.md — Accuracy board counts own puzzles and herrings only; Activity row for foreign blunders and the retired filler row (D-18, D-19)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 263-06-PLAN.md — server foreign reveal: owner move, owner type, neutral game_info, game_id withheld, 404 after deletion (D-09, D-20, D-21)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 263-07-PLAN.md — tests onto the foreign stage first, then remove the lichess composition stage; eligibility follows a written session (D-02, D-03)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 263-08-PLAN.md — legacy filler rows inert (skipped, never pinning, still serialized), value 2 renamed, the lichess set and service deleted (D-03)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 263-09-PLAN.md — own_puzzle_count server side, lazy completion on resume, migration c4e6a8b0d375 (one-way, single confirm) and migration tests (D-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 263-10-PLAN.md — pre-merge gate, CHANGELOG, prod EXPLAIN statements (run before the merge and after the deploy), UAT list with the manual dev DB upgrade
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

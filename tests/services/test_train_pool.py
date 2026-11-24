@@ -247,7 +247,6 @@ def _sr_key(
         missed_pv_lines=blob,
         best_move=best_move,
         ladder=None,
-        filler_solution_uci=None,
     )
 
 
@@ -334,7 +333,6 @@ class TestAnswerKeyFor:
             missed_pv_lines=None,
             best_move=None,
             ladder=ladder,
-            filler_solution_uci=None,
         )
         assert got == PuzzleAnswerKey(expected_key, "herring", None)
 
@@ -347,24 +345,37 @@ class TestAnswerKeyFor:
             missed_pv_lines=[_SHARP_NODE],
             best_move="g1f3",
             ladder=_LADDER,
-            filler_solution_uci=None,
         )
         assert got == PuzzleAnswerKey("e2e4", "herring", None)
 
     @pytest.mark.parametrize(
-        ("solution", "expected_key"),
-        [pytest.param("d2d4", "d2d4", id="solution"), pytest.param(None, None, id="no-solution")],
+        ("blob", "best_move", "expected"),
+        [
+            pytest.param(
+                [_SHARP_NODE],
+                "g1f3",
+                PuzzleAnswerKey("g1f3", "sharp", "b1c3"),
+                id="sharp-keeps-runner-up",
+            ),
+            pytest.param(
+                [_SOFT_NODE], "g1f3", PuzzleAnswerKey("g1f3", "soft", None), id="soft-no-runner-up"
+            ),
+        ],
     )
-    def test_sharp_filler(self, solution: str | None, expected_key: str | None) -> None:
+    def test_answer_key_for_foreign_blunder_takes_the_sr_branch(
+        self, blob: list[Any], best_move: str, expected: PuzzleAnswerKey
+    ) -> None:
+        """A foreign blunder derives its key like an SR item: best move, blob-classified type,
+        and the blob's runner-up when sharp (the caller passes the game OWNER's rows)."""
         got = answer_key_for(
-            source=DrillSource.SHARP_FILLER,
+            source=DrillSource.FOREIGN_BLUNDER,
             ply=_EVEN_PLY,
-            missed_pv_lines=None,
-            best_move=None,
+            missed_pv_lines=blob,
+            best_move=best_move,
             ladder=None,
-            filler_solution_uci=solution,
         )
-        assert got == PuzzleAnswerKey(expected_key, "sharp", None)
+        assert got == expected
+        assert got == _sr_key(blob=blob, best_move=best_move)
 
 
 class TestLegalAnswerKey:
@@ -789,7 +800,6 @@ def _graded_for(
     best_move: str | None = None,
     ladder: list[Any] | None = None,
     herring_mover_color: Literal["white", "black"] | None = None,
-    solution: str | None = None,
 ) -> list[tuple[str, str]]:
     """(uci, tier) of `server_graded_moves_for`, with the RAW key from `answer_key_for`."""
     key = answer_key_for(
@@ -798,7 +808,6 @@ def _graded_for(
         missed_pv_lines=blob,
         best_move=best_move,
         ladder=ladder,
-        filler_solution_uci=solution,
     )
     graded = server_graded_moves_for(
         source=source,
@@ -875,8 +884,17 @@ class TestServerGradedMovesFor:
         )
         assert got == [("e2e4", "good"), ("d2d4", "good"), ("g1f3", "good")]
 
-    def test_sharp_filler_is_empty(self) -> None:
-        assert _graded_for(source=DrillSource.SHARP_FILLER, solution="d2d4") == []
+    def test_server_graded_moves_for_foreign_blunder_takes_the_sr_branch(self) -> None:
+        """A foreign blunder grades its (owner's) blob exactly like an SR item: the vetted entries,
+        then the sharp runner-up."""
+        blob = [_SHARP_NODE]
+        assert _graded_for(
+            source=DrillSource.FOREIGN_BLUNDER, blob=blob, best_move="g1f3"
+        ) == _graded_for(blob=blob, best_move="g1f3")
+        assert _graded_for(source=DrillSource.FOREIGN_BLUNDER, blob=blob, best_move="g1f3") == [
+            ("b1c3", "wrong")
+        ]
+        assert _graded_for(source=DrillSource.FOREIGN_BLUNDER, blob=None, best_move="g1f3") == []
 
     def test_matches_the_building_blocks_for_a_soft_node(self) -> None:
         """Parity with the building blocks the solve path used before server-side grading (no grading change)."""

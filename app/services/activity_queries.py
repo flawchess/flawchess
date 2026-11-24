@@ -682,9 +682,12 @@ async def fetch_puzzle_difficulty(
     `DrillSource` value that has solves; wrong moves are
     `solves - good - inaccuracy`. Source is the only split because it already
     fixes game ownership: an SR item is always the solver's own game, a red
-    herring comes from the cross-user pool (another player's game), and a
-    sharp filler is a lichess puzzle with no game. A row recorded before the
-    tiered grade existed has `move_quality` NULL and falls back to
+    herring comes from the cross-user pool (another player's game), a similar
+    player's blunder (`FOREIGN_BLUNDER`) is another non-guest user's game near
+    the solver's rating, and a retired lichess filler (`LEGACY_SHARP_FILLER`, history
+    only) is a lichess puzzle with no game. Each source keeps its own row, the
+    retired filler is never merged into the foreign blunder row. A row
+    recorded before the tiered grade existed has `move_quality` NULL and falls back to
     `correct_move` (right = good, there was no inaccuracy tier). Same solved
     definition as `fetch_solves`, but bounded by the window start, not the
     lead-in: this is a point-in-time split, nothing is rolled.

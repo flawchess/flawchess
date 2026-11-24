@@ -382,8 +382,9 @@ async def puzzle_cooled_pairs(
     check until `CROSS_MODE_COOLDOWN_DAYS` local days after its last serve. `since` is
     `today - CROSS_MODE_COOLDOWN_DAYS` from the caller's resolved local today, compared with the
     puzzle session's local `session_date`. The scan starts from drill_sessions (filtered on
-    user_id and session_date) because drill_solves has no user index. Herring and sharp-filler
-    rows carry no own flaw, and a row whose game was deleted has a NULL `game_id`.
+    user_id and session_date) because drill_solves has no user index. Only own puzzle rows
+    (`source == SR_ITEM`) count: herring and foreign-blunder rows carry no own flaw. A row whose game was
+    deleted has a NULL `game_id`.
     """
     rows = (
         await session.execute(

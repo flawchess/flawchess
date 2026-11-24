@@ -38,7 +38,8 @@
  * The first-completed-session copy (the practice rationale in line 1) shows
  * exactly once, gated on `useTrainSettings().data.sr_explained_at === null`
  * and stamped in ANY branch that rendered it: without that, an
- * all-warm-up guest would read the rationale every session.
+ * guest whose sessions all held no own puzzles would read the rationale every
+ * session.
  *
  * `TrainScoreScreenView` is the screen from props, with no fetching, writes or
  * sound, so the admin "Session feedback demo" shows production markup.
@@ -103,17 +104,18 @@ export interface TrainScoreScreenProps {
    * resumed/reloaded/handed off. The score bubble's source for the miss count.
    */
   solvedOutcomes: SolvedResult[];
-  /** `TrainSessionResponse.is_warmup` — a warm-up session (zero surviving
-   * SR items) gets its own bubble variant regardless of `sr_explained_at`. */
-  isWarmup: boolean;
+  /** `TrainSessionResponse.own_puzzle_count === 0` — the session held no puzzle
+   * from the user's own games, which gets its own bubble variant regardless of
+   * `sr_explained_at`. */
+  noOwnPuzzles: boolean;
   /** True when the account has at least one imported game
    * (`hasImportedGames`, the shared user-profile hook's data), passed down
-   * from `Train.tsx`. Selects the warm-up bubble's zero-game copy variant. */
+   * from `Train.tsx`. Selects the no-own-puzzles bubble's zero-game copy variant. */
   hasGames: boolean;
   /** Sourced from the shared user-profile hook's data
    * via `Train.tsx`, never the auth hook's user object (FLAWCHESS-64), and
    * never read here directly — this component takes props only, so it
-   * gains no complexity from the profile query. Replaces the warm-up
+   * gains no complexity from the profile query. Replaces the no-own-puzzles
    * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`: a guest
    * gets no reminder slot). */
   isGuest: boolean;
@@ -136,7 +138,7 @@ export function TrainScoreScreen({
   nextSessionDate,
   onDone,
   solvedOutcomes,
-  isWarmup,
+  noOwnPuzzles,
   hasGames,
   isGuest,
   sessionId,
@@ -194,7 +196,7 @@ export function TrainScoreScreen({
       : scoreBubbleCopy({
           missedCount,
           isFirstCompletedSession: firstExplanation,
-          isWarmup,
+          noOwnPuzzles,
           reminderAsk,
           band,
           audience: { hasGames, isGuest } satisfies TrainCopyAudience,
@@ -202,12 +204,13 @@ export function TrainScoreScreen({
         });
 
   // Stamp whenever the first-completed variant actually rendered,
-  // in any branch (warm-up, nothing missed, regular). An explanation that was
-  // never rendered must never be stamped (`bubbleCopy` is still null until
-  // settings resolve), but one that WAS rendered in a warm-up or perfect
-  // session must be, or an all-warm-up guest would see the rationale every
-  // session. Accepted trade-off: a user whose first completed session was a
-  // warm-up never later sees the "Reminders build the habit" line.
+  // in any branch (no own puzzles, nothing missed, regular). An explanation that
+  // was never rendered must never be stamped (`bubbleCopy` is still null until
+  // settings resolve), but one that WAS rendered in a no-own-puzzles or perfect
+  // session must be, or a guest whose sessions all held no own puzzles would see
+  // the rationale every session. Accepted trade-off: a user whose first completed
+  // session held no own puzzles never later sees the "Reminders build the habit"
+  // line.
   const showsFirstSessionCopy = bubbleCopy !== null && firstExplanation;
   const stampedRef = useRef(false);
   useEffect(() => {

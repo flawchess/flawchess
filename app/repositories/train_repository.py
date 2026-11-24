@@ -53,10 +53,11 @@ from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
 from app.repositories import blunder_check_repository
 from app.repositories.game_flaws_repository import _SEVERITY_INT
-from app.schemas.normalization import TimeControlBucket
+from app.schemas.normalization import Platform, TimeControlBucket
 from app.schemas.train import (
     ArchiveList,
     ArchiveSeverity,
+    DrillSourceWire,
     OnboardingStep,
     PhoneGrade,
     SolveRecheck,
@@ -65,11 +66,19 @@ from app.services.best_move_candidates import mover_color_for_ply
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
 from app.services.facepalm_score import facepalm_expr
 from app.services.flaws_service import classify_severity
-from app.services.sharp_filler import (
-    SHARP_SET_BY_ID,
-    pick_sharp_fillers,
-    served_sharp_ids_stmt,
-    sharp_filler_available,
+from app.services import train_foreign
+from app.services.blunder_check_selection import (
+    USER_LEVEL_SCAN_GAMES,
+    level_fallback_elo,
+    user_level_elo,
+)
+from app.services.train_foreign import (
+    FOREIGN_FILLER_RECONSTRUCT_SLACK,
+    ForeignCandidate,
+    ForeignDrawStep,
+    foreign_game_limit,
+    foreign_raw_bounds,
+    pick_foreign_candidates,
 )
 from app.services.train_pool import (
     MAX_ITEMS_PER_GAME_PER_SESSION,
@@ -84,6 +93,8 @@ from app.services.train_pool import (
     compose_slots,
     dead_band_admissible,
     fen_and_last_move_at_ply,
+    foreign_band_candidates_stmt,
+    foreign_nearest_candidates_stmt,
     replay_at_ply,
     full_fen_at_ply,
     herring_stmt,
@@ -277,14 +288,14 @@ class ComposedSolvedResult:
 
     `source`/`item_status`/`due_date` mirror `SolveResponse`'s own nullability
     exactly — `item_status`/`due_date` are
-    `None` for a red-herring or sharp-filler solve (no SR bookkeeping),
+    `None` for a red-herring, foreign-blunder or legacy-filler solve (no SR bookkeeping),
     populated via the same `_STATUS_LITERAL`/`_wire_source` mappings
     `record_solve`/`reveal_for_puzzle` already use, never re-derived.
     """
 
     correct_guess: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     item_status: Literal["active", "mastered", "parked"] | None
     due_date: datetime.date | None
 
@@ -310,14 +321,13 @@ class ComposedSession:
     `position` order — `[]` for a fresh composition and for the
     nothing-qualified case. `solved_count` always equals its length.
 
-    `is_warmup` is the frozen-at-composition warm-up discriminant:
-    `len(surviving_sr_keys) == 0` at the moment the session was (re-)composed,
-    never a ratio or a threshold, and never derived from session ordinal,
-    session count, `session_date`, or account age. `False` for the
-    nothing-qualified case (`session_id is None`). `_resume_session` reads it
-    straight off the stored `drill_sessions.is_warmup` column rather than
-    recomputing it, so the label cannot be shed mid-session when the ES
-    lottery lands new material.
+    `own_puzzle_count` is the number of the session's `SR_ITEM` rows (the user's own blunders),
+    every position, solved or not. It is derived per response (`len(surviving_sr_keys)` on a
+    fresh composition, one COUNT on resume) and never persisted; it is stable across resume
+    because a `drill_solves` row never changes source. The client reads it only as `=== 0`
+    ("no own puzzles", Phase 263 D-12/D-13). Phase 206 D-04 rejected an `sr_puzzle_count`
+    field to avoid partial-shortfall notices; that concern left with the persisted session
+    flag (Phase 263 D-04), and the "no own puzzles" fact is needed without a session flag.
     """
 
     session_id: int | None
@@ -329,7 +339,7 @@ class ComposedSession:
     blob_pending_count: int
     puzzles: list[ComposedPuzzle]
     solved_results: list[ComposedSolvedResult]
-    is_warmup: bool
+    own_puzzle_count: int
 
 
 async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsRow | None:
@@ -967,13 +977,13 @@ async def _stamp_pool_eligibility(
         settings_row: The user's current `TrainSettingsRow`.
         today: The local calendar day (from `local_today`).
         has_material: `has_drill_items OR has_pool_candidates` from
-            `_material_flags`, resolved once by the caller. A caller composing
-            a session may additionally OR in `sharp_filler_available()` — a
-            filler-only session is still a real, completable session, so the
-            eligibility floor `tick_days` reads must exist for a warm-up-only
-            user too. Both callers also OR in `blunder_check_per_session > 0`
-            (Phase 251): blunder check always has foreign supply, so a user
-            with it on has material from day one.
+            `_material_flags`, resolved once by the caller. Both callers also
+            OR in `blunder_check_per_session > 0` (Phase 251): blunder check
+            always has foreign supply, so a user with it on has material from
+            day one. A caller composing a session calls again with `True`
+            once a session row is written: a foreign-blunder-only session is
+            a real, completable session, so the eligibility floor `tick_days`
+            reads must exist for a user with no own puzzles too (Phase 263).
 
     Returns:
         `settings_row.pool_eligible_since` unchanged when already set;
@@ -2126,6 +2136,12 @@ async def load_session_puzzles(
       being CASCADE-deleted, so an orphaned SR row is unservable but must not
       be served or crash) OR when its backing `game_flaws` row has since
       vanished under reclassification (lazy eviction).
+    - A `FOREIGN_BLUNDER` row follows the same rule as an orphaned own puzzle
+      (Phase 263 D-08): dropped when the stranger's game was deleted or the
+      stranger's flaw row vanished, so a puzzle the solver can no longer be
+      served never pins the session open (`_mark_session_complete_if_done`
+      carries the matching exclusion). Its FEN is rebuilt from the stranger's
+      PGN and the wire `game_id` stays None.
 
     Rows whose FEN will not reconstruct are also skipped. The session's
     frozen `puzzle_count` is returned UNCHANGED by this function — callers
@@ -2153,40 +2169,19 @@ async def load_session_puzzles(
     if not rows:
         return []
 
-    sr_game_ids = {
+    flaw_game_ids = {
         solve.game_id
         for solve, _game, _herring in rows
-        if solve.source == DrillSource.SR_ITEM and solve.game_id is not None
+        if solve.source in _OWNER_KEYED_SOURCES and solve.game_id is not None
     }
-    existing_flaw_keys: set[tuple[int, int]] = set()
-    if sr_game_ids:
-        flaw_rows = await session.execute(
-            select(GameFlaw.game_id, GameFlaw.ply).where(
-                GameFlaw.user_id == user_id, GameFlaw.game_id.in_(sr_game_ids)
-            )
-        )
-        existing_flaw_keys = {(gid, ply) for gid, ply in flaw_rows.all()}
+    existing_flaw_keys = await _existing_owner_flaw_keys(session, flaw_game_ids)
 
     puzzles: list[ComposedPuzzle] = []
     for solve, game, herring_row in rows:
-        if solve.source == DrillSource.SHARP_FILLER:
-            # Resolved straight from the in-memory sharp set by
-            # sharp_puzzle_id — no games/herring_pool join needed (both
-            # outer joins above naturally yield None for a sharp row).
-            sharp_row = SHARP_SET_BY_ID.get(solve.sharp_puzzle_id)
-            if sharp_row is None:
-                continue  # data file entry missing (should not happen; committed file is static)
-            puzzles.append(
-                ComposedPuzzle(
-                    position=solve.position,
-                    game_id=None,
-                    ply=solve.ply,
-                    fen=sharp_row.fen,
-                    side_to_move=mover_color_for_ply(solve.ply),
-                    last_move_uci=sharp_row.first_move_uci,
-                    herring_pool_id=None,
-                )
-            )
+        if solve.source == DrillSource.LEGACY_SHARP_FILLER:
+            # The lichess set is gone (Phase 263 D-03): an unsolved legacy row from a session
+            # that was open at deploy cannot be served, so resume skips it. It is also excluded
+            # from the completion check, so it never holds the session open.
             continue
 
         if solve.source == DrillSource.RED_HERRING:
@@ -2205,9 +2200,11 @@ async def load_session_puzzles(
             )
             continue
 
-        # SR_ITEM
+        # SR_ITEM and FOREIGN_BLUNDER share one reconstruction: both rebuild the FEN from the
+        # game's PGN and check the flaw row keyed on the game OWNER (the solver for SR, the
+        # stranger for a foreign puzzle). Only the wire game_id differs (D-10, D-21).
         if game is None:
-            continue  # orphaned by a source-game deletion: lazily evicted
+            continue  # orphaned by a source-game deletion (D-08 for a foreign game): evicted
         # The outer join above guarantees game.id == solve.game_id here, so
         # solve.game_id is non-None whenever game is not None — narrowed
         # explicitly for ty rather than suppressed.
@@ -2221,7 +2218,7 @@ async def load_session_puzzles(
         puzzles.append(
             ComposedPuzzle(
                 position=solve.position,
-                game_id=solve.game_id,
+                game_id=_wire_game_id(solve.source, solve.game_id),
                 ply=solve.ply,
                 fen=fen,
                 side_to_move=mover_color_for_ply(solve.ply),
@@ -2232,6 +2229,33 @@ async def load_session_puzzles(
     return puzzles
 
 
+# Sources whose puzzle is backed by a live game_flaws row on the game's OWNER.
+_OWNER_KEYED_SOURCES: tuple[DrillSource, DrillSource] = (
+    DrillSource.SR_ITEM,
+    DrillSource.FOREIGN_BLUNDER,
+)
+
+
+async def _existing_owner_flaw_keys(
+    session: AsyncSession, game_ids: set[int]
+) -> set[tuple[int, int]]:
+    """The `(game_id, ply)` keys of `game_flaws` rows that exist for `game_ids`, keyed on the
+    game's owner (`Game.user_id == GameFlaw.user_id`), not on the solver.
+
+    For an SR row the owner is the solver, so the set equals what a solver-keyed read returned.
+    A foreign puzzle's flaw row belongs to the stranger; keying on the solver would read nothing,
+    drop every foreign puzzle on resume and (Phase 263 Pitfall 5) pin the session open.
+    """
+    if not game_ids:
+        return set()
+    flaw_rows = await session.execute(
+        select(GameFlaw.game_id, GameFlaw.ply)
+        .join(Game, and_(Game.id == GameFlaw.game_id, Game.user_id == GameFlaw.user_id))
+        .where(GameFlaw.game_id.in_(game_ids))
+    )
+    return {(gid, ply) for gid, ply in flaw_rows.all()}
+
+
 async def _resume_session(
     session: AsyncSession,
     *,
@@ -2239,6 +2263,7 @@ async def _resume_session(
     drill_session: DrillSession,
     requested_count: int,
     blob_pending_count: int,
+    now_utc: datetime.datetime,
 ) -> ComposedSession:
     """Build a `ComposedSession` for an existing session row.
 
@@ -2253,11 +2278,18 @@ async def _resume_session(
     The select carries a set-based LEFT JOIN to `drill_items` on
     `(user_id, game_id, ply)` — never N per-row `_read_drill_item_state`
     calls — so `item_status`/`due_date` ride along for free. A non-`sr_item`
-    row (red herring / sharp filler) never has a matching `drill_items` row
+    row (red herring / foreign blunder / legacy filler) never has a matching `drill_items` row
     (that table holds only the user's own qualifying blunders), so the join
     naturally yields NULL for both, which is exactly `SolveResponse`'s own
     nullability rule for those sources. A deleted-game orphan degrades the
     same way: no matching row, NULL/NULL, never an error.
+
+    Lazy completion (Phase 263 orchestrator ruling 3): an open session that has at least one
+    solve and nothing servable left is completed here and its day credited, the same pair
+    `record_solve` runs. Completion used to run only inside `record_solve`, so a session whose
+    last unsolved rows became unservable (a legacy filler at deploy, a deleted foreign or own
+    game) stayed open until expiry and its day was never credited. An untouched session with
+    nothing servable is left alone (pre-existing SR-orphan behaviour).
     """
     puzzles = await load_session_puzzles(session, user_id=user_id, session_id=drill_session.id)
     solved_rows_stmt = (
@@ -2293,6 +2325,25 @@ async def _resume_session(
         )
         for row in solved_rows
     ]
+    if drill_session.status == "open" and not puzzles and solved_results:
+        if await _mark_session_complete_if_done(
+            session, session_id=drill_session.id, now_utc=now_utc
+        ):
+            await apply_day_completion(
+                session, user_id=user_id, day=drill_session.session_date, now_utc=now_utc
+            )
+    # Recomputing is safe: a drill_solves row never changes source, and the count covers every
+    # SR_ITEM position (solved or not), so it does not move as the session is worked through.
+    own_puzzle_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(DrillSolve)
+            .where(
+                DrillSolve.session_id == drill_session.id,
+                DrillSolve.source == DrillSource.SR_ITEM,
+            )
+        )
+    ).scalar_one()
     return ComposedSession(
         session_id=drill_session.id,
         session_date=drill_session.session_date,
@@ -2303,10 +2354,7 @@ async def _resume_session(
         blob_pending_count=blob_pending_count,
         puzzles=puzzles,
         solved_results=solved_results,
-        # Read the stored column, never recompute — a recomputed flag would
-        # silently shed the warm-up label the moment the ES lottery delivers
-        # material mid-session.
-        is_warmup=drill_session.is_warmup,
+        own_puzzle_count=own_puzzle_count,
     )
 
 
@@ -2355,11 +2403,9 @@ class _ReconstructedPuzzle:
     """One puzzle after FEN/arriving-move reconstruction, pre-shuffle/pre-insert.
 
     `herring_pool_id` is non-None only for a `RED_HERRING` row; an `SR_ITEM`
-    row always carries `herring_pool_id=None`.
-
-    `sharp_puzzle_id` mirrors `herring_pool_id`'s exact
-    nullability contract — non-None only for a `SHARP_FILLER` row; an
-    `SR_ITEM`/`RED_HERRING` row always carries `sharp_puzzle_id=None`.
+    or `FOREIGN_BLUNDER` row always carries `herring_pool_id=None`. Composition never
+    writes a `LEGACY_SHARP_FILLER` row any more (Phase 263 D-03), so there is no
+    sharp-set identity here.
     """
 
     game_id: int | None
@@ -2369,7 +2415,6 @@ class _ReconstructedPuzzle:
     side_to_move: Literal["white", "black"]
     source: int
     herring_pool_id: int | None
-    sharp_puzzle_id: str | None
 
 
 @dataclass(frozen=True)
@@ -2569,10 +2614,10 @@ async def _select_candidates(
             (await session.execute(herring_stmt(user_id, exclude_served=False).limit(n))).scalars()
         )
     # herring_candidates is capped at herring_slots; a short SR side is filled
-    # by sharp fillers after reconstruction (_backfill_sharp_fillers), not
+    # by foreign blunders after reconstruction (_backfill_foreign_blunders), not
     # extra herrings, so a filler-heavy session keeps the 75/25
     # critical/several mix (an 8-puzzle all-filler session is 2 herrings + 6
-    # sharp). Any shortfall left after the cross-backfill below is the
+    # foreign blunders). Any shortfall left after the cross-backfill below is the
     # caller's job too.
     herring_candidates = herring_rows[:herring_slots]
 
@@ -2601,66 +2646,219 @@ async def _select_candidates(
     )
 
 
-async def _backfill_sharp_fillers(
-    session: AsyncSession, *, user_id: int, shortfall: int
+async def _draw_foreign_candidates(
+    session: AsyncSession,
+    *,
+    solver_id: int,
+    step: ForeignDrawStep,
+    level: float,
+    game_limit: int,
+) -> list[ForeignCandidate]:
+    """Run one foreign-draw statement and map its rows (Phase 263 D-01, D-05, D-06).
+
+    The single seam of the draw: tests/conftest.py replaces this attribute with an empty stub
+    unless a test opts in with `real_foreign_draw` (the draw is global across users, so an
+    unstubbed composition test could draw another test's committed games). `step.nearest`
+    picks the nearest-first statement, otherwise the band statement around `level`.
+
+    Args:
+        session: AsyncSession; the draw only reads.
+        solver_id: The solving user (V4: never client-supplied); their own games are excluded.
+        step: Sample percentage and band / nearest mode.
+        level: The solver's level Elo (blunder check's `user_level_elo`).
+        game_limit: Sampled games the statement keeps.
+
+    Returns:
+        Candidates unordered; the pick (`pick_foreign_candidates`) ranks them.
+    """
+    if step.nearest:
+        stmt = foreign_nearest_candidates_stmt(
+            solver_id, sample_percent=step.sample_percent, level=level, game_limit=game_limit
+        )
+    else:
+        raw_low, raw_high = foreign_raw_bounds(level)
+        stmt = foreign_band_candidates_stmt(
+            solver_id,
+            sample_percent=step.sample_percent,
+            raw_low=raw_low,
+            raw_high=raw_high,
+            game_limit=game_limit,
+        )
+    rows = (await session.execute(stmt)).all()
+    return [
+        ForeignCandidate(
+            game_id=row.game_id,
+            ply=row.ply,
+            missed_pv_lines=list(row.missed_pv_lines),
+            # The one place the string columns become the project's Literal types: the import
+            # pipeline writes only those values, the columns themselves are plain strings.
+            platform=cast(Platform, row.platform),
+            time_control_bucket=cast(TimeControlBucket | None, row.time_control_bucket),
+            time_control_str=row.time_control_str,
+            owner_rating=row.owner_rating,
+        )
+        for row in rows
+    ]
+
+
+async def _served_foreign_positions(session: AsyncSession, *, user_id: int) -> set[tuple[int, int]]:
+    """Every `(game_id, ply)` ever served to `user_id` as a foreign blunder, solved or not (D-17).
+
+    One read, excluded in Python by the pick: a correlated NOT EXISTS would scan `drill_solves`
+    per candidate and the table has no user or game index (prod 5.7 ms for this read, no new
+    index needed). A deleted source game has a NULL `game_id` and can never be drawn again, so
+    those rows are skipped.
+    """
+    rows = await session.execute(
+        select(DrillSolve.game_id, DrillSolve.ply).where(
+            DrillSolve.user_id == user_id,
+            DrillSolve.source == DrillSource.FOREIGN_BLUNDER,
+            DrillSolve.game_id.isnot(None),
+        )
+    )
+    return {(game_id, ply) for game_id, ply in rows.all()}
+
+
+async def _foreign_picks(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    shortfall: int,
+    level: float,
+    exclude_game_ids: set[int],
+    want_sharp: bool,
+) -> list[ForeignCandidate]:
+    """Escalate through the draw steps until `shortfall` (plus slack) candidates are picked.
+
+    Reads `train_foreign.FOREIGN_FILLER_DRAW_STEPS` through the module attribute so the
+    `real_foreign_draw` test fixture can patch it. Hard cap: one statement per step (two).
+    The seeded RNG makes the same user and day draw the same candidates from the same sample.
+    """
+    served = await _served_foreign_positions(session, user_id=user_id)
+    rng = random.Random(f"train-foreign:{user_id}:{today.isoformat()}")
+    target = shortfall + FOREIGN_FILLER_RECONSTRUCT_SLACK
+    game_limit = foreign_game_limit(shortfall)
+    picks: list[ForeignCandidate] = []
+    for step in train_foreign.FOREIGN_FILLER_DRAW_STEPS:
+        drawn = await _draw_foreign_candidates(
+            session, solver_id=user_id, step=step, level=level, game_limit=game_limit
+        )
+        # Re-picking from this step's candidates with the picked games excluded keeps the one
+        # puzzle per game rule across steps.
+        picks.extend(
+            pick_foreign_candidates(
+                drawn,
+                level=level,
+                served=served,
+                exclude_game_ids=exclude_game_ids | {pick.game_id for pick in picks},
+                limit=target - len(picks),
+                want_sharp=want_sharp and not _has_sharp(picks),
+                rng=rng,
+            )
+        )
+        if len(picks) >= target:
+            break
+    return picks
+
+
+def _has_sharp(picks: Sequence[ForeignCandidate]) -> bool:
+    """Whether any picked candidate is a sharp puzzle (D-16 asks for one in the first session)."""
+    return any(
+        classify_puzzle_type(pick.missed_pv_lines, mover_color_for_ply(pick.ply)) == "sharp"
+        for pick in picks
+    )
+
+
+async def _backfill_foreign_blunders(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    shortfall: int,
+    blunder_check_level: BlunderCheckLevel | None,
+    exclude_game_ids: set[int],
+    want_sharp: bool,
 ) -> list[_ReconstructedPuzzle]:
-    """Draw `shortfall` puzzles from the static sharp set: the
-    post-reconstruction stage that fills every residual shortfall.
+    """Fill `shortfall` puzzles with servable blunders of similarly rated non-guest players.
 
-    Three scalar inputs, one list output, no state threaded back to the
-    caller — a self-contained stage, unlike `_select_candidates`'s SR/
-    herring selection it deliberately does NOT join (it runs at a different
-    point in the pipeline — AFTER FEN reconstruction, so it can absorb
-    puzzles `compose_and_materialize_session` dropped for an unparseable
-    FEN, which the pre-reconstruction slot arithmetic cannot see).
+    The post-reconstruction stage that replaces the lichess sharp filler (Phase 263, D-02): it
+    runs after SR and herring reconstruction, so it also absorbs puzzles dropped for an
+    unparseable FEN. A session with a full own supply never calls it.
 
-    Dedupes with a LOCAL `set[str]` of already-picked `sharp_puzzle_id`s:
-    `uq_drill_solves_session_puzzle` is `(session_id, game_id, ply)` and
-    every sharp-filler row has `game_id=None`, so Postgres's "NULLs are
-    distinct" rule means the DB constraint cannot catch a duplicate
-    `sharp_puzzle_id` within one session — this function must.
+    The solver's level is blunder check's `user_level_elo` (D-05): the median pinned Elo of
+    recent rated games, else the stored level's Elo, else 1500. The draw is a seeded random pick
+    inside the rating band with no facepalm and no time-control preference (D-14, D-15), at most
+    one puzzle per game, never a position already served to this user (D-17). Every pick is
+    reconstructed from its owner's PGN (a failed replay is dropped) and trimmed to `shortfall`.
+    With `want_sharp` the trim keeps a sharp puzzle whenever one was reconstructed (D-16).
 
     Args:
         session: AsyncSession. Caller commits.
         user_id: Authenticated user's internal PK (V4: never client-supplied).
-        shortfall: Number of sharp fillers to draw (already computed by the
-            caller as `n - len(reconstructed)` post-reconstruction).
+        today: The composition's local calendar day (seeds the draw).
+        shortfall: Number of foreign blunders wanted.
+        blunder_check_level: The stored level a user without rated games composes at.
+        exclude_game_ids: Games already in the session (herring rows carry other users' games).
+        want_sharp: Prefer a sharp puzzle first (a first-ever session, D-16).
 
     Returns:
-        Up to `shortfall` `_ReconstructedPuzzle` entries with `game_id=None`,
-        `herring_pool_id=None`, `source=DrillSource.SHARP_FILLER`, and a
-        unique (within this call) `sharp_puzzle_id`.
+        Up to `shortfall` `_ReconstructedPuzzle` entries carrying the stranger's real
+        `game_id`; `source=FOREIGN_BLUNDER`, no herring or sharp-set identity.
     """
-    # sharp_puzzle_id is a nullable column at the type level (shared with
-    # game_id/herring_pool_id's three-arm-union shape), but every SHARP_FILLER
-    # row this query matches carries a non-None value by construction — the
-    # None-filter here is a type narrowing, not a real runtime case.
-    served = {
-        pid
-        for pid in (await session.execute(served_sharp_ids_stmt(user_id))).scalars()
-        if pid is not None
-    }
-    picks = pick_sharp_fillers(served, limit=shortfall)
-
-    picked: list[_ReconstructedPuzzle] = []
-    seen_ids: set[str] = set()
-    for puzzle in picks:
-        if puzzle.puzzle_id in seen_ids:
+    level = user_level_elo(
+        await blunder_check_repository.recent_rated_games(
+            session, user_id=user_id, limit=USER_LEVEL_SCAN_GAMES
+        ),
+        fallback=level_fallback_elo(blunder_check_level),
+    )
+    picks = await _foreign_picks(
+        session,
+        user_id=user_id,
+        today=today,
+        shortfall=shortfall,
+        level=level,
+        exclude_game_ids=exclude_game_ids,
+        want_sharp=want_sharp,
+    )
+    if not picks:
+        return []
+    pgn_rows = await session.execute(
+        select(Game.id, Game.pgn).where(Game.id.in_({pick.game_id for pick in picks}))
+    )
+    pgns: dict[int, str] = {game_id: pgn for game_id, pgn in pgn_rows.all()}
+    reconstructed: list[_ReconstructedPuzzle] = []
+    # Index in `reconstructed` of the first sharp puzzle that replayed (first-ever session only).
+    first_sharp: int | None = None
+    for pick in picks:
+        pgn = pgns.get(pick.game_id)
+        replay = fen_and_last_move_at_ply(pgn, pick.ply) if pgn is not None else None
+        if replay is None:
             continue
-        seen_ids.add(puzzle.puzzle_id)
-        picked.append(
+        fen, last_move_uci = replay
+        if want_sharp and first_sharp is None and _has_sharp([pick]):
+            first_sharp = len(reconstructed)
+        reconstructed.append(
             _ReconstructedPuzzle(
-                game_id=None,
-                ply=puzzle.ply,
-                fen=puzzle.fen,
-                last_move_uci=puzzle.first_move_uci,
-                side_to_move=puzzle.side_to_move,
-                source=DrillSource.SHARP_FILLER,
+                game_id=pick.game_id,
+                ply=pick.ply,
+                fen=fen,
+                last_move_uci=last_move_uci,
+                side_to_move=mover_color_for_ply(pick.ply),
+                source=DrillSource.FOREIGN_BLUNDER,
                 herring_pool_id=None,
-                sharp_puzzle_id=puzzle.puzzle_id,
             )
         )
-    return picked
+    # Bug fix (Phase 263 review WR-01, D-16): the pick only moves a sharp candidate to the front
+    # of its own draw step, and `_foreign_picks` appends the nearest step after the band step.
+    # When the band step alone covered the shortfall without a sharp pick, the sharp one the
+    # nearest step found sat in the reconstruct slack and this trim cut it, so a first-ever
+    # session had no sharp puzzle although one was drawn. The same happened when the leading
+    # sharp pick failed to replay and another sat in the slack. Moving it to the front makes it
+    # survive the trim; it displaces the last-ranked pick, never the per-game cap or D-17.
+    if first_sharp is not None and first_sharp >= shortfall:
+        reconstructed.insert(0, reconstructed.pop(first_sharp))
+    return reconstructed[:shortfall]
 
 
 async def _resolve_existing_session(
@@ -2670,6 +2868,7 @@ async def _resolve_existing_session(
     today: datetime.date,
     n: int,
     blob_pending_count: int,
+    now_utc: datetime.datetime,
 ) -> ComposedSession | None:
     """Resolve a session `compose_and_materialize_session` should hand back
     as-is, or `None` to continue into fresh composition.
@@ -2701,6 +2900,7 @@ async def _resolve_existing_session(
             unread here, never re-queried (a second read against the same
             session is a behavior change even when the value happens to
             match).
+        now_utc: The current UTC instant, used by the lazy completion in `_resume_session`.
 
     Returns:
         A `ComposedSession` built from the resumed/completed row, or `None`
@@ -2719,6 +2919,7 @@ async def _resolve_existing_session(
                 drill_session=open_session,
                 requested_count=n,
                 blob_pending_count=blob_pending_count,
+                now_utc=now_utc,
             )
 
     # Step 3b (bug fix): a completed session still inside its window blocks
@@ -2734,6 +2935,7 @@ async def _resolve_existing_session(
             drill_session=completed,
             requested_count=n,
             blob_pending_count=blob_pending_count,
+            now_utc=now_utc,
         )
 
     return None
@@ -2800,28 +3002,31 @@ async def _is_first_ever_session(session: AsyncSession, *, user_id: int) -> bool
 
 
 async def _composition_puzzle_types(
-    session: AsyncSession, *, user_id: int, puzzles: Sequence[_ReconstructedPuzzle]
+    session: AsyncSession, *, puzzles: Sequence[_ReconstructedPuzzle]
 ) -> list[TrainPuzzleType]:
     """Each puzzle's answer-key type, from the verdict's own derivation.
 
-    One query loads the live `game_flaws` blobs of the SR items (user_id in the
-    WHERE, V4); herrings and sharp fillers need no query because their type is
-    fixed by `answer_key_for`. The type never depends on the key move, so the
-    move arguments are None; a missing blob classifies as "soft", the same
-    non-leaking default the verdict uses.
+    One query loads the live `game_flaws` blobs of the SR items and the foreign blunders,
+    keyed on the game's OWNER (`Game.user_id == GameFlaw.user_id`): the solver for an SR
+    item, the stranger for a foreign blunder. Reading the owner's blob is what lets a sharp
+    foreign blunder open the first session (D-16); keyed on the solver it would read nothing and
+    classify as "soft". There is no solver filter: the `(game_id, ply)` pairs come from this
+    composition, never from client input. Herrings need no query because their
+    type is fixed by `answer_key_for`. The type never depends on the key move, so the move
+    arguments are None; a missing blob classifies as "soft", the same non-leaking default the
+    verdict uses.
     """
-    sr_keys = [
+    owner_keyed = [
         (puzzle.game_id, puzzle.ply)
         for puzzle in puzzles
-        if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+        if puzzle.source in _OWNER_KEYED_SOURCES and puzzle.game_id is not None
     ]
     blobs: dict[tuple[int, int], list[Any] | None] = {}
-    if sr_keys:
+    if owner_keyed:
         rows = await session.execute(
-            select(GameFlaw.game_id, GameFlaw.ply, GameFlaw.missed_pv_lines).where(
-                GameFlaw.user_id == user_id,
-                tuple_(GameFlaw.game_id, GameFlaw.ply).in_(sr_keys),
-            )
+            select(GameFlaw.game_id, GameFlaw.ply, GameFlaw.missed_pv_lines)
+            .join(Game, and_(Game.id == GameFlaw.game_id, Game.user_id == GameFlaw.user_id))
+            .where(tuple_(GameFlaw.game_id, GameFlaw.ply).in_(owner_keyed))
         )
         blobs = {(row.game_id, row.ply): row.missed_pv_lines for row in rows}
     return [
@@ -2830,12 +3035,11 @@ async def _composition_puzzle_types(
             ply=puzzle.ply,
             missed_pv_lines=(
                 blobs.get((puzzle.game_id, puzzle.ply))
-                if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+                if puzzle.source in _OWNER_KEYED_SOURCES and puzzle.game_id is not None
                 else None
             ),
             best_move=None,
             ladder=None,
-            filler_solution_uci=None,
         ).puzzle_type
         for puzzle in puzzles
     ]
@@ -2853,14 +3057,12 @@ async def _order_first_ever_session(
     Returns `items` unchanged for an empty composition or any user with an
     earlier `drill_sessions` row (any status), so later sessions keep the plain
     shuffle and the only leak is that slot 0 of session 1 is never a
-    herring. `surviving_sr_keys` and `is_warmup` are set-valued, so they stay
-    correct after the reorder.
+    herring. `surviving_sr_keys` is set-valued, so it stays correct after the
+    reorder.
     """
-    if not items.reconstructed:
+    if not items.reconstructed or not items.first_ever:
         return items
-    if not await _is_first_ever_session(session, user_id=user_id):
-        return items
-    types = await _composition_puzzle_types(session, user_id=user_id, puzzles=items.reconstructed)
+    types = await _composition_puzzle_types(session, puzzles=items.reconstructed)
     rng = random.Random(f"{user_id}:{today.isoformat()}:{_FIRST_SESSION_SEED_SUFFIX}")
     return replace(items, reconstructed=_first_session_order(items.reconstructed, types, rng))
 
@@ -2872,8 +3074,7 @@ class _AssembledSessionItems:
     `compose_and_materialize_session`/`_materialize_session_rows`:
     `reconstructed` feeds the empty-session early return AND the row-insert
     loop, `new_sr_items`/`surviving_sr_keys` together gate which pool-sourced
-    picks get a brand-new `drill_items` row, and `is_warmup` is frozen onto
-    the `drill_sessions` row. Not a context object — `surviving_sr_keys` is
+    picks get a brand-new `drill_items` row. Not a context object — `surviving_sr_keys` is
     carried rather than recomputed because it is derived from the
     POST-shuffle `reconstructed` list, and recomputing it in the materialize
     stage from the same list would just be the identical computation typed
@@ -2883,15 +3084,23 @@ class _AssembledSessionItems:
     reconstructed: list[_ReconstructedPuzzle]
     new_sr_items: list[tuple[int, int, Game]]
     surviving_sr_keys: set[tuple[int | None, int]]
-    is_warmup: bool
+    # True when the user has no drill_sessions row of any status. Computed once per composition,
+    # after `_resolve_existing_session` returned None (so a discarded untouched-and-resized first
+    # session still counts as first-ever), and read twice: by the foreign draw (D-16, prefer a
+    # sharp blunder) and by `_order_first_ever_session`.
+    first_ever: bool
 
 
 async def _assemble_session_items(
-    session: AsyncSession, *, user_id: int, today: datetime.date, n: int
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    n: int,
+    blunder_check_level: BlunderCheckLevel | None = None,
 ) -> _AssembledSessionItems:
     """The item-assembly stage: candidate selection, FEN reconstruction,
-    sharp-filler shortfall fill, and the deterministic shuffle. Extracted
-    from `compose_and_materialize_session`.
+    foreign-blunder shortfall fill, and the deterministic shuffle. Extracted from `compose_and_materialize_session`.
 
     4. `_select_candidates` returns due `drill_items` (most-overdue-first)
        padded from `pool_entry_stmt` up to `sr_slots`, plus `herring_stmt` up
@@ -2899,33 +3108,32 @@ async def _assemble_session_items(
     5. Reconstruct each puzzle's full FEN + arriving move via
        `fen_and_last_move_at_ply`; a puzzle whose FEN cannot be
        reconstructed is dropped rather than served broken (the
-       post-reconstruction sharp-filler stage fills the gap).
-       Sharp filler fills EVERY residual shortfall after SR +
-       herring reconstruction — not gated on "is this an all-filler
-       session". Computed POST-reconstruction on purpose: it absorbs
+       post-reconstruction foreign stage fills the gap).
+       Foreign blunders of similarly rated non-guest players fill EVERY
+       residual shortfall after SR + herring reconstruction (Phase 263 D-02),
+       not gated on "is this an all-filler session"; a full own supply never
+       calls the draw. Computed POST-reconstruction on purpose: it absorbs
        puzzles dropped above for an unparseable FEN, which the
        pre-reconstruction slot arithmetic in `_select_candidates` cannot
-       see. This is why the sharp stage is not folded into
-       `_select_candidates` — it runs at a different point in the pipeline.
+       see. This is why the stage is not folded into `_select_candidates` —
+       it runs at a different point in the pipeline. It is the only
+       residual-shortfall stage: the lichess filler stage is gone (D-02),
+       so a draw that comes up short leaves the session short.
     6. If nothing survives, `reconstructed` is empty and the caller must
        write NO `drill_sessions` row. Otherwise shuffle deterministically by
        `(user_id, today)` (a red herring's position must not be
        inferable from ordering).
-
-    The warm-up discriminant is computed here — a plain equality
-    against zero, never a ratio, never a threshold — because it is derived
-    from `surviving_sr_keys`, which only exists once the shuffle has run;
-    moving it to a different stage would either recompute
-    `surviving_sr_keys` there or thread it through as an extra argument for
-    no reason.
 
     Args:
         session: AsyncSession. Caller commits.
         user_id: Authenticated user's internal PK (V4: never client-supplied).
         today: The composition's local calendar day.
         n: Requested puzzles per session (`settings_row.puzzles_per_session`).
+        blunder_check_level: The stored level a user without rated games is
+            matched at by the foreign draw.
     """
     sr_slots, herring_slots = compose_slots(n)
+    first_ever = await _is_first_ever_session(session, user_id=user_id)
 
     candidates = await _select_candidates(
         session, user_id=user_id, today=today, n=n, sr_slots=sr_slots, herring_slots=herring_slots
@@ -2951,7 +3159,6 @@ async def _assemble_session_items(
                 side_to_move=mover_color_for_ply(ply),
                 source=DrillSource.SR_ITEM,
                 herring_pool_id=None,
-                sharp_puzzle_id=None,
             )
         )
     # Own-game herrings are permitted, so a position can legitimately be
@@ -2971,26 +3178,36 @@ async def _assemble_session_items(
                 side_to_move=cast(Literal["white", "black"], pool_row.mover_color),
                 source=DrillSource.RED_HERRING,
                 herring_pool_id=pool_row.id,
-                sharp_puzzle_id=None,
             )
         )
-    # Sharp filler fills EVERY residual shortfall after SR
-    # + herring reconstruction — not gated on "is this an all-filler
-    # session". Computed POST-reconstruction on purpose: it absorbs puzzles
-    # dropped above for an unparseable FEN, which the pre-reconstruction slot
-    # arithmetic in _select_candidates cannot see. This is why the sharp
-    # stage is not folded into _select_candidates — it runs at a different
-    # point in the pipeline.
-    sharp_shortfall = n - len(reconstructed)
-    if sharp_shortfall > 0:
+    # Foreign blunders fill EVERY residual shortfall after SR + herring reconstruction (D-02),
+    # computed POST-reconstruction so a puzzle dropped above for an unparseable FEN is absorbed
+    # too. A full own supply never reaches the draw. A first-ever session prefers a sharp foreign
+    # blunder (D-16); that only binds where there is a foreign shortfall.
+    foreign_shortfall = n - len(reconstructed)
+    if foreign_shortfall > 0:
         reconstructed.extend(
-            await _backfill_sharp_fillers(session, user_id=user_id, shortfall=sharp_shortfall)
+            await _backfill_foreign_blunders(
+                session,
+                user_id=user_id,
+                today=today,
+                shortfall=foreign_shortfall,
+                blunder_check_level=blunder_check_level,
+                # Bug-fix comment: a herring row carries ANOTHER user's (game_id, ply), and a
+                # foreign pick on that same game would collide on uq_drill_solves_session_puzzle
+                # inside the materialize SAVEPOINT and surface as a 500. Exclude those games.
+                exclude_game_ids={p.game_id for p in reconstructed if p.game_id is not None},
+                want_sharp=first_ever,
+            )
         )
     reconstructed = reconstructed[:n]  # defensive cap; slot arithmetic already sums to <= n
 
     if not reconstructed:
         return _AssembledSessionItems(
-            reconstructed=[], new_sr_items=new_sr_items, surviving_sr_keys=set(), is_warmup=False
+            reconstructed=[],
+            new_sr_items=new_sr_items,
+            surviving_sr_keys=set(),
+            first_ever=first_ever,
         )
 
     # Deterministic (user_id, session_date)-seeded shuffle so a red
@@ -3003,16 +3220,12 @@ async def _assemble_session_items(
         for puzzle in reconstructed
         if puzzle.source == DrillSource.SR_ITEM
     }
-    # The warm-up discriminant is a plain equality
-    # against zero — never a ratio, never a threshold — computed from
-    # surviving_sr_keys alone and frozen onto the drill_sessions row below.
-    is_warmup = len(surviving_sr_keys) == 0
 
     return _AssembledSessionItems(
         reconstructed=reconstructed,
         new_sr_items=new_sr_items,
         surviving_sr_keys=surviving_sr_keys,
-        is_warmup=is_warmup,
+        first_ever=first_ever,
     )
 
 
@@ -3025,6 +3238,7 @@ async def _materialize_session_rows(
     settings_row: TrainSettingsRow,
     blob_pending_count: int,
     items: _AssembledSessionItems,
+    now_utc: datetime.datetime,
 ) -> ComposedSession:
     """The row-materialization stage: insert the `DrillItem`/`DrillSession`/
     `DrillSolve` rows for `items` and return the `ComposedSession`. Extracted
@@ -3051,6 +3265,7 @@ async def _materialize_session_rows(
         blob_pending_count: Pre-computed by the caller — passed through, not
             re-queried.
         items: The item-assembly stage's output.
+        now_utc: The current UTC instant, passed to `_resume_session` on the race-loser path.
     """
     try:
         async with session.begin_nested():
@@ -3077,7 +3292,6 @@ async def _materialize_session_rows(
                 puzzle_count=len(items.reconstructed),
                 requested_count=n,
                 expires_on=session_window(today, settings_row.weekday_mask),
-                is_warmup=items.is_warmup,
             )
             session.add(drill_session)
             # Populate drill_session.id for the DrillSolve FK below, and
@@ -3102,14 +3316,13 @@ async def _materialize_session_rows(
                         ply=puzzle.ply,
                         source=puzzle.source,
                         herring_pool_id=puzzle.herring_pool_id,
-                        sharp_puzzle_id=puzzle.sharp_puzzle_id,
                         solved_at=None,
                     )
                 )
                 puzzles.append(
                     ComposedPuzzle(
                         position=position,
-                        game_id=puzzle.game_id,
+                        game_id=_wire_game_id(puzzle.source, puzzle.game_id),
                         ply=puzzle.ply,
                         fen=puzzle.fen,
                         side_to_move=puzzle.side_to_move,
@@ -3133,6 +3346,7 @@ async def _materialize_session_rows(
             drill_session=resumed,
             requested_count=n,
             blob_pending_count=blob_pending_count,
+            now_utc=now_utc,
         )
 
     return ComposedSession(
@@ -3145,15 +3359,24 @@ async def _materialize_session_rows(
         blob_pending_count=blob_pending_count,
         puzzles=puzzles,
         solved_results=[],
-        is_warmup=items.is_warmup,
+        own_puzzle_count=len(items.surviving_sr_keys),
     )
+
+
+def _wire_game_id(source: int, game_id: int | None) -> int | None:
+    """The game id a composed puzzle exposes on the wire: None for a foreign blunder.
+
+    A foreign puzzle's game belongs to another user, so its id must never reach the client
+    (D-10, D-21: neutral facts only, no way to open a stranger's game). The `drill_solves` row
+    keeps the real id for `uq_drill_solves_session_puzzle` and the owner-keyed key reads.
+    """
+    return None if source == DrillSource.FOREIGN_BLUNDER else game_id
 
 
 def _position_answer_key(
     *,
     source: int,
     ply: int,
-    sharp_puzzle_id: str | None,
     blob: list[Any] | None,
     best_move: str | None,
     ladder: list[Any] | None,
@@ -3162,14 +3385,16 @@ def _position_answer_key(
     """Derive one position's key and server-graded set from its composition row.
 
     The answer key plus the server-graded set, with the SAME source gating for both:
-    the SR columns (blob, best move) only for an SR item and the ladder only for
-    a herring. A herring row can share (user, game, ply) with one of the user's
-    own `game_flaws` rows, which must not be read as an SR blob. The herring's
+    the SR columns (blob, best move) only for an SR item or a foreign blunder (the
+    latter's blob is the game OWNER's row, see `_answer_keys_by_position`) and the
+    ladder only for a herring. A herring row can share (game, ply) with a
+    `game_flaws` row, which must not be read as an SR blob. The herring's
     color is the STORED `HerringPool.mover_color`, never ply parity; a herring
     row with no pool row yields a null color and no set.
     """
-    filler_row = SHARP_SET_BY_ID.get(sharp_puzzle_id) if sharp_puzzle_id is not None else None
-    is_sr = source == DrillSource.SR_ITEM
+    # A foreign blunder takes `answer_key_for`'s SR branch: its mover is the game owner, which
+    # ply parity gives for a servable blunder (`player_only_gate`), like an own puzzle.
+    is_sr = source in (DrillSource.SR_ITEM, DrillSource.FOREIGN_BLUNDER)
     is_herring = source == DrillSource.RED_HERRING
     sr_blob = blob if is_sr else None
     sr_best = best_move if is_sr else None
@@ -3180,11 +3405,6 @@ def _position_answer_key(
         missed_pv_lines=sr_blob,
         best_move=sr_best,
         ladder=herring_ladder,
-        filler_solution_uci=(
-            filler_row.solution_uci
-            if filler_row is not None and source == DrillSource.SHARP_FILLER
-            else None
-        ),
     )
     graded = server_graded_moves_for(
         source=source,
@@ -3209,10 +3429,10 @@ async def _answer_keys_by_position(
     by `drill_solves.position`.
 
     Outer-joins the three key sources
-    (`game_flaws` live blob + `game_positions.best_move` for an SR item,
-    `herring_pool.ladder` + `herring_pool.mover_color` for a herring); a sharp
-    filler's key comes from the in-memory `SHARP_SET_BY_ID` (module global, so
-    tests can monkeypatch it). The deferred `GameFlaw.missed_pv_lines` /
+    (`game_flaws` live blob + `game_positions.best_move` for an SR item or a
+    foreign blunder, `herring_pool.ladder` + `herring_pool.mover_color` for a
+    herring); an unsolved retired lichess filler row (`LEGACY_SHARP_FILLER`) matches none of
+    them and yields a null key (it is never served, see `load_session_puzzles`). The deferred `GameFlaw.missed_pv_lines` /
     `HerringPool.ladder` columns are loaded because they are named in the select
     (the resume path would otherwise raise MissingGreenlet on the ladder).
 
@@ -3220,35 +3440,46 @@ async def _answer_keys_by_position(
     `server_graded_moves_for`; `mover_color` is selected so a herring's ladder
     band is graded with its stored color.
 
-    `user_id` is in the WHERE (V4/IDOR) and in every SR join. Source gating of
-    the SR and ladder columns lives in `_position_answer_key`.
+    Phase 263 (assumption delta): a puzzle's `game_flaws` / `game_positions` rows are keyed by
+    the GAME OWNER (`Game.user_id`), not by the solver. For an SR row the owner is the solver by
+    construction (SR rows come from `pool_entry_stmt` / `drill_items`, both owner-scoped), so SR
+    results do not change; a foreign blunder's rows belong to another user. The flaw and position
+    joins are gated on `source IN (SR_ITEM, FOREIGN_BLUNDER)`, so a herring row no longer joins a
+    flaw row at all (its blob was already discarded by `_position_answer_key`).
+
+    `user_id` is in the WHERE (V4/IDOR): the owner join only follows (game_id, ply) of rows
+    composition wrote for this solver, never a client-supplied id. Source gating of the SR and
+    ladder columns lives in `_position_answer_key`.
     """
+    owner_keyed = DrillSolve.source.in_((DrillSource.SR_ITEM, DrillSource.FOREIGN_BLUNDER))
     stmt = (
         select(
             DrillSolve.position,
             DrillSolve.source,
             DrillSolve.ply,
-            DrillSolve.sharp_puzzle_id,
             GameFlaw.missed_pv_lines,
             GamePosition.best_move,
             HerringPool.ladder,
             HerringPool.mover_color,
         )
         .select_from(DrillSolve)
+        .outerjoin(Game, Game.id == DrillSolve.game_id)
         .outerjoin(
             GameFlaw,
             and_(
-                GameFlaw.user_id == DrillSolve.user_id,
+                GameFlaw.user_id == Game.user_id,
                 GameFlaw.game_id == DrillSolve.game_id,
                 GameFlaw.ply == DrillSolve.ply,
+                owner_keyed,
             ),
         )
         .outerjoin(
             GamePosition,
             and_(
-                GamePosition.user_id == DrillSolve.user_id,
+                GamePosition.user_id == Game.user_id,
                 GamePosition.game_id == DrillSolve.game_id,
                 GamePosition.ply == DrillSolve.ply,
+                owner_keyed,
             ),
         )
         .outerjoin(HerringPool, HerringPool.id == DrillSolve.herring_pool_id)
@@ -3262,13 +3493,12 @@ async def _answer_keys_by_position(
         position: _position_answer_key(
             source=source,
             ply=ply,
-            sharp_puzzle_id=sharp_puzzle_id,
             blob=blob,
             best_move=best_move,
             ladder=ladder,
             mover_color=mover_color,
         )
-        for position, source, ply, sharp_puzzle_id, blob, best_move, ladder, mover_color in (
+        for position, source, ply, blob, best_move, ladder, mover_color in (
             await session.execute(stmt)
         ).all()
     }
@@ -3348,8 +3578,8 @@ async def compose_and_materialize_session(
        from `pool_entry_stmt` up to `sr_slots`, plus `herring_stmt` up to
        `herring_slots` (retried with `exclude_served=False` when the source
        is exhausted). A short herring side pulls extra SR picks; any remaining
-       shortfall (short SR side or dropped FENs) is filled by sharp fillers
-       after reconstruction.
+       shortfall (short SR side or dropped FENs) is filled by foreign blunders
+       of similarly rated players after reconstruction.
 
        Both SR sources are capped at
        `MAX_ITEMS_PER_GAME_PER_SESSION` per `game_id`, SESSION-WIDE, via one
@@ -3362,12 +3592,12 @@ async def compose_and_materialize_session(
        seeded UNIFORM RANDOM pick (`pick_one_per_game`), never earliest-ply
        — a permanently-tracked `drill_items` row makes an earliest-ply bias
        there permanent, unlike the due side's transient ordering. A
-       cap-shortened SR side is filled by sharp fillers, never by relaxing the
+       cap-shortened SR side is filled by foreign blunders, never by relaxing the
        cap.
     5. Reconstruct each puzzle's full FEN + arriving move via
        `fen_and_last_move_at_ply`; a puzzle whose FEN cannot be
        reconstructed is dropped rather than served broken (the
-       post-reconstruction sharp-filler stage fills the gap).
+       post-reconstruction foreign stage fills the gap).
     6. If nothing survives, return zero puzzles and write NO `drill_sessions`
        row. Otherwise shuffle deterministically by `(user_id, today)` (a red
        herring's position must not be inferable from ordering), reorder a
@@ -3415,24 +3645,17 @@ async def compose_and_materialize_session(
             blob_pending_count=0,
             puzzles=[],
             solved_results=[],
-            is_warmup=False,
+            own_puzzle_count=0,
         )
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
-    # The third term, sharp_filler_available(), lets a filler-only session
-    # still stamp the eligibility floor tick_days reads — without it a warm-up
-    # user accrues NO streak regardless of what the UI says. Do not "simplify"
-    # this third term away.
     await _stamp_pool_eligibility(
         session,
         user_id=user_id,
         settings_row=settings_row,
         today=today,
         has_material=(
-            has_drill_items
-            or has_pool_candidates
-            or sharp_filler_available()
-            or settings_row.blunder_check_per_session > 0
+            has_drill_items or has_pool_candidates or settings_row.blunder_check_per_session > 0
         ),
     )
 
@@ -3441,12 +3664,23 @@ async def compose_and_materialize_session(
     blob_pending_count = (await session.execute(blob_pending_stmt(user_id))).scalar_one()
 
     resolved = await _resolve_existing_session(
-        session, user_id=user_id, today=today, n=n, blob_pending_count=blob_pending_count
+        session,
+        user_id=user_id,
+        today=today,
+        n=n,
+        blob_pending_count=blob_pending_count,
+        now_utc=now_utc,
     )
     if resolved is not None:
         return await _attach_answer_keys(session, user_id=user_id, composed=resolved)
 
-    items = await _assemble_session_items(session, user_id=user_id, today=today, n=n)
+    items = await _assemble_session_items(
+        session,
+        user_id=user_id,
+        today=today,
+        n=n,
+        blunder_check_level=settings_row.blunder_check_level,
+    )
     # First-ever session only, after the shuffle and before materialize
     # (positions are frozen into drill_solves.position).
     items = await _order_first_ever_session(session, user_id=user_id, today=today, items=items)
@@ -3461,7 +3695,7 @@ async def compose_and_materialize_session(
             blob_pending_count=blob_pending_count,
             puzzles=[],
             solved_results=[],
-            is_warmup=False,
+            own_puzzle_count=0,
         )
 
     materialized = await _materialize_session_rows(
@@ -3472,6 +3706,20 @@ async def compose_and_materialize_session(
         settings_row=settings_row,
         blob_pending_count=blob_pending_count,
         items=items,
+        now_utc=now_utc,
+    )
+    # Fix-site comment (Phase 263): a user with no own material is filled by foreign blunders and
+    # the old static-set term that stamped the floor before composition is gone. A composed session
+    # is completable, so its streak floor must exist: without this stamp such a user accrues no
+    # streak however many sessions they finish. Stamp-if-NULL, so a second call is a no-op. Not a
+    # "pool non-empty" EXISTS before composition: the foreign draw is a TABLESAMPLE, so that probe
+    # would stamp nondeterministically (research, Eligibility).
+    await _stamp_pool_eligibility(
+        session,
+        user_id=user_id,
+        settings_row=settings_row,
+        today=today,
+        has_material=True,
     )
     return await _attach_answer_keys(session, user_id=user_id, composed=materialized)
 
@@ -3481,7 +3729,7 @@ async def compose_and_materialize_session(
 # ---------------------------------------------------------------------------
 
 
-def _wire_source(source: int) -> Literal["sr_item", "red_herring", "sharp_filler"]:
+def _wire_source(source: int) -> DrillSourceWire:
     """Convert a `DrillSource` integer to its published wire string — the
     SINGLE mapping site for this conversion. Both
     `record_solve` (via `RecordedSolve.source`) and `reveal_for_puzzle`
@@ -3504,8 +3752,10 @@ def _wire_source(source: int) -> Literal["sr_item", "red_herring", "sharp_filler
         return "sr_item"
     if source == DrillSource.RED_HERRING:
         return "red_herring"
-    if source == DrillSource.SHARP_FILLER:
+    if source == DrillSource.LEGACY_SHARP_FILLER:
         return "sharp_filler"
+    if source == DrillSource.FOREIGN_BLUNDER:
+        return "foreign_blunder"
     raise ValueError(f"Unrecognized DrillSource value: {source!r}")
 
 
@@ -3542,7 +3792,7 @@ class RecordedSolve:
     correct_move: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
     puzzle_type: Literal["sharp", "soft", "herring"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     item_status: Literal["active", "mastered", "parked"] | None
     streak: int | None
     due_date: datetime.date | None
@@ -3620,7 +3870,6 @@ async def _classify_herring_solve(
         missed_pv_lines=None,
         best_move=None,
         ladder=pool_row.ladder,
-        filler_solution_uci=None,
     )
     # The graded set comes from the SAME function composition uses for the
     # pre-attempt payload, so the two lists cannot drift.
@@ -3640,37 +3889,39 @@ async def _classify_herring_solve(
     )
 
 
-def _classify_filler_solve(solve: DrillSolve) -> SolveClassification:
-    """A sharp filler is always `"sharp"` (the offline MultiPV-5 verification
-    pass at authoring time is what makes this constant assertion provably true
-    rather than assumed; no `game_flaws` row exists for it), and its vetted set
-    is empty by the same rule as any other sharp puzzle. Its key is the CSV
-    `solution_uci`."""
-    filler_row = (
-        SHARP_SET_BY_ID.get(solve.sharp_puzzle_id) if solve.sharp_puzzle_id is not None else None
-    )
-    key = answer_key_for(
-        source=solve.source,
-        ply=solve.ply,
-        missed_pv_lines=None,
-        best_move=None,
-        ladder=None,
-        filler_solution_uci=filler_row.solution_uci if filler_row is not None else None,
-    )
-    return SolveClassification(puzzle_type="sharp", vetted_moves=[], key_uci=key.key_uci)
+def _classify_legacy_filler_solve() -> SolveClassification:
+    """A retired lichess filler row is `"sharp"` with no vetted set and no key.
+
+    Fix-site comment (Phase 263 D-03, research Pitfall 6): the static set is gone, but a browser
+    on a pre-deploy session that already has a solve still shows the filler and posts its solve
+    (migration c4e6a8b0d375 deletes the untouched open sessions, whose first solve gets a 404
+    until the page reloads). With no key `_resolve_grade` records the client's asserted tier
+    instead of misgrading against a key it can no longer derive, or returning a 404 that would
+    strand the client on "Couldn't save your result". The client-asserted tier is the existing
+    accepted trust boundary for keyless puzzles.
+
+    Takes no argument (Phase 263 review IN-02): the row was accepted only to be deleted, since
+    the set that held this puzzle's key no longer exists and nothing can be read from it."""
+    return SolveClassification(puzzle_type="sharp", vetted_moves=[])
 
 
-async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> SolveClassification:
-    """An SR-source row reads the LIVE `game_flaws.missed_pv_lines` blob -- never
-    a snapshot -- so a reclassified-away flaw naturally falls through
-    `classify_puzzle_type`'s None-blob default of `"soft"` rather than failing
-    the solve."""
+async def _classify_sr_solve(
+    session: AsyncSession, *, solve: DrillSolve, flaw_owner_id: int
+) -> SolveClassification:
+    """An SR-path row (an SR item or a foreign blunder) reads the LIVE
+    `game_flaws.missed_pv_lines` blob -- never a snapshot -- so a
+    reclassified-away flaw naturally falls through `classify_puzzle_type`'s
+    None-blob default of `"soft"` rather than failing the solve.
+
+    `flaw_owner_id` keys the `game_flaws` / `game_positions` reads: the solver for an SR item
+    (the owner by construction), the game's owner for a foreign blunder (Phase 263, whose rows
+    belong to another user). The access scope stays `DrillSolve.user_id` in `record_solve`."""
     flaw_row = (
         await session.execute(
             select(GameFlaw)
             .options(undefer(GameFlaw.missed_pv_lines))
             .where(
-                GameFlaw.user_id == solve.user_id,
+                GameFlaw.user_id == flaw_owner_id,
                 GameFlaw.game_id == solve.game_id,
                 GameFlaw.ply == solve.ply,
             )
@@ -3692,7 +3943,7 @@ async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> Sol
         best_uci = (
             await session.execute(
                 select(GamePosition.best_move).where(
-                    GamePosition.user_id == solve.user_id,
+                    GamePosition.user_id == flaw_owner_id,
                     GamePosition.game_id == solve.game_id,
                     GamePosition.ply == solve.ply,
                 )
@@ -3704,7 +3955,6 @@ async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> Sol
         missed_pv_lines=missed_pv_lines,
         best_move=best_uci,
         ladder=None,
-        filler_solution_uci=None,
     )
     vetted_moves = (
         vetted_moves_from_pv_node(missed_pv_lines[0], mover_color, best_uci=best_uci)
@@ -3738,8 +3988,11 @@ async def _classify_and_certify_solve(
     """Server-side puzzle-type classification AND key certification at solve
     time.
 
-    Dispatches on the row's source. Both non-SR early returns sit above the
-    `game_flaws` read so the "no blob read for a non-SR source" invariant holds.
+    Dispatches explicitly on the row's source (raising on an unknown value, the `_wire_source`
+    pattern). The herring and legacy-filler returns sit above the `game_flaws` read so the "no blob read
+    for those sources" invariant holds. An SR item reads its own flaw rows; a foreign blunder
+    reads the GAME OWNER's rows (one `Game.user_id` lookup), and a vanished game degrades to the
+    no-blob classification (soft, no key), the SR-orphan behaviour.
     The point of merging classification and certification into one function is
     that ONE blob/ladder read feeds the puzzle type, the certified key and the
     graded moves -- they can never be computed from two different reads of a
@@ -3748,9 +4001,18 @@ async def _classify_and_certify_solve(
     """
     if solve.source == DrillSource.RED_HERRING:
         return await _classify_herring_solve(session, solve=solve)
-    if solve.source == DrillSource.SHARP_FILLER:
-        return _classify_filler_solve(solve)
-    return await _classify_sr_solve(session, solve=solve)
+    if solve.source == DrillSource.LEGACY_SHARP_FILLER:
+        return _classify_legacy_filler_solve()
+    if solve.source == DrillSource.SR_ITEM:
+        return await _classify_sr_solve(session, solve=solve, flaw_owner_id=solve.user_id)
+    if solve.source == DrillSource.FOREIGN_BLUNDER:
+        owner_id = (
+            await session.execute(select(Game.user_id).where(Game.id == solve.game_id))
+        ).scalar_one_or_none()
+        if owner_id is None:
+            return SolveClassification(puzzle_type="soft", vetted_moves=[])
+        return await _classify_sr_solve(session, solve=solve, flaw_owner_id=owner_id)
+    raise ValueError("Unrecognized DrillSource value")
 
 
 def _matching_server_graded_move(
@@ -3964,6 +4226,10 @@ async def _mark_session_complete_if_done(
       orphaned SR row survives forever with `solved_at IS NULL` and would pin
       `remaining` above zero, leaving the session stuck on "resume" (the same
       stuck-session shape as the vanished flaw row described below).
+    - `FOREIGN_BLUNDER` (Phase 263, D-08): treated exactly like `SR_ITEM`. It is excluded
+      when the stranger's `games` row was deleted or the stranger's `game_flaws` row vanished,
+      so a puzzle that can no longer be served never pins the session open. The flaw join is
+      keyed on the game owner (`Game.user_id`), the stranger for this source.
     - `RED_HERRING`: never excluded by EITHER of the two SR clauses below (an
       unsolved herring with a nulled game link is still perfectly servable off
       its `herring_pool` row, and must keep counting toward `remaining`
@@ -4006,8 +4272,10 @@ async def _mark_session_complete_if_done(
         .outerjoin(Game, Game.id == DrillSolve.game_id)
         .outerjoin(
             GameFlaw,
+            # Keyed on the game's OWNER (Game.user_id), not DrillSolve.user_id: for an SR row
+            # they are the same user, for a foreign blunder the flaw row is the stranger's.
             and_(
-                GameFlaw.user_id == DrillSolve.user_id,
+                GameFlaw.user_id == Game.user_id,
                 GameFlaw.game_id == DrillSolve.game_id,
                 GameFlaw.ply == DrillSolve.ply,
             ),
@@ -4017,14 +4285,14 @@ async def _mark_session_complete_if_done(
             DrillSolve.session_id == session_id,
             DrillSolve.solved_at.is_(None),
             or_(
-                DrillSolve.source != DrillSource.SR_ITEM,
+                DrillSolve.source.notin_(_OWNER_KEYED_SOURCES),
                 GameFlaw.game_id.isnot(None),
             ),
-            # Mandatory parallel leniency clause — an orphaned SR row
+            # Mandatory parallel leniency clause — an orphaned SR or foreign row
             # (source-game deleted) must be excluded here the same way an
             # orphaned herring must NOT be. See docstring above.
             or_(
-                DrillSolve.source != DrillSource.SR_ITEM,
+                DrillSolve.source.notin_(_OWNER_KEYED_SOURCES),
                 Game.id.isnot(None),
             ),
             # The herring's own leniency clause, mirroring
@@ -4038,13 +4306,12 @@ async def _mark_session_complete_if_done(
                 DrillSolve.source != DrillSource.RED_HERRING,
                 HerringPool.id.isnot(None),
             ),
-            # Same leniency for a sharp filler with a NULL identity column: it
-            # cannot be served (`load_session_puzzles` already `continue`s past
-            # it), so it must not pin the session open either.
-            or_(
-                DrillSolve.source != DrillSource.SHARP_FILLER,
-                DrillSolve.sharp_puzzle_id.isnot(None),
-            ),
+            # Fix-site comment (Phase 263 orchestrator ruling 3): the lichess set is gone, so NO
+            # unsolved source-2 row can be served any more (`load_session_puzzles` skips it).
+            # The old clause excluded only rows with a NULL identity column, which left a
+            # session whose remaining rows were prod-style legacy fillers (non-NULL ids) unable
+            # to complete. Every unsolved legacy row is excluded now.
+            DrillSolve.source != DrillSource.LEGACY_SHARP_FILLER,
         )
     )
     remaining = (await session.execute(remaining_stmt)).scalar_one()
@@ -4528,9 +4795,11 @@ RevealNotAttempted = Literal["not_attempted"]
 class RevealedPuzzle:
     """Internal dataclass returned by `reveal_for_puzzle` on a solved puzzle.
 
-    `game_id` is `int | None`: `None` for a sharp filler (no source game) or a
-    red herring whose source game was deleted; an orphaned `SR_ITEM` returns
-    `RevealNotFound` instead (see the function docstring).
+    `game_id` is `int | None`: a red herring whose source game was deleted, and ALWAYS for a
+    foreign blunder (never sent, D-21: the game is a stranger's); an orphaned `SR_ITEM` or
+    `FOREIGN_BLUNDER` returns `RevealNotFound` instead (see the function docstring).
+    `game_info` is set for a foreign blunder only: neutral facts, nothing that identifies
+    the game's owner (D-21).
     """
 
     game_id: int | None
@@ -4542,20 +4811,20 @@ class RevealedPuzzle:
     # post-attempt 409 gate as every other answer-key field.
     played_in_game_move_uci: str | None
     puzzle_type: Literal["sharp", "soft", "herring"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     has_tactic_lines: bool
     # The game move is a facepalm blunder: the reveal badges it "???" instead of "??".
     game_move_facepalm: bool
-    # The sharp filler's motif label, read straight from the committed data
-    # file's precomputed `motif` column. None for every SR_ITEM/RED_HERRING
-    # row — there is no motif taxonomy for those today.
-    motif: str | None
+    game_info: blunder_check_repository.GameInfoRow | None = None
 
 
 async def _game_move_is_facepalm(
-    session: AsyncSession, *, user_id: int, game_id: int, ply: int
+    session: AsyncSession, *, flaw_owner_id: int, game_id: int, ply: int
 ) -> bool:
-    """True when the user's own blunder at `ply` is a facepalm blunder (the "???" badge).
+    """True when the blunder at `ply` is a facepalm blunder (the "???" badge).
+
+    `flaw_owner_id` is the game's owner: the solver for an own puzzle, the stranger for a
+    foreign blunder. The badge reflects the blunder's own facepalm score, whoever played it.
 
     The same cut as the library: a blunder whose query-time
     `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` reaches FACEPALM_STATS_MIN. A mistake, an unscored
@@ -4566,7 +4835,7 @@ async def _game_move_is_facepalm(
     value = (
         await session.execute(
             select(score).where(
-                GameFlaw.user_id == user_id,
+                GameFlaw.user_id == flaw_owner_id,
                 GameFlaw.game_id == game_id,
                 GameFlaw.ply == ply,
                 GameFlaw.severity == _SEVERITY_INT["blunder"],
@@ -4574,6 +4843,49 @@ async def _game_move_is_facepalm(
         )
     ).scalar_one_or_none()
     return value is not None and float(value) >= FACEPALM_STATS_MIN
+
+
+async def _owner_move_san(
+    session: AsyncSession, *, owner_id: int, game_id: int, ply: int
+) -> str | None:
+    """The move the game's owner played at `ply` (`game_positions.move_san`), None when absent."""
+    position_row = (
+        await session.execute(
+            select(GamePosition.move_san).where(
+                GamePosition.user_id == owner_id,
+                GamePosition.game_id == game_id,
+                GamePosition.ply == ply,
+            )
+        )
+    ).one_or_none()
+    return position_row.move_san if position_row is not None else None
+
+
+def _foreign_game_info(game: Game) -> blunder_check_repository.GameInfoRow:
+    """Neutral facts of a stranger's game from the loaded row (D-21, Phase 249 D-09).
+
+    Time control, bucket, date and the owner side's rating. Nothing that identifies the owner:
+    no user id, no username, no platform game id or url. `played_at` keeps its datetime type
+    (the wire schema is shared with blunder check) but carries the UTC date only, at midnight.
+    """
+    mover_rating = game.white_rating if game.user_color == "white" else game.black_rating
+    # Bug fix (Phase 263 review WR-02, D-21): this sent the stranger's start time to the second.
+    # D-21 allows the date, the footer shows only the date, and an exact start time next to the
+    # rating and time control narrows a public lichess game dump to about one row, so to the
+    # owner's username. Truncated to the UTC date here; blunder check's own footer is untouched.
+    played_on = (
+        None
+        if game.played_at is None
+        else game.played_at.astimezone(datetime.timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+    )
+    return blunder_check_repository.GameInfoRow(
+        time_control_str=game.time_control_str,
+        time_control_bucket=game.time_control_bucket,
+        played_at=played_on,
+        mover_rating=mover_rating,
+    )
 
 
 async def reveal_for_puzzle(
@@ -4589,11 +4901,26 @@ async def reveal_for_puzzle(
 
     `Game` and `HerringPool` are OUTER joins — a `RED_HERRING` row's source
     game can be gone (still fully revealable off its `herring_pool` row), and
-    an `SR_ITEM` row's source game can also be gone (`SET NULL`). AFTER the
-    `not_attempted` gate: when `game is None` and `solve.source == SR_ITEM`,
-    this returns `"not_found"`, as if the row did not exist. There is no
-    "reveal an orphaned SR item" state to invent; the puzzle simply cannot be
-    re-shown once its source game is gone.
+    an `SR_ITEM` or `FOREIGN_BLUNDER` row's source game can also be gone
+    (`SET NULL`). AFTER the `not_attempted` gate: when `game is None` and the
+    source is `SR_ITEM` or `FOREIGN_BLUNDER`, this returns `"not_found"`, as if
+    the row did not exist (D-09: the solved foreign puzzle's outcome stays in
+    `drill_solves`, the position is just not re-openable). There is no "reveal
+    an orphaned item" state to invent; the puzzle simply cannot be re-shown once
+    its source game is gone.
+
+    A `FOREIGN_BLUNDER` reveal is built from the game owner's rows (the game is
+    a stranger's): the played move is the owner's `game_positions.move_san`
+    (D-20; the client labels it neutrally, never as the solver's), the puzzle
+    type and facepalm flag come from the owner's `game_flaws` row, and
+    `game_info` carries only time control, bucket, date and the mover's rating
+    (D-21: no username, email or user id, and `game_id` is None). The herring /
+    own-puzzle ownership gate on "played in game" below is NOT loosened for this:
+    it guards a different case (a herring from another user's game).
+    `has_tactic_lines` is False for a foreign blunder: the pointer would need the
+    withheld game id. The library game and tactic-lines endpoints are intentionally
+    NOT owner-scoped (any signed-in user may read any game by id), so the nulled wire
+    `game_id` is the control that keeps a foreign puzzle away from the stranger's game.
 
     The answer key here is deliberately thin — the puzzle type, the in-game
     move (SAN + UCI), and a tactic-lines pointer.
@@ -4634,19 +4961,16 @@ async def reveal_for_puzzle(
     solve, game, herring_row = row
     if solve.solved_at is None:
         return "not_attempted"
-    if game is None and solve.source == DrillSource.SR_ITEM:
-        # An orphaned SR row is unservable/unrevealable: report it as if the
-        # row did not exist. Never invent a new "reveal with an empty FEN"
+    if game is None and solve.source in _OWNER_KEYED_SOURCES:
+        # An orphaned SR or foreign row is unservable/unrevealable: report it as
+        # if the row did not exist. Never invent a new "reveal with an empty FEN"
         # state for this case.
         return "not_found"
-    # The sharp set is an in-memory dict, not a table — it cannot become a
-    # third `outerjoin` above, so it is resolved here by `sharp_puzzle_id`
-    # instead.
-    sharp_row = (
-        SHARP_SET_BY_ID.get(solve.sharp_puzzle_id)
-        if solve.source == DrillSource.SHARP_FILLER
-        else None
-    )
+    if solve.source == DrillSource.LEGACY_SHARP_FILLER:
+        # Phase 263 D-03: the lichess set that held this puzzle's FEN is gone, so a retired
+        # filler is not re-openable, the same as an orphaned own puzzle. The client's pre-deploy
+        # filler already showed its answer card from the solve response.
+        return "not_found"
 
     # Bug fix: the SAN lookup is scoped to the SOLVING user's own game, not
     # the source game's owner. `herring_pool` is a globally shared,
@@ -4660,35 +4984,32 @@ async def reveal_for_puzzle(
     # the ownership test is an explicit gate here rather than an implicit
     # empty-result from the row filter — the intent has to survive the next
     # reader. Own-game herrings and every SR_ITEM keep the label. Skipped
-    # entirely when `game is None` (only reachable for a herring or a sharp
-    # filler at this point) — `played_in_game_san` degrades to None.
+    # entirely when `game is None` (only reachable for a herring at this point) —
+    # `played_in_game_san` degrades to None.
     played_in_game_san: str | None = None
     if game is not None and game.user_id == user_id:
-        position_row = (
-            await session.execute(
-                select(GamePosition.move_san).where(
-                    GamePosition.user_id == user_id,
-                    GamePosition.game_id == game.id,
-                    GamePosition.ply == solve.ply,
-                )
-            )
-        ).one_or_none()
-        played_in_game_san = position_row.move_san if position_row is not None else None
+        played_in_game_san = await _owner_move_san(
+            session, owner_id=user_id, game_id=game.id, ply=solve.ply
+        )
+    elif game is not None and solve.source == DrillSource.FOREIGN_BLUNDER:
+        # D-20: a foreign blunder's move is the stranger's, read off the owner's
+        # rows and shown under neutral labels by the client ("Played in that
+        # game"), never as the solver's. The herring gate above is deliberately
+        # left strict; this is a separate source-keyed branch.
+        played_in_game_san = await _owner_move_san(
+            session, owner_id=game.user_id, game_id=game.id, ply=solve.ply
+        )
 
     # game_flaws.fen is board_fen() only (no castling/en-passant) —
     # reconstruct the full FEN the same way composition did. A herring always
-    # reads its FEN off the pool row (never the PGN), alive game-link or not;
-    # a sharp filler always reads its FEN off the in-memory data file — both
-    # are exceptions to "game is None -> degrade" above, so this is a real
-    # three-way branch.
+    # reads its FEN off the pool row (never the PGN), alive game-link or not —
+    # the exception to "game is None -> degrade" above.
     if solve.source == DrillSource.RED_HERRING:
         fen = herring_row.fen if herring_row is not None else ""
-    elif solve.source == DrillSource.SHARP_FILLER:
-        fen = sharp_row.fen if sharp_row is not None else ""
     else:
-        # The not_found gate above already excluded (game is None and
-        # source == SR_ITEM), so game is guaranteed non-None here — narrowed
-        # explicitly for ty rather than suppressed.
+        # The not_found gate above already excluded (game is None and the
+        # source is SR_ITEM or FOREIGN_BLUNDER), so game is guaranteed non-None
+        # here — narrowed explicitly for ty rather than suppressed.
         assert game is not None
         fen = full_fen_at_ply(game.pgn, solve.ply) or ""
 
@@ -4702,33 +5023,27 @@ async def reveal_for_puzzle(
         except ValueError, chess.IllegalMoveError, AssertionError:
             played_in_game_move_uci = None  # never raise on an unparseable move_san
 
-    motif: str | None = None
-    # Only a personalized puzzle replays a flaw of the user's own; a herring's game move is
-    # good and a sharp filler has no game.
+    # Only a personalized puzzle (own or foreign) replays a flaw; a herring's game move is
+    # good.
     game_move_facepalm = False
+    game_info: blunder_check_repository.GameInfoRow | None = None
     if solve.source == DrillSource.RED_HERRING:
         puzzle_type: Literal["sharp", "soft", "herring"] = "herring"
         has_tactic_lines = False
-    elif solve.source == DrillSource.SHARP_FILLER:
-        # Constant, not derived — the offline MultiPV-5 verification
-        # pass at authoring time is what makes this assertion provably true.
-        puzzle_type = "sharp"
-        # No tactic-lines pointer for a foreign lichess puzzle — the
-        # tactic-lines endpoint reads game_flaws, which does not exist here.
-        has_tactic_lines = False
-        # The label is free — already in the data file, no runtime
-        # camelCase-theme -> display-label map needed.
-        motif = sharp_row.motif if sharp_row is not None else None
     else:
-        # Same not_found-gate invariant as above: source == SR_ITEM implies
-        # game is not None by this point.
+        # Same not_found-gate invariant as above: SR_ITEM / FOREIGN_BLUNDER
+        # imply game is not None by this point.
         assert game is not None
+        foreign = solve.source == DrillSource.FOREIGN_BLUNDER
+        # The flaw belongs to the game's owner: the solver for an own puzzle, the
+        # stranger for a foreign blunder (never key it on the solver).
+        flaw_owner_id = game.user_id if foreign else user_id
         flaw_row = (
             await session.execute(
                 select(GameFlaw)
                 .options(undefer(GameFlaw.missed_pv_lines))
                 .where(
-                    GameFlaw.user_id == user_id,
+                    GameFlaw.user_id == flaw_owner_id,
                     GameFlaw.game_id == game.id,
                     GameFlaw.ply == solve.ply,
                 )
@@ -4736,15 +5051,26 @@ async def reveal_for_puzzle(
         ).scalar_one_or_none()
         missed_pv_lines = flaw_row.missed_pv_lines if flaw_row is not None else None
         puzzle_type = classify_puzzle_type(missed_pv_lines, mover_color_for_ply(solve.ply))
-        has_tactic_lines = flaw_row is not None and (
-            flaw_row.missed_tactic_motif is not None or flaw_row.allowed_tactic_motif is not None
+        # A foreign puzzle never points at the tactic-lines endpoint (T-263-18): the pointer
+        # needs the withheld game id. That endpoint is intentionally NOT owner-scoped (it serves
+        # any game by id), so the nulled wire game_id is the control, and this gate keeps the
+        # client from being told to call it.
+        has_tactic_lines = (
+            not foreign
+            and flaw_row is not None
+            and (
+                flaw_row.missed_tactic_motif is not None
+                or flaw_row.allowed_tactic_motif is not None
+            )
         )
         game_move_facepalm = await _game_move_is_facepalm(
-            session, user_id=user_id, game_id=game.id, ply=solve.ply
+            session, flaw_owner_id=flaw_owner_id, game_id=game.id, ply=solve.ply
         )
+        if foreign:
+            game_info = _foreign_game_info(game)
 
     return RevealedPuzzle(
-        game_id=solve.game_id,
+        game_id=_wire_game_id(solve.source, solve.game_id),
         ply=solve.ply,
         fen=fen,
         played_in_game_san=played_in_game_san,
@@ -4755,7 +5081,7 @@ async def reveal_for_puzzle(
         source=_wire_source(solve.source),
         has_tactic_lines=has_tactic_lines,
         game_move_facepalm=game_move_facepalm,
-        motif=motif,
+        game_info=game_info,
     )
 
 

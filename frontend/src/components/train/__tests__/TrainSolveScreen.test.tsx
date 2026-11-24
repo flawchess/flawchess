@@ -627,7 +627,7 @@ function makeSession(overrides: Partial<TrainSessionResponse> = {}): TrainSessio
     blob_pending_count: 0,
     puzzles: [],
     solved_results: [],
-    is_warmup: false,
+    own_puzzle_count: 5,
     ...overrides,
   };
 }
@@ -2274,6 +2274,41 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(screen.getByTestId('btn-train-next')).not.toBeNull();
   });
 
+  // D-21 / D-10: a foreign puzzle is a stranger's game, so Analyze opens only the position,
+  // even if a game_id were present; the user's own puzzle (sr_item) still opens the game.
+  it('a foreign verdict links Analyze to the position, never the game, even with a game_id', async () => {
+    solvePuzzle.mockResolvedValue({
+      ...SOLVE_RESPONSE,
+      puzzle_type: 'sharp',
+      source: 'foreign_blunder',
+      item_status: null,
+      streak: null,
+      due_date: null,
+    });
+    await renderScreen(makePuzzle({ game_id: 100, ply: 20 }));
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('btn-train-analyze')).not.toBeNull());
+    expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe(
+      buildAnalysisFenUrl(START_FEN, 'white'),
+    );
+  });
+
+  it('an sr_item verdict with a game_id still links Analyze to the whole game', async () => {
+    solvePuzzle.mockResolvedValue({ ...SOLVE_RESPONSE, source: 'sr_item' });
+    await renderScreen(makePuzzle({ game_id: 100, ply: 20 }));
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('btn-train-analyze')).not.toBeNull());
+    expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe(
+      buildGameAnalysisUrl(100, 19),
+    );
+  });
+
   it('renders the Analyze link when the source game is present', async () => {
     await renderScreen(makePuzzle({ game_id: 100, ply: 20 }));
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -3518,6 +3553,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() =>
         expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!'),
       );
+      // A session with own puzzles keeps the own-games welcome.
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain(
+        'puzzles created from your own games',
+      );
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
@@ -3528,17 +3567,17 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('train-bot-copy').textContent).toContain(
         'Decide first, then play. You play',
       );
-      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
-    // A warm-up first session gets the same two bubbles:
-    // the welcome bubble (only) says it is a warm-up, with no import/sign-up ask.
-    it('a warm-up session is also exactly two bubbles, with the warm-up note on the welcome only', async () => {
+    // A session with no own puzzles gets the same two bubbles: the welcome
+    // bubble (only) says where the puzzles come from, with no sign-up ask.
+    it('a session with no own puzzles is also exactly two bubbles, with its own welcome', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
-      await renderScreen(makePuzzle(), makeSession({ is_warmup: true }));
+      await renderScreen(makePuzzle(), makeSession({ own_puzzle_count: 0 }));
       await waitFor(() => expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull());
       expect(screen.getByTestId('train-bot-copy').textContent).toBe(
-        "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.",
+        'Hi there! These puzzles come from games of players at your level. Once some of your games ' +
+          'are imported and analyzed, puzzles will come from your own games.',
       );
       for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
@@ -3546,7 +3585,6 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
       expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
       expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('analyzing');
-      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
     it('stamps intro exactly once on the closing-step guess click and commits the guess', async () => {
@@ -3912,36 +3950,61 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
     });
 
-    // Warm-up is a SESSION property. A herring solved in a
-    // regular session (the user has SR items) gets the neutral non-return line;
-    // In a warm-up session it gets no tail at all.
+    // The tail is per puzzle, never a session property: a herring and a foreign
+    // blunder each show their own non-return line in a session with or without own
+    // puzzles; a legacy 'sharp_filler' verdict shows none.
     it.each([
-      { is_warmup: false, expectTail: true },
-      { is_warmup: true, expectTail: false },
+      {
+        source: 'red_herring' as const,
+        puzzle_type: 'herring' as const,
+        own_puzzle_count: 4,
+        tail: "A red herring, so it won't come back.",
+      },
+      {
+        source: 'red_herring' as const,
+        puzzle_type: 'herring' as const,
+        own_puzzle_count: 0,
+        tail: "A red herring, so it won't come back.",
+      },
+      {
+        source: 'foreign_blunder' as const,
+        puzzle_type: 'sharp' as const,
+        own_puzzle_count: 0,
+        tail: "From a similarly rated player's game, so it won't come back.",
+      },
+      {
+        source: 'foreign_blunder' as const,
+        puzzle_type: 'sharp' as const,
+        own_puzzle_count: 4,
+        tail: "From a similarly rated player's game, so it won't come back.",
+      },
+      {
+        source: 'sharp_filler' as const,
+        puzzle_type: 'sharp' as const,
+        own_puzzle_count: 0,
+        tail: '',
+      },
     ])(
-      'a red_herring verdict has a non-return tail only outside a warm-up (is_warmup=$is_warmup)',
-      async ({ is_warmup, expectTail }) => {
+      'a $source verdict in a session with own_puzzle_count $own_puzzle_count shows tail "$tail"',
+      async ({ source, puzzle_type, own_puzzle_count, tail }) => {
         solvePuzzle.mockResolvedValue({
           correct_guess: true,
           correct_move: true,
           move_quality: 'good',
-          puzzle_type: 'herring',
-          source: 'red_herring',
+          puzzle_type,
+          source,
           item_status: null,
           streak: null,
           due_date: null,
           session_complete: false,
         });
-        await renderScreen(makePuzzle(), makeSession({ is_warmup }));
+        await renderScreen(makePuzzle(), makeSession({ own_puzzle_count }));
         fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
         await act(async () => {
           fireEvent.click(screen.getByTestId('drop-e2e4'));
         });
-        const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
-        const tailText = screen.queryByTestId('train-bot-tail')?.textContent ?? '';
-        expect(tailText.includes("won't come back")).toBe(expectTail);
-        expect(verdictLine.textContent).not.toContain('warm-up');
-        expect(tailText).not.toContain('warm-up');
+        await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
+        expect(screen.queryByTestId('train-bot-tail')?.textContent ?? '').toBe(tail);
         expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
       },
     );
@@ -4106,13 +4169,13 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
     const ANALYZE_POSITION_COPY = 'The Analyze button opens this position on the analysis board.';
     const CHIPS_COPY =
-      "Each chip is a line: your Move, the engine's Best, and your Game move if known. Same moves share a chip. Tap or click a chip to show its line.";
+      "Each chip is a line: your Move, the engine's Best, and the Game move if known. Same moves share a chip. Tap or click a chip to show its line.";
 
     it('stage 1 on a phone: chips (1 / 2, row spotlit), then stepping (2 / 2, list spotlit); the puzzle stays and nothing is stamped', async () => {
       matchMediaMatches = false;
       await openReveal(1);
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      expect(tourCopyText()).toContain("Each chip is a line: your Move, the engine's Best, and your Game move if known.");
+      expect(tourCopyText()).toContain("Each chip is a line: your Move, the engine's Best, and the Game move if known.");
       expect(stepCount()).toBe('1 / 2');
       expect(chipsRowSpotlit()).toBe(true);
       expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);

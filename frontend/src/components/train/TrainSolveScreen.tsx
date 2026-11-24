@@ -435,8 +435,8 @@ interface BubbleBodyDeps {
   suppressPrompt: boolean;
   onIntroNext: () => void;
   onIntroGuess: (guess: Guess) => void;
-  /** Selects the warm-up variant of the intro welcome. */
-  isWarmup: boolean;
+  /** Selects the no-own-puzzles variant of the intro welcome. */
+  noOwnPuzzles: boolean;
 }
 
 /**
@@ -503,7 +503,7 @@ function renderTrainBotBubbleBody(
   }
   if (bubbleState.kind === 'intro') {
     return {
-      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup).copy}</p>,
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.noOwnPuzzles).copy}</p>,
       actions: (
         <TrainBotStepper
           stepCount={INTRO_STEP_COUNT}
@@ -542,10 +542,10 @@ function resolveBubblePersona(
   sideToMove: 'white' | 'black',
   regularBot: Persona,
   verdictBot: Persona | null,
-  isWarmup: boolean,
+  noOwnPuzzles: boolean,
 ): Persona {
   if (bubbleState.kind === 'intro') {
-    return personaForId(introCopy(bubbleState.step, sideToMove, isWarmup).personaId) ?? regularBot;
+    return personaForId(introCopy(bubbleState.step, sideToMove, noOwnPuzzles).personaId) ?? regularBot;
   }
   if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
   return regularBot;
@@ -905,13 +905,17 @@ export function TrainSolveScreen({
   const handleBarAnalyzeClick = useCallback(() => analyzeFromRevealRef.current(), []);
   // Analyze opens the user's own source game one move before the mistake. Every
   // other puzzle opens just its position: a red herring's game_id routinely
-  // points at ANOTHER user's game (the herring pool is shared), which Analyze
-  // must not open in full, and a sharp filler or an orphaned herring has no game
-  // at all, which must not hide Analyze. Reads `verdict.source` like the game
-  // footer (Analyze only renders once the verdict exists); a stale verdict
-  // without `source` keeps the game link whenever there is a game.
+  // points at ANOTHER user's game (the herring pool is shared), and a foreign
+  // blunder is a stranger's game that must never open (D-21; its game_id is null
+  // on the wire anyway), so neither opens in full. A legacy sharp filler or an
+  // orphaned herring has no game at all, which must not hide Analyze. Reads
+  // `verdict.source` like the game footer (Analyze only renders once the verdict
+  // exists); a stale verdict without `source` keeps the game link whenever there
+  // is a game.
   const analyzeOpens: TourContext['analyzeOpens'] =
-    puzzle.game_id !== null && verdict?.source !== 'red_herring' ? 'game' : 'position';
+    puzzle.game_id !== null && (verdict?.source === undefined || verdict.source === 'sr_item')
+      ? 'game'
+      : 'position';
   const analyzeTo = useMemo<string>(
     () =>
       analyzeOpens === 'game' && puzzle.game_id !== null
@@ -1643,9 +1647,9 @@ export function TrainSolveScreen({
     introStep,
   );
 
-  // The intro is two bubbles whether or not the session is a warm-up; a
-  // warm-up only swaps in its own welcome copy.
-  const isWarmup = trainSession.session?.is_warmup ?? false;
+  // The intro is two bubbles whether or not the session holds own puzzles; a
+  // session with none only swaps in its own welcome copy.
+  const noOwnPuzzles = trainSession.session?.own_puzzle_count === 0;
 
   function handleIntroNext(): void {
     setIntroStep((step) => Math.min(step + 1, INTRO_STEP_COUNT - 1) as IntroStep);
@@ -1730,14 +1734,14 @@ export function TrainSolveScreen({
     suppressPrompt,
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
-    isWarmup,
+    noOwnPuzzles,
   });
   const bubblePersona = resolveBubblePersona(
     bubbleState,
     puzzle.side_to_move,
     bot,
     verdictBot,
-    isWarmup,
+    noOwnPuzzles,
   );
 
   // Bug fix (Phase 249 UAT): this block (the bot bubble and its engine states)
@@ -1990,7 +1994,11 @@ export function TrainSolveScreen({
       {isDesktop && (
         <div className={GAME_INFO_SLOT_CLASS} data-testid="train-game-info-slot">
           {verdict !== null && showReveal && (
-            <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />
+            <TrainRevealGameFooter
+              puzzle={puzzle}
+              verdict={verdict}
+              sessionId={trainSession.session?.session_id ?? null}
+            />
           )}
         </div>
       )}
@@ -2028,7 +2036,6 @@ export function TrainSolveScreen({
           isBest={playedIsBest}
           sessionDate={trainSession.session?.session_date}
           expiresOn={trainSession.session?.expires_on}
-          isWarmup={isWarmup}
           onStripExpand={handleStripExpand}
           // `isSmUp` keeps the one-bar invariant explicit: the phone payload
           // publishes exactly when it is false.

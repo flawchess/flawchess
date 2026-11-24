@@ -155,7 +155,7 @@ function renderScoreScreen(
       nextSessionDate={NEXT_SESSION_DATE}
       onDone={onDone}
       solvedOutcomes={[]}
-      isWarmup={false}
+      noOwnPuzzles={false}
       hasGames={true}
       isGuest={false}
       sessionId={42}
@@ -358,7 +358,7 @@ describe('TrainScoreScreen', () => {
         nextSessionDate={NEXT_SESSION_DATE}
         onDone={onDone}
         solvedOutcomes={[]}
-        isWarmup={false}
+        noOwnPuzzles={false}
         hasGames={true}
         isGuest={false}
       />,
@@ -564,7 +564,7 @@ describe('TrainScoreScreen', () => {
           solvedOutcomes={[
             makeSolvedResult({ correct_guess: false, move_quality: 'wrong', due_date: '2026-07-26' }),
           ]}
-          isWarmup={false}
+          noOwnPuzzles={false}
           hasGames={true}
           isGuest={false}
         />,
@@ -593,26 +593,28 @@ describe('TrainScoreScreen', () => {
       expect(stampMock).not.toHaveBeenCalled();
     });
 
-    it('a first warm-up session carries the rationale in line 1, no return text, and stamps exactly once', () => {
+    it('a first no-own-puzzles session carries the rationale in line 1, no return counts, and stamps exactly once', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
       renderScoreScreen(
         { total: 0, max: 0 },
-        { isWarmup: true, solvedOutcomes: [] },
+        { noOwnPuzzles: true, solvedOutcomes: [] },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
       expect(text).toContain(PRACTICE_RATIONALE_TEXT);
-      expect(text).toContain('Those were warm-ups.');
+      expect(text).toContain('Those puzzles came from games of players at your level.');
       expect(text).not.toMatch(/come back|comes back|coming back/);
       expect(stampMock).toHaveBeenCalledTimes(1);
       expect(stampMock).toHaveBeenCalledWith('sr_explained');
     });
 
-    it('a later warm-up session keeps the unchanged warm-up line, no rationale, and never stamps', () => {
-      renderScoreScreen({ total: 0, max: 0 }, { isWarmup: true, solvedOutcomes: [] });
+    it('a later no-own-puzzles session says nothing comes back yet, no rationale, and never stamps', () => {
+      renderScoreScreen({ total: 0, max: 0 }, { noOwnPuzzles: true, solvedOutcomes: [] });
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
-      expect(text).toContain('Those were warm-ups, nothing to bring back yet.');
+      expect(text).toContain(
+        'Those came from games of players at your level, so nothing comes back yet.',
+      );
       expect(text).not.toContain(PRACTICE_RATIONALE_TEXT);
       expect(stampMock).not.toHaveBeenCalled();
     });
@@ -684,12 +686,12 @@ describe('TrainScoreScreen', () => {
   // The guest branch replaces the reminder
   // ask with the sign-up ask and drops the reminder slot/QR block entirely.
   describe('the guest branch', () => {
-    it('a guest warm-up fixture renders the sign-up ask pair inside the bubble and neither reminder stub, with both reminder mocks configured non-null', () => {
+    it('a guest no-own-puzzles fixture renders the sign-up ask pair inside the bubble and neither reminder stub, with both reminder mocks configured non-null', () => {
       reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
       reminderBelowRowMock.mockReturnValue(
         <p data-testid="train-reminder-guest-check-stub">stub</p>,
       );
-      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, isWarmup: true });
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, noOwnPuzzles: true });
 
       const bubble = screen.getByTestId('train-score-bubble');
       expect(bubble.querySelector('[data-testid="btn-signup-why-train-score"]')).not.toBeNull();
@@ -706,7 +708,7 @@ describe('TrainScoreScreen', () => {
       reminderBelowRowMock.mockReturnValue(
         <p data-testid="train-reminder-guest-check-stub">stub</p>,
       );
-      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, isWarmup: true });
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, noOwnPuzzles: true });
       expect(screen.getByTestId('btn-train-done')).not.toBeNull();
     });
 
@@ -723,8 +725,8 @@ describe('TrainScoreScreen', () => {
       expect(signupElements.length).toBe(0);
     });
 
-    it('a registered zero-game warm-up renders the Import games button in the bubble, no sign-up pair', () => {
-      renderScoreScreen({ total: 0, max: 0 }, { isGuest: false, hasGames: false, isWarmup: true });
+    it('a registered zero-game no-own-puzzles session renders the Import games button in the bubble, no sign-up pair', () => {
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: false, hasGames: false, noOwnPuzzles: true });
       const bubble = screen.getByTestId('train-score-bubble');
       const link = bubble.querySelector('[data-testid="btn-import-games-train-score"]');
       expect(link?.getAttribute('href')).toBe('/library/import');
@@ -732,7 +734,7 @@ describe('TrainScoreScreen', () => {
     });
 
     it('a guest without games keeps the sign-up pair, no Import games button', () => {
-      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, hasGames: false, isWarmup: true });
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, hasGames: false, noOwnPuzzles: true });
       expect(screen.queryByTestId('btn-import-games-train-score')).toBeNull();
       expect(screen.getByTestId('btn-signup-free-train-score')).not.toBeNull();
     });
@@ -774,7 +776,7 @@ describe('TrainScoreScreen continue with Blunder Check (D-12)', () => {
           nextSessionDate={NEXT_SESSION_DATE}
           onDone={onDone}
           solvedOutcomes={[]}
-          isWarmup={false}
+          noOwnPuzzles={false}
           hasGames={true}
           isGuest={false}
           sessionId={42}

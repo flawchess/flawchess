@@ -438,7 +438,7 @@ class TestPurgeGuestDrillCascade:
         is preserved (see the comment above the class).
 
         The seed includes a second `drill_solves` row with `game_id=None`
-        (a sharp-filler solve, `source=SHARP_FILLER`) on the SAME session as
+        (a sharp-filler solve, `source=LEGACY_SHARP_FILLER`) on the SAME session as
         the game-derived solve -- this is the row the games cascade
         provably CANNOT reach (it has no `game_id` to cascade through), so
         its deletion is the entire proof that the explicit
@@ -490,8 +490,7 @@ class TestPurgeGuestDrillCascade:
                     user_id=guest_id,
                     game_id=None,
                     ply=0,
-                    source=DrillSource.SHARP_FILLER,
-                    sharp_puzzle_id="purge-test-sharp-filler",
+                    source=DrillSource.LEGACY_SHARP_FILLER,
                 )
             )
             seed_session.add(TrainSettings(user_id=guest_id))

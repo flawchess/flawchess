@@ -45,6 +45,27 @@ from app.services.train_scheduler import (
 )
 
 
+# Wire value of `DrillSource` (the stored SMALLINT): the single alias behind `SolvedResult`,
+# `SolveResponse` and `PuzzleRevealResponse`. "foreign_blunder" is another non-guest user's blunder
+# that fills a short session (Phase 263); "sharp_filler" is the retired lichess filler, kept only
+# for the solved history rows.
+DrillSourceWire = Literal["sr_item", "red_herring", "sharp_filler", "foreign_blunder"]
+
+TimeControlBucketWire = Literal["bullet", "blitz", "rapid", "classical"]
+
+
+class GameInfo(BaseModel):
+    """Neutral facts about a stranger's game (D-09): no usernames, emails or user ids.
+
+    Shared by blunder check's foreign footer and the Train reveal of a foreign blunder.
+    """
+
+    time_control_str: str | None
+    time_control_bucket: TimeControlBucketWire | None
+    played_at: datetime | None
+    mover_rating: int | None
+
+
 class ServerGradedMove(BaseModel):
     """One move whose grade the server owns.
 
@@ -88,8 +109,11 @@ class TrainPuzzle(BaseModel):
     source-game link is nullable provenance — `None` here means either the
     herring's source game has been deleted (the puzzle is still fully
     servable off its `herring_pool` row) or the pool row was never
-    linked to a game in the first place. Never used as an identity key
-    client-side; a puzzle's identity within a session is `position`.
+    linked to a game in the first place. It is also `None` for a foreign
+    blunder on purpose (D-10, D-21): the game is a stranger's and the client
+    never opens it, so neither a current nor a stale client can deep-link it.
+    Never used as an identity key client-side; a puzzle's identity within a
+    session is `position`.
     """
 
     position: int
@@ -100,7 +124,7 @@ class TrainPuzzle(BaseModel):
     last_move_uci: str | None
     # The server's key move; None = no usable key.
     key_move_uci: str | None = None
-    # Wire puzzle type; a sharp filler reads "sharp".
+    # Wire puzzle type.
     puzzle_type: Literal["sharp", "soft", "herring"] | None = None
     # The blob's second-best move, sharp SR items only.
     runner_up_uci: str | None = None
@@ -135,13 +159,13 @@ class SolvedResult(BaseModel):
     truthful for a "when does it come back" statement across a re-composed
     one (e.g. after a later solve in the same session re-advanced the ladder).
     `item_status`/`due_date` are `None` for `source in ("red_herring",
-    "sharp_filler")`, which carry no SR bookkeeping (mirrors `SolveResponse`'s
+    "sharp_filler", "foreign_blunder")`, which carry no SR bookkeeping (mirrors `SolveResponse`'s
     own nullability).
     """
 
     correct_guess: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     item_status: Literal["active", "mastered", "parked"] | None
     due_date: date | None
 
@@ -169,11 +193,10 @@ class TrainSessionResponse(BaseModel):
     saw the original solve responses (the reproduced prod bug: a
     localStorage-only tally read "0 of 18" on a second device).
 
-    `is_warmup` is frozen at composition and derived purely from material scarcity — `True` iff the session contains zero
-    surviving SR_ITEM puzzles at the moment it was (re-)composed. It is
-    never derived from session ordinal, session count, or account age, and
-    the client performs no arithmetic to reproduce it: it is a single
-    server-computed boolean to branch on.
+    `own_puzzle_count` is derived by the server per response and never persisted: the number
+    of the session's own-game puzzles (SR items, every position, solved or not). 0 means the
+    session holds no puzzle from the user's own games (its puzzles are similarly rated players'
+    blunders and herrings). The client reads it only as `=== 0` (Phase 263 D-12, D-13).
     """
 
     session_id: int | None
@@ -185,7 +208,7 @@ class TrainSessionResponse(BaseModel):
     blob_pending_count: int
     puzzles: list[TrainPuzzle]
     solved_results: list[SolvedResult]
-    is_warmup: bool
+    own_puzzle_count: int
 
 
 # Per-puzzle telemetry boundary. Mirrored by the frontend in
@@ -587,8 +610,8 @@ class VettedMove(BaseModel):
 class SolveResponse(BaseModel):
     """Response for POST /train/sessions/{session_id}/solve.
 
-    `item_status`/`streak`/`due_date` are None for red-herring and sharp-filler
-    puzzles, which carry no SR bookkeeping. `correct_guess` is always the
+    `item_status`/`streak`/`due_date` are None for red-herring, foreign-blunder and
+    legacy-filler puzzles, which carry no SR bookkeeping. `correct_guess` is always the
     server-computed verdict, never an echo of the client's own guess.
 
     `correct_move` is the
@@ -607,7 +630,7 @@ class SolveResponse(BaseModel):
     server's certified "also fine" set for this puzzle — the deep best plus
     the blob's `su` for a soft puzzle (best-first; su-only when
     `game_positions.best_move` is unavailable), the good-band ladder entries
-    for a herring, always empty for sharp/sharp-filler — and is what the
+    for a herring, always empty for sharp — and is what the
     reveal's legend row + green arrows render (never the client engine's own
     alternatives). `graded_es_before`
     / `graded_es_after` are non-null EXACTLY when this call claimed the row
@@ -629,7 +652,7 @@ class SolveResponse(BaseModel):
     correct_move: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
     puzzle_type: Literal["sharp", "soft", "herring"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     item_status: Literal["active", "mastered", "parked"] | None
     streak: int | None
     due_date: date | None
@@ -677,7 +700,9 @@ class PuzzleRevealResponse(BaseModel):
     `game_id` is `int | None`: `None` means the
     puzzle's source game has since been deleted. The client hides the Analyze
     deep-link in that case rather than disabling it — nothing else on
-    the reveal panel references the game either way.
+    the reveal panel references the game either way. It is also `None` for a
+    foreign blunder on purpose (D-21): the game is a stranger's and is never
+    opened; `game_info` carries the neutral facts instead.
     """
 
     game_id: int | None
@@ -686,15 +711,15 @@ class PuzzleRevealResponse(BaseModel):
     played_in_game_san: str | None
     played_in_game_move_uci: str | None
     puzzle_type: Literal["sharp", "soft", "herring"]
-    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    source: DrillSourceWire
     has_tactic_lines: bool
     # The in-game move is a facepalm blunder (facepalm score >= 70%): the reveal badges it
     # "???" instead of "??". A boolean on purpose, the score itself stays server-side. Always
-    # False for a herring or a sharp filler.
+    # False for a herring.
     game_move_facepalm: bool = False
-    # The sharp filler's motif label. None for every
-    # SR_ITEM/RED_HERRING row.
-    motif: str | None
+    # Neutral facts of a stranger's game, foreign puzzles only (D-21): time control, date, the
+    # mover's rating; no usernames, emails or user ids. None for every other source.
+    game_info: GameInfo | None = None
 
 
 #: The path parameter for
@@ -933,7 +958,7 @@ class TrainArchiveItem(BaseModel):
     """One mastered or parked puzzle in the Archive list (GET /train/archive).
 
     Carries the move the user originally played and its severity, but deliberately
-    NOT `best_move` or a motif: the card names the mistake, never the answer, and
+    NOT `best_move` or a tactic label: the card names the mistake, never the answer, and
     Analyze shows the rest for a user who wants it.
 
     `fen`, `last_move_uci` and `played_move_*` are null when the game's PGN cannot

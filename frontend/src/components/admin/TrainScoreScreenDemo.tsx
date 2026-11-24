@@ -89,7 +89,7 @@ export function TrainScoreScreenDemo(): ReactElement {
   const bubble = scoreBubbleCopy({
     missedCount: countMissedPuzzles(outcomes),
     isFirstCompletedSession: false,
-    isWarmup: false,
+    noOwnPuzzles: false,
     reminderAsk: 'none',
     band,
     audience: DEMO_AUDIENCE,

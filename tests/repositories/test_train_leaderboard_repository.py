@@ -22,6 +22,7 @@ k table:
 - k=8  test_deadline_splits_one_session_across_two_weeks (the ending week)
 - k=9  owned by the deadline test (the new week)
 - k=10 test_flags_and_usernames_come_through_on_the_aggregate
+- k=11 test_foreign_and_legacy_filler_solves_count_on_points_but_not_on_accuracy
 """
 
 from __future__ import annotations
@@ -85,7 +86,6 @@ async def _seed_session(
                 game_id=None,
                 ply=0,
                 source=int(source),
-                sharp_puzzle_id=f"lbr{position}" if source == DrillSource.SHARP_FILLER else None,
                 correct_guess=correct_guess,
                 correct_move=quality != DrillMoveQuality.WRONG,
                 move_quality=None if quality is None else int(quality),
@@ -113,7 +113,7 @@ async def test_contribution_returns_the_callers_in_window_session_totals(
                 start + datetime.timedelta(hours=2),
                 False,
                 DrillMoveQuality.GOOD,
-                DrillSource.SHARP_FILLER,
+                DrillSource.LEGACY_SHARP_FILLER,
             ),
             # Same session, but solved in week 1: outside this week's window.
             (end + datetime.timedelta(hours=1), True, DrillMoveQuality.GOOD, DrillSource.SR_ITEM),
@@ -201,7 +201,7 @@ async def test_unsolved_rows_are_not_counted(db_session: AsyncSession) -> None:
 async def test_filler_solves_count_on_points_but_not_in_non_filler_totals(
     db_session: AsyncSession,
 ) -> None:
-    """Filler (k=4): SHARP_FILLER adds to points and puzzles, not to non_filler_points / non_filler_puzzles."""
+    """Filler (k=4): LEGACY_SHARP_FILLER adds to points and puzzles, not to non_filler_points / non_filler_puzzles."""
     await ensure_test_user(db_session, _USER_A)
     at = _week(4)[0] + datetime.timedelta(hours=1)
     await _seed_session(
@@ -209,8 +209,8 @@ async def test_filler_solves_count_on_points_but_not_in_non_filler_totals(
         _USER_A,
         [
             (at, True, DrillMoveQuality.GOOD, DrillSource.SR_ITEM),
-            (at, True, DrillMoveQuality.GOOD, DrillSource.SHARP_FILLER),
-            (at, True, DrillMoveQuality.GOOD, DrillSource.SHARP_FILLER),
+            (at, True, DrillMoveQuality.GOOD, DrillSource.LEGACY_SHARP_FILLER),
+            (at, True, DrillMoveQuality.GOOD, DrillSource.LEGACY_SHARP_FILLER),
         ],
     )
 
@@ -218,6 +218,37 @@ async def test_filler_solves_count_on_points_but_not_in_non_filler_totals(
 
     assert aggregates[_USER_A].totals == SolveTotals(
         points=9, puzzles=3, non_filler_points=3, non_filler_puzzles=1
+    )
+
+
+@pytest.mark.asyncio
+async def test_foreign_and_legacy_filler_solves_count_on_points_but_not_on_accuracy(
+    db_session: AsyncSession,
+) -> None:
+    """Accuracy (k=11, D-18): the accuracy totals count own puzzles and herrings only.
+
+    A week with one good solve (with a correct guess, 3 points) from each of the four sources:
+    SR item and red herring count on both boards, a foreign blunder (Phase 263) and a legacy
+    lichess filler count on points and puzzles only.
+    """
+    await ensure_test_user(db_session, _USER_A)
+    at = _week(11)[0] + datetime.timedelta(hours=1)
+    good = DrillMoveQuality.GOOD
+    await _seed_session(
+        db_session,
+        _USER_A,
+        [
+            (at, True, good, DrillSource.SR_ITEM),
+            (at, True, good, DrillSource.RED_HERRING),
+            (at, True, good, DrillSource.FOREIGN_BLUNDER),
+            (at, True, good, DrillSource.LEGACY_SHARP_FILLER),
+        ],
+    )
+
+    aggregates = await _aggregates_for(db_session, 11, _USER_A)
+
+    assert aggregates[_USER_A].totals == SolveTotals(
+        points=12, puzzles=4, non_filler_points=6, non_filler_puzzles=2
     )
 
 

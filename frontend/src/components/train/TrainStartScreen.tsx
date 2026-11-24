@@ -52,6 +52,7 @@ import { useTrainSettingsDraft } from '@/hooks/useTrainSettingsDraft';
 import {
   GUEST_SIGNUP_ASK_SCORE,
   IMPORT_ASK_LANDING,
+  NO_OWN_DUE_TODAY_COPY,
   REMINDER_INSTALL_ASK,
   isRevealTourDone,
   landingHost,
@@ -101,7 +102,7 @@ export interface TrainStartScreenProps {
   isVisible: boolean;
   /**
    * D-21 / D-03: whether the Train step's feature-route dot sits on the start
-   * button (Start, Warmup and Resume share it). Decided by the page and passed
+   * button (Start and Resume share it). Decided by the page and passed
    * as a prop so this component stays hook-free for its provider-less tests.
    */
   showRouteDot: boolean;
@@ -134,30 +135,16 @@ type LandingState =
   | { kind: 'error' }
   | { kind: 'empty' }
   | { kind: 'completed'; score: number; nextSessionDate: string }
-  | { kind: 'resume'; solved: number; total: number; isWarmup: boolean }
-  | { kind: 'warmup'; puzzleCount: number }
+  | { kind: 'resume'; solved: number; total: number }
   | { kind: 'fresh'; puzzleCount: number };
-// 'warmup' and 'fresh' (and `resume.isWarmup`) render identically. The
-// discriminant is kept because the server flag is still the documented
-// contract and the warm-up copy lives on in the intro stepper and the score
-// screen.
 
 /**
  * Single explicit resolution of the landing states. Order matters:
  * loading/error must be checked first; empty (no session_id) before any
  * puzzle-count math; completed/resume (both require solved_count > 0, or
- * solved_count === puzzle_count) before warmup/fresh (both require
- * solved_count === 0).
- *
- * The 'warmup' discriminant is the server-persisted
- * TrainSessionResponse.is_warmup boolean — a single equality check, no
- * client arithmetic over counts. (There is no 'short' kind: a sharp-filler
- * backfill keeps a session full, so puzzle_count < requested_count never
- * legitimately fires.) is_warmup is ALSO carried on the 'resume' variant (not only
- * a standalone 'warmup' kind): a partially-solved session resolves to
- * 'resume', never 'warmup', so without isWarmup on 'resume' too the label
- * would be dropped the moment the user solves one puzzle — contradicting
- * the "the label survives leaving and resuming the session" contract.
+ * solved_count === puzzle_count) before fresh (requires solved_count === 0).
+ * A session with no own puzzles lands like any other; the one sentence that says
+ * so is `showNoOwnDue` below.
  */
 function resolveLandingState(
   session: TrainSessionResponse | null,
@@ -192,11 +179,7 @@ function resolveLandingState(
       kind: 'resume',
       solved: session.solved_count,
       total: session.puzzle_count,
-      isWarmup: session.is_warmup,
     };
-  }
-  if (session.is_warmup) {
-    return { kind: 'warmup', puzzleCount: session.puzzle_count };
   }
   return { kind: 'fresh', puzzleCount: session.puzzle_count };
 }
@@ -240,6 +223,7 @@ function TrainLandingHost({
   hasGames,
   feedbackAskDays,
   sessionCompleted,
+  showNoOwnDue,
 }: {
   session: TrainSessionResponse | null;
   isGuest: boolean;
@@ -247,6 +231,8 @@ function TrainLandingHost({
   feedbackAskDays: number | null;
   /** Today's session is done (the 'completed' landing state). */
   sessionCompleted: boolean;
+  /** An established user whose open session holds no puzzle from their own games (D-13). */
+  showNoOwnDue: boolean;
 }): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
@@ -266,7 +252,7 @@ function TrainLandingHost({
   // The guest sign-up ask (sentence and buttons) waits until the
   // guest has completed a session, so they try Train before being asked to
   // sign up. `sr_explained_at` is stamped by the first completed session's
-  // score screen, warm-up sessions included, but a reload around the end of
+  // score screen, sessions with no own puzzles included, but a reload around the end of
   // the session skips that screen (and its stamp), so today's completed
   // landing counts on its own.
   const showSignupAsk = isGuest && (sessionCompleted || settings?.sr_explained_at != null);
@@ -278,7 +264,7 @@ function TrainLandingHost({
   // desktop-only. Gated on loaded settings so a returning user's bubble never
   // flashes in before hiding.
   const isIntroHost = settings != null && settings.intro_seen_at == null;
-  const keepOnPhone = isIntroHost || showSignupAsk || showImportAsk;
+  const keepOnPhone = isIntroHost || showSignupAsk || showImportAsk || showNoOwnDue;
   // Tank's intro wins; Hilda takes the host only once the intro stepper is
   // completed. Requiring LOADED settings also means no view is counted on a
   // render that would flip to Tank a moment later.
@@ -304,6 +290,7 @@ function TrainLandingHost({
           actions={landingActions(showSignupAsk, showImportAsk)}
         >
           <p data-testid="train-tagline">{host.copy}</p>
+          {showNoOwnDue && <p data-testid="train-landing-no-own-due">{NO_OWN_DUE_TODAY_COPY}</p>}
           {showSignupAsk && (
             <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>
           )}
@@ -393,7 +380,6 @@ function puzzlesLandingFor(state: LandingState): PuzzlesLanding | undefined {
       return { state: 'done', left: 0, pointsToday: state.score };
     case 'resume':
       return { state: 'in_progress', left: state.total - state.solved, pointsToday: 0 };
-    case 'warmup':
     case 'fresh':
       return { state: 'pending', left: state.puzzleCount, pointsToday: 0 };
     default:
@@ -416,6 +402,14 @@ export function TrainStartScreen({
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
+  // D-13: the exhausted day. "Established" means the user has imported games and has finished a
+  // puzzles session before (an assumption recorded for owner review). Strict `=== true`, so a
+  // pending progress query never flashes the sentence. Not shown once today's session is done.
+  const showNoOwnDue =
+    (state.kind === 'fresh' || state.kind === 'resume') &&
+    session?.own_puzzle_count === 0 &&
+    hasGames &&
+    progress.data?.modes.puzzles.first_session_done === true;
   // The one settings draft: the mode rows and the schedule card all edit it, so a debounced
   // save never overwrites another edit. It lives here (above the early returns) so a pending
   // save survives the loading state and a tab switch.
@@ -502,6 +496,7 @@ export function TrainStartScreen({
           hasGames={hasGames}
           feedbackAskDays={feedbackAskDays}
           sessionCompleted={completed}
+          showNoOwnDue={showNoOwnDue}
         />
       )}
       <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">

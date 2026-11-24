@@ -76,7 +76,7 @@ function makeSession(overrides: Partial<TrainSessionResponse> = {}): TrainSessio
     blob_pending_count: 0,
     puzzles: [makePuzzle()],
     solved_results: [],
-    is_warmup: false,
+    own_puzzle_count: 5,
     ...overrides,
   };
 }

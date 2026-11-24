@@ -494,8 +494,7 @@ async def _seed_open_puzzle_session(
                     user_id=user_id,
                     game_id=None,
                     ply=0,
-                    source=int(DrillSource.SHARP_FILLER),
-                    sharp_puzzle_id=f"sharp-off-{position}",
+                    source=int(DrillSource.LEGACY_SHARP_FILLER),
                     solved_at=_NOW if position < solved else None,
                 )
             )
