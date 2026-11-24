@@ -254,6 +254,14 @@ function NavIndicator({ to, ind, mobile }: { to: string; ind: NavIndicators; mob
 // Exported so App.test.tsx can render each nav surface directly —
 // a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
 // which makes route control and hook mocking impractical from the outside.
+/**
+ * Below lg the desktop nav header shows icons only (the label stays for screen readers).
+ * Bug fix (640-1023px: foldables, tablets): with labels the header needs about 840px for a
+ * regular user, 940px for a guest and 1020px for an admin, so it clipped its last items.
+ * Icon-only it needs about 600-620px and fits from sm up.
+ */
+const NAV_HEADER_LABEL_CLASS = 'max-lg:sr-only';
+
 export function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
@@ -283,7 +291,8 @@ export function NavHeader() {
                 to={to}
                 data-testid={`nav-${to.slice(1)}`}
                 aria-disabled={locked || undefined}
-                title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
+                // Below lg the label is visually hidden, so the hover title names the item.
+                title={locked ? IMPORT_REQUIRED_MESSAGE : label}
                 onClick={locked ? (e) => e.preventDefault() : undefined}
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
@@ -294,7 +303,7 @@ export function NavHeader() {
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                {label}
+                <span className={NAV_HEADER_LABEL_CLASS}>{label}</span>
                 <NavIndicator to={to} ind={ind} mobile={false} />
               </Link>
               );
@@ -318,8 +327,9 @@ export function NavHeader() {
           {/* Icon-only cogwheel, deliberately NOT in NAV_ITEMS (it is a utility,
               not main navigation). Opens a modal, never navigates. */}
           <SettingsDialogButton testId="nav-settings" />
-          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
-            Logout
+          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout" title="Logout">
+            <LogOutIcon className="h-4 w-4 lg:hidden" aria-hidden="true" />
+            <span className={NAV_HEADER_LABEL_CLASS}>Logout</span>
           </Button>
         </div>
       </div>
