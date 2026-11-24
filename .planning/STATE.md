@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 263
 status: completed
 stopped_at: Phase 263 complete — all phases complete
-last_updated: "2026-11-24T04:07:50.243Z"
+last_updated: "2026-11-24T18:01:25.153Z"
 last_activity: 2026-11-24
 last_activity_desc: Phase 263 complete
-state_head: c1da0e052f86fb1790af912113416a67aaf196d7
+state_head: cb97d4cfd168d7b03b76824b42087654ce0a0190
 progress:
   total_phases: 17
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-24 — Phase 263 complete
+Last activity: 2026-11-24 - Completed quick task 261124-ply: Foldable layout: compact phone bot bubble and landscape side column for Train
 
 Open threads carried forward (not blockers):
 
@@ -1224,6 +1224,7 @@ None active.
 | 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
 | 261123-lb8 | Blunder check scoring rebalance: safe 1 / blunder 2 / better move 1, no forfeit on a miss, better move after a miss | 2026-11-23 | cc0b2cc7c | [261123-lb8-blunder-check-scoring-rebalance](./quick/261123-lb8-blunder-check-scoring-rebalance/) |
 | 261124-5f3 | Sentry follow-ups: Train load and solve retry on dropped connections plus a Retry button, 30 s poll backoff on errors, silent skip of aborted chess.com games | 2026-11-24 | a61030d41 | [261124-5f3-sentry-follow-ups-train-network-retries-](./quick/261124-5f3-sentry-follow-ups-train-network-retries-/) |
+| 261124-ply | Foldable layout: compact phone bot bubble and landscape side column for Train | 2026-11-24 | cb97d4cfd | [261124-ply-foldable-layout-compact-phone-bot-bubble](./quick/261124-ply-foldable-layout-compact-phone-bot-bubble/) |
 
 ## Deferred Items
 
