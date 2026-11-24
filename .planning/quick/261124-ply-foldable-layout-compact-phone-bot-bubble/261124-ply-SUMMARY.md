@@ -126,3 +126,11 @@ Below the side-layout gate the board is width-bound; the board column is `displa
 Change 4 (phone height reserve) not needed: the compact bubble alone keeps Ready ~80px above the tab bar at 680px tall.
 Personalized puzzles not exercised live (dev session already done, archive empty); covered by the new 816x616 TrainSolveScreen test.
 Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests passed.
+
+## Follow-up (user request after UAT): landscape band polish
+
+- `useIsTrainSideBand` (side layout below lg, i.e. 768-1023px landscape): TrainBotBubble uses the compact floated avatar there too.
+- ProtectedLayout hides NavHeader while a Train drill is active (playActive on /train) in the band; the drills' progress-row settings cog shows there (`trainside:max-lg:flex`); the immersive page top padding drops to pt-3.
+- Band side column 320 -> 272px and row gap 32 -> 16px (TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS): the band is width-bound, so this is what grows the board.
+- useFitBoardToViewport also observes document.body: chrome above the column (the header removed by the drill's effect) changed without resizing the column, leaving a stale fit.
+- Browser: 816x616 board 401 -> 452, 933x704 489 -> 542, no scroll, no nav header; 1024x700 and 1280x800 unchanged (header shown, 384px column). Full suite 385 files / 6905 tests pass; band test mutation-checked.
