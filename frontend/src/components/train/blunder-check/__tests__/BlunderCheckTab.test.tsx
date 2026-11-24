@@ -191,7 +191,11 @@ vi.mock('@/lib/confetti', async () => {
 
 // The reveal action bar renders under the board from `sm` up (phones publish it to the fixed
 // bottom bar, which these tests do not mount); jsdom has no matchMedia.
-vi.mock('@/hooks/useIsDesktop', () => ({ useIsDesktop: () => true, useIsSmUp: () => true }));
+vi.mock('@/hooks/useIsDesktop', () => ({
+  useIsDesktop: () => true,
+  useIsSmUp: () => true,
+  useIsTrainSideLayout: () => true,
+}));
 
 const playSound = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/sounds', async () => {
