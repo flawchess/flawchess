@@ -1863,7 +1863,7 @@ export function TrainSolveScreen({
       </div>
         {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
             keeps the row at its text height, so the board is not pushed down). */}
-        <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex foldportrait:flex">
+        <div className="flex w-5 shrink-0 justify-center lg:hidden">
           <SettingsSheetButton
             testId="btn-train-settings"
             className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"

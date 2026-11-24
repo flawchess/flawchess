@@ -57,7 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
-import { useIsTrainSideBand } from '@/hooks/useIsDesktop';
+import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -254,14 +254,6 @@ function NavIndicator({ to, ind, mobile }: { to: string; ind: NavIndicators; mob
 // Exported so App.test.tsx can render each nav surface directly —
 // a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
 // which makes route control and hook mocking impractical from the outside.
-/**
- * Below lg the desktop nav header shows icons only (the label stays for screen readers).
- * Bug fix (640-1023px: foldables, tablets): with labels the header needs about 840px for a
- * regular user, 940px for a guest and 1020px for an admin, so it clipped its last items.
- * Icon-only it needs about 600-620px and fits from sm up.
- */
-const NAV_HEADER_LABEL_CLASS = 'max-lg:sr-only';
-
 export function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
@@ -273,7 +265,7 @@ export function NavHeader() {
 
   return (
     <header
-      className="hidden deskframe:block bg-background border-b border-border px-6 overflow-hidden"
+      className="hidden lg:block bg-background border-b border-border px-6 overflow-hidden"
       data-testid="nav-header"
     >
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
@@ -291,8 +283,7 @@ export function NavHeader() {
                 to={to}
                 data-testid={`nav-${to.slice(1)}`}
                 aria-disabled={locked || undefined}
-                // Below lg the label is visually hidden, so the hover title names the item.
-                title={locked ? IMPORT_REQUIRED_MESSAGE : label}
+                title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
                 onClick={locked ? (e) => e.preventDefault() : undefined}
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
@@ -303,7 +294,7 @@ export function NavHeader() {
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                <span className={NAV_HEADER_LABEL_CLASS}>{label}</span>
+                {label}
                 <NavIndicator to={to} ind={ind} mobile={false} />
               </Link>
               );
@@ -327,9 +318,8 @@ export function NavHeader() {
           {/* Icon-only cogwheel, deliberately NOT in NAV_ITEMS (it is a utility,
               not main navigation). Opens a modal, never navigates. */}
           <SettingsDialogButton testId="nav-settings" />
-          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout" title="Logout">
-            <LogOutIcon className="h-4 w-4 lg:hidden" aria-hidden="true" />
-            <span className={NAV_HEADER_LABEL_CLASS}>Logout</span>
+          <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
+            Logout
           </Button>
         </div>
       </div>
@@ -349,7 +339,7 @@ export function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block deskframe:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
+      className="block lg:hidden short:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
     >
       <Link
         to="/openings"
@@ -388,7 +378,7 @@ export function AnalysisMobileHeader() {
   return (
     <header
       data-testid="analysis-mobile-header"
-      className="block deskframe:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
+      className="block lg:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
     >
       {/* Wider tap target (w-16) so the back button matches the generous
           board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
@@ -416,9 +406,9 @@ export function AnalysisMobileHeader() {
 // fixed positioning, breakpoint, and border/background stay byte-identical.
 const MOBILE_BOTTOM_BAR_BASE_CLASSES =
   'fixed bottom-0 inset-x-0 flex z-40 bg-background border-t border-border pb-safe';
-// The phone frame's bottom tab bar: hidden in the desktop frame (`deskframe:`, see
-// DESKTOP_FRAME_QUERY), shown on phones and portrait foldables.
-const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} deskframe:hidden`;
+// The phone frame's bottom tab bar: everything below lg (phones, foldables and tablets in
+// either orientation, all held in the hand). The desktop nav header takes over from lg.
+const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} lg:hidden`;
 /**
  * The board-controls bar shows at every width while a payload is published: the
  * publishers decide when it applies (the Train reveals publish in their stacked
@@ -679,16 +669,14 @@ function ProtectedLayout() {
   // needs the vertical space on small screens. Set by BotsGame and
   // TrainSolveScreen via useMarkPlayActive().
   const playActive = usePlayActive();
-  // A Train drill (blunder check, puzzle solve loop) in the landscape band (640-1023px wide in
-  // landscape: a foldable's inner screen or a tablet held sideways) also drops the desktop nav
-  // header, so the board and progress row get the full height of the short screen, as the
-  // phone portrait layout does with its mobile header. The drills show their own settings cog
-  // in that band; Bots keeps the header (its layout is not height-fitted there).
-  const isTrainSideBand = useIsTrainSideBand();
+  // The desktop nav header only shows from lg, where its labelled items fit; below it the
+  // phone frame (phone header + bottom tab bar) applies at any orientation. A Train drill in
+  // the side layout (a foldable, tablet or phone in landscape) also drops the bottom tab bar,
+  // so the height-fitted board gets the full height of the short screen; the drill shows its
+  // own settings cog, as phones do with their header suppressed during play.
+  const isTrainSideLayout = useIsTrainSideLayout();
+  const hideBottomBar = playActive && isTrainSideLayout && location.pathname.startsWith('/train');
   const boardControlsActive = useMobileBoardControls() != null;
-  // (Portrait foldables need no rule here: they get the phone frame, whose header a drill
-  // already hides through `playActive`.)
-  const hideNavHeader = playActive && isTrainSideBand && location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
@@ -819,7 +807,7 @@ function ProtectedLayout() {
   return (
     <>
       <FeatureRouteRecorder />
-      {!hideNavHeader && <NavHeader />}
+      <NavHeader />
       {!isOpeningsRoute && !playActive && (
         <>
           <MobileHeader />
@@ -827,10 +815,10 @@ function ProtectedLayout() {
       )}
       {/* The fixed board-controls bar can show from `sm` up too, so the page keeps its
           bottom padding while one is published. */}
-      <main className={cn('pb-16', !boardControlsActive && 'deskframe:pb-0')}>
+      <main className={hideBottomBar ? undefined : cn('pb-16', !boardControlsActive && 'lg:pb-0')}>
         <Outlet />
       </main>
-      <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
+      {!hideBottomBar && <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />}
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
       {/* The floating feedback bubble sits over the board's bottom right corner

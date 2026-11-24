@@ -521,9 +521,7 @@ describe('Train gating', () => {
     const { unmount: unmountHeader } = renderNavHeader();
     const desktopLink = screen.getByTestId('nav-train');
     expect(desktopLink.getAttribute('aria-disabled')).toBeNull();
-    // Unlocked: the title is the item's name (the icon-only header's hover label), not the
-    // import-required lock message.
-    expect(desktopLink.getAttribute('title')).toBe('Train');
+    expect(desktopLink.getAttribute('title')).toBeNull();
     // Control assertion: the lock mechanism itself still works for routes
     // that are NOT exempt.
     expect(screen.getByTestId('nav-openings').getAttribute('aria-disabled')).toBe('true');

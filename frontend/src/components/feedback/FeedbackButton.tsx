@@ -31,9 +31,9 @@ export function FeedbackButton() {
     <>
       <div
         className={[
-          // Desktop frame only (`deskframe:`, see DESKTOP_FRAME_QUERY): on phones and
-          // portrait foldables the button crowded the bottom tab bar / board controls
-          'hidden deskframe:block',
+          // Desktop frame only (lg up): below it the bottom tab bar / board controls
+          // sit where the button would, and it crowded them
+          'hidden lg:block',
           'fixed bottom-4 right-4 z-20',
           // Safe-area: compose with bottom offset for iOS home indicator in PWA mode
           'pb-safe',

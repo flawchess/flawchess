@@ -76,16 +76,7 @@ export const SHORT_SIDE_SCROLLER_CLASS =
 export const SHORT_SIDE_STICKY_FOOTER_CLASS =
   'trainside:short:sticky trainside:short:bottom-0 trainside:short:z-10 trainside:short:bg-background trainside:short:pt-2';
 
-/** A portrait foldable or small tablet: past `sm` (so the desktop nav header shows) but below
- * `md`, in portrait (the unfolded Galaxy Z Fold8 is about 704px wide). The JS twin of the
- * `foldportrait:` CSS variant in `index.css`; lib/__tests__/trainSideLayout.test.ts keeps them
- * in sync. */
+/** A portrait foldable or small tablet: past `sm` but below `md`, in portrait (the unfolded
+ * Galaxy Z Fold8 is about 704px wide). It reads like a phone, so the Train bot bubble uses
+ * its compact phone layout there (`useIsPortraitFoldable`). */
 export const PORTRAIT_FOLDABLE_QUERY = '(min-width: 640px) and (max-width: 767.98px) and (orientation: portrait)';
-
-/** The desktop app frame (top nav header, no bottom tab bar, floating Feedback button): 768px
- * and up, or 640px and up in landscape. Below it, the phone frame (phone header, bottom tab
- * bar), which now also covers portrait foldables (640-767px, e.g. an unfolded Galaxy Z Fold8
- * at about 704px wide), where the desktop header did not fit. The exact complement of the
- * phone type scale's query in `index.css`. The `deskframe:` CSS variant reads this query;
- * lib/__tests__/trainSideLayout.test.ts keeps them in sync. */
-export const DESKTOP_FRAME_QUERY = '(min-width: 768px), (min-width: 640px) and (orientation: landscape)';

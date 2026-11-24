@@ -91,7 +91,7 @@ function BlunderCheckProgress({ progress }: { progress: DrillProgress }): ReactE
           progress={progress}
         />
       </div>
-      <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex foldportrait:flex">
+      <div className="flex w-5 shrink-0 justify-center lg:hidden">
         <SettingsSheetButton
           testId="btn-blunder-check-settings"
           className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"

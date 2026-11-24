@@ -160,3 +160,11 @@ Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests 
 - Part 2: NavHeader is icon-only below lg (`max-lg:sr-only` labels, hover titles, icon Logout). Fits from 640px: admin ~588px, guest ~582px (was ~1022 / ~915).
 - Part 1: `DESKTOP_FRAME_QUERY` / `deskframe:` (768px+, or 640px+ landscape) gates the app frame: NavHeader, MobileHeader, AnalysisMobileHeader, bottom tab bar, main bottom padding, floating Feedback button. Portrait foldables (640-767px) get the phone frame. The nav-header type exemption became dead and was removed. Sync test covers the variant and its complement (the phone type scale query).
 - Browser: 704x933, 744x1133, 616x816, 393x852 phone frame (bottom bar at the bottom, 64px main padding, 16px type); 768x1024, 816x616, 667x375, 1280x800 desktop frame. Pages at 704x933: endgames, library, train, leaderboard, openings, bots (immersive game, its controls bar), analysis (its own phone header): no horizontal overflow. 385 files / 6909 tests pass.
+
+## Follow-up 6 (user decision): bottom bar below lg
+
+- Replaced the icon-only header and the `deskframe` frame gate: the app frame now switches at lg (plain `lg:`). Below 1024px at any orientation: phone header + bottom tab bar (icon + label); from lg the labelled desktop header (fits: admin ~1022px at 1024).
+- Short screens (<560px tall) drop the phone header (`short:hidden`); settings and logout stay reachable in the More drawer.
+- Train drills in the side layout hide the bottom bar (`hideBottomBar` in ProtectedLayout, main padding dropped too); the drills' settings cog shows below lg (`lg:hidden`), page top padding `max-lg:pt-0`.
+- Removed `deskframe` and `foldportrait` variants, `DESKTOP_FRAME_QUERY`, and the icon-only header (`NAV_HEADER_LABEL_CLASS`); `useIsTrainSideBand` / `useIsPortraitFoldable` remain for the compact bot bubble.
+- Browser: frame matrix 393x852 ... 1280x800 as intended; drills: landscape no bars + cog (board 564 at 941x710), portrait bottom bar + Ready visible; Analysis (mid layout under its back-button header) and Openings (its own single-column layout, pre-existing) at 768-1023 without overflow. 385 files / 6907 tests pass; lint, build, knip clean.

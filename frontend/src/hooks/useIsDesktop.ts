@@ -57,7 +57,7 @@ export function useIsSmUp(): boolean {
   return useMinWidth(SM_BREAKPOINT_PX);
 }
 
-/** True when the Train drills use their side-column layout (1024px and up, or 768px and up in
+/** True when the Train drills use their side-column layout (1024px and up, or 640px and up in
  * landscape). The JS twin of the `trainside:` CSS variant: both read TRAIN_SIDE_LAYOUT_QUERY,
  * so a drill's JS-mounted branches (height fit, side-column footer, verdict card vs strip)
  * always agree with its CSS split. */
@@ -67,8 +67,8 @@ export function useIsTrainSideLayout(): boolean {
 
 /** True in the Train drills' landscape band: the side-column layout is on but the window is
  * narrower than `lg` (a foldable's inner screen or a tablet held sideways, 640-1023px wide).
- * The JS twin of the `trainside:max-lg:` CSS prefix. The screen is short there, so the drills
- * hide the desktop nav header and use the compact floated-avatar bot bubble. */
+ * The JS twin of the `trainside:max-lg:` CSS prefix. The side column is narrow there, so the
+ * drills use the compact floated-avatar bot bubble. */
 export function useIsTrainSideBand(): boolean {
   const isSideLayout = useIsTrainSideLayout();
   const isDesktop = useIsDesktop();
@@ -84,8 +84,8 @@ export function useIsTrainShortSide(): boolean {
   return isSideLayout && isShort;
 }
 
-/** True on a portrait foldable or small tablet (640-767px wide, portrait). The JS twin of the
- * `foldportrait:` CSS variant. Train drills hide the desktop nav header there. */
+/** True on a portrait foldable or small tablet (640-767px wide, portrait), which reads like a
+ * phone: the Train bot bubble uses its compact layout there. */
 export function useIsPortraitFoldable(): boolean {
   return useMediaQuery(PORTRAIT_FOLDABLE_QUERY);
 }
