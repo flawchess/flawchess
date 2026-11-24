@@ -44,6 +44,7 @@ import { useAnalysisEngineLines } from '@/hooks/analysis/useAnalysisEngineLines'
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
 import { useExplainBar } from '@/hooks/analysis/useExplainBar';
 import { useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
+import { AnalysisMoreMenu } from '@/components/analysis/AnalysisMoreMenu';
 import { ExplainBar } from '@/components/analysis/ExplainBar';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
@@ -102,7 +103,6 @@ import {
   EloSelectorPanel,
   FlawChessCard,
   MoveListHeaderContent,
-  PgnFenMenu,
   HumanTab,
   FlawChessTab,
   MobileEngineLines,
@@ -165,8 +165,8 @@ const EVAL_BAR_NEUTRAL_FRACTION = 0.5;
  *  (App.tsx uses `md:max-desk3col:` so [0,768) stays locked for the takeover's footer chain,
  *  [768,1200) scrolls for the two-column layout). Note this is now above the shell's `sm`
  *  chrome breakpoint (640px). The app frame switches at lg (1024px), so below it the page
- *  sits under its own mobile header (AnalysisMobileHeader), in the takeover and in the
- *  mid-range two-column layout alike. */
+ *  mid-range two-column layout sits under AnalysisMobileHeader (md to lg). The takeover has
+ *  no header, so that header's `md:` MUST track this value too. */
 const MOBILE_BREAKPOINT_PX = 768;
 
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
@@ -2171,8 +2171,13 @@ export default function Analysis() {
     <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} />
   );
   // Mobile: icon-only menu under the SF eval bar instead of the move-list header.
-  const pgnFenIconMenu = (
-    <PgnFenMenu onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} iconOnly />
+  const mobileMoreMenu = (
+    <AnalysisMoreMenu
+      onFlip={() => setBoardFlipped((f) => !f)}
+      onOpenPasteModal={() => setPasteModalOpen(true)}
+      fen={position}
+      getPgn={getPgn}
+    />
   );
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
@@ -2480,13 +2485,15 @@ export default function Analysis() {
   // ── Mobile takeover layout (< MOBILE_BREAKPOINT_PX) ───────────────────────────
   // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Stats]) that
   // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
-  // live at the top of the Eval tab (not above the board). The shell's back-button
-  // header + suppressed bottom nav (ProtectedLayout) complete the takeover.
+  // live at the top of the Eval tab (not above the board). The shell renders no header
+  // and no bottom nav here (ProtectedLayout); the footer's More menu holds the exit,
+  // settings, PGN/FEN tools and flip.
   if (isMobile) {
     return (
       <div
         data-testid="analysis-page"
-        className="flex min-h-0 flex-1 flex-col bg-background"
+        // pt-safe: no header above on phones, so the page itself clears the notch.
+        className="flex min-h-0 flex-1 flex-col bg-background pt-safe"
       >
         {pasteModalNode}
         {engineGateNode}
@@ -2517,12 +2524,9 @@ export default function Analysis() {
             rightEvalBar={rightEvalBarNode()}
             containerRef={containerRef}
           />
-          {/* Rendered even without player bars: the slot under the SF eval bar holds the
-              icon-only PGN/FEN menu, which replaces the mobile move-list header (UAT:
-              reclaims that header's vertical space). */}
-          <BoardFooterRow
-            player={
-              showPlayerBars ? (
+          {showPlayerBars && (
+            <BoardFooterRow
+              player={
                 <AnalysisPlayerBar
                   color={bottomPlayerColor}
                   pastedHeaders={pastedHeaders}
@@ -2530,10 +2534,9 @@ export default function Analysis() {
                   playerClocks={playerClocks}
                   position={position}
                 />
-              ) : null
-            }
-            rightSlot={pgnFenIconMenu}
-          />
+              }
+            />
+          )}
         </div>
 
         {/* Game load error (CLAUDE.md isError branch). */}
@@ -2573,7 +2576,6 @@ export default function Analysis() {
             onBack={goBack}
             onForward={goForward}
             onReset={handleReset}
-            onFlip={() => setBoardFlipped((f) => !f)}
             canGoBack={currentNodeId !== null}
             canReset={canReset}
             canGoForward={canGoForward}
@@ -2582,6 +2584,7 @@ export default function Analysis() {
             canFastForward={fastForward.canFastForward}
             flat
             labels
+            infoSlot={mobileMoreMenu}
           />
         </div>
       </div>

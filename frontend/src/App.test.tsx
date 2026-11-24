@@ -1588,7 +1588,19 @@ describe('settings overlay entry', () => {
     expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
   });
 
-  it('mobile /analysis header: cogwheel opens the sheet in place without navigating', async () => {
+  it('/analysis header shows only between md and lg (phones use the footer More menu)', () => {
+    render(
+      <MemoryRouter initialEntries={['/analysis']}>
+        <AnalysisMobileHeader />
+      </MemoryRouter>,
+    );
+    const classes = screen.getByTestId('analysis-mobile-header').className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(['hidden', 'md:flex', 'lg:hidden']));
+    expect(classes).not.toContain('flex');
+    expect(classes).not.toContain('block');
+  });
+
+  it('/analysis header (md to lg): cogwheel opens the sheet in place without navigating', async () => {
     render(
       <MemoryRouter initialEntries={['/analysis']}>
         <TooltipProvider>

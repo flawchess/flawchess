@@ -371,14 +371,16 @@ export function MobileHeader() {
 
 // ─── Analysis mobile header ───────────────────────────────────────────────────
 
-// The analysis page takes over the mobile shell: a back button (browser back) replaces
-// the logo, and the board controls replace the bottom nav bar (rendered by the page).
+// The analysis page takes over the mobile shell. Between md and lg this header shows a back
+// button (browser back) instead of the logo. Phones (below md, the page's mobile takeover)
+// have no header, so the tab panel gets its height: the footer's AnalysisMoreMenu holds the
+// exit and settings there.
 export function AnalysisMobileHeader() {
   const navigate = useNavigate();
   return (
     <header
       data-testid="analysis-mobile-header"
-      className="block lg:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
+      className="hidden md:flex lg:hidden shrink-0 pt-safe items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
     >
       {/* Wider tap target (w-16) so the back button matches the generous
           board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
@@ -660,8 +662,9 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
-  // The analysis page takes over the mobile shell (back-button header + board-controls
-  // footer owned by the page), so it gets a full-height flex chain on mobile and the
+  // The analysis page takes over the mobile shell (no header on phones, a back-button
+  // header from md, a board-controls footer owned by the page), so it gets a full-height
+  // flex chain on mobile and the
   // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
   const isAnalysisRoute = location.pathname.startsWith('/analysis');
   // A mounted immersive board screen (bot game, Train solve loop) suppresses

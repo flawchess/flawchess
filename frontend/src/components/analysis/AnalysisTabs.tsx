@@ -1,5 +1,5 @@
 import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react';
-import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ChevronDown, ClipboardPaste, Copy, Cpu, FileText, User } from 'lucide-react';
+import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ChevronDown, ClipboardPaste, Copy, Cpu, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -121,7 +121,10 @@ export type BoardControlsProps = {
   onBack: () => void;
   onForward: () => void;
   onReset: () => void;
-  onFlip: () => void;
+  /** Omitted on phones: the footer's More menu (`infoSlot`) holds the flip there. */
+  onFlip?: () => void;
+  /** Extra column at the end of the bar (the phone footer's More menu). */
+  infoSlot?: ReactNode;
   canGoBack: boolean;
   canReset: boolean;
   canGoForward: boolean;
@@ -146,6 +149,7 @@ export function BoardControls({
   onForward,
   onReset,
   onFlip,
+  infoSlot,
   canGoBack,
   canReset,
   canGoForward,
@@ -159,6 +163,7 @@ export function BoardControls({
       onForward={onForward}
       onReset={onReset}
       onFlip={onFlip}
+      infoSlot={infoSlot}
       canGoBack={canGoBack}
       canReset={canReset}
       canGoForward={canGoForward}
@@ -509,58 +514,58 @@ async function copyToClipboard(text: string, label: 'FEN' | 'PGN', target: 'fen-
   }
 }
 
-// The PGN/FEN menu (import, copy PGN or copy FEN). Rendered unconditionally in
-// every layout, including ?game_id= game mode (the whole flow must work at 375px):
-// labelled inside the move-list header on desktop/mid, icon-only under the SF eval
-// bar on mobile (UAT: the mobile move-list header was dropped to gain vertical space).
-export function PgnFenMenu({
-  onOpenPasteModal,
-  fen,
-  getPgn,
-  iconOnly = false,
-}: MoveListHeaderContentProps & { iconOnly?: boolean }): ReactElement {
+/**
+ * The PGN/FEN items (import, copy PGN, copy FEN), shared by `PgnFenMenu` (desktop/mid
+ * move-list header) and the phone footer's `AnalysisMoreMenu`. Available in every
+ * layout, including ?game_id= game mode (the whole flow must work at 375px).
+ */
+export function PgnFenMenuItems({ onOpenPasteModal, fen, getPgn }: MoveListHeaderContentProps): ReactElement {
+  return (
+    <>
+      <DropdownMenuItem
+        data-testid="analysis-menu-import"
+        onSelect={() => {
+          onOpenPasteModal();
+          trackFeature('board-tool', { target: 'paste-open' });
+        }}
+      >
+        <ClipboardPaste aria-hidden="true" />
+        Import PGN/FEN
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        data-testid="analysis-menu-copy-pgn"
+        onSelect={() => void copyToClipboard(getPgn(), 'PGN', 'pgn-copy')}
+      >
+        <Copy aria-hidden="true" />
+        Copy PGN
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        data-testid="analysis-menu-copy-fen"
+        onSelect={() => void copyToClipboard(fen, 'FEN', 'fen-copy')}
+      >
+        <Copy aria-hidden="true" />
+        Copy FEN
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+// The labelled PGN/FEN menu in the move-list header on desktop/mid. Phones have no
+// move-list header: their footer's More menu holds the same items.
+function PgnFenMenu(props: MoveListHeaderContentProps): ReactElement {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {iconOnly ? (
-          <Button variant="ghost" size="icon-sm" aria-label="PGN/FEN" data-testid="analysis-btn-paste">
-            <FileText className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        ) : (
-          // -my-1.5: the h-8 button keeps its tap target but no longer sets the header
-          // row height, so the Moves header matches the Stockfish/FlawChess/Maia headers
-          // (whose tallest content is a 20px text line).
-          <Button variant="ghost" size="default" className="-my-1.5 ml-auto gap-1" data-testid="analysis-btn-paste">
-            PGN/FEN
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        )}
+        {/* -my-1.5: the h-8 button keeps its tap target but no longer sets the header
+            row height, so the Moves header matches the Stockfish/FlawChess/Maia headers
+            (whose tallest content is a 20px text line). */}
+        <Button variant="ghost" size="default" className="-my-1.5 ml-auto gap-1" data-testid="analysis-btn-paste">
+          PGN/FEN
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" data-testid="analysis-pgn-fen-menu">
-        <DropdownMenuItem
-          data-testid="analysis-menu-import"
-          onSelect={() => {
-            onOpenPasteModal();
-            trackFeature('board-tool', { target: 'paste-open' });
-          }}
-        >
-          <ClipboardPaste aria-hidden="true" />
-          Import PGN/FEN
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          data-testid="analysis-menu-copy-pgn"
-          onSelect={() => void copyToClipboard(getPgn(), 'PGN', 'pgn-copy')}
-        >
-          <Copy aria-hidden="true" />
-          Copy PGN
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          data-testid="analysis-menu-copy-fen"
-          onSelect={() => void copyToClipboard(fen, 'FEN', 'fen-copy')}
-        >
-          <Copy aria-hidden="true" />
-          Copy FEN
-        </DropdownMenuItem>
+        <PgnFenMenuItems {...props} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

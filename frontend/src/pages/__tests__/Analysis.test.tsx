@@ -2380,11 +2380,21 @@ describe('Mobile Stats tab: present during analysis, then the MoveStats panel', 
     clientWidthSpy.mockRestore();
   });
 
-  // Board flip is a layout-agnostic re-render trigger (present in the mobile footer),
-  // unlike the desktop block's Maia toggle which is buried inside a tab here.
+  // Board flip (in the footer's More menu) is a re-render trigger that needs no tab
+  // switch, unlike the desktop block's Maia toggle which is buried inside a tab here.
+  // Radix menus open on Enter or pointerdown, never on a bare click.
   function forceRerender(): void {
-    fireEvent.click(screen.getByTestId('board-btn-flip'));
+    fireEvent.keyDown(screen.getByTestId('analysis-btn-more'), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('analysis-menu-flip'));
   }
+
+  it('the footer has More instead of Flip, and no PGN/FEN button', () => {
+    renderAnalysis('/analysis');
+    const footer = screen.getByTestId('analysis-mobile-footer');
+    expect(within(footer).getByTestId('analysis-btn-more')).toBeTruthy();
+    expect(screen.queryByTestId('board-btn-flip')).toBeNull();
+    expect(screen.queryByTestId('analysis-btn-paste')).toBeNull();
+  });
 
   it('renders the Stats tab trigger while analysis is still pending — not only once evals land', () => {
     libraryGameState.data = buildGame({
