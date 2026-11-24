@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 263
-current_phase_name: Similarly Rated Players' Blunders Replace the Lichess Fillers (SEED-261120-jnw)
-status: verifying
-stopped_at: Completed 263-10-PLAN.md
-last_updated: "2026-11-23T22:20:29.754Z"
-last_activity: 2026-11-23
-last_activity_desc: Phase 263 execution started
-state_head: 227421b59e0ac52d9edd8e05d6f5cc28f63246af
+status: completed
+stopped_at: Phase 263 complete — all phases complete
+last_updated: "2026-11-24T04:07:50.243Z"
+last_activity: 2026-11-24
+last_activity_desc: Phase 263 complete
+state_head: c1da0e052f86fb1790af912113416a67aaf196d7
 progress:
   total_phases: 17
   completed_phases: 63
   total_plans: 154
   completed_plans: 150
+  percent: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,14 +21,16 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 263 (Similarly Rated Players' Blunders Replace the Lichess Fillers (SEED-261120-jnw)) — EXECUTING
-Plan: 10 of 10
+Phase: 263
+Plan: Not started
 
-Status: Phase complete — ready for verification
+Status: All phases complete
 
-Last activity: 2026-11-23 — Phase 263 execution started
+Last activity: 2026-11-24 — Phase 263 complete
 
 Open threads carried forward (not blockers):
+
+- Phase 263 post-deploy: UAT items 7 (re-run 263-PROD-EXPLAIN.sql on prod, incl. LIMIT 200) and 8 (reveal of a lichess filler solved just before the deploy; finish such a session BEFORE deploying). Accepted as is: WR-03 score bubble on an exhausted day, out-of-band picks at level about 1000 and 2300+ (263-UAT.md).
 
 - Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
 
@@ -1275,7 +1277,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 ## Session Continuity
 
 **Last session:** 2026-11-23T22:20:27.440Z
-**Stopped at:** Completed 263-10-PLAN.md
+**Stopped at:** Phase 263 complete — all phases complete
 **Resume file:** None
 
 Previous session note (Phase 227):

@@ -1,7 +1,7 @@
 ---
 phase: 263-foreign-blunder-fillers
 verified: 2026-11-24T00:10:00Z
-status: human_needed
+status: passed
 score: 13/13 must-haves verified
 covered_files:
   - ".planning/phases/263-foreign-blunder-fillers/263-01-PLAN.md"
@@ -45,7 +45,7 @@ covered_files:
   - "tests/routers/test_train_foreign.py"
   - "tests/services/test_train_foreign.py"
   - "tests/test_phase_263_migration.py"
-covered_digest: "v4:sha256:9f1d2723478e9fab70b75024b6607338b1684e315d5a94178f2e5a675eb6bd1b"
+covered_digest: "v4:sha256:66a5d0157b7d63686a312afa6121239a58ea44561782f3ee4b98bd2b858b3fdf"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification: false
@@ -180,3 +180,12 @@ None. All 21 owner decisions are honored in code, the serving path is deleted, t
 
 _Verified: 2026-11-24_
 _Verifier: Claude (gsd-verifier)_
+
+## Addendum 2026-11-24 (orchestrator, at phase close)
+
+Status moved from `human_needed` to `passed`: 263-UAT.md has 6 of 8 items passed (browser UAT plus the owner's
+acceptance). Items 7 (prod EXPLAIN) and 8 (old-filler reveal) are only reachable after the deploy and stay pending there.
+
+`covered_digest` was recomputed without re-running the verifier. The only covered file that changed since the
+verifier ran is `TrainStartScreen.tsx`, from merging `main` (quick task 261124-5f3: a Retry button in the error state).
+The D-13 logic is unchanged, and the full backend and frontend suites passed on the merged tree.
