@@ -1,6 +1,6 @@
 import type { QueryStatus } from '@tanstack/react-query';
 
-/** Slowest cadence a failing status poll falls back to. */
+/** Minimum wait between polls while a status poll is failing. */
 export const POLL_ERROR_BACKOFF_MS = 30_000;
 
 /**
