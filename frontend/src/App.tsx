@@ -57,7 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
-import { useIsPortraitFoldable, useIsTrainSideBand } from '@/hooks/useIsDesktop';
+import { useIsTrainSideBand } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -273,7 +273,7 @@ export function NavHeader() {
 
   return (
     <header
-      className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden"
+      className="hidden deskframe:block bg-background border-b border-border px-6 overflow-hidden"
       data-testid="nav-header"
     >
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
@@ -349,7 +349,7 @@ export function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
+      className="block deskframe:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
     >
       <Link
         to="/openings"
@@ -388,7 +388,7 @@ export function AnalysisMobileHeader() {
   return (
     <header
       data-testid="analysis-mobile-header"
-      className="block sm:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
+      className="block deskframe:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
     >
       {/* Wider tap target (w-16) so the back button matches the generous
           board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
@@ -416,7 +416,9 @@ export function AnalysisMobileHeader() {
 // fixed positioning, breakpoint, and border/background stay byte-identical.
 const MOBILE_BOTTOM_BAR_BASE_CLASSES =
   'fixed bottom-0 inset-x-0 flex z-40 bg-background border-t border-border pb-safe';
-const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} sm:hidden`;
+// The phone frame's bottom tab bar: hidden in the desktop frame (`deskframe:`, see
+// DESKTOP_FRAME_QUERY), shown on phones and portrait foldables.
+const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} deskframe:hidden`;
 /**
  * The board-controls bar shows at every width while a payload is published: the
  * publishers decide when it applies (the Train reveals publish in their stacked
@@ -684,11 +686,9 @@ function ProtectedLayout() {
   // in that band; Bots keeps the header (its layout is not height-fitted there).
   const isTrainSideBand = useIsTrainSideBand();
   const boardControlsActive = useMobileBoardControls() != null;
-  // The same on a portrait foldable (an unfolded Galaxy Z Fold8, about 704px wide): it is past
-  // sm, so it shows the desktop header that phones never show during a drill.
-  const isPortraitFoldable = useIsPortraitFoldable();
-  const hideNavHeader =
-    playActive && (isTrainSideBand || isPortraitFoldable) && location.pathname.startsWith('/train');
+  // (Portrait foldables need no rule here: they get the phone frame, whose header a drill
+  // already hides through `playActive`.)
+  const hideNavHeader = playActive && isTrainSideBand && location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
@@ -827,7 +827,7 @@ function ProtectedLayout() {
       )}
       {/* The fixed board-controls bar can show from `sm` up too, so the page keeps its
           bottom padding while one is published. */}
-      <main className={cn('pb-16', !boardControlsActive && 'sm:pb-0')}>
+      <main className={cn('pb-16', !boardControlsActive && 'deskframe:pb-0')}>
         <Outlet />
       </main>
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />

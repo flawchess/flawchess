@@ -154,3 +154,9 @@ Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests 
 - Band side column: `flex-1 basis-0`, 272px floor, 448px cap (was a fixed 272px), so it takes the width the height-fitted board leaves. Board column gets `min-w-0` (with `min-width: auto` it could not shrink and near-square screens overflowed by up to 44px).
 - Landscape side-layout threshold 768 -> 640px (covers iPhone SE 667x375, Galaxy S8 740x360).
 - Browser matrix (puzzle reveal + blunder ready gate), settled measurements: 941x710, 933x704, 816x616, 841x701, 832x750, 820x791, 1000x650, 852x393, 915x412, 740x360, 667x375 all fill to the page padding with Next / Ready visible and no horizontal overflow; portrait (704x933, 393x852, 412x915, 768x1024) and desktop (1024x700, 1280x800) unchanged. 816x616 reveal still scrolls 41px vertically (column taller than the board; Next visible).
+
+## Follow-up 5 (user request): header fit
+
+- Part 2: NavHeader is icon-only below lg (`max-lg:sr-only` labels, hover titles, icon Logout). Fits from 640px: admin ~588px, guest ~582px (was ~1022 / ~915).
+- Part 1: `DESKTOP_FRAME_QUERY` / `deskframe:` (768px+, or 640px+ landscape) gates the app frame: NavHeader, MobileHeader, AnalysisMobileHeader, bottom tab bar, main bottom padding, floating Feedback button. Portrait foldables (640-767px) get the phone frame. The nav-header type exemption became dead and was removed. Sync test covers the variant and its complement (the phone type scale query).
+- Browser: 704x933, 744x1133, 616x816, 393x852 phone frame (bottom bar at the bottom, 64px main padding, 16px type); 768x1024, 816x616, 667x375, 1280x800 desktop frame. Pages at 704x933: endgames, library, train, leaderboard, openings, bots (immersive game, its controls bar), analysis (its own phone header): no horizontal overflow. 385 files / 6909 tests pass.
