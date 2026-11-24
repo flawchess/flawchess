@@ -483,6 +483,63 @@ async def test_lease_lifo(
         await _delete_games(eval_worker_session_maker, game_ids)
 
 
+# Planner settings that leave Postgres a nested loop that rescans the claim's candidate subquery
+# per outer row, the plan a small or never-analyzed games table can pick on its own.
+_RESCAN_PLAN_SETTINGS: tuple[str, ...] = (
+    "enable_hashjoin",
+    "enable_mergejoin",
+    "enable_hashagg",
+    "enable_sort",
+    "enable_material",
+    "enable_memoize",
+)
+
+
+@pytest.mark.asyncio
+async def test_claim_never_exceeds_batch_under_rescanning_plan(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """The claim returns at most batch_size games whatever join plan Postgres picks.
+
+    Regression: the candidate SELECT sat directly in the UPDATE's `id IN (...)`. A nested-loop
+    semi join rescans it per outer row, and each rescan skips the rows this same UPDATE already
+    changed, so LIMIT applied per rescan and the claim took extra games (test_lease_lifo flaked
+    with 4 of 3, depending on table statistics and heap order).
+    """
+    from app.services.eval_drain import _claim_entry_eval_games
+
+    game_ids: list[int] = []
+    for _ in range(8):
+        game_ids.append(
+            await _insert_game(
+                eval_worker_session_maker, eval_worker_test_user, evals_completed_at=None
+            )
+        )
+
+    try:
+        # Rewrite the rows newest first in one transaction, so the heap order the outer scan
+        # follows starts with the rows the claim takes first.
+        async with eval_worker_session_maker() as session:
+            for game_id in reversed(game_ids):
+                await session.execute(
+                    sa.text("UPDATE games SET pgn = pgn WHERE id = :id"), {"id": game_id}
+                )
+            await session.commit()
+
+        async with eval_worker_session_maker() as session:
+            for setting in _RESCAN_PLAN_SETTINGS:
+                await session.execute(sa.text(f"SET LOCAL {setting} = off"))
+            claimed = await _claim_entry_eval_games(session, "worker-rescan", 3, 60)
+            await session.commit()
+
+        assert sorted(claimed) == sorted(game_ids)[-3:], (
+            f"expected exactly the 3 newest games, got {sorted(claimed)} of {sorted(game_ids)}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, game_ids)
+
+
 @pytest.mark.asyncio
 async def test_lease_reclaim(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
@@ -754,11 +811,10 @@ async def test_entry_lease_returns_positions(
 # an empty _selection_gate_clause()-equivalent that renders as a stray space,
 # a newline, or a bare truthy conjunct rather than nothing at all must fail
 # these, not merely a "looks equivalent" whitespace-normalized check.
+# The claim baseline was re-frozen on 2026-11-24, when the candidate SELECT moved into a
+# MATERIALIZED CTE (see test_claim_never_exceeds_batch_under_rescanning_plan).
 _FROZEN_ENTRY_CLAIM_SQL: str = (
-    "\n            UPDATE games\n"
-    "            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,\n"
-    "                entry_eval_leased_by = :worker_id\n"
-    "            WHERE id IN (\n"
+    "\n            WITH candidate AS MATERIALIZED (\n"
     "                SELECT id FROM games\n"
     "                WHERE evals_completed_at IS NULL\n"
     "                  AND (entry_eval_lease_expiry IS NULL OR entry_eval_lease_expiry < now())\n"
@@ -766,6 +822,10 @@ _FROZEN_ENTRY_CLAIM_SQL: str = (
     "                LIMIT :batch\n"
     "                FOR UPDATE SKIP LOCKED\n"
     "            )\n"
+    "            UPDATE games\n"
+    "            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,\n"
+    "                entry_eval_leased_by = :worker_id\n"
+    "            WHERE id IN (SELECT id FROM candidate)\n"
     "            RETURNING id\n"
     "        "
 )
