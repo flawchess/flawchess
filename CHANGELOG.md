@@ -30,6 +30,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Analysis on phones: the top header is gone, so the move list and the other tabs get more room. A More button replaces Flip in the bottom bar and holds Flip board, Settings, the PGN/FEN tools and Leave analysis.
+- Analysis on unfolded foldables and tablets below 1024px wide uses the same bottom bar with the More button. The top header and the controls under the board are gone, and the tabs fill the height beside the board.
 - Train: on landscape tablets, unfolded foldables and phones held sideways (640px wide and up), blunder check and personalized puzzles put the board and the bot's bubble side by side, with the board sized to fit the screen height. On the narrower of these screens (640 to 1023px wide) the top menu is hidden during a drill and the bot's bubble uses the compact layout, so the board gets as much room as possible.
 - Bot speech bubbles on phones show the bot's avatar inside the bubble instead of a name row above it, so the bubble and its buttons take less height (Train, Bots, Endgames, Import, and Hilda's tour on the board).
 - Train on phones in landscape: the board uses the full screen height, the progress row sits above the bot's bubble, and the solution column scrolls beside the board with Next always on screen.
