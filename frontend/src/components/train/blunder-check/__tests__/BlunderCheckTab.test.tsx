@@ -196,6 +196,7 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   useIsSmUp: () => true,
   useIsTrainSideLayout: () => true,
   useIsTrainSideBand: () => false,
+  useIsPortraitFoldable: () => false,
   useIsTrainShortSide: () => false,
 }));
 

@@ -53,6 +53,7 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   // The desktop-path tests model a desktop side column (avatar + name beside the bubble), not
   // the landscape band's compact bubble, which TrainBotBubble.test covers.
   useIsTrainSideBand: () => false,
+  useIsPortraitFoldable: () => false,
   useIsTrainShortSide: () => false,
 }));
 

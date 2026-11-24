@@ -15,16 +15,25 @@ import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 
-import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import { PORTRAIT_FOLDABLE_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 
 const SM_UP_QUERY = '(min-width: 640px)';
 let smUp = false;
 /** The Train side-layout query; with `lg` (1024px) answering false this is the landscape band. */
 let trainSide = false;
+/** The portrait foldable query (640-767px wide, portrait). */
+let portraitFoldable = false;
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
-    matches: query === SM_UP_QUERY ? smUp : query === TRAIN_SIDE_LAYOUT_QUERY ? trainSide : false,
+    matches:
+      query === SM_UP_QUERY
+        ? smUp
+        : query === TRAIN_SIDE_LAYOUT_QUERY
+          ? trainSide
+          : query === PORTRAIT_FOLDABLE_QUERY
+            ? portraitFoldable
+            : false,
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -39,6 +48,7 @@ afterEach(() => {
   cleanup();
   smUp = false;
   trainSide = false;
+  portraitFoldable = false;
 });
 
 const PERSONA = PERSONA_REGISTRY['wall-1800']; // Hilda — has curated art
@@ -127,6 +137,23 @@ describe('TrainBotBubble', () => {
       expect(screen.queryByTestId('train-bot-name')).toBeNull();
       expect(container.querySelector('.rotate-45')).toBeNull();
       expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe(PERSONA.name);
+    });
+  });
+
+  describe('portrait foldable (640-767px wide, portrait)', () => {
+    it('uses the compact floated avatar like a phone', () => {
+      smUp = true;
+      portraitFoldable = true;
+      render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(true);
+      expect(screen.queryByTestId('train-bot-name')).toBeNull();
     });
   });
 

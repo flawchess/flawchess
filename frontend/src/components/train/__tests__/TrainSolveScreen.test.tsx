@@ -26,7 +26,11 @@ import { PublishedRevealBar } from '@/components/train/__tests__/PublishedReveal
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
-import { SHORT_VIEWPORT_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import {
+  PORTRAIT_FOLDABLE_QUERY,
+  SHORT_VIEWPORT_QUERY,
+  TRAIN_SIDE_LAYOUT_QUERY,
+} from '@/lib/trainSideLayout';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
@@ -98,6 +102,8 @@ let sideLayoutOnly = false;
 let shortViewport = false;
 function mediaMatches(query: string): boolean {
   if (query === SHORT_VIEWPORT_QUERY) return shortViewport;
+  // No test here models a portrait foldable; TrainBotBubble.test covers its compact bubble.
+  if (query === PORTRAIT_FOLDABLE_QUERY) return false;
   if (query === SM_UP_QUERY) return smUpMatches;
   if (query === TRAIN_SIDE_LAYOUT_QUERY && !smUpMatches) return false;
   if (sideLayoutOnly) return query === TRAIN_SIDE_LAYOUT_QUERY;

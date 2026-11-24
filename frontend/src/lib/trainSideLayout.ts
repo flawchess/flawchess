@@ -70,3 +70,9 @@ export const SHORT_SIDE_SCROLLER_CLASS =
 /** The side column's footer (Analyze / Next), pinned to the scroller's bottom edge. */
 export const SHORT_SIDE_STICKY_FOOTER_CLASS =
   'trainside:short:sticky trainside:short:bottom-0 trainside:short:z-10 trainside:short:bg-background trainside:short:pt-2';
+
+/** A portrait foldable or small tablet: past `sm` (so the desktop nav header shows) but below
+ * `md`, in portrait (the unfolded Galaxy Z Fold8 is about 704px wide). The JS twin of the
+ * `foldportrait:` CSS variant in `index.css`, which also gates the phone type scale's
+ * nav-header exemption; lib/__tests__/trainSideLayout.test.ts keeps them in sync. */
+export const PORTRAIT_FOLDABLE_QUERY = '(min-width: 640px) and (max-width: 767.98px) and (orientation: portrait)';

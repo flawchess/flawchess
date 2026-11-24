@@ -48,6 +48,12 @@
     }
 }
 
+/* foldportrait: a portrait foldable or small tablet (sm up to just below md, portrait), e.g.
+   the unfolded Galaxy Z Fold8 at about 704px wide. Train drills hide the desktop nav header
+   there, as phones hide their header. MUST match PORTRAIT_FOLDABLE_QUERY in
+   lib/trainSideLayout.ts; lib/__tests__/trainSideLayout.test.ts enforces it. */
+@custom-variant foldportrait (@media (min-width: 640px) and (max-width: 767.98px) and (orientation: portrait));
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

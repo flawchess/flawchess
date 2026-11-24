@@ -142,3 +142,9 @@ Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests 
 - Browser matrix (blunder check ready gate + solution, puzzles prompt + reveal) at iPhone 16 393x852 / 852x393, Fold8 cover 412x915 / 915x412, inner 704x933 / 933x704 and 616x816 / 816x616: no hidden action button, no horizontal overflow. iPhone 16 landscape board 228 -> 341 (both drills), cover landscape 278 -> 360; Next on the board's bottom edge in landscape, in the bottom bar in portrait.
 - Tests: PublishedRevealBar test stand-in for the shell bar; TrainSolveScreen stub made realistic (below sm is never side layout); new short-side test, mutation-checked. 385 files / 6906 tests pass; lint, build, knip clean.
 - Not done: widening the side column in phone landscape (there is spare width at 852px); custom-variant cascade order between `trainside:max-lg:` and `trainside:short:` utilities is unverified, so the band width was left alone.
+
+## Follow-up 3 (user request): portrait foldable header, type scale
+
+- Phone type scale extends to portrait up to 767px (`index.css`); the desktop nav header keeps the desktop scale there.
+- `PORTRAIT_FOLDABLE_QUERY` / `foldportrait:` variant / `useIsPortraitFoldable` (640-767px, portrait), sync-tested against index.css. Train drills hide the nav header there (as in the landscape band), show the progress-row cog, drop the top padding; TrainBotBubble is compact there.
+- Browser at 704x933: drill and solution with no header, cog at top, 16px copy, board 572, Next in the bottom bar. 744x1133 behaves the same; 768x1024 portrait, landscape and desktop unchanged. 385 files / 6908 tests pass.

@@ -10,7 +10,11 @@
  * hover (side layout) or glyph tap (stacked layout), and which layout-dependent branches mount.
  */
 import { useEffect, useState } from 'react';
-import { SHORT_VIEWPORT_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import {
+  PORTRAIT_FOLDABLE_QUERY,
+  SHORT_VIEWPORT_QUERY,
+  TRAIN_SIDE_LAYOUT_QUERY,
+} from '@/lib/trainSideLayout';
 
 /** Tailwind's default `lg` breakpoint — kept module-private (not exported;
  * knip flags unused exports) since nothing outside this hook needs the raw
@@ -78,4 +82,10 @@ export function useIsTrainShortSide(): boolean {
   const isSideLayout = useIsTrainSideLayout();
   const isShort = useMediaQuery(SHORT_VIEWPORT_QUERY);
   return isSideLayout && isShort;
+}
+
+/** True on a portrait foldable or small tablet (640-767px wide, portrait). The JS twin of the
+ * `foldportrait:` CSS variant. Train drills hide the desktop nav header there. */
+export function useIsPortraitFoldable(): boolean {
+  return useMediaQuery(PORTRAIT_FOLDABLE_QUERY);
 }

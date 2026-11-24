@@ -68,7 +68,9 @@ function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
   // padding shrinks there too: the short screen's height goes to the board.
   return cn(
     'px-4 py-6 md:px-6',
-    (showLoop || restoredActive) && 'max-sm:pt-0',
+    // Phones and portrait foldables hide the header during a drill, so the progress row
+    // starts at the top edge.
+    (showLoop || restoredActive) && 'max-sm:pt-0 foldportrait:pt-0',
     showLoop && TRAIN_SIDE_BAND_PAGE_TOP_CLASS,
     showLoop && TRAIN_SHORT_SIDE_PAGE_BOTTOM_CLASS,
   );

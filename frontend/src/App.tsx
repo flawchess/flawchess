@@ -57,7 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
-import { useIsTrainSideBand } from '@/hooks/useIsDesktop';
+import { useIsPortraitFoldable, useIsTrainSideBand } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -674,7 +674,11 @@ function ProtectedLayout() {
   // in that band; Bots keeps the header (its layout is not height-fitted there).
   const isTrainSideBand = useIsTrainSideBand();
   const boardControlsActive = useMobileBoardControls() != null;
-  const hideNavHeader = playActive && isTrainSideBand && location.pathname.startsWith('/train');
+  // The same on a portrait foldable (an unfolded Galaxy Z Fold8, about 704px wide): it is past
+  // sm, so it shows the desktop header that phones never show during a drill.
+  const isPortraitFoldable = useIsPortraitFoldable();
+  const hideNavHeader =
+    playActive && (isTrainSideBand || isPortraitFoldable) && location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
