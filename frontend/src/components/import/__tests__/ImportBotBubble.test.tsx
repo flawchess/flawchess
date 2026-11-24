@@ -125,13 +125,13 @@ describe('ImportBotBubble (signup-ask)', () => {
 
   it('the rendered persona name is the same after a re-render (useMemo)', () => {
     const { rerender } = renderBubble('signup-ask');
-    const firstName = screen.getByTestId('train-bot-name').textContent;
+    const firstName = screen.getByTestId('train-bot-bubble').getAttribute('aria-label');
     rerender(
       <MemoryRouter>
         <ImportBotBubble variant="signup-ask" />
       </MemoryRouter>,
     );
-    const secondName = screen.getByTestId('train-bot-name').textContent;
+    const secondName = screen.getByTestId('train-bot-bubble').getAttribute('aria-label');
     expect(secondName).toBe(firstName);
   });
 });

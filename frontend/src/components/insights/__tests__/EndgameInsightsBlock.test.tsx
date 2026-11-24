@@ -102,7 +102,7 @@ describe('EndgameInsightsBlock', () => {
     );
     const bubble = screen.getByTestId('insights-bubble');
     expect(bubble.getAttribute('data-status')).toBe('idle');
-    expect(screen.getByTestId('train-bot-name').textContent).toBe('Shelly the Turtle');
+    expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe('Shelly the Turtle');
     expect(screen.getByTestId('insights-bubble-copy').textContent).toBe(INSIGHTS_BUBBLE_COPY.idle);
     const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
     expect(generate.textContent).toContain('Generate Insights');
