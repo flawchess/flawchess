@@ -315,3 +315,130 @@ describe('useEvalCoverage', () => {
     expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
   });
 });
+
+/**
+ * FLAWCHESS-24: while the query is in an error state the poll runs at most every 30 s, returns
+ * to the normal cadence after the next success, and never restarts a poll that had stopped.
+ */
+describe('useEvalCoverage — error backoff', () => {
+  const PENDING_PAYLOAD = { pending_count: 5, total_count: 10, pct_complete: 50 };
+  const STALLED_PAYLOAD = {
+    pending_count: 0,
+    total_count: 10,
+    pct_complete: 100,
+    analyzed_count: 5,
+  };
+
+  /** apiClient.get mock that records call timestamps and rejects on the listed call indexes. */
+  function setupScriptedMock(payload: object, failingCalls: readonly number[]) {
+    const timestamps: number[] = [];
+    vi.mocked(apiClient.get).mockImplementation(() => {
+      const index = timestamps.length;
+      timestamps.push(Date.now());
+      if (failingCalls.includes(index)) return Promise.reject(new Error('network down'));
+      return Promise.resolve({ data: payload });
+    });
+    return timestamps;
+  }
+
+  function deltasOf(timestamps: number[]): number[] {
+    return timestamps.slice(1).map((t, i) => t - (timestamps[i] ?? 0));
+  }
+
+  async function advanceAndFlush(ms: number): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(apiClient.get).mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a first fetch that keeps failing is retried at 30 s, not 1 s', async () => {
+    const timestamps = setupScriptedMock(PENDING_PAYLOAD, [0, 1, 2]);
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(timestamps.length).toBe(1);
+
+    await advanceAndFlush(29_000);
+    expect(timestamps.length).toBe(1);
+
+    await advanceAndFlush(1_000);
+    expect(timestamps.length).toBe(2);
+  });
+
+  it('success, a failing poll, then success: 1 s, 30 s, 1 s', async () => {
+    const timestamps = setupScriptedMock(PENDING_PAYLOAD, [1]);
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await advanceAndFlush(1_000);
+    await advanceAndFlush(30_000);
+    await advanceAndFlush(1_000);
+
+    expect(deltasOf(timestamps)).toEqual([1_000, 30_000, 1_000]);
+  });
+
+  it('a failed manual refetch of a fully covered user does not restart the poll', async () => {
+    const timestamps = setupScriptedMock({ pending_count: 0, total_count: 10, pct_complete: 100 }, [1]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useEvalCoverage(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(timestamps.length).toBe(1);
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['imports', 'eval-coverage'] });
+    });
+    expect(timestamps.length).toBe(2);
+
+    await advanceAndFlush(5 * 60_000);
+    expect(timestamps.length).toBe(2);
+  });
+
+  /** Renders a stalled trackFullAnalysis poll to its end; returns total and successful calls. */
+  async function runStalledPoll(failingCalls: readonly number[]) {
+    const timestamps = setupScriptedMock(STALLED_PAYLOAD, failingCalls);
+    const { unmount } = renderHook(() => useEvalCoverage({ trackFullAnalysis: true }), {
+      wrapper: makeWrapper(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    for (let i = 0; i < 100; i++) {
+      await advanceAndFlush(1_000);
+    }
+    await advanceAndFlush(10 * 60_000);
+    const total = timestamps.length;
+    unmount();
+    return { total, ok: total - failingCalls.length };
+  }
+
+  it('trackFullAnalysis: a failing poll in a stalled run does not change when polling stops', async () => {
+    const baseline = await runStalledPoll([]);
+    vi.mocked(apiClient.get).mockReset();
+    const withFailure = await runStalledPoll([10]);
+
+    expect(withFailure.ok).toBe(baseline.ok);
+    expect(withFailure.total).toBe(baseline.total + 1);
+  });
+});
+

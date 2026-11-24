@@ -750,6 +750,18 @@ describe('Train layout: D-16 tabs on the landing states', () => {
     expect(screen.getByTestId('train-tabs')).not.toBeNull();
   });
 
+  it('the session error has a Retry button that loads the session again', async () => {
+    composeOrResumeSession.mockImplementationOnce(async () => {
+      throw new Error('compose failed');
+    });
+    renderTrainPage(['/train']);
+
+    fireEvent.click(await screen.findByTestId('btn-train-session-retry'));
+
+    await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
+    expect(composeOrResumeSession).toHaveBeenCalledTimes(2);
+  });
+
   it('shows the tabs on the Archive while its request fails', async () => {
     getArchive.mockImplementation(async () => {
       throw new Error('archive failed');

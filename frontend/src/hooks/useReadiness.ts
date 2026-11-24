@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
+import { withErrorBackoff } from '@/lib/pollBackoff';
 import type { ReadinessResponse } from '@/types/api';
 
 const READINESS_POLL_INTERVAL_MS = 3_000;
@@ -20,6 +21,34 @@ const READINESS_BACKOFF_LADDER_MS = [15_000, 60_000, 300_000] as const;
 // refreshes a resumed tab even after this budget is exhausted.
 const READINESS_BACKOFF_BUDGET_MS = 30 * 60_000;
 
+interface ReadinessBackoffState {
+  backoffStartedAtMs: number | null;
+  backoffFetchCount: number;
+}
+
+/**
+ * The interval the poll would use on a healthy connection, or false once it should stop.
+ * Read-only on `state`: the ladder advances in queryFn only; the error cadence is applied on
+ * top by `withErrorBackoff`.
+ */
+function scheduleReadinessPoll(
+  data: ReadinessResponse | undefined,
+  state: ReadinessBackoffState,
+): number | false {
+  if (data?.tier2) return false;
+  if (!data || !data.tier1) return READINESS_POLL_INTERVAL_MS;
+
+  const lastIndex = READINESS_BACKOFF_LADDER_MS.length - 1;
+  const index = Math.min(state.backoffFetchCount, lastIndex);
+  const candidate = READINESS_BACKOFF_LADDER_MS[index] ?? READINESS_BACKOFF_LADDER_MS[lastIndex];
+  if (candidate === undefined) return false;
+
+  const elapsed = state.backoffStartedAtMs === null ? 0 : Date.now() - state.backoffStartedAtMs;
+  if (elapsed + candidate > READINESS_BACKOFF_BUDGET_MS) return false;
+
+  return candidate;
+}
+
 /** Poll GET /imports/readiness, decaying once only Tier 2 is outstanding.
  *
  * Tier 1 (tier1=true): no active import job in-flight for this user.
@@ -38,6 +67,10 @@ const READINESS_BACKOFF_BUDGET_MS = 30 * 60_000;
  *   decay phase: polling stops entirely (the duration-cap "go quiet" case).
  * - tier2 true: polling stops, as before — Stage-A/Stage-B work is done.
  *
+ * While the query is in an error state the poll runs at most every 30 s
+ * (`withErrorBackoff`, FLAWCHESS-24): a failure never advances the ladder, never restarts a
+ * stopped poll and never speeds up the 60 s / 300 s steps; the next success restores the cadence.
+ *
  * The hook never hard-stops at tier1: while tier1 is true and tier2 is false
  * it keeps polling (albeit decayed), so Endgames.tsx, FindingCard.tsx,
  * RepertoireCard.tsx and PositionResultsPanel.tsx still unlock reactively
@@ -54,7 +87,7 @@ export function useReadiness() {
   // Poll-state ref carried across renders/fetches. Advanced exclusively in
   // queryFn (once per real fetch) — never in refetchInterval, which React may
   // evaluate multiple times per fetch and would make the ladder nondeterministic.
-  const backoffRef = useRef<{ backoffStartedAtMs: number | null; backoffFetchCount: number }>({
+  const backoffRef = useRef<ReadinessBackoffState>({
     backoffStartedAtMs: null,
     backoffFetchCount: 0,
   });
@@ -81,23 +114,11 @@ export function useReadiness() {
       return data;
     },
     staleTime: READINESS_STALE_TIME_MS,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (data?.tier2) return false;
-      if (!data || !data.tier1) return READINESS_POLL_INTERVAL_MS;
-
-      const state = backoffRef.current;
-      const lastIndex = READINESS_BACKOFF_LADDER_MS.length - 1;
-      const index = Math.min(state.backoffFetchCount, lastIndex);
-      const candidate = READINESS_BACKOFF_LADDER_MS[index] ?? READINESS_BACKOFF_LADDER_MS[lastIndex];
-      if (candidate === undefined) return false;
-
-      const elapsed =
-        state.backoffStartedAtMs === null ? 0 : Date.now() - state.backoffStartedAtMs;
-      if (elapsed + candidate > READINESS_BACKOFF_BUDGET_MS) return false;
-
-      return candidate;
-    },
+    refetchInterval: (query) =>
+      withErrorBackoff(
+        scheduleReadinessPoll(query.state.data, backoffRef.current),
+        query.state.status,
+      ),
   });
 
   return {

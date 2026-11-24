@@ -350,3 +350,122 @@ describe('useReadiness', () => {
     expect(result.current.totalCount).toBe(15);
   });
 });
+
+/**
+ * FLAWCHESS-24: while the query is in an error state the poll runs at most every 30 s. A
+ * failure never advances the ladder, never speeds up the 60 s / 300 s steps and never restarts
+ * a stopped poll.
+ */
+describe('useReadiness — error backoff', () => {
+  const TIER1_ONLY: ReadinessPayload = {
+    tier1: true,
+    tier2: false,
+    pending_count: 0,
+    total_count: 0,
+  };
+  const NOT_READY: ReadinessPayload = { ...TIER1_ONLY, tier1: false };
+  const DONE: ReadinessPayload = { ...TIER1_ONLY, tier2: true };
+
+  /** apiClient.get mock that records call timestamps and rejects on the listed call indexes. */
+  function setupScriptedMock(payload: ReadinessPayload, failingCalls: readonly number[]) {
+    const timestamps: number[] = [];
+    vi.mocked(apiClient.get).mockImplementation(() => {
+      const index = timestamps.length;
+      timestamps.push(Date.now());
+      if (failingCalls.includes(index)) return Promise.reject(new Error('network down'));
+      return Promise.resolve({ data: payload });
+    });
+    return timestamps;
+  }
+
+  beforeEach(() => {
+    vi.mocked(apiClient.get).mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a first fetch that keeps failing is retried at 30 s, not 3 s', async () => {
+    const timestamps = setupScriptedMock(NOT_READY, [0, 1, 2]);
+    renderHook(() => useReadiness(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(timestamps.length).toBe(1);
+
+    await advanceAndFlush(29_000);
+    expect(timestamps.length).toBe(1);
+
+    await advanceAndFlush(1_000);
+    expect(timestamps.length).toBe(2);
+  });
+
+  it('tier1 true: success, failure, success keeps the ladder at its step (15 s, 30 s, 60 s)', async () => {
+    const timestamps = setupScriptedMock(TIER1_ONLY, [1]);
+    renderHook(() => useReadiness(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await advanceAndFlush(15_000);
+    await advanceAndFlush(30_000);
+    await advanceAndFlush(60_000);
+
+    expect(deltasOf(timestamps)).toEqual([15_000, 30_000, 60_000]);
+  });
+
+  it('a failure on the 300 s step keeps 300 s as the next delta', async () => {
+    const timestamps = setupScriptedMock(TIER1_ONLY, [4]);
+    renderHook(() => useReadiness(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await advanceAndFlush(15_000);
+    await advanceAndFlush(60_000);
+    await advanceAndFlush(300_000);
+    await advanceAndFlush(300_000);
+    await advanceAndFlush(300_000);
+
+    expect(deltasOf(timestamps)).toEqual([15_000, 60_000, 300_000, 300_000, 300_000]);
+  });
+
+  it('tier1 false: success, failure, success is 3 s, 30 s, 3 s', async () => {
+    const timestamps = setupScriptedMock(NOT_READY, [1]);
+    renderHook(() => useReadiness(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await advanceAndFlush(3_000);
+    await advanceAndFlush(30_000);
+    await advanceAndFlush(3_000);
+
+    expect(deltasOf(timestamps)).toEqual([3_000, 30_000, 3_000]);
+  });
+
+  it('a failed manual refetch after tier2 does not restart the poll', async () => {
+    const timestamps = setupScriptedMock(DONE, [1]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useReadiness(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(timestamps.length).toBe(1);
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['imports', 'readiness'] });
+    });
+    expect(timestamps.length).toBe(2);
+
+    await advanceAndFlush(3_600_000);
+    expect(timestamps.length).toBe(2);
+  });
+});
+
