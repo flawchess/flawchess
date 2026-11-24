@@ -267,6 +267,7 @@ export default function TrainPage(): ReactElement {
             isError={trainSession.isSessionError}
             sessionScore={trainSession.sessionScore}
             onSettingsSaved={loop.requestSessionReread}
+            onRetry={loop.requestSessionReread}
             isGuest={isGuest}
             hasGames={hasGames}
             feedbackAskDays={feedbackAskDays(profile)}

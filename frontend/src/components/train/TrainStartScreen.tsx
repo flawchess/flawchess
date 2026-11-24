@@ -36,7 +36,7 @@ import { Button } from '@/components/ui/button';
 import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
-import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
@@ -78,6 +78,8 @@ export interface TrainStartScreenProps {
    * load — see `TrainScheduleSettings`'s `onSaved` prop docstring.
    */
   onSettingsSaved: () => void;
+  /** Loads the session again from the error state's Retry button. */
+  onRetry: () => void;
   /** From `useUserProfile().data`, never `useAuth().user` (FLAWCHESS-64). Puts the sign-up ask (sentence +
    * "What changes?"/"Sign up free" buttons) into the host bubble and hides
    * the reminder/QR section on `TrainScheduleSettings`. */
@@ -405,6 +407,7 @@ export function TrainStartScreen({
   isError,
   sessionScore,
   onSettingsSaved,
+  onRetry,
   isGuest,
   hasGames,
   feedbackAskDays,
@@ -443,8 +446,16 @@ export function TrainStartScreen({
 
   if (state.kind === 'error') {
     return (
-      <div data-testid="train-start-screen">
+      <div className="flex flex-col items-center gap-2" data-testid="train-start-screen">
         <LoadError resource="your training session" variant="centered" />
+        <Button
+          variant="brand-outline"
+          className={TRAIN_BUTTON_CLASS}
+          data-testid="btn-train-session-retry"
+          onClick={onRetry}
+        >
+          Retry
+        </Button>
       </div>
     );
   }

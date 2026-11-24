@@ -286,6 +286,7 @@ function TestWrapper({ children }: { children: ReactNode }) {
 
 function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {}) {
   const onSettingsSaved = vi.fn();
+  const onRetry = vi.fn();
   render(
     <TestWrapper>
       <TrainStartScreen
@@ -294,6 +295,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         isError={false}
         sessionScore={0}
         onSettingsSaved={onSettingsSaved}
+        onRetry={onRetry}
         isGuest={false}
         hasGames={true}
         feedbackAskDays={null}
@@ -303,7 +305,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
       />
     </TestWrapper>,
   );
-  return { onSettingsSaved };
+  return { onSettingsSaved, onRetry };
 }
 
 /**
@@ -332,6 +334,7 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       isError: false,
       sessionScore: 0,
       onSettingsSaved: vi.fn(),
+      onRetry: vi.fn(),
       isGuest: false,
       hasGames: true,
       feedbackAskDays: null,
@@ -376,6 +379,20 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.getByText(/Failed to load your training session/)).not.toBeNull();
     expect(screen.queryByText('No puzzles available yet')).toBeNull();
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
+  });
+
+  it('error: renders a Retry button that calls onRetry once', () => {
+    const { onRetry } = renderScreen({ isError: true, session: null });
+    const retry = screen.getByTestId('btn-train-session-retry');
+    expect(retry.textContent).toBe('Retry');
+    expect(onRetry).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('fresh state: no Retry button', () => {
+    renderScreen();
+    expect(screen.queryByTestId('btn-train-session-retry')).toBeNull();
   });
 
   it('empty: session_id null and puzzle_count 0 renders the placeholder under the Today card, puzzles Start disabled', () => {
