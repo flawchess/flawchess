@@ -5,9 +5,10 @@
  * info under it), the bot bubble / solution / reveal in a right column. Below the gate the
  * drills stack with a sticky pinned board.
  *
- * The gate is "1024px and up, or 768px and up in landscape" (width greater than height). The
- * landscape band covers an unfolded Galaxy Z Fold8 (816x616, 933x704) where the stacked
- * layout used to overflow the viewport. `index.css`'s `trainside` custom variant MUST read
+ * The gate is "1024px and up, or 640px and up in landscape" (width greater than height). The
+ * landscape band covers unfolded foldables (Galaxy Z Fold8 816x616 / 933x704, near-square
+ * inner screens around 820x790) and phones held sideways (iPhone 16 852x393, iPhone SE
+ * 667x375), where the stacked layout used to overflow the viewport. `index.css`'s `trainside` custom variant MUST read
  * this exact query, and `lib/__tests__/trainSideLayout.test.ts` enforces it. The JS twin is
  * `useIsTrainSideLayout` in `hooks/useIsDesktop.ts`.
  *
@@ -17,24 +18,28 @@
 
 /** Tailwind's default `lg` breakpoint: the side layout applies at any orientation from here. */
 const SIDE_LAYOUT_ANY_ORIENTATION_MIN_PX = 1024;
-/** Tailwind's default `md` breakpoint: the side layout applies from here in landscape only. */
-const SIDE_LAYOUT_LANDSCAPE_MIN_PX = 768;
+/** Tailwind's default `sm` breakpoint: the side layout applies from here in landscape only.
+ * Bug fix: it was `md` (768px), which left small phones in landscape (iPhone SE 667x375,
+ * Galaxy S8 740x360) in the stacked layout, with the board running off the screen. */
+const SIDE_LAYOUT_LANDSCAPE_MIN_PX = 640;
 
 /** The one media query behind both the `trainside:` CSS variant and `useIsTrainSideLayout`. */
 export const TRAIN_SIDE_LAYOUT_QUERY = `(min-width: ${SIDE_LAYOUT_ANY_ORIENTATION_MIN_PX}px), (min-width: ${SIDE_LAYOUT_LANDSCAPE_MIN_PX}px) and (orientation: landscape)`;
 
 /**
- * Width cap of the side column. Desktop (lg and up) keeps its 384px column; the 768-1023px
- * landscape band caps it at 272px. The band's 4:3-ish screens are width-bound: at 816x616 the
- * page content is 768px wide, so the board gets what the side column and gap leave. With the
- * compact floated-avatar bot bubble (useIsTrainSideBand) a 272px column reads fine, and with
- * TRAIN_SIDE_ROW_GAP_CLASS's 16px gap the board is about 452px there instead of 388px.
+ * Width of the side column. Desktop (lg and up) keeps its 384px column. In the 640-1023px
+ * landscape band (and on a phone in landscape) the column takes the width the board leaves:
+ * `flex-1 basis-0` with a 272px floor and a 448px cap. Its flex base size is 0, so when the
+ * row is too narrow only the board column shrinks to make room for the 272px floor (816x616:
+ * board about 450px), and when the board is height-bound the column grows into the spare
+ * width instead of leaving empty margins. Bug fix (Galaxy Z Fold8 landscape, about 941x710):
+ * the fixed 272px column left about 75px empty on each side of the row.
  *
  * The two conditions are disjoint on purpose: custom-variant utilities are emitted after the
- * built-in breakpoints, so pairing a plain `trainside:max-w-68` with `lg:max-w-sm` would let
- * the band value override desktop.
+ * built-in breakpoints, so a plain `trainside:max-w-md` would override desktop's `lg:max-w-sm`.
  */
-export const TRAIN_SIDE_COLUMN_WIDTH_CLASS = 'lg:max-w-sm trainside:max-lg:max-w-68';
+export const TRAIN_SIDE_COLUMN_WIDTH_CLASS =
+  'lg:max-w-sm trainside:max-lg:max-w-md trainside:max-lg:min-w-68 trainside:max-lg:flex-1 trainside:max-lg:basis-0';
 
 /** Gap between the board column and the side column: 32px on desktop, 16px in the landscape
  * band, where every pixel of the short, narrow screen goes to the board. Disjoint conditions,

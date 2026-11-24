@@ -1953,7 +1953,11 @@ export function TrainSolveScreen({
         // container — a sticky element only sticks within its parent's box,
         // and this column ends at the bubble, which is exactly where the board
         // must stay pinned while the reveal beneath it is read.
-        className="contents trainside:flex trainside:w-full trainside:flex-col trainside:items-center trainside:gap-3"
+        // `min-w-0`: the board sizes from this column's width, so the column must be able to
+        // shrink below the board's current size. Bug fix (near-square foldables, e.g. 820x791): with
+        // the default `min-width: auto` the board kept its height-fitted size and the row
+        // overflowed by up to 44px next to the side column's 272px floor.
+        className="contents trainside:flex trainside:w-full trainside:min-w-0 trainside:flex-col trainside:items-center trainside:gap-3"
         style={{ maxWidth: boardMaxWidthPx }}
       >
       <div

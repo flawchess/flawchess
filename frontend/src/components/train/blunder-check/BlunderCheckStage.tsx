@@ -204,7 +204,11 @@ export function BlunderCheckStage({
         ref={columnRef}
         // Stacked, the column is `display: contents`, so the pinned block is a direct
         // child of the page-long container and stays pinned while the panel scrolls.
-        className="contents trainside:flex trainside:w-full trainside:flex-col trainside:items-center trainside:gap-3"
+        // `min-w-0`: the board sizes from this column's width, so the column must be able to
+        // shrink below the board's current size. Bug fix (near-square foldables, e.g. 820x791): with
+        // the default `min-width: auto` the board kept its height-fitted size and the row
+        // overflowed by up to 44px next to the side column's 272px floor.
+        className="contents trainside:flex trainside:w-full trainside:min-w-0 trainside:flex-col trainside:items-center trainside:gap-3"
         style={{ maxWidth: columnMaxWidthPx }}
       >
         <div

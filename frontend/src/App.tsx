@@ -667,7 +667,7 @@ function ProtectedLayout() {
   // needs the vertical space on small screens. Set by BotsGame and
   // TrainSolveScreen via useMarkPlayActive().
   const playActive = usePlayActive();
-  // A Train drill (blunder check, puzzle solve loop) in the landscape band (768-1023px wide in
+  // A Train drill (blunder check, puzzle solve loop) in the landscape band (640-1023px wide in
   // landscape: a foldable's inner screen or a tablet held sideways) also drops the desktop nav
   // header, so the board and progress row get the full height of the short screen, as the
   // phone portrait layout does with its mobile header. The drills show their own settings cog

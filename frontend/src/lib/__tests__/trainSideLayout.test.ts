@@ -43,7 +43,7 @@ describe('trainside layout gate', () => {
 
   it('pins the approved breakpoints', () => {
     expect(TRAIN_SIDE_LAYOUT_QUERY).toBe(
-      '(min-width: 1024px), (min-width: 768px) and (orientation: landscape)',
+      '(min-width: 1024px), (min-width: 640px) and (orientation: landscape)',
     );
   });
 

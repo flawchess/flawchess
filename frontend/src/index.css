@@ -36,14 +36,14 @@
 @custom-variant deskshort (@media (min-width: 1200px) and (max-height: 879.98px));
 
 /* trainside gates the Train drills' (blunder check, personalized puzzles) side-column
-   layout: 1024px and up at any orientation, or 768px and up in landscape (width greater
-   than height), which covers the unfolded Galaxy Z Fold8 (816x616, 933x704). Block form
+   layout: 1024px and up at any orientation, or 640px and up in landscape (width greater
+   than height), which covers unfolded foldables and phones held sideways. Block form
    with @slot, not the parenthesised shorthand: the shorthand splits its argument on
    top-level commas, and this query is a comma-separated list.
    MUST match TRAIN_SIDE_LAYOUT_QUERY in lib/trainSideLayout.ts (the JS twin
    useIsTrainSideLayout reads it); lib/__tests__/trainSideLayout.test.ts enforces it. */
 @custom-variant trainside {
-    @media (min-width: 1024px), (min-width: 768px) and (orientation: landscape) {
+    @media (min-width: 1024px), (min-width: 640px) and (orientation: landscape) {
         @slot;
     }
 }

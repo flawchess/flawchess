@@ -148,3 +148,9 @@ Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests 
 - Phone type scale extends to portrait up to 767px (`index.css`); the desktop nav header keeps the desktop scale there.
 - `PORTRAIT_FOLDABLE_QUERY` / `foldportrait:` variant / `useIsPortraitFoldable` (640-767px, portrait), sync-tested against index.css. Train drills hide the nav header there (as in the landscape band), show the progress-row cog, drop the top padding; TrainBotBubble is compact there.
 - Browser at 704x933: drill and solution with no header, cog at top, 16px copy, board 572, Next in the bottom bar. 744x1133 behaves the same; 768x1024 portrait, landscape and desktop unchanged. 385 files / 6908 tests pass.
+
+## Follow-up 4 (user request): fill the landscape width, generalize
+
+- Band side column: `flex-1 basis-0`, 272px floor, 448px cap (was a fixed 272px), so it takes the width the height-fitted board leaves. Board column gets `min-w-0` (with `min-width: auto` it could not shrink and near-square screens overflowed by up to 44px).
+- Landscape side-layout threshold 768 -> 640px (covers iPhone SE 667x375, Galaxy S8 740x360).
+- Browser matrix (puzzle reveal + blunder ready gate), settled measurements: 941x710, 933x704, 816x616, 841x701, 832x750, 820x791, 1000x650, 852x393, 915x412, 740x360, 667x375 all fill to the page padding with Next / Ready visible and no horizontal overflow; portrait (704x933, 393x852, 412x915, 768x1024) and desktop (1024x700, 1280x800) unchanged. 816x616 reveal still scrolls 41px vertically (column taller than the board; Next visible).

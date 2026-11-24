@@ -9,7 +9,7 @@
  * convention the reveal action bar uses): from `sm` up, an avatar + name column BESIDE the
  * bubble with a left-pointing tail. On phones, the avatar is floated top-left INSIDE the
  * bubble (no name row, no tail), so the bubble costs far less height. The landscape band
- * (`useIsTrainSideBand`: 768-1023px wide in landscape) uses the same compact layout, since
+ * (`useIsTrainSideBand`: 640-1023px wide in landscape) uses the same compact layout, since
  * the Train side column there is narrow and the screen is short, and so does a portrait
  * foldable (`useIsPortraitFoldable`: 640-767px wide in portrait). A CSS-only single node
  * is not clean here: on phones the avatar must sit inside the bubble's border, while from
@@ -128,7 +128,7 @@ export function TrainBotBubble({
   const isSideBand = useIsTrainSideBand();
   const sideBySide = leading !== undefined;
   // Phones without a leading slot: the avatar floats inside the bubble. Also the landscape
-  // band (768-1023px wide in landscape), where the Train side column is only 320px wide and
+  // band (640-1023px wide in landscape), where the Train side column is narrow and
   // an avatar + name column beside the bubble wrapped short copy onto four lines.
   // And a portrait foldable (640-767px wide in portrait), which reads like a phone.
   const isPortraitFoldable = useIsPortraitFoldable();

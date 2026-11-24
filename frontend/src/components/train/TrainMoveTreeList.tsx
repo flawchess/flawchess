@@ -28,7 +28,7 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
 
 /**
  * Height of the reveal move list: two wrapped token rows on mobile, four on
- * desktop (lg), without scrolling. The `lg` step is deliberate: the 768-1023px landscape
+ * desktop (lg), without scrolling. The `lg` step is deliberate: the 640-1023px landscape
  * side-layout band is height-constrained (616px / 704px tall), so it keeps the two-row list. A row is 24px (text-sm 20px line + py-0.5)
  * with a 2px gap-y; the box adds 16px padding + 2px border (h-16 scrolls at
  * two rows). Mobile adds a little air under the second row (h-19, still on the
