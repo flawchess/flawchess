@@ -264,7 +264,10 @@ export function NavHeader() {
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
 
   return (
-    <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
+    <header
+      className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden"
+      data-testid="nav-header"
+    >
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
         <div className="flex items-center">
           <Link to="/openings" className="flex items-center gap-1 mr-3" data-testid="nav-home">
