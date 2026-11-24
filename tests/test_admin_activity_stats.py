@@ -1572,12 +1572,12 @@ def _bc_window_row(rows: list[list[typing.Any]], day: datetime.date) -> dict[str
 async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
     """Judged windows (outcome NOT NULL) bucket by ended_at day with points and mix.
 
-    lead_in_start 2031-03-01, window_end 2031-03-20. On 03-10 four judged
+    window_start 2031-03-01, window_end 2031-03-20. On 03-10 four judged
     windows (one per outcome). Excluded: a started-but-unended window (outcome
-    NULL) and one ended before lead_in_start. A window ended on window_end's day
+    NULL) and one ended before window_start. A window ended on window_end's day
     lands in that day's row.
     """
-    lead_in = datetime.date(2031, 3, 1)
+    window_start = datetime.date(2031, 3, 1)
     noon = datetime.time(12, 0)
     utc = datetime.timezone.utc
     ended_day = datetime.datetime.combine(_OUTCOME_DAY, noon, tzinfo=utc)
@@ -1587,7 +1587,7 @@ async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
     before_day = datetime.date(2031, 2, 28)
 
     async with test_engine.connect() as conn:
-        baseline_rows = await queries.fetch_blunder_check_windows(conn, lead_in, last_day)
+        baseline_rows = await queries.fetch_blunder_check_windows(conn, window_start, last_day)
     baseline = {d: _bc_window_row(baseline_rows, d) for d in (_OUTCOME_DAY, last_day, before_day)}
 
     (user_id,) = await _fresh_users(test_engine, 1, "bcwin")
@@ -1619,7 +1619,7 @@ async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
             )
         )
         async with test_engine.connect() as conn:
-            rows = await queries.fetch_blunder_check_windows(conn, lead_in, last_day)
+            rows = await queries.fetch_blunder_check_windows(conn, window_start, last_day)
     finally:
         await delete_blunder_check_sessions(test_engine, session_ids)
 
@@ -1638,7 +1638,7 @@ async def test_fetch_blunder_check_windows_score_and_outcome_mix(test_engine):
         "false_alarm": 1,
     }
     assert delta(last_day)["windows"] == 1
-    # Ended before lead_in_start: never fetched, so no row and no delta.
+    # Ended before window_start: never fetched, so no row and no delta.
     assert all(row[0] != before_day.isoformat() for row in rows)
     assert delta(before_day)["windows"] == 0
 

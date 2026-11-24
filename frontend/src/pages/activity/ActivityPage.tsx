@@ -545,7 +545,7 @@ export default function ActivityPage() {
               <div className="card">
                 <h3>Personalized Puzzles: accuracy on solved puzzles</h3>
                 <p className="note">
-                  Share correct, 7-day rolling. Move = played the right move; guess = called the
+                  Share correct per day. Move = played the right move; guess = called the
                   position&apos;s verdict correctly.
                 </p>
                 <div className="legend" id="acc-legend"></div>
@@ -598,7 +598,7 @@ export default function ActivityPage() {
               </div>
               <div className="card">
                 <h3>Blunder Check: score % over time</h3>
-                <p className="note">Points scored over points possible, 7-day rolling.</p>
+                <p className="note">Points scored over points possible, per day.</p>
                 <div className="chart" id="c-bc-score"></div>
               </div>
             </div>
