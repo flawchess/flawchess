@@ -134,15 +134,27 @@ FACEPALM_LAMBDA_MAX: float = 1.0
 ES_BAND_LOW: float = 0.10
 ES_BAND_HIGH: float = 0.90
 # Undecided-position rule (Phase 249 UAT): a blunder is served only if the game was not decided
-# yet, a Stockfish eval within +/- BLUNDER_MAX_PRE_EVAL_CP. Tested on the classifier's own ES (the
-# ES map is monotone in cp, so this is exactly the cp band); a mate maps to +/- MATE_CP_EQUIVALENT
-# and always falls outside. An allowed blunder is tested on the position before it. A miss is
-# tested on the position before the opponent's gift (owner: keep big missed gifts), since the
-# position right before the miss is decided by the gift itself. Applies to the blunder only: the
-# moves before it and the herrings keep the wider D-05 band.
+# yet, a Stockfish eval between BLUNDER_MIN_PRE_EVAL_CP and BLUNDER_MAX_PRE_EVAL_CP from the
+# user's side. Tested on the classifier's own ES (the ES map is monotone in cp, so this is exactly
+# the cp band); a mate maps to +/- MATE_CP_EQUIVALENT and always falls outside. An allowed blunder
+# is tested on the position before it. A miss is tested on the position before the opponent's gift
+# (owner: keep big missed gifts), since the position right before the miss is decided by the gift
+# itself. Applies to the blunder only: the moves before it and the herrings keep the wider D-05
+# band.
+# The band of an allowed blunder is asymmetric (owner decision 2026-11-24, after user feedback): a
+# blunder is a 0.15 ES drop, so from -3 it lands near -6 and the better move was losing too, which
+# is not worth finding. Of the 405 allowed blunders served in prod until then, 36 (9%) started
+# below -2 and ended at -5.95 on average. Throwing away a won position stays in, so the upper side
+# keeps +3.
+# A miss keeps the symmetric band on its pre-gift position: after the gift the better move is not
+# losing (the 174 misses served until then stood at -1.3 or better right before the miss), so the
+# "better move loses too" argument does not apply to it.
 BLUNDER_MAX_PRE_EVAL_CP: int = 300
-BLUNDER_ES_LOW: float = eval_cp_to_expected_score(-BLUNDER_MAX_PRE_EVAL_CP, "white")
+BLUNDER_MIN_PRE_EVAL_CP: int = -200
+# User point of view, like every ES in this module ("white" here only means "no sign flip").
+BLUNDER_ES_LOW: float = eval_cp_to_expected_score(BLUNDER_MIN_PRE_EVAL_CP, "white")
 BLUNDER_ES_HIGH: float = eval_cp_to_expected_score(BLUNDER_MAX_PRE_EVAL_CP, "white")
+MISS_PRE_GIFT_ES_LOW: float = eval_cp_to_expected_score(-BLUNDER_MAX_PRE_EVAL_CP, "white")
 # Early-ply floor for a served blunder (Phase 249 UAT): the same floors personalized puzzles use
 # for their sampled positions, so an opening-theory slip is never the blunder to find. An
 # opening-phase position needs the stricter floor (move 10+).
@@ -282,10 +294,12 @@ def in_band(es: float | None, band_low: float, band_high: float) -> bool:
 def blunder_position_undecided(
     is_miss: bool, es_before: float | None, es_ref: float | None
 ) -> bool:
-    """Whether the game was undecided (eval within +/- BLUNDER_MAX_PRE_EVAL_CP, no mate) before
-    the blunder, or, for a miss, before the opponent's gift (es_ref)."""
-    es = es_ref if is_miss else es_before
-    return in_band(es, BLUNDER_ES_LOW, BLUNDER_ES_HIGH)
+    """Whether the game was undecided (no mate) before the blunder: an allowed blunder needs a
+    user-side eval between BLUNDER_MIN_PRE_EVAL_CP and BLUNDER_MAX_PRE_EVAL_CP right before it, a
+    miss an eval within +/- BLUNDER_MAX_PRE_EVAL_CP before the opponent's gift (es_ref)."""
+    if is_miss:
+        return in_band(es_ref, MISS_PRE_GIFT_ES_LOW, BLUNDER_ES_HIGH)
+    return in_band(es_before, BLUNDER_ES_LOW, BLUNDER_ES_HIGH)
 
 
 def blunder_fits_position(

@@ -29,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Blunder check: a blunder is no longer served when the player was already losing by more than 2 before it (it was 3). From there the better move was losing too, so it was not worth finding. Blunders that throw away an advantage of up to 3 stay in, and so do missed chances.
 - Train: when a personalized-puzzle session is short of your own puzzles, it is now filled with blunders from games of similarly rated players instead of a fixed set of lichess puzzles. They are graded like your own puzzles, never come back, and the reveal shows the move played in that game with its time control, the player's rating and the date, never a name. The intro, start screen and score screen now say where such a session's puzzles came from.
 - Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
 - Blunder check wording: the host now says that a hard-to-catch blunder was mixed in on purpose, names what the blunder did more plainly ("loses material", "misses a chance to win material"), tells you which side moves next before a sequence starts, and gives friendlier feedback on your better move.
