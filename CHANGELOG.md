@@ -29,7 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Train: on landscape tablets, unfolded foldables and phones held sideways (640px wide and up), blunder check and personalized puzzles put the board and the bot's bubble side by side, with the board sized to fit the screen height. On the narrower of these screens (768 to 1023px wide) the top menu is hidden during a drill and the bot's bubble uses the compact layout, so the board gets as much room as possible.
+- Train: on landscape tablets, unfolded foldables and phones held sideways (640px wide and up), blunder check and personalized puzzles put the board and the bot's bubble side by side, with the board sized to fit the screen height. On the narrower of these screens (640 to 1023px wide) the top menu is hidden during a drill and the bot's bubble uses the compact layout, so the board gets as much room as possible.
 - Bot speech bubbles on phones show the bot's avatar inside the bubble instead of a name row above it, so the bubble and its buttons take less height (Train, Bots, Endgames, Import, and Hilda's tour on the board).
 - Train on phones in landscape: the board uses the full screen height, the progress row sits above the bot's bubble, and the solution column scrolls beside the board with Next always on screen.
 - Train on portrait tablets and unfolded foldables: the solution's step, Analyze and Next buttons use the same bottom bar as on phones. Bot games between 640 and 800px wide now show their Resign bar too.
