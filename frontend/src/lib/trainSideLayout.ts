@@ -12,6 +12,9 @@
  * this exact query, and `lib/__tests__/trainSideLayout.test.ts` enforces it. The JS twin is
  * `useIsTrainSideLayout` in `hooks/useIsDesktop.ts`.
  *
+ * The Openings page's phone branch reuses the same gate for its landscape side layout (board
+ * left, content right; see `lib/openingsBoardLayout.ts`), so board pages switch at one point.
+ *
  * These constants live here, not in `hooks/useIsDesktop.ts`, on purpose: two test files mock
  * that module wholesale with a factory, and a missing export of a factory mock throws.
  */
