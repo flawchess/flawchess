@@ -17,6 +17,7 @@
  * `bestmove e2e4` — the test always plays e2e4, so grading takes the
  * exact-match fast path (no second search needed to reach a verdict).
  */
+import { PublishedRevealBar } from '@/components/train/__tests__/PublishedRevealBar';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   act,
@@ -300,6 +301,8 @@ async function renderTrainPage() {
         {/* The reveal bar's BoardControls use tooltips (the App shell provides this). */}
         <TooltipProvider>
           <TrainPage />
+          {/* The stacked layout's reveal controls live in the shell's fixed bottom bar. */}
+          <PublishedRevealBar />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -315,9 +318,9 @@ describe('Train solve loop (end-to-end tracer)', () => {
         return fakeWorker;
       }),
     );
-    // The reveal action bar mounts once by breakpoint. Model a tablet width:
-    // `sm` up (in-flow bar, btn-train-next in the DOM) but below `lg` (collapsed
-    // verdict strip, as the strip assertions below expect).
+    // Model a portrait tablet: `sm` up but below the side layout (collapsed verdict
+    // strip, as the strip assertions below expect). The stacked layout publishes its
+    // reveal controls to the shell's fixed bar, which PublishedRevealBar stands in for.
     vi.stubGlobal(
       'matchMedia',
       vi.fn().mockImplementation((query: string) => ({

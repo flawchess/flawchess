@@ -33,15 +33,11 @@ import {
 } from '@/components/train/blunder-check/BlunderCheckStage';
 import { TrainLineChips } from '@/components/train/TrainLineChips';
 import { TRAIN_MOVE_TREE_HEIGHT_CLASS, TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
-import {
-  TrainRevealActionBar,
-  TrainRevealControlsRow,
-  TrainRevealFooter,
-} from '@/components/train/TrainRevealActionBar';
+import { TrainRevealControlsRow, TrainRevealFooter } from '@/components/train/TrainRevealActionBar';
 import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import { useBoardNavigationInput } from '@/hooks/useBoardNavigationInput';
-import { useIsSmUp, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import type { TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
@@ -262,8 +258,9 @@ function SolutionVerdict({ copy, avatar, showHeading = true }: SolutionVerdictPr
 
 /**
  * The reveal layout shared by the three solution kinds: stage, action bar (split across the
- * side column in the side layout: controls row above the move list, Next as the footer; under the board in the stacked layout from `sm` up, published to the fixed phone bottom bar
- * below `sm`, so exactly one is mounted) and the verdict panel.
+ * side column in the side layout: controls row above the move list, Next as the footer;
+ * published to the fixed bottom bar in the stacked layout, so exactly one is mounted) and the
+ * verdict panel.
  */
 function SolutionShell({
   progress,
@@ -283,15 +280,17 @@ function SolutionShell({
   // The board opens facing the user's side; the side-layout controls row can flip it.
   const [flipped, setFlipped] = useState(orientation === 'black');
   const handleFlip = useCallback(() => setFlipped((previous) => !previous), []);
-  const isSmUp = useIsSmUp();
   // Same gate as BlunderCheckStage: the stage renders `underBoard` (the game info) only in the
   // side layout and this panel drops the footer from the side column there, so a mismatch
   // shows the game info twice or never.
   const isSideLayout = useIsTrainSideLayout();
+  const isShortSide = useIsTrainShortSide();
   const { onRewind, onBack, onForward, canRewind, canGoBack, canGoForward } = nav;
   const mobileControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
-      isSmUp
+      // The stacked layout (phones, and portrait tablets / unfolded foldables) publishes to
+      // the fixed bottom bar; the side layout puts the controls in its side column.
+      isSideLayout
         ? null
         : {
             onBack,
@@ -305,7 +304,7 @@ function SolutionShell({
             onAnalyzeClick,
           },
     [
-      isSmUp,
+      isSideLayout,
       onBack,
       onForward,
       onRewind,
@@ -319,8 +318,8 @@ function SolutionShell({
   );
   usePublishMobileBoardControls(mobileControls);
 
-  // `isSmUp` keeps the one-bar invariant explicit: the phone payload publishes when it is false.
-  const onDesktop = isSideLayout && isSmUp;
+  // Exactly one bar: the bottom-bar payload publishes in the stacked layout, these in the side one.
+  const onDesktop = isSideLayout;
   // Side layout: the controls sit between the chips and the move list.
   const controlsRow = onDesktop && (
     <TrainRevealControlsRow
@@ -353,23 +352,6 @@ function SolutionShell({
           id="chessboard"
         />
       )}
-      actionBar={
-        isSmUp && !isSideLayout && (
-          <TrainRevealActionBar
-            onRewind={onRewind}
-            onBack={onBack}
-            onForward={onForward}
-            canRewind={canRewind}
-            canGoBack={canGoBack}
-            canGoForward={canGoForward}
-            analyzeTo={analyzeTo}
-            onAnalyzeClick={onAnalyzeClick}
-            onNext={onNext}
-            framed
-            className="w-full"
-          />
-        )
-      }
       underBoard={footer}
       side={
         <div
@@ -395,8 +377,9 @@ function SolutionShell({
             </TrainVerdictStrip>
           )}
           {renderLines(flipped, controlsRow)}
-          {/* The side layout shows the game info under the board instead (underBoard). */}
-          {!isSideLayout && footer}
+          {/* The side layout shows the game info under the board instead (underBoard), except
+              on a short screen, where the board column holds the board alone. */}
+          {(!isSideLayout || isShortSide) && footer}
           {/* Side layout: Analyze and Next are the side column's footer, on the board's bottom edge. */}
           {onDesktop && (
             <TrainRevealFooter

@@ -43,11 +43,7 @@ import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainReveal } from '@/components/train/TrainReveal';
 import { TrainRevealGameFooter } from '@/components/train/TrainRevealGameFooter';
 import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
-import {
-  TrainRevealActionBar,
-  TrainRevealControlsRow,
-  TrainRevealFooter,
-} from '@/components/train/TrainRevealActionBar';
+import { TrainRevealControlsRow, TrainRevealFooter } from '@/components/train/TrainRevealActionBar';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import type {
   ServerGradedMove,
@@ -59,7 +55,7 @@ import type {
 } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsSmUp, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealEvalReading, RevealUserMove } from '@/hooks/useTrainRevealTree';
 import { useTrainLiveAlternatives } from '@/hooks/useTrainLiveAlternatives';
@@ -137,7 +133,15 @@ import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
-import { TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS } from '@/lib/trainSideLayout';
+import {
+  SHORT_SIDE_BOARD_GUTTER_PX,
+  SHORT_SIDE_FOOTER_RESET_CLASS,
+  SHORT_SIDE_FRAME_CLASS,
+  SHORT_SIDE_STICKY_FOOTER_CLASS,
+  SHORT_SIDE_TOP_RESET_CLASS,
+  TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+  TRAIN_SIDE_ROW_GAP_CLASS,
+} from '@/lib/trainSideLayout';
 import {
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -254,12 +258,12 @@ const GAME_INFO_SLOT_CLASS = 'min-h-11 w-full';
  * full height, which ends with the game-info slot (44px) and its 12px gap, so
  * this bottom margin puts the footer back on the board's bottom edge.
  */
-const NEXT_FOOTER_CLASS = 'mt-auto mb-14';
+const NEXT_FOOTER_CLASS = `mt-auto mb-14 ${SHORT_SIDE_FOOTER_RESET_CLASS} ${SHORT_SIDE_STICKY_FOOTER_CLASS}`;
 /**
  * The side layout's right column before the reveal (the bot bubble). Same box as
  * TrainReveal's own root, which replaces it, so the board never moves.
  */
-const PROMPT_SIDE_CLASS = `flex w-full flex-col items-center gap-4 trainside:mt-8 ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
+const PROMPT_SIDE_CLASS = `flex w-full flex-col items-center gap-4 trainside:mt-8 ${SHORT_SIDE_TOP_RESET_CLASS} ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
 
 /**
  * Synthetic search depth handed to `EvalBar` for a terminal
@@ -743,11 +747,12 @@ export function TrainSolveScreen({
   // engage on the trainside gate (1024px and up, or 768px and up in landscape).
   const isSideLayout = useIsTrainSideLayout();
   // Exactly one reveal action bar is mounted. In the side layout it is split across
-  // the reveal column (controls row + Next footer), in the stacked layout from `sm` up the in-flow bar under the board; below `sm` it
-  // is the fixed bottom bar fed by the published payload. Mounting more than
+  // the reveal column (controls row + Next footer); in the stacked layout it is the
+  // fixed bottom bar fed by the published payload. Bug fix (Galaxy Z Fold8 inner
+  // screen, portrait): the stacked layout from `sm` up had a cramped in-flow bar under
+  // the board; it now uses the bottom bar like phones do. Mounting more than
   // one (CSS-hidden) would duplicate btn-train-next / btn-train-analyze /
   // train-reveal-action-bar testids in the DOM.
-  const isSmUp = useIsSmUp();
 
   // The played move's classified quality — derived once here and
   // shared by the board overlay below AND the reveal's chips (marks), so the two
@@ -979,12 +984,14 @@ export function TrainSolveScreen({
   useEffect(() => {
     if (tourActive) puzzleTelemetry.markTourActive();
   }, [tourActive, puzzleTelemetry]);
+  // A phone in landscape: a small gutter, so the board gets the screen's height.
+  const isShortSide = useIsTrainShortSide();
   const boardMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef,
     maxPx: TRAIN_BOARD_MAX_WIDTH_PX,
     minPx: TRAIN_BOARD_MIN_WIDTH_PX,
-    gutterPx: TRAIN_BOARD_BOTTOM_GUTTER_PX,
+    gutterPx: isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : TRAIN_BOARD_BOTTOM_GUTTER_PX,
     enabled: isSideLayout,
   });
   const [engineTimedOut, setEngineTimedOut] = useState(false);
@@ -1397,14 +1404,17 @@ export function TrainSolveScreen({
   // On phones the reveal bar replaces the main nav
   // buttons in the fixed bottom bar for the WHOLE reveal, from the moment the
   // verdict lands (`showReveal`); null before it and on unmount, so a stale
-  // payload can never press Next for a puzzle no longer on screen. The sm+ hosts
-  // render the same bar in the page flow below.
+  // payload can never press Next for a puzzle no longer on screen. The same
+  // applies to portrait tablets and unfolded foldables (the whole stacked
+  // layout); the side layout renders the bar in its reveal column instead.
   const revealCanReset = !revealTree.isAtRoot;
   const revealCanGoBack = revealTree.canGoBack;
   const revealCanGoForward = revealTree.canGoForward;
   const mobileBoardControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
-      verdict !== null && showReveal && !isSmUp
+      // The stacked layout (phones, portrait tablets, unfolded foldables) publishes to the
+      // fixed bottom bar; the side layout renders the bar as the reveal column's footer.
+      verdict !== null && showReveal && !isSideLayout
         ? {
             onBack: revealGoBack,
             onForward: revealGoForward,
@@ -1421,7 +1431,7 @@ export function TrainSolveScreen({
     [
       verdict,
       showReveal,
-      isSmUp,
+      isSideLayout,
       revealGoBack,
       revealGoForward,
       handleRewind,
@@ -1823,6 +1833,104 @@ export function TrainSolveScreen({
         </>
       );
 
+  // One compact row — "n of m", the bar, "x / y pts".
+  // On phones (below `sm`) the mobile header is suppressed during play,
+  // so the row spans only the board and the settings cogwheel takes the
+  // corner above the eval-bar slot (same `w-5` + `gap-2` geometry as the
+  // board row below). At `sm`+ the desktop nav carries its own cog.
+  // Short side layout (a phone in landscape): the row tops the side column instead, so the
+  // board column holds the board alone and gets the screen's full height.
+  const progressRow = (
+      <div className="flex w-full items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <p className="shrink-0 text-sm font-semibold" data-testid="train-progress">
+          {currentPosition1Based} of {totalPuzzles}
+        </p>
+        <div className="h-1.5 min-w-0 flex-1 rounded-full bg-muted" data-testid="train-progress-bar">
+          <div
+            className="h-1.5 rounded-full bg-brand-brown"
+            style={{ width: `${progressFraction * 100}%` }}
+          />
+        </div>
+        {/* The running session score, right end of the progress
+            row — only once at least one puzzle has actually been scored, so
+            the first puzzle of a fresh session never shows "0 / 0 pts". */}
+        {trainSession.sessionSolvedCount > 0 && (
+          <p className="shrink-0 text-sm font-semibold" data-testid="train-session-score">
+            {trainSession.sessionScore} / {trainSession.sessionSolvedCount * TRAIN_POINTS_PER_PUZZLE} pts
+          </p>
+        )}
+      </div>
+        {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
+            keeps the row at its text height, so the board is not pushed down). */}
+        <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex">
+          <SettingsSheetButton
+            testId="btn-train-settings"
+            className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"
+          />
+        </div>
+      </div>
+  );
+
+  // The reveal column (only rendered while `showReveal`).
+  const revealNode = (
+    <TrainReveal
+      puzzle={puzzle}
+      sessionId={trainSession.session?.session_id ?? null}
+      verdict={verdict}
+      isSolveError={trainSession.isSolveError}
+      onRetrySolve={trainSession.retrySolve}
+      onNext={handleNext}
+      gradingEngine={gradingEngine}
+      playedMoveUci={lastPlayedUci}
+      gradeResult={gradeResult}
+      instantGrade={instantGrade}
+      chips={chips}
+      activeChip={revealTree.activeChip}
+      onChipSelect={handleChipSelect}
+      treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
+      onGameMoveUciChange={setGameMoveUci}
+      onGameMoveFacepalmChange={setGameMoveFacepalm}
+      onGameMoveLineStateChange={setGameMoveLineState}
+      alsoFineMoves={alsoFineMoves}
+      tourTarget={tourTarget}
+      verdictBot={verdictBot}
+      verdictOpening={verdictOpening}
+      isBest={playedIsBest}
+      sessionDate={trainSession.session?.session_date}
+      expiresOn={trainSession.session?.expires_on}
+      onStripExpand={handleStripExpand}
+      // Exactly one bar: the bottom-bar payload publishes in the stacked layout,
+      // these render in the side layout.
+      controlsRow={
+        verdict !== null && isSideLayout ? (
+          <TrainRevealControlsRow
+            onRewind={handleRewind}
+            onBack={revealGoBack}
+            onForward={revealGoForward}
+            canRewind={revealCanReset}
+            canGoBack={revealCanGoBack}
+            canGoForward={revealCanGoForward}
+            onFlip={handleFlipBoard}
+          />
+        ) : undefined
+      }
+      showGameFooter={!isSideLayout || isShortSide}
+      header={isShortSide ? progressRow : undefined}
+      nextButton={
+        verdict !== null && isSideLayout ? (
+          <TrainRevealFooter
+            onNext={handleBarNext}
+            analyzeTo={analyzeTo}
+            onAnalyzeClick={handleBarAnalyzeClick}
+            spotlightAnalyze={tourTarget === 'analyze'}
+            className={NEXT_FOOTER_CLASS}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   return (
     <div
       // The board column's fitted width, published as a custom property so the
@@ -1864,40 +1972,7 @@ export function TrainSolveScreen({
         className="sticky top-0 z-10 flex w-full flex-col items-center gap-3 bg-background trainside:static trainside:z-auto trainside:bg-transparent"
         data-testid="train-pinned-board"
       >
-      {/* One compact row — "n of m", the bar, "x / y pts".
-          On phones (below `sm`) the mobile header is suppressed during play,
-          so the row spans only the board and the settings cogwheel takes the
-          corner above the eval-bar slot (same `w-5` + `gap-2` geometry as the
-          board row below). At `sm`+ the desktop nav carries its own cog. */}
-      <div className="flex w-full items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <p className="shrink-0 text-sm font-semibold" data-testid="train-progress">
-          {currentPosition1Based} of {totalPuzzles}
-        </p>
-        <div className="h-1.5 min-w-0 flex-1 rounded-full bg-muted" data-testid="train-progress-bar">
-          <div
-            className="h-1.5 rounded-full bg-brand-brown"
-            style={{ width: `${progressFraction * 100}%` }}
-          />
-        </div>
-        {/* The running session score, right end of the progress
-            row — only once at least one puzzle has actually been scored, so
-            the first puzzle of a fresh session never shows "0 / 0 pts". */}
-        {trainSession.sessionSolvedCount > 0 && (
-          <p className="shrink-0 text-sm font-semibold" data-testid="train-session-score">
-            {trainSession.sessionScore} / {trainSession.sessionSolvedCount * TRAIN_POINTS_PER_PUZZLE} pts
-          </p>
-        )}
-      </div>
-        {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
-            keeps the row at its text height, so the board is not pushed down). */}
-        <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex">
-          <SettingsSheetButton
-            testId="btn-train-settings"
-            className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"
-          />
-        </div>
-      </div>
+      {!isShortSide && progressRow}
       <div
         ref={boardRef}
         className={cn(
@@ -1973,31 +2048,10 @@ export function TrainSolveScreen({
           )}
         </div>
       </div>
-      {/* The reveal's action bar under the board in the stacked layout from `sm` up.
-          Phones get the same bar in the fixed bottom bar through the published
-          payload; the side layout gets it as the reveal column's footer (below), so
-          nothing sits under the side-layout board before or after the reveal and
-          the height-fitted board never changes size. */}
-      {verdict !== null && showReveal && isSmUp && !isSideLayout && (
-        <TrainRevealActionBar
-          onRewind={handleRewind}
-          onBack={revealGoBack}
-          onForward={revealGoForward}
-          canRewind={revealCanReset}
-          canGoBack={revealCanGoBack}
-          canGoForward={revealCanGoForward}
-          analyzeTo={analyzeTo}
-          onAnalyzeClick={handleBarAnalyzeClick}
-          onNext={handleBarNext}
-          framed
-          spotlightAnalyze={tourTarget === 'analyze'}
-          className="w-full"
-        />
-      )}
       {/* Side layout: the game info sits under the board, not in the sidebar (Phase
           249 UAT). The slot is always there, so the height-fitted board is the
           same size before and after the reveal fills it. */}
-      {isSideLayout && (
+      {isSideLayout && !isShortSide && (
         <div className={GAME_INFO_SLOT_CLASS} data-testid="train-game-info-slot">
           {verdict !== null && showReveal && (
             <TrainRevealGameFooter
@@ -2013,65 +2067,19 @@ export function TrainSolveScreen({
       </div>
       {isSideLayout && !showReveal && (
         <div className={PROMPT_SIDE_CLASS} data-testid="train-prompt-panel">
+          {isShortSide && progressRow}
           {promptArea}
         </div>
       )}
-      {showReveal && (
-        <TrainReveal
-          puzzle={puzzle}
-          sessionId={trainSession.session?.session_id ?? null}
-          verdict={verdict}
-          isSolveError={trainSession.isSolveError}
-          onRetrySolve={trainSession.retrySolve}
-          onNext={handleNext}
-          gradingEngine={gradingEngine}
-          playedMoveUci={lastPlayedUci}
-          gradeResult={gradeResult}
-          instantGrade={instantGrade}
-          chips={chips}
-          activeChip={revealTree.activeChip}
-          onChipSelect={handleChipSelect}
-          treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
-          onGameMoveUciChange={setGameMoveUci}
-          onGameMoveFacepalmChange={setGameMoveFacepalm}
-          onGameMoveLineStateChange={setGameMoveLineState}
-          alsoFineMoves={alsoFineMoves}
-          tourTarget={tourTarget}
-          verdictBot={verdictBot}
-          verdictOpening={verdictOpening}
-          isBest={playedIsBest}
-          sessionDate={trainSession.session?.session_date}
-          expiresOn={trainSession.session?.expires_on}
-          onStripExpand={handleStripExpand}
-          // `isSmUp` keeps the one-bar invariant explicit: the phone payload
-          // publishes exactly when it is false.
-          controlsRow={
-            verdict !== null && isSideLayout && isSmUp ? (
-              <TrainRevealControlsRow
-                onRewind={handleRewind}
-                onBack={revealGoBack}
-                onForward={revealGoForward}
-                canRewind={revealCanReset}
-                canGoBack={revealCanGoBack}
-                canGoForward={revealCanGoForward}
-                onFlip={handleFlipBoard}
-              />
-            ) : undefined
-          }
-          showGameFooter={!isSideLayout}
-          nextButton={
-            verdict !== null && isSideLayout && isSmUp ? (
-              <TrainRevealFooter
-                onNext={handleBarNext}
-                analyzeTo={analyzeTo}
-                onAnalyzeClick={handleBarAnalyzeClick}
-                spotlightAnalyze={tourTarget === 'analyze'}
-                className={NEXT_FOOTER_CLASS}
-              />
-            ) : undefined
-          }
-        />
-      )}
+      {showReveal &&
+        (isShortSide ? (
+          // Short side layout: the reveal column scrolls inside a frame as tall as the board.
+          <div className={SHORT_SIDE_FRAME_CLASS} data-testid="train-reveal-short-frame">
+            {revealNode}
+          </div>
+        ) : (
+          revealNode
+        ))}
     </div>
   );
 }

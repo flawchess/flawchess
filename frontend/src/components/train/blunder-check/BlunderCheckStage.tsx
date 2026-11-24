@@ -18,10 +18,18 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { BlunderCheckScore } from '@/components/train/blunder-check/BlunderCheckScore';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { BLUNDER_CHECK_BOARD_MAX_WIDTH_PX } from '@/lib/blunderCheckDrill';
 import type { DrillProgress } from '@/lib/blunderCheckDrill';
-import { TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS } from '@/lib/trainSideLayout';
+import {
+  SHORT_SIDE_BOARD_GUTTER_PX,
+  SHORT_SIDE_FOOTER_RESET_CLASS,
+  SHORT_SIDE_FRAME_CLASS,
+  SHORT_SIDE_STICKY_FOOTER_CLASS,
+  SHORT_SIDE_TOP_RESET_CLASS,
+  TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+  TRAIN_SIDE_ROW_GAP_CLASS,
+} from '@/lib/trainSideLayout';
 
 /** Floor of the short-window board shrink; below it the page scrolls (TrainSolveScreen's value). */
 const BOARD_MIN_WIDTH_PX = 240;
@@ -37,7 +45,7 @@ const GAME_INFO_SLOT_CLASS = 'min-h-5 w-full';
  * column's full height, which ends with the game-info slot (20px) and its 12px gap, so
  * this bottom margin puts the footer back on the board's bottom edge.
  */
-export const BLUNDER_CHECK_SIDE_FOOTER_CLASS = 'mt-auto mb-8';
+export const BLUNDER_CHECK_SIDE_FOOTER_CLASS = `mt-auto mb-8 ${SHORT_SIDE_FOOTER_RESET_CLASS} ${SHORT_SIDE_STICKY_FOOTER_CLASS}`;
 /**
  * The side column, right of the board. `trainside:mt-[34px]` top-aligns its content with
  * the top of the board: the progress row is 22px tall here (the pot badge, 26px less its
@@ -46,7 +54,11 @@ export const BLUNDER_CHECK_SIDE_FOOTER_CLASS = 'mt-auto mb-8';
  * `trainside:self-stretch` makes it as tall as the board column, so a footer with
  * BLUNDER_CHECK_SIDE_FOOTER_CLASS (the solution's Next) lands on the board's bottom edge.
  */
-export const BLUNDER_CHECK_SIDE_CLASS = `flex w-full flex-col gap-4 trainside:mt-[34px] trainside:self-stretch ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
+export const BLUNDER_CHECK_SIDE_CLASS = `flex w-full flex-col gap-4 trainside:mt-[34px] trainside:self-stretch ${SHORT_SIDE_TOP_RESET_CLASS} trainside:short:flex-1 ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
+
+/** Short side layout: the scroller that stacks the progress row over the side panel, inside a
+ * SHORT_SIDE_FRAME_CLASS frame as tall as the board column. */
+const SHORT_SIDE_STACK_CLASS = 'absolute inset-0 flex flex-col gap-3 overflow-y-auto';
 
 /**
  * The compact progress row: "n of m", the bar, the pot at risk and the banked points
@@ -152,12 +164,14 @@ export function BlunderCheckStage({
   // viewport bottom and the bubble sat below the fold; the side column and the height fit now
   // engage on the trainside gate (1024px and up, or 768px and up in landscape).
   const isSideLayout = useIsTrainSideLayout();
+  // A phone in landscape: a small gutter, so the board gets the screen's height.
+  const isShortSide = useIsTrainShortSide();
   const columnMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef: boardRowRef,
     maxPx: BLUNDER_CHECK_BOARD_MAX_WIDTH_PX,
     minPx: BOARD_MIN_WIDTH_PX,
-    gutterPx: BOARD_BOTTOM_GUTTER_PX,
+    gutterPx: isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : BOARD_BOTTOM_GUTTER_PX,
     enabled: isSideLayout,
   });
 
@@ -167,6 +181,16 @@ export function BlunderCheckStage({
   // under the board on any side-layout screen (the solution's action bar is in the side
   // column), so the fitted board width is the same on every screen.
   const bubbleInSide = isSideLayout && side === undefined;
+  const sidePanel = bubbleInSide ? (
+    <div className={BLUNDER_CHECK_SIDE_CLASS} data-testid="blunder-check-side-panel">
+      {children}
+    </div>
+  ) : (
+    side
+  );
+  // Short side layout (a phone in landscape): the progress row tops the side column instead of
+  // the board column, so the board gets the screen's full height.
+  const progressRow = <BlunderCheckProgress progress={progress} />;
 
   return (
     <div
@@ -187,7 +211,7 @@ export function BlunderCheckStage({
           className="sticky top-0 z-10 flex w-full flex-col items-center gap-3 bg-background trainside:static trainside:z-auto trainside:bg-transparent"
           data-testid="blunder-check-pinned-board"
         >
-          <BlunderCheckProgress progress={progress} />
+          {!isShortSide && progressRow}
           <div ref={boardRowRef} className="flex w-full flex-row items-stretch gap-2">
             <div className="relative min-w-0 flex-1">
               {renderBoard(columnMaxWidthPx - EVAL_BAR_CHROME_PX)}
@@ -203,7 +227,7 @@ export function BlunderCheckStage({
             </div>
           </div>
           {actionBar}
-          {isSideLayout && (
+          {isSideLayout && !isShortSide && (
             <div className={GAME_INFO_SLOT_CLASS} data-testid="blunder-check-game-info-slot">
               {underBoard}
             </div>
@@ -211,12 +235,15 @@ export function BlunderCheckStage({
         </div>
         {!bubbleInSide && children}
       </div>
-      {bubbleInSide ? (
-        <div className={BLUNDER_CHECK_SIDE_CLASS} data-testid="blunder-check-side-panel">
-          {children}
+      {isShortSide ? (
+        <div className={SHORT_SIDE_FRAME_CLASS} data-testid="blunder-check-short-side">
+          <div className={SHORT_SIDE_STACK_CLASS}>
+            {progressRow}
+            {sidePanel}
+          </div>
         </div>
       ) : (
-        side
+        sidePanel
       )}
     </div>
   );

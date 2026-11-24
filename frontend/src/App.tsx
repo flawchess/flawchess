@@ -401,8 +401,18 @@ export function AnalysisMobileHeader() {
 
 // Shared by both MobileBottomBar branches (main nav / board controls) so the
 // fixed positioning, breakpoint, and border/background stay byte-identical.
-const MOBILE_BOTTOM_BAR_CLASSES =
-  'fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe';
+const MOBILE_BOTTOM_BAR_BASE_CLASSES =
+  'fixed bottom-0 inset-x-0 flex z-40 bg-background border-t border-border pb-safe';
+const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} sm:hidden`;
+/**
+ * The board-controls bar shows at every width while a payload is published: the
+ * publishers decide when it applies (the Train reveals publish in their stacked
+ * layout, which also covers portrait tablets and unfolded foldables; the bot game
+ * publishes in its mobile layout, below 800px). Bug fix: it used to hide from `sm`
+ * up, which left a 640-799px bot game without Resign and the stacked Train reveal
+ * with a cramped in-flow bar under the board (Galaxy Z Fold8 inner screen, portrait).
+ */
+const MOBILE_BOARD_CONTROLS_BAR_CLASSES = MOBILE_BOTTOM_BAR_BASE_CLASSES;
 
 /**
  * A payload may omit `onReset` (the bot game has no Reset action), but
@@ -483,7 +493,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
     return (
       <div
         data-testid="mobile-board-controls-bar"
-        className={cn(MOBILE_BOTTOM_BAR_CLASSES, 'items-center px-2 py-2')}
+        className={cn(MOBILE_BOARD_CONTROLS_BAR_CLASSES, 'items-center px-2 py-2')}
       >
         {renderBoardControlsBar(boardControls)}
       </div>
@@ -660,6 +670,7 @@ function ProtectedLayout() {
   // phone portrait layout does with its mobile header. The drills show their own settings cog
   // in that band; Bots keeps the header (its layout is not height-fitted there).
   const isTrainSideBand = useIsTrainSideBand();
+  const boardControlsActive = useMobileBoardControls() != null;
   const hideNavHeader = playActive && isTrainSideBand && location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
@@ -797,7 +808,9 @@ function ProtectedLayout() {
           <MobileHeader />
         </>
       )}
-      <main className="pb-16 sm:pb-0">
+      {/* The fixed board-controls bar can show from `sm` up too, so the page keeps its
+          bottom padding while one is published. */}
+      <main className={cn('pb-16', !boardControlsActive && 'sm:pb-0')}>
         <Outlet />
       </main>
       <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />

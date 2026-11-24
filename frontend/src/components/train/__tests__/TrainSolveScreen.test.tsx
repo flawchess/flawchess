@@ -22,10 +22,11 @@ import type { ReactElement } from 'react';
 import { Chess } from 'chess.js';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
+import { PublishedRevealBar } from '@/components/train/__tests__/PublishedRevealBar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
-import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import { SHORT_VIEWPORT_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
@@ -84,17 +85,21 @@ class ResizeObserverStub {
 // the desktop path so the pre-existing hover-spotlight coverage below needs
 // no per-test override.
 let matchMediaMatches = true;
-// The reveal action bar is mounted once by breakpoint (`useIsSmUp`, 640px):
-// the in-flow bar from `sm` up, the published phone bottom-bar payload below it.
-// Kept separate from `matchMediaMatches` (the lg desktop gate) so a phone-width
-// bubble/strip test does not also flip the action bar; the probe render sets it false.
+// The phone width (below `sm`, 640px). Below it the side layout never applies, so the
+// stub answers the side-layout query false too, and the reveal publishes its bottom-bar
+// payload (the stacked layout). Kept separate from `matchMediaMatches` (the lg desktop
+// gate) so a phone-width bubble/strip test does not also flip the action bar.
 let smUpMatches = true;
 const SM_UP_QUERY = '(min-width: 640px)';
 // Models a landscape tablet (816x616): the lg gate is off but the side-layout query matches.
 // While set, every query except the sm one matches only TRAIN_SIDE_LAYOUT_QUERY.
 let sideLayoutOnly = false;
+// Models a phone in landscape (852x393): set together with `sideLayoutOnly`.
+let shortViewport = false;
 function mediaMatches(query: string): boolean {
+  if (query === SHORT_VIEWPORT_QUERY) return shortViewport;
   if (query === SM_UP_QUERY) return smUpMatches;
+  if (query === TRAIN_SIDE_LAYOUT_QUERY && !smUpMatches) return false;
   if (sideLayoutOnly) return query === TRAIN_SIDE_LAYOUT_QUERY;
   return matchMediaMatches;
 }
@@ -739,6 +744,8 @@ async function renderScreen(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Harness puzzle={puzzle} restoredSolve={restoredSolve} gradeMoveOverride={gradeMoveOverride} />
+          {/* The stacked layout's reveal controls live in the shell's fixed bottom bar. */}
+          <PublishedRevealBar />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -3876,6 +3883,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     describe('side layout below the lg gate (landscape tablet, 816x616)', () => {
       afterEach(() => {
         sideLayoutOnly = false;
+        shortViewport = false;
       });
 
       it('uses the side column, the game-info slot and the always-open verdict card', async () => {
@@ -3889,6 +3897,26 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         });
         await screen.findByTestId('train-verdict-card');
         expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+      });
+
+      it('on a short screen (phone landscape) the progress row and game info leave the board column', async () => {
+        sideLayoutOnly = true;
+        shortViewport = true;
+        await renderScreen(makePuzzle());
+        const pinned = screen.getByTestId('train-pinned-board');
+        // The board column holds the board alone; the progress row tops the side column.
+        expect(within(pinned).queryByTestId('train-progress')).toBeNull();
+        expect(within(screen.getByTestId('train-prompt-panel')).getByTestId('train-progress')).not.toBeNull();
+        expect(screen.queryByTestId('train-game-info-slot')).toBeNull();
+        fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+        await act(async () => {
+          fireEvent.click(screen.getByTestId('drop-e2e4'));
+        });
+        await screen.findByTestId('train-verdict-card');
+        // The reveal column scrolls inside a frame as tall as the board and leads with the row.
+        const frame = screen.getByTestId('train-reveal-short-frame');
+        expect(within(frame).getByTestId('train-progress')).not.toBeNull();
+        expect(within(frame).getByTestId('btn-train-next')).not.toBeNull();
       });
     });
 

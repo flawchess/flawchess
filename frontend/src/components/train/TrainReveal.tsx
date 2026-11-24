@@ -40,7 +40,11 @@ import { TrainVerdictDetails } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
-import { TRAIN_SIDE_COLUMN_WIDTH_CLASS } from '@/lib/trainSideLayout';
+import {
+  SHORT_SIDE_SCROLLER_CLASS,
+  SHORT_SIDE_TOP_RESET_CLASS,
+  TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+} from '@/lib/trainSideLayout';
 import { cn } from '@/lib/utils';
 import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { verdictClauseParts, verdictStripLine } from '@/lib/trainBotCopy';
@@ -165,6 +169,8 @@ export interface TrainRevealProps {
    * board instead of in this column (Phase 249 UAT). Defaults to true.
    */
   showGameFooter?: boolean;
+  /** Rendered first in the reveal column (the progress row, in the short side layout). */
+  header?: ReactNode;
 }
 
 export function TrainReveal({
@@ -196,6 +202,7 @@ export function TrainReveal({
   controlsRow,
   nextButton,
   showGameFooter = true,
+  header,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
   // Same gate as TrainSolveScreen, which hands this component the side-column controls row
@@ -355,10 +362,14 @@ export function TrainReveal({
     <div
       className={cn(
         'flex w-full flex-col gap-4 trainside:mt-8 trainside:self-stretch',
+        SHORT_SIDE_TOP_RESET_CLASS,
+        // Short side layout: TrainSolveScreen frames the column, which scrolls inside it.
+        SHORT_SIDE_SCROLLER_CLASS,
         TRAIN_SIDE_COLUMN_WIDTH_CLASS,
       )}
       data-testid="train-reveal"
     >
+      {header}
       {/* 1. The verdict surface. Phones: the one-line strip
           (bot avatar + total + clause), collapsed on every reveal; its tap opens
           the full feedback. Side layout: the same card always open, avatar floated

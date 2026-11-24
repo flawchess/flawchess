@@ -40,3 +40,33 @@ export const TRAIN_SIDE_COLUMN_WIDTH_CLASS = 'lg:max-w-sm trainside:max-lg:max-w
  * band, where every pixel of the short, narrow screen goes to the board. Disjoint conditions,
  * for the same cascade-order reason as TRAIN_SIDE_COLUMN_WIDTH_CLASS. */
 export const TRAIN_SIDE_ROW_GAP_CLASS = 'lg:gap-8 trainside:max-lg:gap-4';
+
+/** A short viewport: the same query as `index.css`'s `short` custom variant (below 560px tall,
+ * e.g. a phone in landscape at about 393px). The JS twin for the Train drills' height fit. */
+export const SHORT_VIEWPORT_QUERY = '(max-height: 559.98px)';
+
+/** Bottom gutter of the Train drills' height fit on a short side-layout screen (a phone in
+ * landscape). The default 40px gutter plus the page padding took about a quarter of a 393px
+ * screen; this keeps a small gap above the bottom edge and gives the rest to the board. */
+export const SHORT_SIDE_BOARD_GUTTER_PX = 12;
+
+/** Short side layout (a phone in landscape): the progress row and the game info move from the
+ * board column to the top and foot of the side column, so the board column holds the board
+ * alone. The side column's top offset (it top-aligns with the board under the progress row) and
+ * the footer's bottom offset (it lines up with the board above the game-info slot) reset. */
+export const SHORT_SIDE_TOP_RESET_CLASS = 'trainside:short:mt-0';
+export const SHORT_SIDE_FOOTER_RESET_CLASS = 'trainside:short:mb-0';
+
+/**
+ * Short side layout: the side column (a reveal's verdict, lines, move list and Analyze / Next)
+ * is taller than a phone's landscape height. Bug fix (iPhone 16 landscape, 852x393): the page
+ * scrolled about 200px and Next sat below the fold. The column now sits in a frame as tall as
+ * the board column and scrolls inside it, with the footer pinned to its bottom edge.
+ */
+export const SHORT_SIDE_FRAME_CLASS = `relative w-full self-stretch ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
+/** The scroller inside SHORT_SIDE_FRAME_CLASS; `short:`-gated so it is inert outside the frame. */
+export const SHORT_SIDE_SCROLLER_CLASS =
+  'trainside:short:absolute trainside:short:inset-0 trainside:short:overflow-y-auto';
+/** The side column's footer (Analyze / Next), pinned to the scroller's bottom edge. */
+export const SHORT_SIDE_STICKY_FOOTER_CLASS =
+  'trainside:short:sticky trainside:short:bottom-0 trainside:short:z-10 trainside:short:bg-background trainside:short:pt-2';

@@ -134,3 +134,11 @@ Full frontend suite re-run after the executor's last fix: 385 files, 6904 tests 
 - Band side column 320 -> 272px and row gap 32 -> 16px (TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS): the band is width-bound, so this is what grows the board.
 - useFitBoardToViewport also observes document.body: chrome above the column (the header removed by the drill's effect) changed without resizing the column, leaving a stale fit.
 - Browser: 816x616 board 401 -> 452, 933x704 489 -> 542, no scroll, no nav header; 1024x700 and 1280x800 unchanged (header shown, 384px column). Full suite 385 files / 6905 tests pass; band test mutation-checked.
+
+## Follow-up 2 (user request): portrait bottom bar, phone landscape
+
+- Stacked layout at every width (phones, portrait tablets, unfolded foldables) publishes the reveal controls to the fixed bottom bar; the in-flow tablet bar is gone (blunder check solution + puzzles). The board-controls bar no longer hides from `sm` up; `main` keeps pb-16 while one is published. Side effect: bot games at 640-799px now show their Resign bar (it was hidden there).
+- Short side layout (`useIsTrainShortSide`: side layout and below 560px tall): 12px fit gutter, pb-2 page padding, progress row and game info move to the side column, the side column scrolls inside a board-tall frame with Analyze/Next sticky at its bottom. Blunder-check panel `mt-4` dropped while immersive.
+- Browser matrix (blunder check ready gate + solution, puzzles prompt + reveal) at iPhone 16 393x852 / 852x393, Fold8 cover 412x915 / 915x412, inner 704x933 / 933x704 and 616x816 / 816x616: no hidden action button, no horizontal overflow. iPhone 16 landscape board 228 -> 341 (both drills), cover landscape 278 -> 360; Next on the board's bottom edge in landscape, in the bottom bar in portrait.
+- Tests: PublishedRevealBar test stand-in for the shell bar; TrainSolveScreen stub made realistic (below sm is never side layout); new short-side test, mutation-checked. 385 files / 6906 tests pass; lint, build, knip clean.
+- Not done: widening the side column in phone landscape (there is spare width at 852px); custom-variant cascade order between `trainside:max-lg:` and `trainside:short:` utilities is unverified, so the band width was left alone.

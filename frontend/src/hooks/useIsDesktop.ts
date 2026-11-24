@@ -10,7 +10,7 @@
  * hover (side layout) or glyph tap (stacked layout), and which layout-dependent branches mount.
  */
 import { useEffect, useState } from 'react';
-import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import { SHORT_VIEWPORT_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 
 /** Tailwind's default `lg` breakpoint — kept module-private (not exported;
  * knip flags unused exports) since nothing outside this hook needs the raw
@@ -69,4 +69,13 @@ export function useIsTrainSideBand(): boolean {
   const isSideLayout = useIsTrainSideLayout();
   const isDesktop = useIsDesktop();
   return isSideLayout && !isDesktop;
+}
+
+/** True when the Train drills use their side layout on a short screen (below 560px tall: a
+ * phone in landscape). The JS twin of `trainside:short:`. The drills shrink the height fit's
+ * bottom gutter there so the board gets the height. */
+export function useIsTrainShortSide(): boolean {
+  const isSideLayout = useIsTrainSideLayout();
+  const isShort = useMediaQuery(SHORT_VIEWPORT_QUERY);
+  return isSideLayout && isShort;
 }
