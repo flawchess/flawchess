@@ -21,7 +21,7 @@ import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { BLUNDER_CHECK_BOARD_MAX_WIDTH_PX } from '@/lib/blunderCheckDrill';
 import type { DrillProgress } from '@/lib/blunderCheckDrill';
-import { TRAIN_SIDE_COLUMN_WIDTH_CLASS } from '@/lib/trainSideLayout';
+import { TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS } from '@/lib/trainSideLayout';
 
 /** Floor of the short-window board shrink; below it the page scrolls (TrainSolveScreen's value). */
 const BOARD_MIN_WIDTH_PX = 240;
@@ -79,7 +79,7 @@ function BlunderCheckProgress({ progress }: { progress: DrillProgress }): ReactE
           progress={progress}
         />
       </div>
-      <div className="flex w-5 shrink-0 justify-center sm:hidden">
+      <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex">
         <SettingsSheetButton
           testId="btn-blunder-check-settings"
           className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"
@@ -173,7 +173,7 @@ export function BlunderCheckStage({
       // Published as a custom property so the phone stack caps itself with a class that
       // `trainside:max-w-none` can still override (same device as TrainSolveScreen).
       style={{ '--train-col-max': `${columnMaxWidthPx}px` } as CSSProperties}
-      className="mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 trainside:mx-0 trainside:max-w-none trainside:flex-row trainside:items-start trainside:justify-center trainside:gap-8"
+      className={`mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 trainside:mx-0 trainside:max-w-none trainside:flex-row trainside:items-start trainside:justify-center ${TRAIN_SIDE_ROW_GAP_CLASS}`}
       data-testid={testId}
     >
       <div

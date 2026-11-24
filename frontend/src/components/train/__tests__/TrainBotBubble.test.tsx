@@ -15,12 +15,16 @@ import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 
+import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+
 const SM_UP_QUERY = '(min-width: 640px)';
 let smUp = false;
+/** The Train side-layout query; with `lg` (1024px) answering false this is the landscape band. */
+let trainSide = false;
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
-    matches: query === SM_UP_QUERY ? smUp : false,
+    matches: query === SM_UP_QUERY ? smUp : query === TRAIN_SIDE_LAYOUT_QUERY ? trainSide : false,
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -34,6 +38,7 @@ Object.defineProperty(window, 'matchMedia', {
 afterEach(() => {
   cleanup();
   smUp = false;
+  trainSide = false;
 });
 
 const PERSONA = PERSONA_REGISTRY['wall-1800']; // Hilda — has curated art
@@ -103,6 +108,25 @@ describe('TrainBotBubble', () => {
       expect(screen.getByTestId('leading-ring')).not.toBeNull();
       expect(screen.queryByTestId('train-bot-avatar')).toBeNull();
       expect(container.querySelector('.rotate-45')).not.toBeNull();
+    });
+  });
+
+  describe('landscape band (side layout below lg)', () => {
+    it('uses the compact floated avatar even though the window is sm+', () => {
+      smUp = true;
+      trainSide = true;
+      const { container } = render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(true);
+      expect(screen.queryByTestId('train-bot-name')).toBeNull();
+      expect(container.querySelector('.rotate-45')).toBeNull();
+      expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe(PERSONA.name);
     });
   });
 

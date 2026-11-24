@@ -52,12 +52,21 @@ import { parseTrainRoute, TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 
+/** Top padding of an immersive Train screen in the landscape band (no nav header above it). */
+const TRAIN_SIDE_BAND_PAGE_TOP_CLASS = 'trainside:max-lg:pt-3';
+
 /** The page wrapper's classes while a session view is on screen (the loop or a
  * restored reveal); it drops the phone top padding (see the comment at the
  * call site). Module-level so the branching stays out of `TrainPage`'s own
  * gated complexity. */
 function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
-  return cn('px-4 py-6 md:px-6', (showLoop || restoredActive) && 'max-sm:pt-0');
+  // The landscape band hides the nav header during a drill (ProtectedLayout), so the top
+  // padding shrinks there too: the short screen's height goes to the board.
+  return cn(
+    'px-4 py-6 md:px-6',
+    (showLoop || restoredActive) && 'max-sm:pt-0',
+    showLoop && TRAIN_SIDE_BAND_PAGE_TOP_CLASS,
+  );
 }
 
 /** The wrapper's classes on the tab views: the same max-w-7xl on every tab. */

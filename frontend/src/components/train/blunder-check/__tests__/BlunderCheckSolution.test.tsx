@@ -50,6 +50,9 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   useIsDesktop: () => false,
   useIsSmUp: () => true,
   useIsTrainSideLayout: () => viewport.desktop,
+  // The desktop-path tests model a desktop side column (avatar + name beside the bubble), not
+  // the landscape band's compact bubble, which TrainBotBubble.test covers.
+  useIsTrainSideBand: () => false,
 }));
 
 vi.mock('@/lib/sounds', () => ({ playSound: vi.fn(), unlockAudio: vi.fn() }));

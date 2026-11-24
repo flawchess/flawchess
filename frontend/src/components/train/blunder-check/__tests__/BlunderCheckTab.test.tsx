@@ -195,6 +195,7 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   useIsDesktop: () => true,
   useIsSmUp: () => true,
   useIsTrainSideLayout: () => true,
+  useIsTrainSideBand: () => false,
 }));
 
 const playSound = vi.hoisted(() => vi.fn());

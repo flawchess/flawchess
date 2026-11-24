@@ -60,3 +60,13 @@ export function useIsSmUp(): boolean {
 export function useIsTrainSideLayout(): boolean {
   return useMediaQuery(TRAIN_SIDE_LAYOUT_QUERY);
 }
+
+/** True in the Train drills' landscape band: the side-column layout is on but the window is
+ * narrower than `lg` (a foldable's inner screen or a tablet held sideways, 768-1023px wide).
+ * The JS twin of the `trainside:max-lg:` CSS prefix. The screen is short there, so the drills
+ * hide the desktop nav header and use the compact floated-avatar bot bubble. */
+export function useIsTrainSideBand(): boolean {
+  const isSideLayout = useIsTrainSideLayout();
+  const isDesktop = useIsDesktop();
+  return isSideLayout && !isDesktop;
+}

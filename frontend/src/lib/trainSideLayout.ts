@@ -25,14 +25,18 @@ export const TRAIN_SIDE_LAYOUT_QUERY = `(min-width: ${SIDE_LAYOUT_ANY_ORIENTATIO
 
 /**
  * Width cap of the side column. Desktop (lg and up) keeps its 384px column; the 768-1023px
- * landscape band caps it at 320px. Fit math at 816x616 / 933x704: the height-fitted board
- * column is about 437px / 525px (blunder check) or 413px / 501px (puzzles) wide, and the
- * page content is 768px / 885px wide. With 384px plus the 32px gap the row would overflow by
- * up to 86px; with 320px it fits, or overflows by at most about 21px, which flex-shrink
- * absorbs (the board sizes from its container width).
+ * landscape band caps it at 272px. The band's 4:3-ish screens are width-bound: at 816x616 the
+ * page content is 768px wide, so the board gets what the side column and gap leave. With the
+ * compact floated-avatar bot bubble (useIsTrainSideBand) a 272px column reads fine, and with
+ * TRAIN_SIDE_ROW_GAP_CLASS's 16px gap the board is about 452px there instead of 388px.
  *
  * The two conditions are disjoint on purpose: custom-variant utilities are emitted after the
- * built-in breakpoints, so pairing a plain `trainside:max-w-xs` with `lg:max-w-sm` would let
+ * built-in breakpoints, so pairing a plain `trainside:max-w-68` with `lg:max-w-sm` would let
  * the band value override desktop.
  */
-export const TRAIN_SIDE_COLUMN_WIDTH_CLASS = 'lg:max-w-sm trainside:max-lg:max-w-xs';
+export const TRAIN_SIDE_COLUMN_WIDTH_CLASS = 'lg:max-w-sm trainside:max-lg:max-w-68';
+
+/** Gap between the board column and the side column: 32px on desktop, 16px in the landscape
+ * band, where every pixel of the short, narrow screen goes to the board. Disjoint conditions,
+ * for the same cascade-order reason as TRAIN_SIDE_COLUMN_WIDTH_CLASS. */
+export const TRAIN_SIDE_ROW_GAP_CLASS = 'lg:gap-8 trainside:max-lg:gap-4';

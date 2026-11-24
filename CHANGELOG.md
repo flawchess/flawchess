@@ -29,7 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Train: on landscape tablets and unfolded foldables (768px wide and up), blunder check and personalized puzzles put the board and the bot's bubble side by side, with the board sized to fit the screen height.
+- Train: on landscape tablets and unfolded foldables (768px wide and up), blunder check and personalized puzzles put the board and the bot's bubble side by side, with the board sized to fit the screen height. On the narrower of these screens (768 to 1023px wide) the top menu is hidden during a drill and the bot's bubble uses the compact layout, so the board gets as much room as possible.
 - Bot speech bubbles on phones show the bot's avatar inside the bubble instead of a name row above it, so the bubble and its buttons take less height (Train, Bots, Endgames, Import, and Hilda's tour on the board).
 - Blunder check: a blunder is no longer served when the player was already losing by more than 2 before it (it was 3). From there the better move was losing too, so it was not worth finding. Blunders that throw away an advantage of up to 3 stay in, and so do missed chances.
 - Train: when a personalized-puzzle session is short of your own puzzles, it is now filled with blunders from games of similarly rated players instead of a fixed set of lichess puzzles. They are graded like your own puzzles, never come back, and the reveal shows the move played in that game with its time control, the player's rating and the date, never a name. The intro, start screen and score screen now say where such a session's puzzles came from.

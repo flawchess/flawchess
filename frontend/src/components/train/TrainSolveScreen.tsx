@@ -137,7 +137,7 @@ import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
-import { TRAIN_SIDE_COLUMN_WIDTH_CLASS } from '@/lib/trainSideLayout';
+import { TRAIN_SIDE_COLUMN_WIDTH_CLASS, TRAIN_SIDE_ROW_GAP_CLASS } from '@/lib/trainSideLayout';
 import {
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -1834,7 +1834,7 @@ export function TrainSolveScreen({
       // background and show two strips of moving cards flanking the board.
       style={{ '--train-col-max': `${boardMaxWidthPx}px` } as CSSProperties}
       ref={screenRef}
-      className="mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 trainside:mx-0 trainside:max-w-none trainside:flex-row trainside:items-start trainside:justify-center trainside:gap-8"
+      className={`mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 trainside:mx-0 trainside:max-w-none trainside:flex-row trainside:items-start trainside:justify-center ${TRAIN_SIDE_ROW_GAP_CLASS}`}
       data-testid="train-solve-screen"
     >
       <div
@@ -1891,7 +1891,7 @@ export function TrainSolveScreen({
       </div>
         {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
             keeps the row at its text height, so the board is not pushed down). */}
-        <div className="flex w-5 shrink-0 justify-center sm:hidden">
+        <div className="flex w-5 shrink-0 justify-center sm:hidden trainside:max-lg:flex">
           <SettingsSheetButton
             testId="btn-train-settings"
             className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"

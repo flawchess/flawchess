@@ -8,7 +8,9 @@
  * Two layouts, mounted exclusively through `useIsSmUp` (one placement in the DOM, the
  * convention the reveal action bar uses): from `sm` up, an avatar + name column BESIDE the
  * bubble with a left-pointing tail. On phones, the avatar is floated top-left INSIDE the
- * bubble (no name row, no tail), so the bubble costs far less height. A CSS-only single node
+ * bubble (no name row, no tail), so the bubble costs far less height. The landscape band
+ * (`useIsTrainSideBand`: 768-1023px wide in landscape) uses the same compact layout, since
+ * the Train side column there is narrow and the screen is short. A CSS-only single node
  * is not clean here: on phones the avatar must sit inside the bubble's border, while from
  * `sm` up it lives in a column whose width comes from the name and which sets the row's
  * minimum height; absolute positioning on `sm+` would lose both.
@@ -19,7 +21,7 @@
  */
 
 import type { ReactElement, ReactNode } from 'react';
-import { useIsSmUp } from '@/hooks/useIsDesktop';
+import { useIsSmUp, useIsTrainSideBand } from '@/hooks/useIsDesktop';
 import { cn } from '@/lib/utils';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -122,9 +124,12 @@ export function TrainBotBubble({
   leading,
 }: TrainBotBubbleProps): ReactElement {
   const isSmUp = useIsSmUp();
+  const isSideBand = useIsTrainSideBand();
   const sideBySide = leading !== undefined;
-  // Phones without a leading slot: the avatar floats inside the bubble.
-  const compact = !sideBySide && !isSmUp;
+  // Phones without a leading slot: the avatar floats inside the bubble. Also the landscape
+  // band (768-1023px wide in landscape), where the Train side column is only 320px wide and
+  // an avatar + name column beside the bubble wrapped short copy onto four lines.
+  const compact = !sideBySide && (!isSmUp || isSideBand);
   const isNudge = state === 'drop-nudge';
   // `resolveBubbleState` ranks `intro` above `drop-nudge`, so a piece dropped
   // while Hilda's guess step is up keeps the intro copy: a nudge must not

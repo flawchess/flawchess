@@ -57,6 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
+import { useIsTrainSideBand } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -653,6 +654,13 @@ function ProtectedLayout() {
   // needs the vertical space on small screens. Set by BotsGame and
   // TrainSolveScreen via useMarkPlayActive().
   const playActive = usePlayActive();
+  // A Train drill (blunder check, puzzle solve loop) in the landscape band (768-1023px wide in
+  // landscape: a foldable's inner screen or a tablet held sideways) also drops the desktop nav
+  // header, so the board and progress row get the full height of the short screen, as the
+  // phone portrait layout does with its mobile header. The drills show their own settings cog
+  // in that band; Bots keeps the header (its layout is not height-fitted there).
+  const isTrainSideBand = useIsTrainSideBand();
+  const hideNavHeader = playActive && isTrainSideBand && location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
@@ -783,7 +791,7 @@ function ProtectedLayout() {
   return (
     <>
       <FeatureRouteRecorder />
-      <NavHeader />
+      {!hideNavHeader && <NavHeader />}
       {!isOpeningsRoute && !playActive && (
         <>
           <MobileHeader />
