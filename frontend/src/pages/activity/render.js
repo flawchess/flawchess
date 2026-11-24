@@ -542,8 +542,14 @@ function mount(){
     return [b,h];
   });
 
-  let rt=null;
-  const onResize=()=>{clearTimeout(rt);rt=setTimeout(draw,150);};
+  // Width only: mobile browsers fire `resize` when the URL bar collapses on
+  // scroll, and that redraw would drop a tooltip the user just tapped open.
+  let rt=null, lastWidth=window.innerWidth;
+  const onResize=()=>{
+    if(window.innerWidth===lastWidth) return;
+    lastWidth=window.innerWidth;
+    clearTimeout(rt);rt=setTimeout(draw,150);
+  };
   addEventListener("resize",onResize);
 
   const mq=matchMedia("(prefers-color-scheme: dark)");

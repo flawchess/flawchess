@@ -47,6 +47,9 @@ const FUNNEL_INDEX_W=26, FUNNEL_INDEX_W_NARROW=20;
 const FUNNEL_LABEL_PX=14.5, FUNNEL_LABEL_PX_NARROW=13.5;
 const MONO_CHAR_RATIO=0.6, SANS_CHAR_RATIO=0.55; // advance / font-size for IBM Plex Mono, Source Sans 3
 const MIN_TICK_GAP_PX=8; // whitespace required between two tick labels
+// Tooltip placement: the touch offsets are larger so the finger does not cover it.
+const TIP_EDGE_PX=10, TIP_ABOVE_PX=14, TIP_BELOW_PX=18, TIP_ABOVE_TOUCH_PX=24, TIP_BELOW_TOUCH_PX=40;
+const TAP_SLOP_PX=8; // finger travel beyond this is a drag or a scroll, not a tap
 const GBAR_LABEL_PX=13, GBAR_LABEL_PX_NARROW=12; // consistent with the 12/12.5px already used elsewhere in this file
 const GBAR_LABEL_LINE_H=15, GBAR_LABEL_MAX_LINES=3, GBAR_LABEL_BASE=10;
 // Estimated text-box width. Not a real measurement — but it's the SAME
@@ -77,6 +80,8 @@ function resolveFrame(host){
   return {w,narrow:w<NARROW_CHART_WIDTH};
 }
 function frame(host,h){
+  // A redraw replaces the svg a pinned tooltip points at, so drop the tooltip too.
+  if(activeHover&&host.contains(activeHover.svg)) activeHover.hide();
   host.innerHTML="";
   const {w,narrow}=resolveFrame(host);
   let name="Chart";
@@ -132,23 +137,88 @@ function hover(svg,x0,x1,yTop,yBot,n,xAt,onIdx,c){
   const dots=el("g",{opacity:0}); svg.appendChild(cross); svg.appendChild(dots);
   const rect=el("rect",{x:x0,y:yTop,width:Math.max(1,x1-x0),height:yBot-yTop,fill:"transparent"});
   svg.appendChild(rect);
-  const move=ev=>{
+  const show=ev=>{
+    if(activeHover&&activeHover.svg!==svg) activeHover.hide();
     const b=svg.getBoundingClientRect(), mx=ev.clientX-b.left;
     let i=0,best=Infinity;
     for(let k=0;k<n;k++){const d=Math.abs(xAt(k)-mx); if(d<best){best=d;i=k;}}
     const px=xAt(i);
     cross.setAttribute("x1",px); cross.setAttribute("x2",px); cross.setAttribute("opacity",".45");
     dots.innerHTML=""; dots.setAttribute("opacity",1);
-    const rows=onIdx(i,dots,px);
-    const tip=tipEl(); if(!tip) return;
-    tip.innerHTML=rows; tip.style.opacity=1;
-    const tw=tip.offsetWidth, th=tip.offsetHeight;
-    tip.style.left=Math.min(window.innerWidth-tw-10,Math.max(10,ev.clientX-tw/2))+"px";
-    tip.style.top=(ev.clientY-th-14<10?ev.clientY+18:ev.clientY-th-14)+"px";
+    placeTip(onIdx(i,dots,px),ev);
+    activeHover={svg,hide};
   };
-  const out=()=>{cross.setAttribute("opacity",0);dots.setAttribute("opacity",0);
-    const tip=tipEl(); if(tip) tip.style.opacity=0;};
-  rect.addEventListener("pointermove",move); rect.addEventListener("pointerleave",out);
+  // Touch pins the tooltip (see bindTouch); these listeners live only while it
+  // is pinned, so nothing outlives the chart.
+  let unpin=null;
+  const hide=()=>{
+    cross.setAttribute("opacity",0); dots.setAttribute("opacity",0);
+    if(unpin){ unpin(); unpin=null; }
+    // Another chart may own the shared #tip by now; only its owner clears it.
+    if(!activeHover||activeHover.svg!==svg) return;
+    activeHover=null;
+    const tip=tipEl(); if(!tip) return;
+    // Parked at the origin so a hidden tip never extends the page's scroll area.
+    tip.style.opacity=0; tip.style.left="0px"; tip.style.top="0px";
+  };
+  rect.addEventListener("pointermove",ev=>{ if(!isTouch(ev)) show(ev); });
+  rect.addEventListener("pointerleave",ev=>{ if(!isTouch(ev)) hide(); });
+  bindTouch(svg,rect,ev=>{ show(ev); if(!unpin) unpin=onTapOutside(svg,hide); });
+}
+// The chart currently owning the one shared #tip, as {svg, hide}, or null.
+let activeHover=null;
+const isTouch=ev=>ev.pointerType==="touch";
+const movedPx=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+// Touch works like the app's Recharts tooltips: a tap shows the tooltip and it
+// stays after the finger lifts, a horizontal drag scrubs along the chart, and a
+// vertical swipe scrolls the page. Before this, touch shared the mouse path,
+// where lifting the finger fires pointerleave and dropped the tooltip at once.
+function bindTouch(svg,rect,show){
+  // Leaves vertical panning and pinch zoom to the browser (it then sends
+  // pointercancel); horizontal drags stay ours. Set on the svg because Chrome
+  // ignores touch-action on an inner SVG shape and cancels the drag.
+  svg.style.touchAction="pan-y pinch-zoom";
+  let start=null, scrubbing=false;
+  rect.addEventListener("pointerdown",ev=>{
+    if(!isTouch(ev)||!ev.isPrimary) return;
+    start={clientX:ev.clientX,clientY:ev.clientY}; scrubbing=false;
+  });
+  rect.addEventListener("pointermove",ev=>{
+    if(!isTouch(ev)||!ev.isPrimary||!start) return;
+    const dx=Math.abs(ev.clientX-start.clientX), dy=Math.abs(ev.clientY-start.clientY);
+    if(!scrubbing) scrubbing=dx>TAP_SLOP_PX&&dx>dy;
+    if(scrubbing) show(ev);
+  });
+  rect.addEventListener("pointerup",ev=>{
+    if(!isTouch(ev)||!ev.isPrimary||!start) return;
+    if(!scrubbing&&movedPx(ev,start)<=TAP_SLOP_PX) show(ev);
+    start=null;
+  });
+  rect.addEventListener("pointercancel",()=>{ start=null; });
+}
+// Calls `hide` on a tap outside `svg`. Taps only: a swipe that scrolls the page
+// keeps the tooltip. Pointer events rather than `click`, which iOS Safari does
+// not deliver to the document for non-interactive targets. Returns the unbind.
+function onTapOutside(svg,hide){
+  let start=null;
+  const down=ev=>{ start=svg.contains(ev.target)?null:{clientX:ev.clientX,clientY:ev.clientY}; };
+  const up=ev=>{ if(start&&movedPx(ev,start)<=TAP_SLOP_PX) hide(); start=null; };
+  const cancel=()=>{ start=null; };
+  const events=[["pointerdown",down],["pointerup",up],["pointercancel",cancel]];
+  events.forEach(([t,h])=>document.addEventListener(t,h));
+  return ()=>events.forEach(([t,h])=>document.removeEventListener(t,h));
+}
+// Positioned in page flow (absolute inside .activity-dash), not fixed to the
+// viewport, so a pinned tooltip scrolls along with its chart.
+function placeTip(html,ev){
+  const tip=tipEl(); if(!tip) return;
+  tip.innerHTML=html; tip.style.opacity=1;
+  const host=tip.offsetParent||document.documentElement, o=host.getBoundingClientRect();
+  const tw=tip.offsetWidth, th=tip.offsetHeight, touch=isTouch(ev);
+  const above=ev.clientY-th-(touch?TIP_ABOVE_TOUCH_PX:TIP_ABOVE_PX);
+  const top=above<TIP_EDGE_PX?ev.clientY+(touch?TIP_BELOW_TOUCH_PX:TIP_BELOW_PX):above;
+  const left=Math.min(window.innerWidth-tw-TIP_EDGE_PX,Math.max(TIP_EDGE_PX,ev.clientX-tw/2));
+  tip.style.left=(left-o.left)+"px"; tip.style.top=(top-o.top)+"px";
 }
 const tipRows=(title,rows)=>`<div class="th">${title}</div>`+rows.map(r=>
   `<div class="r"><span class="lab">${r.c?`<i style="background:${r.c}"></i>`:""}${r.k}</span><b>${r.v}</b></div>`).join("");

@@ -22,6 +22,7 @@
   /* merged from the old bare `body` rule; `margin:0` is dropped so the rule
      cannot fight the SPA's app shell when the wrapper is a nested div. */
   background:var(--ground); color:var(--ink);
+  position:relative; /* containing block for .tip */
   font-family:"Source Sans 3",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased;
 }
@@ -152,7 +153,8 @@
 
 /* ---- tooltip ---- */
 .activity-dash .tip{
-  position:fixed; z-index:50; pointer-events:none; opacity:0; transition:opacity .08s;
+  position:absolute; left:0; top:0; width:max-content; max-width:calc(100% - 20px);
+  z-index:50; pointer-events:none; opacity:0;
   background:var(--surface); color:var(--ink); border:1px solid var(--rule); border-radius:10px;
   padding:9px 11px; box-shadow:0 10px 30px -10px rgba(0,0,0,.35); font-size:.9375rem; min-width:140px;
 }
