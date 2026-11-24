@@ -139,6 +139,7 @@ import {
   SHORT_SIDE_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
   SHORT_SIDE_TOP_RESET_CLASS,
+  STACKED_BOARD_ROW_CAP_CLASS,
   TRAIN_SIDE_COLUMN_WIDTH_CLASS,
   TRAIN_SIDE_ROW_GAP_CLASS,
 } from '@/lib/trainSideLayout';
@@ -210,7 +211,8 @@ const TRAIN_BOARD_MIN_WIDTH_PX = 240;
 const TRAIN_BOARD_BOTTOM_GUTTER_PX = 40;
 /*
  * In the stacked layout (below the side-layout gate, see lib/trainSideLayout.ts) the
- * board is WIDTH-bound only — the height fit (`useFitBoardToViewport`) runs in the side
+ * board is WIDTH-bound, with only STACKED_BOARD_ROW_CAP_CLASS bounding it by the screen
+ * height on wide portrait screens — the height fit (`useFitBoardToViewport`) runs in the side
  * layout alone (`useIsTrainSideLayout`).
  * Folding the phone bottom bar into the fit's gutter would shrink the board
  * to its 240px floor on a 375x667 phone and leave wide empty margins beside
@@ -1981,6 +1983,7 @@ export function TrainSolveScreen({
         ref={boardRef}
         className={cn(
           'flex w-full flex-row items-stretch gap-2',
+          STACKED_BOARD_ROW_CAP_CLASS,
           // The tour's sidelines step spotlights the board row
           // (the glow sits outside ChessBoard's own overflow-hidden square).
           tourTarget === 'board' && `rounded-md ${TOUR_SPOTLIGHT_CLASS}`,

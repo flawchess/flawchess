@@ -83,3 +83,19 @@ export const SHORT_SIDE_STICKY_FOOTER_CLASS =
  * Galaxy Z Fold8 is about 704px wide). It reads like a phone, so the Train bot bubble uses
  * its compact phone layout there (`useIsPortraitFoldable`). */
 export const PORTRAIT_FOLDABLE_QUERY = '(min-width: 640px) and (max-width: 767.98px) and (orientation: portrait)';
+
+/**
+ * Stacked layout: caps the board row (board plus its 28px eval-bar slot) so the pinned board
+ * leaves room for the reveal under it. Bug fix (Galaxy Z Fold8 portrait, 616x816): the board was
+ * width-bound alone and the pinned block left about 150px, so the move list and the engine lines
+ * were always below the fold. The row shrinks with the screen height down to a 428px floor (a
+ * 400px board), which is wider than most phones' board row, so phones keep the full width.
+ *
+ * The 387px reserve is everything on the reveal except the board row's width-derived height:
+ * 415px of chrome (progress row, verdict strip, chips, two-row move list, two Stockfish lines,
+ * gaps, bottom bar) less the 28px slot. `svh`, not `dvh`: a collapsing browser toolbar must not
+ * resize the board. Only the row is capped: the pinned block keeps its full width, because its
+ * background hides the content scrolling under it. Literal class: Tailwind scans the source.
+ */
+export const STACKED_BOARD_ROW_CAP_CLASS =
+  'max-w-[max(428px,calc(100svh-387px))] trainside:max-w-none';

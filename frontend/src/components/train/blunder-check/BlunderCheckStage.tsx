@@ -27,6 +27,7 @@ import {
   SHORT_SIDE_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
   SHORT_SIDE_TOP_RESET_CLASS,
+  STACKED_BOARD_ROW_CAP_CLASS,
   TRAIN_SIDE_COLUMN_WIDTH_CLASS,
   TRAIN_SIDE_ROW_GAP_CLASS,
 } from '@/lib/trainSideLayout';
@@ -216,7 +217,10 @@ export function BlunderCheckStage({
           data-testid="blunder-check-pinned-board"
         >
           {!isShortSide && progressRow}
-          <div ref={boardRowRef} className="flex w-full flex-row items-stretch gap-2">
+          <div
+            ref={boardRowRef}
+            className={`flex w-full flex-row items-stretch gap-2 ${STACKED_BOARD_ROW_CAP_CLASS}`}
+          >
             <div className="relative min-w-0 flex-1">
               {renderBoard(columnMaxWidthPx - EVAL_BAR_CHROME_PX)}
             </div>
