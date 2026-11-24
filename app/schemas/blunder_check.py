@@ -8,12 +8,13 @@ move's own answer, and no payload carries the window length or a remaining-promp
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.train import ServerGradedMove
+# `GameInfo` lives in `app.schemas.train` (the Train reveal also carries it, and this module
+# already imports from there); re-exported here for the existing importers.
+from app.schemas.train import GameInfo, ServerGradedMove
 from app.services.blunder_check_rules import MAX_BLUNDER_POSITION
 
 WindowOutcomeWire = Literal["cleared", "caught", "missed", "false_alarm"]
@@ -164,7 +165,6 @@ class SessionResultResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 MoveTierWire = Literal["good", "inaccuracy", "wrong"]
-TimeControlBucketWire = Literal["bullet", "blitz", "rapid", "classical"]
 WindowCaseWire = Literal["allowed", "pure_miss", "mixed"]
 BlunderTypeLineWire = Literal["allowed_material", "allowed_mate", "missed_material", "missed_mate"]
 
@@ -186,15 +186,6 @@ class BetterMoveResponse(BaseModel):
     points_awarded: int
     window_points: int
     session_points: int
-
-
-class GameInfo(BaseModel):
-    """Neutral facts about a stranger's game (D-09): no usernames, emails or user ids."""
-
-    time_control_str: str | None
-    time_control_bucket: TimeControlBucketWire | None
-    played_at: datetime | None
-    mover_rating: int | None
 
 
 class BlunderFeedback(BaseModel):

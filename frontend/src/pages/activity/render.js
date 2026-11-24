@@ -382,12 +382,15 @@ function renderSolvesCard(){
 // Below this many solved puzzles a row's shares are too noisy to compare, so
 // the row is drawn faded and says so.
 const PZ_DIFF_MIN_SOLVES=20;
-// One row per DrillSource value (0 SR item, 1 red herring, 2 sharp filler), in
-// display order. Source is the only split: it already fixes game ownership
-// (own game, another player's game, lichess puzzle), so there is no 2x2.
+// One row per DrillSource value (0 SR item, 1 red herring, 3 similar player's
+// blunder, 2 retired sharp filler), in display order. Source is the only split:
+// it already fixes game ownership (own game, another player's game, a similarly
+// rated player's game, a retired lichess puzzle), so there is no 2x2. The
+// retired filler row shows older solves only and is never merged into row 3.
 const PZ_DIFF_ROWS=[
   {source:0,label:"Own flaw · own"},{source:1,label:"Herring · foreign"},
-  {source:2,label:"Sharp filler · lichess"}];
+  {source:3,label:"Similar player's blunder"},
+  {source:2,label:"Sharp filler (retired)"}];
 
 function puzzleDifficultyRow(def,c){
   const r=PZDIFF.find(x=>x[0]===def.source);

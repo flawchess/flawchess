@@ -117,7 +117,7 @@ async def _purge_guest(guest_id: int) -> int:
         # inactivity" as a sign-up delta -- only honest if a purged guest's Train
         # state goes with their games. Deleting drill_sessions is sufficient:
         # drill_solves.session_id is ON DELETE CASCADE to drill_sessions, so
-        # this reaches every solve, including warm-up filler / red-herring
+        # this reaches every solve, including red-herring and foreign-blunder
         # rows whose game_id is NULL or points at a stranger's game -- rows
         # the games cascade above cannot see. Do NOT add a separate
         # DrillSolve-targeting delete statement. The streak has drained to 0

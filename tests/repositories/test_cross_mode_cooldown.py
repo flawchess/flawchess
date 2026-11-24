@@ -34,7 +34,7 @@ from app.models.drill_session import DrillSession
 from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
-from app.services import blunder_check_selection, blunder_check_service, sharp_filler
+from app.services import blunder_check_selection, blunder_check_service
 from app.services.blunder_check_rules import SlotPlan, WindowShape
 from app.services.train_scheduler import CROSS_MODE_COOLDOWN_DAYS
 from tests.blunder_check_seed import (
@@ -56,14 +56,6 @@ _FLAW_PLY = 2
 # Inside / outside the cooldown, derived from the production constant so a tuning change moves them.
 _INSIDE_DAYS = CROSS_MODE_COOLDOWN_DAYS - 5
 _OUTSIDE_DAYS = CROSS_MODE_COOLDOWN_DAYS + 1
-
-
-@pytest.fixture(autouse=True)
-def _empty_sharp_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No sharp fillers: a composed session holds exactly the SR material seeded here."""
-    monkeypatch.setattr(sharp_filler, "SHARP_SET", ())
-    monkeypatch.setattr(sharp_filler, "SHARP_SET_BY_ID", {})
-    monkeypatch.setattr(train_repository, "SHARP_SET_BY_ID", {})
 
 
 # ---------------------------------------------------------------------------

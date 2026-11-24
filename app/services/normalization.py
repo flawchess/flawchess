@@ -192,6 +192,10 @@ _CHESSCOM_DRAW_RESULTS = {
 }
 
 
+# chess.com result string for a game that was aborted before it really started
+_CHESSCOM_ABORTED_RESULT = "aborted"
+
+
 def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResult | None:
     """Convert chess.com result strings to standard "1-0"/"0-1"/"1/2-1/2".
 
@@ -227,7 +231,8 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
 def normalize_chesscom_game(game: dict, username: str, user_id: int) -> NormalizedGame | None:
     """Normalize a chess.com JSON game object to a NormalizedGame.
 
-    Returns None for a non-standard variant or an unrecognized result combination.
+    Returns None for a non-standard variant, a game both players aborted, or an
+    unrecognized result combination.
 
     Args:
         game: Raw chess.com game object from their API.
@@ -268,6 +273,14 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
     black_result_str = black.get("result", "")
     result = _normalize_chesscom_result(white_result_str, black_result_str)
     if result is None:
+        # FLAWCHESS-DM: a game aborted by both sides has no outcome and is expected data, so
+        # skipping it is correct and reporting it was noise. Only the exact aborted/aborted
+        # pair is silent; one side aborted is not a known shape and keeps reporting below.
+        if (
+            white_result_str == _CHESSCOM_ABORTED_RESULT
+            and black_result_str == _CHESSCOM_ABORTED_RESULT
+        ):
+            return None
         # Unrecognized white/black result combination. Skip the game
         # (flows through the same `if normalized is not None` gate in
         # chesscom_client.py that already skips non-standard variants) rather

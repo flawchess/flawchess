@@ -29,9 +29,8 @@
 
 import { useEffect } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { trainApi } from '@/api/client';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { useTrainRevealQuery } from '@/hooks/useTrainRevealQuery';
 import { Button } from '@/components/ui/button';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainFlawFixedBanner } from '@/components/train/TrainFlawFixedBanner';
@@ -50,7 +49,7 @@ import { revealBestUciOf, sanFromUci } from '@/lib/trainRevealLines';
 import type { ChipGroup, GameMoveLineState, RoleKey } from '@/lib/trainRevealLines';
 import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import type { InstantGradeState } from '@/hooks/trainGradingSupport';
-import type { PuzzleRevealResponse, SolveResponse, TrainPuzzle } from '@/types/train';
+import type { SolveResponse, TrainPuzzle } from '@/types/train';
 
 export interface TrainRevealProps {
   puzzle: TrainPuzzle;
@@ -146,7 +145,6 @@ export interface TrainRevealProps {
   isBest: boolean;
   sessionDate?: string;
   expiresOn?: string;
-  isWarmup: boolean;
   /** Fired once per strip expansion (collapsed -> open), for the board owner's
    * telemetry. The Umami event itself is sent by the strip. */
   onStripExpand?: () => void;
@@ -193,7 +191,6 @@ export function TrainReveal({
   isBest,
   sessionDate,
   expiresOn,
-  isWarmup,
   onStripExpand,
   controlsRow,
   nextButton,
@@ -204,12 +201,7 @@ export function TrainReveal({
 
   // Disabled until the solve POST has landed — no speculative
   // pre-attempt fetch, no answer-key data reachable before this gate flips.
-  const revealQuery = useQuery<PuzzleRevealResponse>({
-    queryKey: ['train-reveal', sessionId, puzzle.position],
-    queryFn: () => trainApi.revealPuzzle(sessionId as number, puzzle.position),
-    enabled: verdict !== null && sessionId !== null,
-    staleTime: Infinity, // the answer key never changes once solved
-  });
+  const revealQuery = useTrainRevealQuery(sessionId, puzzle.position, verdict !== null);
 
   // Dispatched exclusively off
   // `revealQuery.data` — reachable only once the reveal GET has itself
@@ -310,11 +302,6 @@ export function TrainReveal({
   // unparseable SAN) has no line to pre-load, so it renders as a non-interactive
   // chip instead of a button.
   const sanOnlyGameMove = gameMoveUci === null ? gameMoveSan : null;
-  // Unlike the `sr_item` predicate above, this has no
-  // synchronous-timing requirement — it only adds a line once the async
-  // reveal resolves, never gates a suppression, so reading `revealQuery.data`
-  // here is safe.
-  const motif = revealQuery.data?.motif ?? null;
   const showChipRow = chips.length > 0 || sanOnlyGameMove !== null;
   const tourSpotlightVerdict = tourTarget === 'verdict';
 
@@ -333,6 +320,7 @@ export function TrainReveal({
     moveTier: verdict.move_quality,
     isBest,
     fromOwnBlunder: verdict.source === 'sr_item',
+    fromForeignGame: verdict.source === 'foreign_blunder',
     disagreement,
     keySan: disagreement ? sanFromUci(puzzle.fen, gradeResult?.bestMoveUci ?? null) : null,
   };
@@ -350,8 +338,6 @@ export function TrainReveal({
         clause={verdictClauseParts(clauseInput)}
         sessionDate={sessionDate}
         expiresOn={expiresOn}
-        isWarmup={isWarmup}
-        motif={motif}
         alsoFineSanList={alsoFineSanList}
       />
     ) : null;
@@ -438,9 +424,10 @@ export function TrainReveal({
         </div>
       )}
 
-      {/* 4. Game footer (phones and tablets): "Game: <TC> · vs <opponent> (<elo>) · <date>", with
-          its `sr_item` gate and game query, in TrainRevealGameFooter. */}
-      {showGameFooter && <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />}
+      {/* 4. Game footer (phones and tablets): "Game: <TC> · vs <opponent> (<elo>) · <date>" for the
+          user's own puzzle, or the neutral "Game: <TC> · player rated <elo> · <date>" for a foreign
+          one, in TrainRevealGameFooter. */}
+      {showGameFooter && <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} sessionId={sessionId} />}
       {nextButton}
     </div>
   );

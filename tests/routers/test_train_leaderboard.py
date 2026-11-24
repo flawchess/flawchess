@@ -60,7 +60,7 @@ BASE_MONDAY = datetime.datetime(2032, 1, 5, tzinfo=datetime.UTC)
 Outcome = tuple[bool, DrillMoveQuality, DrillSource]
 
 _GOOD_SR: Outcome = (True, DrillMoveQuality.GOOD, DrillSource.SR_ITEM)
-_GOOD_FILLER: Outcome = (True, DrillMoveQuality.GOOD, DrillSource.SHARP_FILLER)
+_GOOD_FILLER: Outcome = (True, DrillMoveQuality.GOOD, DrillSource.LEGACY_SHARP_FILLER)
 
 
 def _week_monday(k: int) -> datetime.datetime:
@@ -140,9 +140,6 @@ async def _seed_solves(
                         game_id=None,
                         ply=0,
                         source=int(source),
-                        sharp_puzzle_id=(
-                            f"lb{position}" if source == DrillSource.SHARP_FILLER else None
-                        ),
                         correct_guess=correct_guess,
                         correct_move=quality != DrillMoveQuality.WRONG,
                         move_quality=int(quality),

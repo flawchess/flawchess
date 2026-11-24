@@ -131,10 +131,14 @@ all count as started: they are created only by an explicit `POST /sessions`.
 
 `fetch_puzzle_difficulty` groups the puzzles solved in the selected range
 (window start, no lead-in) by `drill_solves.source`: own flaw (`SR_ITEM`), red
-herring, sharp filler. There is no ownership axis, unlike the Blunder Check
-card, because the source already fixes it: an SR item is always the solver's own
-game, a red herring comes from the cross-user pool, and a sharp filler is a
-lichess puzzle with no game. Each row is a 100% stacked bar of move quality
+herring, similar player's blunder (`FOREIGN_BLUNDER`), retired sharp filler.
+There is no ownership axis, unlike the Blunder Check card, because the source
+already fixes it: an SR item is always the solver's own game, a red herring
+comes from the cross-user pool, a similar player's blunder is another non-guest
+user's game near the solver's rating, and a sharp filler is a lichess puzzle
+with no game. The sharp filler row is labelled "(retired)": the source is no
+longer served, so it shows older solves only and is never merged into the
+similar player's blunder row. Each row is a 100% stacked bar of move quality
 (good, inaccuracy, wrong), good first so the rows compare from one left edge.
 Rows from before the tiered grade (`move_quality` NULL) fall back to
 `correct_move`. The right-verdict share is in the table only. Rows under

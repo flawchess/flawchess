@@ -104,7 +104,7 @@ vi.mock('@/api/client', async () => {
         blob_pending_count: 0,
         puzzles: [],
         solved_results: [],
-        is_warmup: false,
+        own_puzzle_count: 5,
       })),
       solvePuzzle: vi.fn(),
       // Same payload as the pre-seeded cache entry below, so the cold-cache

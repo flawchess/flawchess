@@ -107,7 +107,7 @@ function TrainSessionViews({
           nextSessionDate={trainSession.session.expires_on}
           onDone={loop.returnToLanding}
           solvedOutcomes={trainSession.solvedOutcomes}
-          isWarmup={trainSession.session.is_warmup}
+          noOwnPuzzles={trainSession.session.own_puzzle_count === 0}
           hasGames={hasGames}
           isGuest={isGuest}
           sessionId={trainSession.session.session_id}
@@ -179,7 +179,7 @@ export default function TrainPage(): ReactElement {
     );
   }
 
-  // D-21: the Train step completes on Start or Resume (fresh, warmup and resume
+  // D-21: the Train step completes on Start or Resume (fresh and resume
   // share this one handler), never on opening Train. useTrainLoop stays
   // route-agnostic. No Umami event: drill_sessions.entered_at already records the
   // press server-side.
@@ -267,6 +267,7 @@ export default function TrainPage(): ReactElement {
             isError={trainSession.isSessionError}
             sessionScore={trainSession.sessionScore}
             onSettingsSaved={loop.requestSessionReread}
+            onRetry={loop.requestSessionReread}
             isGuest={isGuest}
             hasGames={hasGames}
             feedbackAskDays={feedbackAskDays(profile)}

@@ -157,7 +157,7 @@ const ROUTE_TITLES: Record<string, string> = {
  *   instead. An import-gate on top of the superuser gate would be incoherent
  *   for the same reason `/admin` is exempt.
  * - `/train` — every account may train with zero games (composition serves red
- *   herrings and filler without game input).
+ *   herrings and similarly rated players' blunders without game input).
  *
  * One definition shared by all three nav surfaces. Don't copy this check into a
  * surface: divergent copies let the surfaces disagree about which routes are
@@ -1002,8 +1002,8 @@ function AppRoutes() {
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           {/* Every account, guest or registered, may open Train with zero games —
-              composition already serves red herrings and sharp filler with no
-              rating and no game input, so there is nothing behind this route that
+              composition already serves red herrings and similarly rated players'
+              blunders with no game input of the user's own, so there is nothing behind this route that
               requires an import. In IMPORT_EXEMPT_ROUTES; no ImportRequiredRoute
               wrapper. */}
           <Route

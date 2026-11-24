@@ -31,10 +31,8 @@ from app.main import app
 from app.models.blunder_check import BlunderCheckSession
 from app.models.drill_session import DrillSession
 from app.models.train_settings import TrainSettings
-from app.repositories import train_repository
-from app.services import blunder_check_selection, sharp_filler
+from app.services import blunder_check_selection
 from app.services.blunder_check_rules import SlotPlan, WindowShape
-from app.services.sharp_filler import SharpPuzzle
 from app.services.train_scheduler import (
     ALL_WEEKDAYS_MASK,
     DEFAULT_BLUNDER_CHECK_PER_SESSION,
@@ -64,32 +62,11 @@ _SEED_BLUNDER_DROP_CP = 400
 _SEED_BC_GAMES = 8
 _CUSTOM_BC_SIZE = 3
 
-# A small deterministic sharp-filler fixture (sibling to tests/routers/test_train.py's), so a
-# user with no games composes a real warm-up session of DEFAULT_PUZZLES_PER_SESSION puzzles.
-_SHARP_PUZZLES: tuple[SharpPuzzle, ...] = tuple(
-    SharpPuzzle(
-        puzzle_id=f"sharp-two-mode-{i:02d}",
-        fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        first_move_uci="e2e4",
-        solution_uci="d2d4",
-        ply=0,
-        side_to_move="white",
-        motif="Fork",
-        rating=1200,
-        themes="fork short",
-    )
-    for i in range(10)
-)
-
 
 @pytest.fixture(autouse=True)
-def _sharp_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Install the deterministic sharp fixture (both bindings, see test_train.py)."""
-    ordered = tuple(sorted(_SHARP_PUZZLES, key=lambda p: p.puzzle_id))
-    by_id = {p.puzzle_id: p for p in ordered}
-    monkeypatch.setattr(sharp_filler, "SHARP_SET", ordered)
-    monkeypatch.setattr(sharp_filler, "SHARP_SET_BY_ID", by_id)
-    monkeypatch.setattr(train_repository, "SHARP_SET_BY_ID", by_id)
+def _filled_sessions(foreign_filler_pool: None) -> None:
+    """A user with no games still composes a full session of DEFAULT_PUZZLES_PER_SESSION puzzles:
+    the committed stranger pool (tests/conftest.py) is the only filler."""
 
 
 async def _seed_streak_holder(test_engine, user_id: int, *, bc_size: int) -> None:

@@ -115,7 +115,6 @@ function makeReveal(overrides: Partial<PuzzleRevealResponse> = {}): PuzzleReveal
     puzzle_type: 'sharp',
     source: 'sr_item',
     has_tactic_lines: false,
-    motif: null,
     ...overrides,
   };
 }
@@ -247,7 +246,6 @@ function renderReveal(
     verdictBot: PERSONA_REGISTRY['wall-1800'],
     verdictOpening: verdictCopy(2, () => 0),
     isBest: false,
-    isWarmup: false,
     ...props,
   };
   const result = render(
@@ -727,38 +725,73 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('btn-train-tactic-step')).toBeNull();
   });
 
-  // ─── Sharp filler motif line ────────────────────────────
+  // ─── Foreign puzzle: neutral game line from the reveal's game_info (D-21) ──
 
-  it('a non-null motif renders exactly one Motif row inside the guess card', async () => {
+  const FOREIGN_VERDICT = {
+    puzzle_type: 'sharp',
+    source: 'foreign_blunder',
+    item_status: null,
+    due_date: null,
+    streak: null,
+  } as const;
+  const FOREIGN_GAME_INFO = {
+    time_control_str: '300+0',
+    time_control_bucket: 'blitz',
+    played_at: '2026-05-01T12:00:00Z',
+    mover_rating: 1873,
+  } as const;
+
+  it('a foreign verdict renders the neutral game line from game_info, no library footer, no library fetch', async () => {
     revealPuzzle.mockResolvedValue(
-      makeReveal({ source: 'sharp_filler', puzzle_type: 'sharp', motif: 'Fork' }),
+      makeReveal({ game_id: null, source: 'foreign_blunder', game_info: FOREIGN_GAME_INFO }),
     );
-    renderReveal({ verdict: makeVerdict({ puzzle_type: 'sharp', source: 'sharp_filler' }) });
-    await waitFor(() => expect(screen.getByTestId('train-reveal-motif')).not.toBeNull());
-    expect(screen.getByTestId('train-reveal-motif').textContent).toBe('Motif: Fork');
-    expect(screen.getAllByTestId('train-reveal-motif')).toHaveLength(1);
+    renderReveal({
+      puzzle: makePuzzle({ game_id: null }),
+      verdict: makeVerdict(FOREIGN_VERDICT),
+    });
+    const line = await screen.findByTestId('train-reveal-foreign-game-footer');
+    expect(line.textContent).toBe(
+      `Game: Blitz 5+0 · player rated 1873 · ${formatDateWithYear('2026-05-01T12:00:00Z')}`,
+    );
+    expect(screen.queryByTestId('train-reveal-footer')).toBeNull();
+    expect(line.textContent).not.toContain('vs ');
+    expect(getGame).not.toHaveBeenCalled();
   });
 
-  it('a null motif (the normal SR/herring case) renders no Motif row, no placeholder, no dash', async () => {
-    revealPuzzle.mockResolvedValue(makeReveal({ motif: null }));
-    // guess set (-> non-null guessProse) so the guess CardBody itself
-    // renders regardless of motif — otherwise this test would trivially
-    // pass whenever the whole card is absent, never actually exercising
-    // the motif row's own null guard.
-    renderReveal();
-    await waitFor(() => expect(getGame).toHaveBeenCalled());
-    expect(screen.getByTestId('train-bot-fact')).not.toBeNull();
-    expect(screen.queryByTestId('train-reveal-motif')).toBeNull();
+  it('a foreign verdict never calls the library game endpoint even if the puzzle carried a game_id', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({ source: 'foreign_blunder', game_info: FOREIGN_GAME_INFO }),
+    );
+    renderReveal({ verdict: makeVerdict(FOREIGN_VERDICT), puzzle: makePuzzle({ game_id: 100 }) });
+    await screen.findByTestId('train-reveal-foreign-game-footer');
+    expect(getGame).not.toHaveBeenCalled();
   });
 
-  it('the motif row text size is text-sm, never text-xs', async () => {
+  it('a foreign verdict with game_info null renders no footer at all', async () => {
     revealPuzzle.mockResolvedValue(
-      makeReveal({ source: 'sharp_filler', puzzle_type: 'sharp', motif: 'Skewer' }),
+      makeReveal({ game_id: null, source: 'foreign_blunder', game_info: null }),
     );
-    renderReveal({ verdict: makeVerdict({ puzzle_type: 'sharp', source: 'sharp_filler' }) });
-    const motifRow = await screen.findByTestId('train-reveal-motif');
-    expect(motifRow.className).toContain('text-sm');
-    expect(motifRow.className).not.toContain('text-xs');
+    const { client } = renderReveal({
+      puzzle: makePuzzle({ game_id: null }),
+      verdict: makeVerdict(FOREIGN_VERDICT),
+    });
+    await waitFor(() =>
+      expect(client.getQueryState(['train-reveal', 1, 5])?.status).toBe('success'),
+    );
+    expect(screen.queryByTestId('train-reveal-foreign-game-footer')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-footer')).toBeNull();
+  });
+
+  it('the reveal is fetched once per puzzle: the reveal and the footer share one query', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({ game_id: null, source: 'foreign_blunder', game_info: FOREIGN_GAME_INFO }),
+    );
+    renderReveal({
+      puzzle: makePuzzle({ game_id: null }),
+      verdict: makeVerdict(FOREIGN_VERDICT),
+    });
+    await screen.findByTestId('train-reveal-foreign-game-footer');
+    expect(revealPuzzle).toHaveBeenCalledTimes(1);
   });
 
   // ─── Opponent-and-date footer ─────────────────────
@@ -951,7 +984,7 @@ describe('TrainReveal', () => {
 
   // ─── The own-game predicate reads source === 'sr_item', not puzzle_type ──
 
-  it('a sharp_filler verdict (puzzle_type "sharp", same as a real SR puzzle) suppresses the mastery banner, the game footer, and the own-game guess prose all together', async () => {
+  it('a legacy sharp_filler verdict (puzzle_type "sharp", same as a real SR puzzle) renders no footer and no motif, and suppresses the mastery banner and the own-game guess prose', async () => {
     getGame.mockResolvedValue(makeGame());
     const { client } = renderReveal({
       verdict: makeVerdict({
@@ -975,6 +1008,8 @@ describe('TrainReveal', () => {
       expect(client.getQueryState(['library-game', 100])?.status).toBe('success'),
     );
     expect(screen.queryByTestId('train-reveal-footer')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-foreign-game-footer')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-motif')).toBeNull();
   });
 
   it('an sr_item verdict with puzzle_type "sharp" (the exact literal a sharp_filler also carries) still renders all three own-game sites — proves the predicate reads source, not puzzle_type', async () => {
@@ -1013,13 +1048,6 @@ describe('TrainReveal', () => {
     // The card is inert (the Also fine arrows stay on the board,
     // dimmed, whichever chip is focused): no button anywhere in it.
     expect(within(card).queryAllByRole('button')).toHaveLength(0);
-  });
-
-  it('motif and Also fine share one extras line, motif first', async () => {
-    revealPuzzle.mockResolvedValue(makeReveal({ motif: 'Fork' }));
-    renderReveal({ alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }] });
-    await waitFor(() => expect(screen.getByTestId('train-reveal-motif')).not.toBeNull());
-    expect(screen.getByTestId('train-verdict-extras').textContent).toBe('Motif: Fork · Also fine, e.g. d4');
   });
 
   // ─── Card engagement reaches the telemetry callbacks ──
@@ -1143,7 +1171,7 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-bot-verdict-line').contains(tail)).toBe(false);
   });
 
-  it('no motif and no Also fine renders no extras line at all', () => {
+  it('no Also fine renders no extras line at all', () => {
     renderReveal({ alsoFineMoves: [] });
     expect(screen.queryByTestId('train-verdict-extras')).toBeNull();
   });
@@ -1211,7 +1239,6 @@ describe('instant-path game-move search', () => {
       verdictBot: PERSONA_REGISTRY['wall-1800'],
       verdictOpening: verdictCopy(2, () => 0),
       isBest: false,
-      isWarmup: false,
     };
     const tree = (props: ComponentProps<typeof TrainReveal>) => (
       <MemoryRouter>

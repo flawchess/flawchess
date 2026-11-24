@@ -110,7 +110,6 @@ async def _seed_solves(db: AsyncSession, user_id: int, week_k: int, count: int) 
                 game_id=None,
                 ply=0,
                 source=int(source),
-                sharp_puzzle_id=None,
                 correct_guess=correct_guess,
                 correct_move=True,
                 move_quality=int(quality),

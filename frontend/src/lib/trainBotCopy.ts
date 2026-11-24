@@ -274,14 +274,15 @@ function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
 
 /**
  * Intro stepper step index: two steps (welcome, then the
- * closing prompt with the guess buttons) for every audience and for warm-up
- * sessions alike.
+ * closing prompt with the guess buttons) for every audience and for sessions
+ * with or without own puzzles alike.
  */
 export type IntroStep = 0 | 1;
 
 /**
  * The intro always has exactly two bubbles. The count never
- * varies with warm-up or audience (only the welcome copy does).
+ * varies with the audience or the session's own-puzzle count (only the welcome
+ * copy does).
  */
 export const INTRO_STEP_COUNT = 2;
 
@@ -295,12 +296,22 @@ export interface IntroStepCopy {
  * The intro welcome. It opens with a plain "Hi there!" (Tanks
  * already welcomes the user to Train on the start screen) and carries no
  * import or sign-up ask, so a new user is not sent away before the first
- * puzzle; the score screen makes that ask instead. A warm-up session says so
- * up front: its puzzles are not from the user's own games yet.
+ * puzzle; the score screen makes that ask instead. A session with no own
+ * puzzles says so up front: its puzzles come from similarly rated players
+ * until the user's own games are imported and analyzed.
  */
 const INTRO_WELCOME_COPY = 'Hi there! You will improve by solving puzzles created from your own games.';
-const INTRO_WARMUP_WELCOME_COPY =
-  "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.";
+const INTRO_NO_OWN_PUZZLES_WELCOME_COPY =
+  'Hi there! These puzzles come from games of players at your level. Once some of your games ' +
+  'are imported and analyzed, puzzles will come from your own games.';
+
+/**
+ * The start-screen sentence for an established user whose open session holds no
+ * puzzle from their own games (none of their own mistakes are due, the
+ * exhausted day). One plain sentence, no session name.
+ */
+export const NO_OWN_DUE_TODAY_COPY =
+  "None of your own mistakes are due today. Today's puzzles come from similarly rated players.";
 
 /** The guess vocabulary, phrased as a legend for the "Only one"
  * and "Several" buttons it sits above (see `introSteps`). */
@@ -312,8 +323,8 @@ const INTRO_GUESS_LEGEND =
  * welcome, then the closing prompt that carries the guess buttons (so it
  * takes `sideToMove` like `promptCopy`). The guiding rule is to act within one
  * or two taps and read later; the practice rationale waits for the first
- * score screen. `isWarmup` (`TrainSessionResponse.is_warmup`) selects the
- * welcome variant.
+ * score screen. `noOwnPuzzles` (`TrainSessionResponse.own_puzzle_count === 0`)
+ * selects the welcome variant.
  *
  * The closing prompt defines the two calls next to their buttons
  * (`INTRO_GUESS_LEGEND`). The tour does not teach them after the first move
@@ -322,9 +333,9 @@ const INTRO_GUESS_LEGEND =
  * game's central question for a new user. The legend replaces the bare
  * question, so no step is added.
  */
-export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
+export function introSteps(sideToMove: 'white' | 'black', noOwnPuzzles: boolean): IntroStepCopy[] {
   return [
-    { personaId: HILDA_ID, copy: isWarmup ? INTRO_WARMUP_WELCOME_COPY : INTRO_WELCOME_COPY },
+    { personaId: HILDA_ID, copy: noOwnPuzzles ? INTRO_NO_OWN_PUZZLES_WELCOME_COPY : INTRO_WELCOME_COPY },
     { personaId: HILDA_ID, copy: `Decide first, then play. You play ${sideToMove}. ${INTRO_GUESS_LEGEND}` },
   ];
 }
@@ -338,9 +349,9 @@ export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): In
 export function introCopy(
   step: IntroStep,
   sideToMove: 'white' | 'black',
-  isWarmup: boolean,
+  noOwnPuzzles: boolean,
 ): IntroStepCopy {
-  const steps = introSteps(sideToMove, isWarmup);
+  const steps = introSteps(sideToMove, noOwnPuzzles);
   const closing = steps[steps.length - 1];
   if (closing === undefined) throw new Error('introSteps: unexpectedly empty');
   return steps[step] ?? closing;
@@ -385,6 +396,9 @@ export interface VerdictClauseInput {
   isBest: boolean;
   /** `source === 'sr_item'`: the position is one of the user's own blunders. */
   fromOwnBlunder: boolean;
+  /** `source === 'foreign_blunder'`: the position is a similarly rated player's blunder, so the
+   * game move is not the solver's and must not be claimed as theirs (D-20). */
+  fromForeignGame: boolean;
   /** The server accepted a confirmed phone disagreement (both guesses credited). */
   disagreement: boolean;
   keySan: string | null;
@@ -437,11 +451,12 @@ function movePhrase(input: VerdictClauseInput): MovePhrase {
 }
 
 /** The position fact. The soft/herring split only matters for the user's own
- * blunders: "Several moves work here" alone read as "nothing happened here"
+ * blunders and a foreign game's (neutral "the game move"): "Several moves work here" alone read as "nothing happened here"
  * at a position where they blundered in the game. */
 function positionFact(input: VerdictClauseInput): string {
   if (input.puzzleType === 'sharp') return 'Only one move works here.';
   if (input.fromOwnBlunder) return 'Several moves work here, just not your game move.';
+  if (input.fromForeignGame) return 'Several moves work here, just not the game move.';
   return 'Several moves work here.';
 }
 
@@ -520,27 +535,21 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 const NEXT_SESSION_TAIL = 'Back next session.';
 const MASTERED_TAIL = 'Two in a row, so this one is retired.';
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now.';
-/** The non-return lines for a herring/filler solved in a
- * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
- * sources unconditionally, so a user with plenty of SR items was told a
- * routine red herring "was a warm-up" and that "your own positions will"
- * come, while the surrounding puzzles already were their own positions.
- * Warm-up is a SESSION property (`TrainSessionResponse.is_warmup`), not a
- * per-puzzle one. */
+/** The non-return lines. A herring shows its own tail in every session. A foreign
+ * blunder (a similarly rated player's game) shows one neutral line, on every
+ * foreign puzzle and in an all-foreign session too; nothing marks it before it
+ * is solved. A legacy `sharp_filler` verdict (a cached reveal or an old solved
+ * result from before lichess fillers were retired) shows no tail. */
 const HERRING_TAIL = "A red herring, so it won't come back.";
-const FILLER_TAIL = "Not from your games, so it won't come back.";
+const FOREIGN_TAIL = "From a similarly rated player's game, so it won't come back.";
 
 /** Inputs for `returnPhrase` — every field optional so a pre-206 cached
  * reveal or an incomplete fixture degrades to an empty
  * string rather than a throw or a TypeScript error at the call site. */
 export interface ReturnPhraseInput {
-  source?: 'sr_item' | 'red_herring' | 'sharp_filler';
+  source?: 'sr_item' | 'red_herring' | 'sharp_filler' | 'foreign_blunder';
   item_status?: 'active' | 'mastered' | 'parked' | null;
   due_date?: string | null;
-  /** `TrainSessionResponse.is_warmup` — the SESSION is a warm-up (zero
-   * surviving SR items at composition). A warm-up
-   * herring/filler gets no tail at all. */
-  is_warmup?: boolean;
   /** `TrainSessionResponse.session_date` — the session's own calendar date. */
   session_date?: string;
   /** `TrainSessionResponse.expires_on` — the first scheduled day strictly
@@ -549,13 +558,9 @@ export interface ReturnPhraseInput {
 }
 
 /**
- * The return-date phrase for a single solved item. Herrings and
- * fillers never return: in a warm-up SESSION (`is_warmup`) they get no tail,
- * else a neutral non-return line. There is no warm-up tail
- * ("That one was a warm-up, so it won't come back. ... your own positions
- * will."): repeated on every warm-up puzzle, it was one more import/sign-up
- * ask during the first session, and the score screen already says the
- * session was warm-ups. Status is
+ * The return-date phrase for a single solved item. Herrings and foreign
+ * blunders never return and get a neutral non-return line per puzzle, whatever
+ * the session holds; a legacy `sharp_filler` verdict gets none. Status is
  * checked strictly BEFORE any date comparison — `due_date` is a STALE value
  * for mastered/parked items (`apply_result` leaves it
  * untouched on both branches), so phrasing it as a return date would lie.
@@ -564,10 +569,9 @@ export interface ReturnPhraseInput {
  * `parseISO`, which are DST-exact.
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
-  const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
-  if (neverReturns && input.is_warmup === true) return '';
   if (input.source === 'red_herring') return HERRING_TAIL;
-  if (input.source === 'sharp_filler') return FILLER_TAIL;
+  if (input.source === 'foreign_blunder') return FOREIGN_TAIL;
+  if (input.source === 'sharp_filler') return '';
   if (input.item_status === 'mastered') return MASTERED_TAIL;
   if (input.item_status === 'parked') return PARKED_TAIL;
   if (input.due_date == null) return '';
@@ -677,7 +681,7 @@ const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
 const TOUR_CHIPS =
-  "Each chip is a line: your Move, the engine's Best, and your Game move if known. " +
+  "Each chip is a line: your Move, the engine's Best, and the Game move if known. " +
   'Same moves share a chip. Tap or click a chip to show its line.';
 // The bar's buttons are named by icon tokens, which the tour renders as the
 // bar's real lucide icons (`TourCopy`). Don't use glyphs: they drift from the
@@ -752,7 +756,7 @@ const REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
   none: 'Yours are already on, so the next session will find you.',
 };
 
-const WARMUP_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
+const NO_OWN_PUZZLES_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
   remind_me: 'Turn on Remind me so the habit is there when they arrive.',
   scan_qr:
     'Scan the code below to install FlawChess on your phone and turn on reminders, so ' +
@@ -761,24 +765,24 @@ const WARMUP_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
 };
 
 /**
- * The second half of the warm-up score bubble's opening
+ * The second half of the no-own-puzzles score bubble's opening
  * line, keyed by audience. `has_games` is today's clause verbatim; the
  * zero-game variants name import instead of a running analysis, and the
  * guest variant adds sign-up after import.
  */
-const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
+const NO_OWN_PUZZLES_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   has_games: 'Once your games are analyzed, your own mistakes take over.',
   // The guest sign-up ask (`GUEST_SIGNUP_ASK_SCORE`) follows as the second
   // line, so this clause only states why there are no own mistakes yet.
   has_games_guest: 'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
   no_games: 'Import your games and your own mistakes take over.',
   // Empty on purpose. The sign-up line below already says the guest's
-  // own blunders replace the warm-ups; repeating it here read as a double ask.
+  // own blunders become their puzzles; repeating it here read as a double ask.
   no_games_guest: '',
 };
 
 /**
- * Replaces the warm-up reminder ask on the score screen
+ * Replaces the no-own-puzzles reminder ask on the score screen
  * for a guest — a guest gets no reminder slot, so the ask is sign-up
  * instead. Persona-neutral: one tunable sentence, not a per-persona
  * table. Truthful because promotion is an in-place `UPDATE users`
@@ -787,8 +791,14 @@ const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
  * genuinely stay exactly where they are.
  */
 export const GUEST_SIGNUP_ASK_SCORE =
-  'Sign up free and your own blunders come back instead of warm-ups. Your streak and ' +
+  'Sign up free and your own blunders become your puzzles. Your streak and ' +
   'everything you have solved stay exactly where they are.';
+
+/** The note after the opener when a session held no own puzzles: where the puzzles
+ * came from. First session, then later sessions (which also say nothing comes back). */
+const NO_OWN_PUZZLES_NOTE_FIRST = 'Those puzzles came from games of players at your level.';
+const NO_OWN_PUZZLES_NOTE_LATER =
+  'Those came from games of players at your level, so nothing comes back yet.';
 
 /** The landing bubble's reminder ask for a registered account with
  * no push subscription from a phone (`has_mobile_subscription === false`). The
@@ -803,7 +813,7 @@ export const REMINDER_INSTALL_ASK =
 export const IMPORT_ASK_LANDING =
   'Import your games from chess.com or lichess, and your own mistakes become your puzzles.';
 
-/** Every session's opener comments on the result (first, later and warm-up
+/** Every session's opener comments on the result (first, later and no-own-puzzles
  * sessions alike; the nothing-missed variant is its
  * own comment), in the bot's voice: about the session, never about the user,
  * and always forward-looking. A `null` band (nothing scored) falls back to
@@ -900,11 +910,11 @@ export interface ScoreBubbleInput {
    * drives the "nothing missed" variant. */
   missedCount: number;
   isFirstCompletedSession: boolean;
-  /** A warm-up session has zero surviving SR items — mirrors
-   * `TrainSessionResponse.is_warmup`. */
-  isWarmup: boolean;
+  /** The session held no puzzle from the user's own games — mirrors
+   * `TrainSessionResponse.own_puzzle_count === 0`. */
+  noOwnPuzzles: boolean;
   /** Which reminder ask closes the first-session and
-   * warm-up variants. `remind_me` names the row button (mobile, standalone);
+   * no-own-puzzles variants. `remind_me` names the row button (mobile, standalone);
    * `scan_qr` points at the phone QR block the desktop score screen renders
    * below the row (desktop push only fires while the browser is running);
    * `none` is desktop with reminders already on a phone, where there is
@@ -914,8 +924,8 @@ export interface ScoreBubbleInput {
    * variant except nothing-missed — `null` when nothing was scored
    * (`max === 0`). */
   band: TrainRatingBand | null;
-  /** Selects the warm-up variant's copy AND, when
-   * `isGuest` is true, replaces the warm-up reminder ask with
+  /** Selects the no-own-puzzles variant's copy AND, when
+   * `isGuest` is true, replaces its reminder ask with
    * `GUEST_SIGNUP_ASK_SCORE` (a guest gets no reminder slot). */
   audience: TrainCopyAudience;
   /** Follows "See you ": `NextSessionWhen.seeYou` from `lib/trainNextSession.ts`. */
@@ -951,27 +961,23 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
 
 /**
  * The score screen's bubble copy — four mutually exclusive
- * variants, evaluated in this precedence order: warm-up session, nothing
+ * variants, evaluated in this precedence order: no own puzzles, nothing
  * missed, first completed session (result + the practice rationale, then the
  * habit sentence and reminder ask), later session (one-liner). The
  * rationale sits in line 1 of the first completed session in
- * the warm-up, perfect and regular branches alike. No variant says how
+ * the no-own-puzzles, perfect and regular branches alike. No variant says how
  * many puzzles come back or when (the per-puzzle verdict tails still do). The
  * bubble never exceeds two lines.
  */
 export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
   const first = input.isFirstCompletedSession;
-  if (input.isWarmup) {
+  if (input.noOwnPuzzles) {
     const key = audienceKey(input.audience);
     const opener = sessionOpener(input.band);
-    // A guest's sign-up line already says "instead of warm-ups", so
-    // the guest opening skips the warm-up note rather than saying it twice.
-    const warmupNote = input.audience.isGuest
-      ? ''
-      : first
-        ? 'Those were warm-ups.'
-        : 'Those were warm-ups, nothing to bring back yet.';
-    const opening = [opener, first ? PRACTICE_RATIONALE : '', warmupNote, WARMUP_SCORE_CLAUSE[key]]
+    // The note says where the puzzles came from; the guest sign-up line no longer
+    // does, so every audience (guests included) gets it.
+    const note = first ? NO_OWN_PUZZLES_NOTE_FIRST : NO_OWN_PUZZLES_NOTE_LATER;
+    const opening = [opener, first ? PRACTICE_RATIONALE : '', note, NO_OWN_PUZZLES_SCORE_CLAUSE[key]]
       .filter((part) => part !== '')
       .join(' ');
     // A registered zero-game account gets the
@@ -984,7 +990,7 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
         opening,
         input.audience.isGuest
           ? GUEST_SIGNUP_ASK_SCORE
-          : WARMUP_REMINDER_ASK_COPY[input.reminderAsk],
+          : NO_OWN_PUZZLES_REMINDER_ASK_COPY[input.reminderAsk],
       ],
     };
   }

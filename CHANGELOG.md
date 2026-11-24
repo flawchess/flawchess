@@ -29,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train: when a personalized-puzzle session is short of your own puzzles, it is now filled with blunders from games of similarly rated players instead of a fixed set of lichess puzzles. They are graded like your own puzzles, never come back, and the reveal shows the move played in that game with its time control, the player's rating and the date, never a name. The intro, start screen and score screen now say where such a session's puzzles came from.
 - Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
 - Blunder check wording: the host now says that a hard-to-catch blunder was mixed in on purpose, names what the blunder did more plainly ("loses material", "misses a chance to win material"), tells you which side moves next before a sequence starts, and gives friendlier feedback on your better move.
 - Blunder check: banking a sequence now plays one coin per point you collected instead of always three.
@@ -74,10 +75,12 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Removed
 
+- Train: the warm-up label and the fixed set of lichess filler puzzles are retired. Puzzles you already solved from that set keep their points and streak days, and the Activity dashboard lists them as retired.
 - Library filters: the Facepalm Score filter (slider and Low, Mid, High presets) is gone from the Tags panel on the Games and Flaws tabs. The Facepalm tag in the Flaws filter replaces it.
 
 ### Fixed
 
+- Train: a dropped connection while loading the training session or saving a puzzle result is now retried automatically, and the training session load error has a Retry button.
 - Library: the eval chart tooltip background is translucent again, and the move-quality icons in the mobile move stats row are the same size as in the full table.
 - Tactic tags: a blunder that allows (or misses) a forced checkmate no longer loses its checkmate tag when two moves mate equally fast somewhere along the line. Existing games pick the tag up after the next re-tagging run. (quick 261122-jsf)
 - Tactic tags: long forced checkmates (about seven moves or more) are now tagged as checkmate reliably. Before, the tag depended on what the opponent happened to play next, and a missed long mate was usually not tagged at all. A mate in one is also no longer left untagged in some opening positions. Existing games pick the tags up after the next re-tagging run. (quick 261122-kos)

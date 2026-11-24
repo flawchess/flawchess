@@ -257,7 +257,7 @@ const BASE_SESSION: TrainSessionResponse = {
   blob_pending_count: 0,
   puzzles: [],
   solved_results: [],
-  is_warmup: false,
+  own_puzzle_count: 10,
 };
 
 // session_id null and puzzle_count 0 is the shape that reaches the
@@ -286,6 +286,7 @@ function TestWrapper({ children }: { children: ReactNode }) {
 
 function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {}) {
   const onSettingsSaved = vi.fn();
+  const onRetry = vi.fn();
   render(
     <TestWrapper>
       <TrainStartScreen
@@ -294,6 +295,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         isError={false}
         sessionScore={0}
         onSettingsSaved={onSettingsSaved}
+        onRetry={onRetry}
         isGuest={false}
         hasGames={true}
         feedbackAskDays={null}
@@ -303,7 +305,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
       />
     </TestWrapper>,
   );
-  return { onSettingsSaved };
+  return { onSettingsSaved, onRetry };
 }
 
 /**
@@ -332,6 +334,7 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       isError: false,
       sessionScore: 0,
       onSettingsSaved: vi.fn(),
+      onRetry: vi.fn(),
       isGuest: false,
       hasGames: true,
       feedbackAskDays: null,
@@ -376,6 +379,20 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.getByText(/Failed to load your training session/)).not.toBeNull();
     expect(screen.queryByText('No puzzles available yet')).toBeNull();
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
+  });
+
+  it('error: renders a Retry button that calls onRetry once', () => {
+    const { onRetry } = renderScreen({ isError: true, session: null });
+    const retry = screen.getByTestId('btn-train-session-retry');
+    expect(retry.textContent).toBe('Retry');
+    expect(onRetry).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('fresh state: no Retry button', () => {
+    renderScreen();
+    expect(screen.queryByTestId('btn-train-session-retry')).toBeNull();
   });
 
   it('empty: session_id null and puzzle_count 0 renders the placeholder under the Today card, puzzles Start disabled', () => {
@@ -562,13 +579,12 @@ describe('TrainStartScreen — six landing states', () => {
   });
 });
 
-describe('TrainStartScreen — no warm-up info card, guest sign-up ask in the host bubble', () => {
-  it('is_warmup true: renders no warm-up card and the plain Start CTA', () => {
+describe('TrainStartScreen — a session with no own puzzles, guest sign-up ask in the host bubble', () => {
+  it('own_puzzle_count 0: renders like any fresh session, with the plain Start CTA', () => {
     onScheduledDay();
     renderScreen({
-      session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true },
+      session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, own_puzzle_count: 0 },
     });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
     expect(screen.queryByText(/analyzing your games/)).toBeNull();
     expect(screen.getByTestId('btn-train-start').textContent).toBe('Start');
     expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('8');
@@ -576,7 +592,7 @@ describe('TrainStartScreen — no warm-up info card, guest sign-up ask in the ho
 
   it('guest: the host bubble carries the score-screen sign-up sentence and both action buttons', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED };
-    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.getByTestId('train-tagline')).not.toBeNull();
     expect(screen.getByTestId('train-landing-signup-ask').textContent).toBe(GUEST_SIGNUP_ASK_SCORE);
     expect(screen.getByTestId('btn-signup-why-train-landing')).not.toBeNull();
@@ -611,26 +627,107 @@ describe('TrainStartScreen — no warm-up info card, guest sign-up ask in the ho
   });
 
   it('guest who has not completed a session (first visit, or tour done mid-session): no sign-up sentence or buttons', () => {
-    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
     cleanup();
 
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED, sr_explained_at: null };
-    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
   });
 
-  it('registered account: no sign-up sentence and no btn-signup- element, warm-up or not', () => {
-    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: true } });
+  it('registered account: no sign-up sentence and no btn-signup- element, with or without own puzzles', () => {
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
     cleanup();
 
-    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, own_puzzle_count: 4 } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
+  });
+});
+
+describe('TrainStartScreen — the exhausted-day sentence (D-13)', () => {
+  const NO_OWN_SESSION: TrainSessionResponse = { ...BASE_SESSION, own_puzzle_count: 0 };
+
+  function firstSessionDone(done: boolean): void {
+    trainProgressMock = {
+      data: {
+        ...DEFAULT_TRAIN_PROGRESS,
+        modes: {
+          ...DEFAULT_TRAIN_PROGRESS.modes,
+          puzzles: {
+            ...DEFAULT_TRAIN_PROGRESS.modes.puzzles,
+            first_session_done: done,
+            remaining: 6,
+            pending: 6,
+          },
+        },
+      },
+      isPending: false,
+      isError: false,
+    };
+  }
+
+  it('an established user with a fresh no-own session reads the sentence, with no session name', () => {
+    firstSessionDone(true);
+    renderScreen({ session: NO_OWN_SESSION });
+    expect(screen.getByTestId('train-landing-no-own-due').textContent).toBe(
+      "None of your own mistakes are due today. Today's puzzles come from similarly rated players.",
+    );
+    expect(screen.getByTestId('btn-train-start').textContent).toBe('Start');
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe(String(NO_OWN_SESSION.puzzle_count));
+  });
+
+  it('the sentence also shows in the resume state', () => {
+    firstSessionDone(true);
+    renderScreen({
+      session: { ...NO_OWN_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] },
+    });
+    expect(screen.getByTestId('train-landing-no-own-due')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
+  });
+
+  it('shows the sentence on a phone: the host bubble is not phone-hidden', () => {
+    firstSessionDone(true);
+    renderScreen({ session: NO_OWN_SESSION });
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+  });
+
+  it('is absent when the session holds own puzzles', () => {
+    firstSessionDone(true);
+    renderScreen({ session: { ...BASE_SESSION, own_puzzle_count: 3 } });
+    expect(screen.queryByTestId('train-landing-no-own-due')).toBeNull();
+  });
+
+  it('is absent before the user has completed a puzzles session', () => {
+    firstSessionDone(false);
+    renderScreen({ session: NO_OWN_SESSION });
+    expect(screen.queryByTestId('train-landing-no-own-due')).toBeNull();
+  });
+
+  it('is absent while the progress query has not loaded', () => {
+    trainProgressMock = { data: undefined, isPending: true, isError: false };
+    renderScreen({ session: NO_OWN_SESSION });
+    expect(screen.queryByTestId('train-landing-no-own-due')).toBeNull();
+  });
+
+  it('is absent for an account with no imported games', () => {
+    firstSessionDone(true);
+    renderScreen({ hasGames: false, session: NO_OWN_SESSION });
+    expect(screen.queryByTestId('train-landing-no-own-due')).toBeNull();
+  });
+
+  it('is absent in the completed state', () => {
+    firstSessionDone(true);
+    renderScreen({
+      session: { ...NO_OWN_SESSION, puzzle_count: 6, solved_count: 6 },
+      sessionScore: 6,
+    });
+    expect(screen.queryByTestId('train-landing-no-own-due')).toBeNull();
   });
 });
 
@@ -642,7 +739,7 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
 
   it('registered account without a phone subscription: the host bubble carries the reminder sentence', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, ...ONBOARDED, has_mobile_subscription: false };
-    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, own_puzzle_count: 4 } });
     expect(screen.getByTestId('train-landing-reminder-ask').textContent).toBe(REMINDER_INSTALL_ASK);
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
   });
@@ -654,19 +751,19 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
       reveal_tour_stage: 2,
       has_mobile_subscription: false,
     };
-    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, own_puzzle_count: 4 } });
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 
   it('registered account with a phone subscription: no reminder sentence', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: true };
-    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, own_puzzle_count: 4 } });
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 
   it('guest without a phone subscription: the sign-up ask wins, no reminder sentence', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED, has_mobile_subscription: false };
-    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
@@ -675,7 +772,7 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
 describe('TrainStartScreen — import ask for a registered zero-game account', () => {
   it('registered, no games: import sentence + Import games button, and it replaces the reminder ask', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
-    renderScreen({ isGuest: false, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: false, hasGames: false, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.getByTestId('train-landing-import-ask').textContent).toBe(IMPORT_ASK_LANDING);
     expect(screen.getByTestId('btn-import-games-train-landing').getAttribute('href')).toBe(
       '/library/import',
@@ -687,7 +784,7 @@ describe('TrainStartScreen — import ask for a registered zero-game account', (
     renderScreen({
       isGuest: false,
       hasGames: false,
-      session: { ...BASE_SESSION, is_warmup: true, solved_count: BASE_SESSION.puzzle_count },
+      session: { ...BASE_SESSION, own_puzzle_count: 0, solved_count: BASE_SESSION.puzzle_count },
     });
     expect(screen.getByTestId('btn-import-games-train-landing')).not.toBeNull();
   });
@@ -700,7 +797,7 @@ describe('TrainStartScreen — import ask for a registered zero-game account', (
 
   it('guest without games: the sign-up ask wins, no import button', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED };
-    renderScreen({ isGuest: true, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
+    renderScreen({ isGuest: true, hasGames: false, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.queryByTestId('btn-import-games-train-landing')).toBeNull();
   });
@@ -886,7 +983,7 @@ describe('TrainStartScreen: Points today and the retired stats card', () => {
     renderScreen({ session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] } });
     expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
     cleanup();
-    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true } });
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, own_puzzle_count: 0 } });
     expect(screen.queryByTestId('train-launcher-done-puzzles')).toBeNull();
     cleanup();
     trainProgressMock = {
@@ -1036,8 +1133,8 @@ describe('TrainStartScreen — route dot (D-21 / D-03)', () => {
     expect(within(btn).queryByTestId('train-start-notification-dot')).not.toBeNull();
   });
 
-  it('warmup: showRouteDot puts the dot inside the start button', () => {
-    renderScreen({ showRouteDot: true, session: { ...BASE_SESSION, is_warmup: true } });
+  it('no own puzzles: showRouteDot puts the dot inside the start button', () => {
+    renderScreen({ showRouteDot: true, session: { ...BASE_SESSION, own_puzzle_count: 0 } });
     const btn = screen.getByTestId('btn-train-start');
     expect(within(btn).queryByTestId('train-start-notification-dot')).not.toBeNull();
   });

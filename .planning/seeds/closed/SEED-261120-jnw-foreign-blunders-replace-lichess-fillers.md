@@ -1,10 +1,13 @@
 ---
 id: SEED-261120-jnw
-status: dormant
+status: closed
+closed: 2026-11-24
+closed_reason: shipped to main as Phase 263 (squash-merge b4c91bc60), not yet deployed
+promoted_to: Phase 263 (2026-11-23)
 planted: 2026-11-20
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)
 trigger_when: next time Train session composition, the guest / onboarding first session, or the drill_solves source model is touched; or when planning the next Train milestone
-scope: medium, one phase (new foreign-blunder selection, one migration, copy changes, deletion of the lichess filler path)
+scope: medium, one phase (new foreign-blunder selection, one small migration, copy changes, deletion of the lichess filler serving path and of the warm-up concept)
 ---
 
 # SEED-261120-jnw: Replace lichess sharp fillers with similarly rated players' blunders
@@ -12,6 +15,8 @@ scope: medium, one phase (new foreign-blunder selection, one migration, copy cha
 Personalized puzzles (Train) fill a short session with a committed set of lichess puzzles. Blunder
 check instead serves blunders from similarly rated players when own supply is short. Use that
 approach for personalized puzzles too and delete the lichess filler path entirely.
+
+**Promoted 2026-11-23 to Phase 263** (`.planning/ROADMAP.md`).
 
 ## Why This Matters
 
@@ -32,23 +37,52 @@ Fillers are a thin bridge, a weak case for a separate puzzle type. Prod, 2026-11
 - A foreign blunder carries the same answer-key blob as an own puzzle, so it grades on the normal
   path.
 
-## Decisions (owner, 2026-11-20)
+## Decisions (owner, 2026-11-20, revised 2026-11-23)
 
 1. **Swap the supply.** Blunders from similarly rated non-guest users replace the lichess fillers.
 2. **Pure filler only.** Served only when the user's own supply is short, the same trigger as
    today's `_backfill_sharp_fillers`. Not a permanent share of every session. `HERRING_SHARE`
    is unchanged.
-3. **Clean delete.** Retire the existing `source = 2` (`SHARP_FILLER`) `drill_solves` history,
-   no read-only legacy path. Drop `app/data/sharp_filler_puzzles.csv`,
-   `app/services/sharp_filler.py`, `scripts/gen_sharp_filler_set.py`,
-   `drill_solves.sharp_puzzle_id` and the `SHARP_FILLER` source value in one migration.
+3. **Delete the serving path, keep the history rows** (revised 2026-11-23, replaces the earlier
+   "clean delete"). Drop `app/data/sharp_filler_puzzles.csv`, `app/services/sharp_filler.py`,
+   `scripts/gen_sharp_filler_set.py` and every composition, grading and reveal branch for a
+   filler. The ~795 solved `source = 2` rows stay as inert history, so session `puzzle_count`,
+   points-board totals, frozen `train_weekly_standing` snapshots, streaks and
+   `pool_eligible_since` are all untouched. See "What keeping the history costs" below.
+4. **Retire the warm-up concept entirely** (2026-11-23). A foreign blunder is the same puzzle
+   type as the product, so a session with no own puzzles is no longer a different kind of
+   session. Remove `drill_sessions.is_warmup`, `TrainSessionResponse.is_warmup` and every
+   `isWarmup` branch in the frontend.
+
+## What keeping the history costs (checked against the code, 2026-11-23)
+
+Light. Nothing re-renders an old filler puzzle: the Archive page is `SR_ITEM` only, and the
+leaderboard and Activity read only `source`, points and counts. What stays:
+
+- `DrillSource.SHARP_FILLER = 2` (rename to mark it retired) and the `source IN (...)` CHECK.
+- `_NON_FILLER` in `train_leaderboard_repository.py` (keeps old fillers off the Accuracy board;
+  the new foreign source needs the same exclusion anyway).
+- The `"sharp_filler"` arm of `_wire_source`, only if a read path still serializes old rows;
+  the Activity source breakdown keeps its source-2 label.
+
+What needs care:
+
+- **Unsolved filler rows in sessions open at deploy.** With the CSV gone they cannot be served.
+  `load_session_puzzles` already skips an unresolvable filler; widen the leniency in
+  `_mark_session_complete_if_done` from "filler with NULL `sharp_puzzle_id`" to "any filler" so
+  such a row cannot pin a session open.
+- **`reveal_for_puzzle` on an old filler** returns `not_found`, the same as an orphaned SR row.
+  Confirm the frontend handles that for a session completed just before the deploy.
+- **`drill_solves.sharp_puzzle_id`**: meaningless without the CSV. Lean: drop the column (the
+  set stays in git history). Keeping it is free but dead.
 
 ## Expectation Setting
 
 A quality and consistency win, roughly code-neutral in the backend. A third source arm remains: a
 foreign blunder is still "not your game" (no SR state, no `drill_items` row, no open-game link,
 different copy, excluded from the Accuracy board). What disappears is the CSV, the generator, the
-in-memory lookup and the filler special cases in `answer_key_for` / `server_graded_moves_for`.
+in-memory lookup, the filler special cases in `answer_key_for` / `server_graded_moves_for`, and
+the warm-up flag with its copy variants.
 
 ## Supply (measured, prod 2026-11-20)
 
@@ -83,14 +117,19 @@ like blunder check's. This counts games, not servable blunders: the share that c
 - **Snapshot vs live join.** A foreign game can be deleted mid-session or later. `herring_pool`
   denormalizes FEN and ladder; blunder check snapshots start FEN plus UCI moves. Pick one so
   session review and Activity survive a deletion.
-- **Side effects of retiring history.** 602 of 737 non-guest filler solves sit in `is_warmup`
-  sessions that also hold herrings, so deleting rows leaves sessions whose `puzzle_count` no
-  longer matches their solves. Points-board totals shift for 167 users. Check frozen
-  `train_weekly_standing` snapshots, `pool_eligible_since` / streak accrual for users whose only
-  solves were fillers, and the `activity_queries` source breakdown (`frontend/src/types/activity.ts`
-  documents source 2).
-- **Warm-up semantics and copy.** `is_warmup`, `trainBotCopy` `FILLER_TAIL` and
-  `TrainStartScreen` need rewording for "from a similarly rated player's game".
+- **Copy after warm-up is gone.** `is_warmup` did three jobs in `trainBotCopy`: it picked
+  `INTRO_WARMUP_WELCOME_COPY`, it suppressed the "won't come back" tail on every reveal, and it
+  branched the score screen. Without it: the welcome must still be truthful for a user with no
+  own puzzles (derive from the material flags, not a session column), and the per-puzzle tail
+  ("from a similarly rated player's game") must not repeat on all puzzles of an all-foreign
+  first session. `FILLER_TAIL` and `TrainStartScreen` need the same rewording.
+- **First-session ordering.** `_first_session_order` moves the first sharp puzzle to slot 0, and
+  lichess fillers were always sharp. Foreign blunders can be soft, so a new user's first session
+  may hold no sharp puzzle. Either the filler draw prefers at least one sharp, or onboarding
+  tolerates an all-soft session.
+- **Pool eligibility.** `_stamp_pool_eligibility` and the session gate OR in
+  `sharp_filler_available()`, which is always true. The replacement is "foreign pool non-empty",
+  which is false on a fresh dev DB and in tests.
 - **Empty database.** The CSV worked with zero games; a foreign pool does not (fresh dev DB,
   tests). Sessions may be short there, as blunder check already accepts.
 - **Source exclusions.** Never guests' games, never the user's own.

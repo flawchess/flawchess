@@ -14,6 +14,7 @@
 
 import type { TrainMoveTier } from '@/lib/trainScore';
 import type { TrainPuzzleType } from '@/lib/trainArrows';
+import type { GameInfo } from '@/types/blunderCheck';
 
 export interface TrainPuzzle {
   position: number;
@@ -70,9 +71,10 @@ export interface SolvedResult {
    * Entries here still carry no `position`, `game_id`, `ply` or best-move
    * field. `source` mirrors `SolveResponse.source` (required); `item_status`
    * and `due_date` mirror `SolveResponse.item_status`/`due_date` (nullable —
-   * `null` for `red_herring`/`sharp_filler` sources).
+   * `null` for every non-SR source). `sharp_filler` is the retired lichess filler: it
+   * only appears on solved results from before it was retired.
    */
-  source: 'sr_item' | 'red_herring' | 'sharp_filler';
+  source: 'sr_item' | 'red_herring' | 'foreign_blunder' | 'sharp_filler';
   item_status: 'active' | 'mastered' | 'parked' | null;
   due_date: string | null;
 }
@@ -85,11 +87,11 @@ export interface SolvedResult {
  * Empty for a freshly composed session and for the no-eligible-material
  * (`session_id === null`) case.
  *
- * `is_warmup` is frozen at composition and derived purely from material
- * scarcity — true iff the session contains zero surviving SR_ITEM puzzles at
- * the moment it was (re-)composed. Never derived from session ordinal,
- * session count, or account age. The client performs no arithmetic over it —
- * a single equality read.
+ * `own_puzzle_count` is derived by the server per response and never persisted:
+ * the number of the session's own-game puzzles (SR items, every position,
+ * solved or not). 0 means the session holds no puzzle from the user's own games
+ * (its puzzles are similarly rated players' blunders and herrings). The client
+ * reads it only as `=== 0` (the intro welcome and the start-screen sentence).
  */
 export interface TrainSessionResponse {
   session_id: number | null;
@@ -101,7 +103,7 @@ export interface TrainSessionResponse {
   blob_pending_count: number;
   puzzles: TrainPuzzle[];
   solved_results: SolvedResult[];
-  is_warmup: boolean;
+  own_puzzle_count: number;
 }
 
 /**
@@ -280,7 +282,7 @@ export interface SolveResponse {
   correct_move: boolean;
   move_quality: TrainMoveTier;
   puzzle_type: 'sharp' | 'soft' | 'herring';
-  source: 'sr_item' | 'red_herring' | 'sharp_filler';
+  source: 'sr_item' | 'red_herring' | 'foreign_blunder' | 'sharp_filler';
   item_status: 'active' | 'mastered' | 'parked' | null;
   streak: number | null;
   due_date: string | null;
@@ -321,7 +323,8 @@ export interface SolveResponse {
  * behind the identical gate — used to dispatch the client's reveal-time engine
  * search.
  *
- * `game_id` is `number | null`: a red herring's source game can be nulled by
+ * `game_id` is `number | null`: null for a foreign puzzle (never sent, D-21: the
+ * game is a stranger's), and a red herring's source game can be nulled by
  * the OWNER deleting it (a global pool row survives independently) — never by
  * the solving user. A null `game_id` degrades the reveal's game footer to
  * nothing and hides the Analyze deep-link rather than disabling it.
@@ -333,17 +336,18 @@ export interface PuzzleRevealResponse {
   played_in_game_san: string | null;
   played_in_game_move_uci: string | null;
   puzzle_type: 'sharp' | 'soft' | 'herring';
-  source: 'sr_item' | 'red_herring' | 'sharp_filler';
+  source: 'sr_item' | 'red_herring' | 'foreign_blunder' | 'sharp_filler';
   has_tactic_lines: boolean;
   /**
    * The in-game move is a facepalm blunder (facepalm score of 70% or more): the reveal badges
    * it "???" instead of "??". OPTIONAL: a stale server or an old reveal-cache entry omits it.
    */
   game_move_facepalm?: boolean;
-  /** The sharp filler's motif label ("Fork", "Skewer", ...), read straight
-   * from the committed data file. null for every
-   * sr_item/red_herring reveal — no motif taxonomy exists for those today. */
-  motif: string | null;
+  /**
+   * Neutral facts of a stranger's game for a foreign puzzle only (D-21): time control, the
+   * mover's rating, date; no usernames or ids. Optional because a pre-deploy server omits it.
+   */
+  game_info?: GameInfo | null;
 }
 
 /** Finished reveal-tour parts, 0..3; 3 means the whole tour is done. */
@@ -648,7 +652,7 @@ export type ArchiveSeverity = 'mistake' | 'blunder';
 /**
  * One archived (mastered or parked) puzzle. Mirrors app/schemas/train.py
  * field for field. Deliberately carries no spoiler field (no played move,
- * motif or severity): a later Retry must not be hinted at.
+ * tactic label or severity): a later Retry must not be hinted at.
  */
 export interface TrainArchiveItem {
   game_id: number;

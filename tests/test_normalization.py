@@ -1317,6 +1317,64 @@ class TestNormalizeChesscomResult:
         mock_set_context.assert_not_called()
         mock_capture.assert_not_called()
 
+    @staticmethod
+    def _chesscom_game(white_result: str, black_result: str) -> dict:
+        return {
+            "uuid": "test",
+            "url": "https://chess.com/test",
+            "pgn": "",
+            "rules": "chess",
+            "time_control": "600+0",
+            "rated": True,
+            "end_time": 1700000000,
+            "white": {"username": "Alice", "rating": 1500, "result": white_result},
+            "black": {"username": "Bob", "rating": 1500, "result": black_result},
+        }
+
+    def test_both_aborted_is_skipped_without_sentry(self):
+        """FLAWCHESS-DM: a game both players aborted has no outcome; it is skipped silently."""
+        from unittest.mock import patch
+
+        from app.services.normalization import normalize_chesscom_game
+
+        with (
+            patch("app.services.normalization.sentry_sdk.set_context") as mock_set_context,
+            patch("app.services.normalization.sentry_sdk.capture_message") as mock_capture,
+        ):
+            result = normalize_chesscom_game(
+                self._chesscom_game("aborted", "aborted"), "Alice", user_id=1
+            )
+
+        assert result is None
+        mock_set_context.assert_not_called()
+        mock_capture.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("white_result", "black_result"),
+        [
+            ("aborted", "some_new_unmapped_status"),
+            ("some_new_unmapped_status", "aborted"),
+            ("aborted", ""),
+            ("", "aborted"),
+        ],
+    )
+    def test_one_side_aborted_still_reports_to_sentry(self, white_result: str, black_result: str):
+        """Only the exact aborted/aborted pair is silent; one side aborted is an unknown shape."""
+        from unittest.mock import patch
+
+        from app.services.normalization import normalize_chesscom_game
+
+        with (
+            patch("app.services.normalization.sentry_sdk.set_context"),
+            patch("app.services.normalization.sentry_sdk.capture_message") as mock_capture,
+        ):
+            result = normalize_chesscom_game(
+                self._chesscom_game(white_result, black_result), "Alice", user_id=1
+            )
+
+        assert result is None
+        mock_capture.assert_called_once()
+
 
 class TestParseBaseAndIncrement:
     """Tests for parse_base_and_increment function."""

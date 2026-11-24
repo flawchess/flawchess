@@ -587,6 +587,103 @@ def reset_blob_claim_leases() -> None:
     blob_claim_lease.reset_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _stub_foreign_draw(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the Train foreign-blunder draw with an empty stub (Phase 263).
+
+    The draw samples OTHER users' games across the whole database, so without this stub any
+    composition test would fill its short session from another test's committed games (research
+    Pitfall 4) and the suite would depend on what happens to be committed. A test that exercises
+    the real draw requests the `real_foreign_draw` fixture, seeds its own strangers and pins the
+    solver level to 2600 (raw 2700), where no other test seeds.
+    """
+    if "real_foreign_draw" in request.fixturenames:
+        return
+    from app.repositories import train_repository
+
+    async def _no_foreign_candidates(*args: object, **kwargs: object) -> list[object]:
+        return []
+
+    monkeypatch.setattr(train_repository, "_draw_foreign_candidates", _no_foreign_candidates)
+
+
+@pytest.fixture
+def real_foreign_draw(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt in to the real foreign draw, sampling every game (TABLESAMPLE 100) so tests are exact.
+
+    Requesting this fixture disables the autouse `_stub_foreign_draw`. The draw stays global
+    across users: the test seeds its own non-guest strangers, deletes committed rows in
+    `finally`, and pins the solver level to 2600 (three rated games at raw 2700) where no other
+    test seeds. That pin isolates the band step only: the nearest-first step has no distance
+    cap (review IN-07), so a test asserting an exact count uses `real_foreign_band_draw`.
+    """
+    from app.services import train_foreign
+
+    steps = tuple(
+        train_foreign.ForeignDrawStep(sample_percent=100.0, nearest=step.nearest)
+        for step in train_foreign.FOREIGN_FILLER_DRAW_STEPS
+    )
+    monkeypatch.setattr(train_foreign, "FOREIGN_FILLER_DRAW_STEPS", steps)
+
+
+@pytest.fixture
+def real_foreign_band_draw(real_foreign_draw: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real foreign draw restricted to its band step, for tests asserting an exact result.
+
+    Review IN-07: pinning the solver to level 2600 keeps other tests' rows out of the BAND step
+    only. The nearest-first step has no distance cap, so with one seeded game it would also draw
+    any committed non-guest game with a servable blunder left in the worker database, at any
+    rating, and break an exact-count assertion. A test that asserts how many puzzles were
+    composed (or that none were) requests this fixture; the nearest statement keeps its own
+    direct tests in tests/repositories/test_train_foreign.py.
+    """
+    from app.services import train_foreign
+
+    band_steps = tuple(step for step in train_foreign.FOREIGN_FILLER_DRAW_STEPS if not step.nearest)
+    monkeypatch.setattr(train_foreign, "FOREIGN_FILLER_DRAW_STEPS", band_steps)
+
+
+# Games of the committed stranger pool below: enough that a default 6-puzzle session, the
+# reconstruction slack and a few extra draws are all covered.
+FOREIGN_FILLER_POOL_GAMES = 8
+# A user with no rated games composes at the 1500 fallback level, so the pool sits at raw 1500.
+FOREIGN_FILLER_POOL_RATING = 1500
+
+
+@pytest_asyncio.fixture
+async def foreign_filler_pool(real_foreign_draw: None, test_engine) -> AsyncGenerator[None, None]:
+    """Commit a pool of a stranger's qualifying blunders (Phase 263), then delete it.
+
+    For tests that need a user WITHOUT games to compose a full session: with the lichess filler
+    gone, the foreign draw is the only filler, and the autouse `_stub_foreign_draw` returns
+    nothing. Requests `real_foreign_draw`, so the real draw runs against these rows.
+
+    It commits rows (the router tests run the app on its own sessions), so it cleans up in
+    `finally`. A test using it may assert how many puzzles were composed but never WHICH games
+    were drawn: leaked committed rows from other modules at raw 1500 could join the draw (tests
+    that need membership pin the solver to 2600 as in tests/repositories/test_train_foreign.py).
+    """
+    from tests.blunder_check_seed import delete_games
+    from tests.train_foreign_seed import add_foreign_blunder_game, add_stranger
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    game_ids: list[int] = []
+    async with maker() as session, session.begin():
+        stranger_id = await add_stranger(session, label="foreign-filler-pool")
+        for _ in range(FOREIGN_FILLER_POOL_GAMES):
+            game_ids.append(
+                await add_foreign_blunder_game(
+                    session, owner_id=stranger_id, owner_rating=FOREIGN_FILLER_POOL_RATING
+                )
+            )
+    try:
+        yield
+    finally:
+        await delete_games(test_engine, game_ids)
+        async with maker() as session, session.begin():
+            await session.execute(delete(User).where(User.id == stranger_id))
+
+
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""

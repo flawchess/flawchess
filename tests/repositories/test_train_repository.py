@@ -66,8 +66,6 @@ from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
 from app.schemas.train import OnboardingStep, SolveRecheck
-from app.services import sharp_filler
-from app.services.sharp_filler import SharpPuzzle
 from app.services.flaws_service import classify_severity
 from app.services.train_pool import (
     MAX_ITEMS_PER_GAME_PER_SESSION,
@@ -79,6 +77,14 @@ from app.services.train_pool import (
 )
 from app.services.train_scheduler import ALL_WEEKDAYS_MASK, SHIELD_CAP
 from tests.conftest import ensure_test_user
+from tests.train_foreign_seed import (
+    FOREIGN_KEY_UCI,
+    FOREIGN_RUNNER_UP_UCI,
+    FOREIGN_SHARP_PV_LINES,
+    add_foreign_blunder_game,
+    add_rated_games,
+    add_stranger,
+)
 
 # Phase 251: the pre-existing tick tests below pin the puzzle-only completion rule, which the
 # D-02 both-modes rule reduces to when blunder check is off (size 0 = not part of the day).
@@ -361,61 +367,48 @@ async def _seed_herring_pool_row(
     return game_id, row.id
 
 
-# A small deterministic sharp-filler fixture — 10 entries, enough
-# to cover every composition scenario in this file (the largest shortfall
-# any test drives is puzzles_per_session=12's cap-induced 7-puzzle gap).
-# `puzzle_id` is zero-padded so `SHARP_SET`'s ascending-id sort order is
-# stable and readable in assertion failures.
-_TEST_SHARP_PUZZLES: tuple[SharpPuzzle, ...] = tuple(
-    SharpPuzzle(
-        puzzle_id=f"sharp-test-{i:02d}",
-        fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        first_move_uci="e2e4",
-        solution_uci="d2d4",
-        ply=0,
-        side_to_move="white",
-        motif="Fork",
-        rating=1200,
-        themes="fork short",
+# Phase 263: strangers' blunders are the only filler of a short session. The foreign draw is global
+# across users, so a test that needs it requests `real_foreign_draw` and pins its solver to level
+# 2600 (three rated games at raw 2700, where no other test seeds) with `_seed_foreign_blunders`.
+_FOREIGN_RATING = 2700
+_FOREIGN_SOLVER_RATED_GAMES = 3
+
+
+async def _seed_foreign_blunders(
+    db_session: AsyncSession,
+    count: int,
+    *,
+    missed_pv_lines: list[dict[str, object]] | None = None,
+) -> list[int]:
+    """Pin `_USER_ID` to level 2600 and seed `count` games of one non-guest stranger.
+
+    Each game holds one qualifying blunder at raw 2700, so the draw offers exactly `count`
+    puzzles (one per game). The soft default blob keeps the type-sensitive tests unchanged. Rolled
+    back with `db_session`, so nothing leaks into the global draw of other tests.
+    """
+    await ensure_test_user(db_session, _USER_ID)
+    await add_rated_games(
+        db_session,
+        user_id=_USER_ID,
+        rating=_FOREIGN_RATING,
+        count=_FOREIGN_SOLVER_RATED_GAMES,
     )
-    for i in range(10)
-)
-
-
-def _install_sharp_fixture(
-    monkeypatch: pytest.MonkeyPatch, puzzles: Sequence[SharpPuzzle] = _TEST_SHARP_PUZZLES
-) -> None:
-    """Install a small deterministic sharp-filler fixture in place of the
-    committed data file — the module-level-constant analog of
-    `_seed_herring_pool_row`'s DB row seeding. `pick_sharp_fillers` reads
-    `sharp_filler.SHARP_SET` as a module global at call time, but
-    `train_repository` binds `SHARP_SET_BY_ID` by reference at import time
-    (`from app.services.sharp_filler import SHARP_SET_BY_ID`) — both names
-    must be patched independently, patching one does not affect the other.
-    """
-    ordered = tuple(sorted(puzzles, key=lambda p: p.puzzle_id))
-    by_id = {p.puzzle_id: p for p in ordered}
-    monkeypatch.setattr(sharp_filler, "SHARP_SET", ordered)
-    monkeypatch.setattr(sharp_filler, "SHARP_SET_BY_ID", by_id)
-    monkeypatch.setattr(train_repository, "SHARP_SET_BY_ID", by_id)
-
-
-@pytest.fixture(autouse=True)
-def _default_empty_sharp_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every test in this file defaults to an EMPTY sharp-filler
-    set unless it opts in via `_install_sharp_fixture`.
-
-    Without this, the real committed `app/data/sharp_filler_puzzles.csv`
-    (non-empty by construction — the fail-closed loader forbids an
-    empty `SHARP_SET`) would silently fill every "zero material" scenario
-    this file's pre-existing pool-entry-gate tests rely on as their proxy
-    for "excluded from the SR pool" (a cold-start/exhausted session is
-    now ALWAYS filled with the sharp/herring mix, never empty) — isolating
-    sharp-filler composition to the tests that explicitly opt in.
-    """
-    monkeypatch.setattr(sharp_filler, "SHARP_SET", ())
-    monkeypatch.setattr(sharp_filler, "SHARP_SET_BY_ID", {})
-    monkeypatch.setattr(train_repository, "SHARP_SET_BY_ID", {})
+    stranger_id = await add_stranger(db_session, label="repo-foreign")
+    game_ids: list[int] = []
+    for _ in range(count):
+        if missed_pv_lines is None:
+            game_id = await add_foreign_blunder_game(
+                db_session, owner_id=stranger_id, owner_rating=_FOREIGN_RATING
+            )
+        else:
+            game_id = await add_foreign_blunder_game(
+                db_session,
+                owner_id=stranger_id,
+                owner_rating=_FOREIGN_RATING,
+                missed_pv_lines=missed_pv_lines,
+            )
+        game_ids.append(game_id)
+    return game_ids
 
 
 # ---------------------------------------------------------------------------
@@ -486,20 +479,18 @@ async def test_full_session_is_nine_sr_and_three_herrings(db_session: AsyncSessi
 
 
 @pytest.mark.asyncio
-async def test_sr_shortfall_backfills_with_herrings(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_sr_shortfall_backfills_with_herrings(db_session: AsyncSession) -> None:
     """Too few SR items no longer pull EXTRA herrings past `herring_slots`: the
     herring side is capped at `floor(n * HERRING_SHARE)` and every remaining
-    shortfall routes to the static sharp set instead, so "2 SR + 10 herrings"
-    becomes "2 SR + 3 herrings (the cap) + 7 sharp fillers".
+    shortfall routes to the foreign stage instead, so "2 SR + 10 herrings"
+    becomes "2 SR + 3 herrings (the cap) + 7 foreign blunders".
 
     Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
     is 6) so the SR shortfall this test exercises stays a genuine
     shortfall relative to sr_slots.
     """
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -535,8 +526,9 @@ async def test_sr_shortfall_backfills_with_herrings(
     assert sum(1 for s in rows if s == DrillSource.SR_ITEM) == 2
     # Capped at floor(12 * HERRING_SHARE) == 3, never grown past it.
     assert sum(1 for s in rows if s == DrillSource.RED_HERRING) == 3
-    # The residual shortfall (12 - 2 - 3 == 7) is sharp filler, not herring.
-    assert sum(1 for s in rows if s == DrillSource.SHARP_FILLER) == 7
+    # The residual shortfall (12 - 2 - 3 == 7) is foreign blunders, not herring.
+    assert sum(1 for s in rows if s == DrillSource.FOREIGN_BLUNDER) == 7
+    assert sum(1 for s in rows if s == DrillSource.LEGACY_SHARP_FILLER) == 0
 
 
 @pytest.mark.asyncio
@@ -758,8 +750,9 @@ async def test_new_drill_items_are_due_immediately(db_session: AsyncSession) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("real_foreign_draw")
 async def test_blunder_heavy_game_contributes_exactly_one_pool_pick(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """A fresh blunder-heavy game (6
     qualifying blunders, none yet tracked as a drill_items row) contributes
@@ -774,12 +767,11 @@ async def test_blunder_heavy_game_contributes_exactly_one_pool_pick(
     herring material is seeded to prove the cap doesn't relax under
     cross-backfill (the due-item tests below cover that); this test must not
     accidentally depend on an unbacked cross-backfill assumption. The residual shortfall
-    routes to the sharp filler (not extra herrings) — a sharp fixture is
-    installed so `puzzle_count` still reaches the full 6; this test's own
+    routes to the foreign stage (not extra herrings) — foreign blunders are
+    seeded so `puzzle_count` still reaches the full 6; this test's own
     assertions are scoped to the SR side and are unaffected either way.
     """
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 6)
     plies = [2, 4, 6, 8, 10, 12]
     game_id = await _seed_flaw_game(db_session, _USER_ID, "blunderheavy-0", ply=plies[0])
     for ply in plies[1:]:
@@ -962,19 +954,17 @@ async def test_due_and_untracked_pool_same_game_never_both_appear(
 
 
 @pytest.mark.asyncio
-async def test_cap_shortened_sr_side_fills_via_herring_backfill(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_cap_shortened_sr_side_fills_via_herring_backfill(db_session: AsyncSession) -> None:
     """Two blunder-heavy games (5 qualifying blunders
     each, all untracked) at puzzles_per_session=12 with plenty of herring
     material -> the session still has 12 puzzles, but the cap-induced SR
     shortfall (2 candidates found vs sr_slots=9) does not relax the
     herring cap to absorb it — the herring side stops at
-    `floor(12 * HERRING_SHARE) == 3` and the residual 7-puzzle gap is sharp
-    filler instead (2 SR + 3 herrings + 7 sharp fillers). The one-per-game SR
+    `floor(12 * HERRING_SHARE) == 3` and the residual 7-puzzle gap is foreign
+    blunders instead (2 SR + 3 herrings + 7 foreign blunders). The one-per-game SR
     cap itself is proven below."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -1013,10 +1003,10 @@ async def test_cap_shortened_sr_side_fills_via_herring_backfill(
     ).all()
     sr_rows = [(source, gid) for source, gid in rows if source == DrillSource.SR_ITEM]
     herring_rows = [row for row in rows if row[0] == DrillSource.RED_HERRING]
-    sharp_rows = [row for row in rows if row[0] == DrillSource.SHARP_FILLER]
+    foreign_rows = [row for row in rows if row[0] == DrillSource.FOREIGN_BLUNDER]
     assert len(sr_rows) == 2
     assert len(herring_rows) == 3  # capped at floor(12 * HERRING_SHARE), never grown
-    assert len(sharp_rows) == 7  # the residual shortfall, sharp filler not herring
+    assert len(foreign_rows) == 7  # the residual shortfall, foreign blunders not herring
     assert {gid for _source, gid in sr_rows} == set(game_ids)  # exactly one SR puzzle per game
 
 
@@ -1026,15 +1016,15 @@ async def test_cap_shortened_sr_side_fills_via_herring_backfill(
 
 
 @pytest.mark.asyncio
-async def test_zero_sr_material_composes_two_herrings_and_six_sharp(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_zero_sr_material_composes_herrings_and_foreign_blunders(
+    db_session: AsyncSession,
 ) -> None:
     """Zero SR candidates + plenty of herring material, N=8 ->
-    exactly 2 RED_HERRING (floor(8 * HERRING_SHARE)) + 6 SHARP_FILLER — never
-    100% herrings (the defect the sharp filler removes) and never
-    100% sharp (the herring side is still used as-is)."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    exactly 2 RED_HERRING (floor(8 * HERRING_SHARE)) + 6 FOREIGN_BLUNDER — never
+    100% herrings (the defect the filler removes) and never
+    100% foreign (the herring side is still used as-is). No lichess filler is composed."""
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -1047,7 +1037,7 @@ async def test_zero_sr_material_composes_two_herrings_and_six_sharp(
         now_utc=_NOW,
     )
     for i in range(10):
-        await _seed_herring_pool_row(db_session, _USER_ID, f"warmup-herring-{i}")
+        await _seed_herring_pool_row(db_session, _USER_ID, f"zero-sr-herring-{i}")
 
     composed = await train_repository.compose_and_materialize_session(
         db_session, user_id=_USER_ID, now_utc=_NOW
@@ -1066,20 +1056,21 @@ async def test_zero_sr_material_composes_two_herrings_and_six_sharp(
     )
     assert sum(1 for s in rows if s == DrillSource.SR_ITEM) == 0
     assert sum(1 for s in rows if s == DrillSource.RED_HERRING) == 2
-    assert sum(1 for s in rows if s == DrillSource.SHARP_FILLER) == 6
+    assert sum(1 for s in rows if s == DrillSource.FOREIGN_BLUNDER) == 6
+    assert sum(1 for s in rows if s == DrillSource.LEGACY_SHARP_FILLER) == 0
 
 
 @pytest.mark.asyncio
-async def test_three_sr_candidates_compose_three_sr_two_herring_three_sharp(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_three_sr_candidates_compose_sr_herrings_and_foreign_blunders(
+    db_session: AsyncSession,
 ) -> None:
     """3 SR candidates, N=8 (sr_slots=6, herring_slots=2) -> 3 SR_ITEM (the
     SR side genuinely has no more material, so no cross-backfill triggers
-    for it), 2 RED_HERRING (the cap, never grown), 3 SHARP_FILLER (the
+    for it), 2 RED_HERRING (the cap, never grown), 3 FOREIGN_BLUNDER (the
     residual 8 - 3 - 2 shortfall) — the herring count equals
     math.floor(8 * HERRING_SHARE) exactly, never 5."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -1113,23 +1104,18 @@ async def test_three_sr_candidates_compose_three_sr_two_herring_three_sharp(
     )
     assert sum(1 for s in rows if s == DrillSource.SR_ITEM) == 3
     assert sum(1 for s in rows if s == DrillSource.RED_HERRING) == 2
-    assert sum(1 for s in rows if s == DrillSource.SHARP_FILLER) == 3
+    assert sum(1 for s in rows if s == DrillSource.FOREIGN_BLUNDER) == 3
+    assert sum(1 for s in rows if s == DrillSource.LEGACY_SHARP_FILLER) == 0
 
 
 # ---------------------------------------------------------------------------
-# is_warmup
+# own_puzzle_count
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_zero_sr_composition_sets_is_warmup(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Boundary: zero surviving SR_ITEM puzzles -> is_warmup True,
-    both on the returned ComposedSession and the persisted drill_sessions
-    row — never a ratio, never a threshold."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+async def _setup_own_count_user(db_session: AsyncSession, label: str, own_games: int) -> None:
+    """Seed foreign blunders, an 8-puzzle setting, `own_games` flawed own games and herrings."""
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -1141,99 +1127,48 @@ async def test_zero_sr_composition_sets_is_warmup(
         reminder_intent_at=None,
         now_utc=_NOW,
     )
+    for i in range(own_games):
+        await _seed_flaw_game(db_session, _USER_ID, f"{label}-sr-{i}")
     for i in range(10):
-        await _seed_herring_pool_row(db_session, _USER_ID, f"is-warmup-herring-{i}")
-
-    composed = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-    assert composed.session_id is not None
-    assert composed.is_warmup is True
-
-    row = (
-        await db_session.execute(
-            select(DrillSession.is_warmup).where(DrillSession.id == composed.session_id)
-        )
-    ).scalar_one()
-    assert row is True
+        await _seed_herring_pool_row(db_session, _USER_ID, f"{label}-herring-{i}")
 
 
 @pytest.mark.asyncio
-async def test_one_sr_item_is_not_warmup(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Boundary: exactly one qualifying blunder makes is_warmup False,
-    even with seven filler puzzles beside it in an 8-puzzle session."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
-    await train_repository.upsert_settings(
-        db_session,
-        user_id=_USER_ID,
-        timezone="UTC",
-        weekday_mask=0,
-        puzzles_per_session=8,
-        reminder_enabled=False,
-        reminder_hour=18,
-        reminder_intent_at=None,
-        now_utc=_NOW,
-    )
-    await _seed_flaw_game(db_session, _USER_ID, "one-sr-not-warmup")
-    for i in range(10):
-        await _seed_herring_pool_row(db_session, _USER_ID, f"one-sr-not-warmup-herring-{i}")
-
-    composed = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-    assert composed.session_id is not None
-    assert composed.is_warmup is False
-
-    row = (
-        await db_session.execute(
-            select(DrillSession.is_warmup).where(DrillSession.id == composed.session_id)
-        )
-    ).scalar_one()
-    assert row is False
-
-
-@pytest.mark.asyncio
-async def test_is_warmup_survives_resume_after_material_arrives(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """is_warmup is frozen at composition. Composing with zero SR
-    material, then seeding a due drill_items row and re-composing (which
-    resumes the still-open session, never recomposes), must still report
-    is_warmup True — the label is read off the stored column, never
-    recomputed from the current pool state."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
-    await train_repository.upsert_settings(
-        db_session,
-        user_id=_USER_ID,
-        timezone="UTC",
-        weekday_mask=0,
-        puzzles_per_session=8,
-        reminder_enabled=False,
-        reminder_hour=18,
-        reminder_intent_at=None,
-        now_utc=_NOW,
-    )
-    for i in range(10):
-        await _seed_herring_pool_row(db_session, _USER_ID, f"warmup-resume-herring-{i}")
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_own_puzzle_count_fresh_and_resume(db_session: AsyncSession) -> None:
+    """own_puzzle_count is the number of SR_ITEM rows of the session (every position, solved or
+    not), derived per response: len(surviving_sr_keys) on a fresh composition, one COUNT on resume.
+    A session with 2 own puzzles reports 2 fresh and on resume after one solve, even when new
+    material arrives mid-session (the session is resumed, not recomposed)."""
+    await _setup_own_count_user(db_session, "own-count-two", own_games=2)
 
     first = await train_repository.compose_and_materialize_session(
         db_session, user_id=_USER_ID, now_utc=_NOW
     )
     assert first.session_id is not None
-    assert first.is_warmup is True
+    assert first.own_puzzle_count == 2
 
-    # New SR material arrives mid-session (the ES lottery landing) — the
-    # still-open session must resume, not recompose, and must not shed the
-    # label just because material now exists.
-    game_id = await _seed_flaw_game(db_session, _USER_ID, "warmup-resume-new-material")
+    # One own puzzle gets solved; a third own game lands with a due item mid-session.
+    sr_position = (
+        await db_session.execute(
+            select(DrillSolve.position)
+            .where(
+                DrillSolve.session_id == first.session_id,
+                DrillSolve.source == DrillSource.SR_ITEM,
+            )
+            .limit(1)
+        )
+    ).scalar_one()
+    await db_session.execute(
+        update(DrillSolve)
+        .where(DrillSolve.session_id == first.session_id, DrillSolve.position == sr_position)
+        .values(solved_at=_NOW)
+    )
+    late_game_id = await _seed_flaw_game(db_session, _USER_ID, "own-count-late")
     db_session.add(
         DrillItem(
             user_id=_USER_ID,
-            game_id=game_id,
+            game_id=late_game_id,
             ply=2,
             status=DrillStatus.ACTIVE,
             streak=0,
@@ -1244,114 +1179,56 @@ async def test_is_warmup_survives_resume_after_material_arrives(
     )
     await db_session.flush()
 
-    second = await train_repository.compose_and_materialize_session(
+    resumed = await train_repository.compose_and_materialize_session(
         db_session, user_id=_USER_ID, now_utc=_NOW
     )
-    assert second.session_id == first.session_id
-    assert second.is_warmup is True
+    assert resumed.session_id == first.session_id
+    assert resumed.solved_count == 1
+    assert resumed.own_puzzle_count == 2
 
 
 @pytest.mark.asyncio
-async def test_empty_composition_reports_is_warmup_false(db_session: AsyncSession) -> None:
-    """Empty: the nothing-qualified session_id=None path reports
-    is_warmup False, never True — resolveLandingState must reach the
-    'empty' kind before it could ever reach 'warmup'."""
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_own_puzzle_count_is_zero_for_an_all_foreign_session(
+    db_session: AsyncSession,
+) -> None:
+    """No own puzzles: 0 on the fresh composition and on resume (the client reads only `=== 0`)."""
+    await _setup_own_count_user(db_session, "own-count-zero", own_games=0)
+
+    first = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert first.session_id is not None
+    assert first.own_puzzle_count == 0
+
+    resumed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert resumed.session_id == first.session_id
+    assert resumed.own_puzzle_count == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_composition_reports_zero_own_puzzles(db_session: AsyncSession) -> None:
+    """The nothing-qualified session_id=None path reports own_puzzle_count 0."""
     await ensure_test_user(db_session, _USER_ID)
 
     composed = await train_repository.compose_and_materialize_session(
         db_session, user_id=_USER_ID, now_utc=_NOW
     )
     assert composed.session_id is None
-    assert composed.is_warmup is False
+    assert composed.own_puzzle_count == 0
 
 
-@pytest.mark.asyncio
-async def test_no_resume_recomputation_mutation_check(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mutation check 1 target, expressed as a real test rather
-    than a manual revert: resuming an already-warm-up session must return
-    the STORED is_warmup, not a value recomputed from the puzzles currently
-    on the row (which, for a resumed session, always reflects the frozen
-    composition anyway — this test pins the read-the-column contract by
-    asserting the resumed ComposedSession's is_warmup matches the persisted
-    drill_sessions.is_warmup exactly)."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
-    await train_repository.upsert_settings(
-        db_session,
-        user_id=_USER_ID,
-        timezone="UTC",
-        weekday_mask=0,
-        puzzles_per_session=8,
-        reminder_enabled=False,
-        reminder_hour=18,
-        reminder_intent_at=None,
-        now_utc=_NOW,
-    )
-    for i in range(10):
-        await _seed_herring_pool_row(db_session, _USER_ID, f"warmup-resume-column-{i}")
-
-    first = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-    assert first.session_id is not None
-
-    resumed = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-    row = (
-        await db_session.execute(
-            select(DrillSession.is_warmup).where(DrillSession.id == first.session_id)
-        )
-    ).scalar_one()
-    assert resumed.is_warmup == row
-
-
-@pytest.mark.asyncio
-async def test_no_sharp_puzzle_id_collides_within_one_session(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """uq_drill_solves_session_puzzle cannot catch a duplicate
-    sharp_puzzle_id (every sharp row has game_id=None, and Postgres treats
-    NULLs as distinct) — _backfill_sharp_fillers must dedupe itself."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
-    await train_repository.upsert_settings(
-        db_session,
-        user_id=_USER_ID,
-        timezone="UTC",
-        weekday_mask=0,
-        puzzles_per_session=8,
-        reminder_enabled=False,
-        reminder_hour=18,
-        reminder_intent_at=None,
-        now_utc=_NOW,
-    )
-
-    composed = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-    assert composed.session_id is not None
-    sharp_puzzle_ids = (
-        (
-            await db_session.execute(
-                select(DrillSolve.sharp_puzzle_id).where(
-                    DrillSolve.session_id == composed.session_id,
-                    DrillSolve.source == DrillSource.SHARP_FILLER,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(sharp_puzzle_ids) == len(set(sharp_puzzle_ids))
-
-
-_IDENTITY_COLUMN_BY_SOURCE: dict[DrillSource, str] = {
+# None = the source has no identity column: a retired LEGACY_SHARP_FILLER history row lost its
+# puzzle id with migration c4e6a8b0d375 and composition never writes one (D-03).
+_IDENTITY_COLUMN_BY_SOURCE: dict[DrillSource, str | None] = {
     DrillSource.SR_ITEM: "game_id",
     DrillSource.RED_HERRING: "herring_pool_id",
-    DrillSource.SHARP_FILLER: "sharp_puzzle_id",
+    DrillSource.LEGACY_SHARP_FILLER: None,
+    # Phase 263: a foreign blunder drills a real (other user's) game, so game_id is its identity;
+    # its row-level shape is asserted in tests/repositories/test_train_foreign.py.
+    DrillSource.FOREIGN_BLUNDER: "game_id",
 }
 
 
@@ -1364,36 +1241,36 @@ def test_drill_solve_identity_column_matches_source() -> None:
     it already knew about."""
     assert set(_IDENTITY_COLUMN_BY_SOURCE.keys()) == set(DrillSource)
 
-    # No two DrillSource members share the same identity column — each of
-    # the three columns names exactly one source's identity key. (The
+    # game_id is shared by the two sources that drill a real game (SR item, foreign blunder);
+    # herring_pool_id names exactly one source's identity key. (The
     # DB-backed companion test below proves the real per-row non-nullness;
     # game_id is deliberately NOT part of this mutual-exclusivity set — see
     # that test's docstring for why a RED_HERRING row's game_id is real
     # provenance, not forced null.)
-    assert len(set(_IDENTITY_COLUMN_BY_SOURCE.values())) == len(_IDENTITY_COLUMN_BY_SOURCE)
+    exclusive_columns = [
+        c for c in _IDENTITY_COLUMN_BY_SOURCE.values() if c is not None and c != "game_id"
+    ]
+    assert len(set(exclusive_columns)) == len(exclusive_columns)
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("real_foreign_draw")
 async def test_composed_session_rows_each_carry_exactly_one_identity_column(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """DB-backed companion to test_drill_solve_identity_column_matches_source:
-    a real composed session (all three sources present) is checked row by
-    row against `_IDENTITY_COLUMN_BY_SOURCE`.
+    a real composed session (SR, herring and foreign blunder present) is checked
+    row by row against `_IDENTITY_COLUMN_BY_SOURCE`.
 
-    `herring_pool_id`/`sharp_puzzle_id` are mutually exclusive AND
-    source-exclusive across all three sources (a row's own identity column
-    is non-null, the other of these two is null for every row regardless of
-    source). `game_id` is NOT included in that mutual-exclusivity check: a
+    `herring_pool_id` is source-exclusive (non-null only on a herring row, null for every other
+    source). `game_id` is NOT included in that check: a
     fresh `RED_HERRING` row legitimately carries a non-null `game_id` too
     (own-game herrings are permitted — the herring's identity key is
     `herring_pool_id`, not `game_id`, but `game_id` is still real provenance,
-    not forced null). Only `SR_ITEM` (its own identity) and `SHARP_FILLER`
-    (structurally NULL — no `games` row exists for a lichess puzzle)
-    have a fixed expectation for `game_id`.
+    not forced null). A `FOREIGN_BLUNDER` row carries `game_id` only (the stranger's
+    game is its identity); composition never writes a `LEGACY_SHARP_FILLER` row any more (D-03).
     """
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 10)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -1420,33 +1297,32 @@ async def test_composed_session_rows_each_carry_exactly_one_identity_column(
                 DrillSolve.source,
                 DrillSolve.game_id,
                 DrillSolve.herring_pool_id,
-                DrillSolve.sharp_puzzle_id,
             ).where(DrillSolve.session_id == composed.session_id)
         )
     ).all()
     assert len(rows) == 8
     seen_sources: set[DrillSource] = set()
-    for source_int, game_id, herring_pool_id, sharp_puzzle_id in rows:
+    for source_int, game_id, herring_pool_id in rows:
         source = DrillSource(source_int)
         seen_sources.add(source)
         own_column = _IDENTITY_COLUMN_BY_SOURCE[source]
         values_by_column = {
             "game_id": game_id,
             "herring_pool_id": herring_pool_id,
-            "sharp_puzzle_id": sharp_puzzle_id,
         }
+        assert own_column is not None
         assert values_by_column[own_column] is not None
-        # Mutual exclusivity across herring_pool_id/sharp_puzzle_id only —
-        # see docstring for why game_id is excluded from this check.
-        for other_column in ("herring_pool_id", "sharp_puzzle_id"):
-            if other_column != own_column:
-                assert values_by_column[other_column] is None
+        # herring_pool_id is non-null only on a herring row — see docstring for why game_id is
+        # excluded from this check.
+        if own_column != "herring_pool_id":
+            assert values_by_column["herring_pool_id"] is None
         if source == DrillSource.SR_ITEM:
             assert values_by_column["game_id"] is not None
-        elif source == DrillSource.SHARP_FILLER:
-            assert values_by_column["game_id"] is None
-    # All three sources actually appeared — the test exercises every arm.
-    assert seen_sources == set(DrillSource)
+        elif source == DrillSource.FOREIGN_BLUNDER:
+            assert values_by_column["game_id"] is not None
+            assert values_by_column["herring_pool_id"] is None
+    # Every source composition can write appeared (D-03: no lichess filler row any more).
+    assert seen_sources == set(DrillSource) - {DrillSource.LEGACY_SHARP_FILLER}
 
 
 @pytest.mark.asyncio
@@ -1854,8 +1730,7 @@ async def test_resume_solved_results_include_source_item_status_due_date(
                 user_id=_USER_ID,
                 game_id=None,
                 ply=0,
-                source=DrillSource.SHARP_FILLER,
-                sharp_puzzle_id="sharp-source-test-01",
+                source=DrillSource.LEGACY_SHARP_FILLER,
                 solved_at=_NOW,
                 correct_guess=True,
                 correct_move=True,
@@ -2527,16 +2402,14 @@ async def test_open_session_serves_item_after_backing_blob_moves_into_band(
 
 
 @pytest.mark.asyncio
-async def test_frozen_order_is_stable_across_resumes(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_frozen_order_is_stable_across_resumes(db_session: AsyncSession) -> None:
     # 4 SR + 2 herring is a 1-puzzle shortfall against the
     # default puzzles_per_session=6 (sr_slots=5, herring_slots=1) that used
     # to route through the retired "SR short -> extra herrings" arm — a
-    # sharp fixture fills it instead so the total stays 6, which is all this
+    # foreign blunder fills it instead so the total stays 6, which is all this
     # test's own order-stability assertion cares about.
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 8)
     for i in range(4):
         await _seed_flaw_game(db_session, _USER_ID, f"frozen-sr-{i}")
     for i in range(2):
@@ -3660,22 +3533,27 @@ class TestStampPoolEligibility:
         assert row.pool_eligible_since is None
 
     @pytest.mark.asyncio
-    async def test_filler_only_session_stamps_pool_eligible_since(
-        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.usefixtures("real_foreign_draw")
+    async def test_foreign_only_session_stamps_pool_eligible_since(
+        self, db_session: AsyncSession
     ) -> None:
-        """A user with zero drill_items and
-        zero pool candidates, but a non-empty sharp set, gets
-        pool_eligible_since stamped to today on the first
-        compose_and_materialize_session call — a filler-only session is
-        still a real, completable session the user can accrue streak for."""
-        _install_sharp_fixture(monkeypatch)
-        await ensure_test_user(db_session, _USER_ID)
+        """A user with zero drill_items and zero pool candidates, but foreign
+        blunders to draw, gets pool_eligible_since stamped to today on the first
+        compose_and_materialize_session call — a foreign-only session is
+        still a real, completable session the user can accrue streak for. The
+        stamp happens AFTER the session row is written (no static-set term any
+        more), so this fails when that post-materialize stamp is removed.
+
+        Blunder check is switched off: at its default size it already counts as material and
+        would stamp before composition, masking the stamp under test."""
+        await _seed_foreign_blunders(db_session, 8)
+        await _set_blunder_check_size(db_session, _USER_ID, _PUZZLES_ONLY_BC_SIZE)
 
         composed = await train_repository.compose_and_materialize_session(
             db_session, user_id=_USER_ID, now_utc=_NOW
         )
         assert composed.session_id is not None
-        assert composed.is_warmup is True
+        assert composed.own_puzzle_count == 0
 
         row = (
             await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
@@ -3683,14 +3561,34 @@ class TestStampPoolEligibility:
         assert row.pool_eligible_since == _TODAY
 
     @pytest.mark.asyncio
-    async def test_existing_watermark_is_not_overwritten_by_filler_session(
-        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    async def test_empty_foreign_pool_composes_nothing_and_stamps_nothing(
+        self, db_session: AsyncSession
     ) -> None:
-        """A pre-set watermark survives a filler-only composition unchanged
-        — the widened has_material term only ever moves the floor from
-        unset to today, never overwrites an existing value."""
-        _install_sharp_fixture(monkeypatch)
+        """No own material, blunder check off and an empty foreign pool (the conftest stub):
+        no session row is written and the eligibility floor stays NULL, so a user with nothing
+        completable accrues no streak."""
         await ensure_test_user(db_session, _USER_ID)
+        await _set_blunder_check_size(db_session, _USER_ID, _PUZZLES_ONLY_BC_SIZE)
+
+        composed = await train_repository.compose_and_materialize_session(
+            db_session, user_id=_USER_ID, now_utc=_NOW
+        )
+
+        assert composed.session_id is None
+        row = (
+            await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
+        ).scalar_one()
+        assert row.pool_eligible_since is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("real_foreign_draw")
+    async def test_existing_watermark_is_not_overwritten_by_filler_session(
+        self, db_session: AsyncSession
+    ) -> None:
+        """A pre-set watermark survives a foreign-only composition unchanged
+        — the post-materialize stamp only ever moves the floor from
+        unset to today, never overwrites an existing value."""
+        await _seed_foreign_blunders(db_session, 8)
         earlier = datetime.date(2025, 12, 1)
         await _seed_pool_eligible_since(db_session, _USER_ID, earlier)
 
@@ -4683,54 +4581,6 @@ async def test_record_solve_herring_off_band_ladder_move_keeps_client_tier(
 
 
 @pytest.mark.asyncio
-async def test_record_solve_sharp_filler_returns_empty_vetted_moves(
-    db_session: AsyncSession,
-) -> None:
-    """A sharp-filler solve serves NO vetted moves
-    — the same empty outcome as any other sharp puzzle, with no stored data
-    and no special-cased predicate."""
-    await ensure_test_user(db_session, _USER_ID)
-    drill_session = DrillSession(
-        user_id=_USER_ID,
-        session_date=_TODAY,
-        status="open",
-        puzzle_count=1,
-        expires_on=_TODAY + datetime.timedelta(days=1),
-    )
-    db_session.add(drill_session)
-    await db_session.flush()
-    db_session.add(
-        DrillSolve(
-            session_id=drill_session.id,
-            position=0,
-            user_id=_USER_ID,
-            game_id=None,
-            ply=0,
-            source=DrillSource.SHARP_FILLER,
-            sharp_puzzle_id="sharp-test-00",
-            solved_at=None,
-        )
-    )
-    await db_session.flush()
-
-    recorded = await train_repository.record_solve(
-        db_session,
-        user_id=_USER_ID,
-        session_id=drill_session.id,
-        position=0,
-        guess="critical",
-        played_move="d2d4",
-        move_quality="good",
-        now_utc=_NOW,
-    )
-    assert recorded is not None
-    assert recorded.puzzle_type == "sharp"
-    assert recorded.vetted_moves == []
-    assert recorded.graded_es_before is None
-    assert recorded.graded_es_after is None
-
-
-@pytest.mark.asyncio
 async def test_record_solve_foreign_user_returns_none_before_herring_read(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -5532,14 +5382,12 @@ async def _answer_key_by_source(
 
 
 @pytest.mark.asyncio
-async def test_compose_attaches_answer_keys_for_every_source(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("real_foreign_draw")
+async def test_compose_attaches_answer_keys_for_every_source(db_session: AsyncSession) -> None:
     """Fresh composition AND the resumed session carry the same answer keys:
     SR item = stored best_move + live-blob type + sharp `su`; herring = top of
-    its ladder; sharp filler = its CSV solution."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    its ladder; foreign blunder = the game OWNER's stored best_move, blob type and `su`."""
+    await _seed_foreign_blunders(db_session, 8, missed_pv_lines=FOREIGN_SHARP_PV_LINES)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -5565,9 +5413,10 @@ async def test_compose_attaches_answer_keys_for_every_source(
 
     assert by_source[DrillSource.SR_ITEM] == [("g1f3", "sharp", "b1c3")]
     assert by_source[DrillSource.RED_HERRING] == [("e2e4", "herring", None)]
-    fillers = by_source[DrillSource.SHARP_FILLER]
-    assert len(fillers) == 2
-    assert all(entry == ("d2d4", "sharp", None) for entry in fillers)
+    foreign = by_source[DrillSource.FOREIGN_BLUNDER]
+    assert len(foreign) == 2
+    assert all(entry == (FOREIGN_KEY_UCI, "sharp", FOREIGN_RUNNER_UP_UCI) for entry in foreign)
+    assert DrillSource.LEGACY_SHARP_FILLER not in by_source
 
     # Second call, same instant: resumes the open session (deferred ladder
     # column must not raise MissingGreenlet) and returns the identical keys.
@@ -5631,16 +5480,16 @@ async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("real_foreign_draw")
 async def test_server_graded_moves_graded_parity_fresh_and_resumed(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
-    """For EVERY composed puzzle (soft SR, sharp SR, herring, sharp
-    filler), fresh and resumed, the pre-attempt `server_graded_moves` equals
+    """For EVERY composed puzzle (soft SR, sharp SR, herring, foreign
+    blunder), fresh and resumed, the pre-attempt `server_graded_moves` equals
     `SolveClassification.graded_moves` from `_classify_and_certify_solve` on the
     same drill_solves row (uci, tier, order): composition and the solve path call
     the one shared function, so a drift would be a real divergence."""
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    await _seed_foreign_blunders(db_session, 8, missed_pv_lines=FOREIGN_SHARP_PV_LINES)
     await train_repository.upsert_settings(
         db_session,
         user_id=_USER_ID,
@@ -5680,7 +5529,8 @@ async def test_server_graded_moves_graded_parity_fresh_and_resumed(
             ("d2d4", "good"),
             ("g1f3", "good"),
         ],
-        (DrillSource.SHARP_FILLER, "sharp"): [],
+        # The foreign blunder grades like an SR item on its OWNER's blob: the runner-up is "wrong".
+        (DrillSource.FOREIGN_BLUNDER, "sharp"): [(FOREIGN_RUNNER_UP_UCI, "wrong")],
     }
     for composed in (fresh, resumed):
         seen: set[tuple[int, str | None]] = set()
@@ -6041,7 +5891,6 @@ def _reconstructed(
         side_to_move="white",
         source=source,
         herring_pool_id=None,
-        sharp_puzzle_id=None,
     )
 
 
@@ -6265,14 +6114,14 @@ async def test_first_session_gate_blocks_an_earlier_completed_session(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("real_foreign_draw")
 async def test_first_session_resized_untouched_session_is_recomposed_with_the_reorder(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A first session discarded as untouched-and-resized still counts as
     first-ever, because the discard DELETE runs before the check."""
-    # Sharp fillers make a sharp puzzle available at every session size.
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
+    # Sharp foreign blunders make a sharp puzzle available at every session size.
+    await _seed_foreign_blunders(db_session, 10, missed_pv_lines=FOREIGN_SHARP_PV_LINES)
     await _set_session_size(db_session, 6)
     await _seed_first_session_material(db_session, sharp_sr=0, soft_sr=2, herrings=1)
     spy = _install_first_session_spy(monkeypatch)
@@ -6293,36 +6142,6 @@ async def test_first_session_resized_untouched_session_is_recomposed_with_the_re
     assert second.puzzle_count == 7
     assert len(spy.calls) == 2
     assert second.puzzles[0].puzzle_type == "sharp"
-
-
-@pytest.mark.asyncio
-async def test_first_session_slot_0_is_the_sharp_filler_when_sr_items_are_all_soft(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_sharp_fixture(monkeypatch)
-    await ensure_test_user(db_session, _USER_ID)
-    await _seed_first_session_material(db_session, sharp_sr=0, soft_sr=2, herrings=0)
-    spy = _install_first_session_spy(monkeypatch)
-
-    composed = await train_repository.compose_and_materialize_session(
-        db_session, user_id=_USER_ID, now_utc=_NOW
-    )
-
-    assert len(spy.calls) == 1
-    source_by_position = dict(
-        (
-            await db_session.execute(
-                select(DrillSolve.position, DrillSolve.source).where(
-                    DrillSolve.session_id == composed.session_id
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    assert source_by_position[0] == DrillSource.SHARP_FILLER
-    assert composed.puzzles[0].puzzle_type == "sharp"
-    assert any(p.puzzle_type == "soft" for p in composed.puzzles[1:3])
 
 
 @pytest.mark.asyncio

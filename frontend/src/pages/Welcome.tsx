@@ -11,7 +11,7 @@ const INTRO = 'Everything stays completely free.';
 
 const DELTA_1 =
   'Every game you import is analyzed by Stockfish automatically, with no per-game Analyze click.';
-const DELTA_2 = 'Train switches from warm-up puzzles to the mistakes in your own games.';
+const DELTA_2 = "Train switches from other players' blunders to the mistakes in your own games.";
 const DELTA_3 = 'Your account, your games and your streak work on any device you log in from.';
 const DELTA_4 = 'Nothing is deleted after 30 days of inactivity.';
 

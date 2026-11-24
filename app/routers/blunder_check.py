@@ -40,7 +40,6 @@ from app.schemas.blunder_check import (
     HerringSolution,
     Prompt,
     SessionResultResponse,
-    TimeControlBucketWire,
     WindowOutcomeWire,
     WindowProgress,
     WindowResultItem,
@@ -48,7 +47,7 @@ from app.schemas.blunder_check import (
     WindowStartResponse,
     WindowState,
 )
-from app.schemas.train import ServerGradedMove
+from app.schemas.train import ServerGradedMove, TimeControlBucketWire
 from app.services import blunder_check_service
 from app.services.blunder_check_feedback import BlunderFeedbackData
 from app.services.blunder_check_grading import MOVE_TIMER_SECONDS

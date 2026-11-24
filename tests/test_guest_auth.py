@@ -673,6 +673,7 @@ class TestGuestPromotion:
             assert created_at_before == created_at_after
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("foreign_filler_pool")
     async def test_train_state_preserved_after_promotion(self, test_engine) -> None:
         """Promotion is an in-place UPDATE users: a promoted guest's drill_sessions,
         drill_solves and

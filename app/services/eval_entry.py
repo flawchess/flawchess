@@ -393,7 +393,7 @@ def _entry_claim_sql() -> str:
     is the plain claim literal -- no alias, no reformatting,
     only the {gate} suffix ever changes.
 
-    The gate is applied inside the candidate subquery's WHERE (the lease-expiry
+    The gate is applied inside the candidate CTE's WHERE (the lease-expiry
     disjunction line), narrowing which rows are ELIGIBLE TO BE CLAIMED -- never on
     the outer UPDATE target -- matching every other lottery/claim site's pattern
     of gating the candidate predicate, not the write target.
@@ -403,11 +403,12 @@ def _entry_claim_sql() -> str:
     passes still implies a claimable row exists. If you change one, change both.
     """
     gate = selection_gate_clause("games")
+    # Bug fix (2026-11-24): the candidate SELECT used to sit directly in `id IN (...)`. A nested-loop
+    # semi join rescans it per outer row, and each rescan skips the rows this same UPDATE already
+    # changed, so LIMIT held per rescan and one claim could take more than :batch games. The
+    # MATERIALIZED CTE runs the locking SELECT exactly once, whatever join plan Postgres picks.
     return f"""
-            UPDATE games
-            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,
-                entry_eval_leased_by = :worker_id
-            WHERE id IN (
+            WITH candidate AS MATERIALIZED (
                 SELECT id FROM games
                 WHERE evals_completed_at IS NULL
                   AND (entry_eval_lease_expiry IS NULL OR entry_eval_lease_expiry < now()){(" " + gate) if gate else ""}
@@ -415,6 +416,10 @@ def _entry_claim_sql() -> str:
                 LIMIT :batch
                 FOR UPDATE SKIP LOCKED
             )
+            UPDATE games
+            SET entry_eval_lease_expiry = now() + (:ttl || ' seconds')::interval,
+                entry_eval_leased_by = :worker_id
+            WHERE id IN (SELECT id FROM candidate)
             RETURNING id
         """
 
@@ -430,7 +435,7 @@ async def _claim_entry_eval_games(
     Also the one edit that gates both of
     those consumers against benchmark_selection when the gate is on.
 
-    Shape: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING.
+    Shape: WITH candidate AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED) UPDATE … RETURNING.
     Mirrors _claim_queued_job (eval_queue_service.py) in both bound-param discipline
     (every value bound as :param, never f-string-interpolated — project Security rule)
     and TTL idiom (:ttl || ' seconds')::interval / str(ttl_seconds).

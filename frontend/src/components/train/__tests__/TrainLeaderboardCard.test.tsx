@@ -417,7 +417,7 @@ describe('TrainLeaderboardCard tabs', () => {
     await screen.findByTestId('train-leaderboard-rows');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     expect(screen.getByTestId('train-leaderboard-accuracy-not-entered').textContent).toContain(
-      "tactics puzzles don't count",
+      "similarly rated players' blunders don't count",
     );
     expect(screen.queryByTestId('train-leaderboard-qualify')).toBeNull();
   });

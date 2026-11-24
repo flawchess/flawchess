@@ -8,7 +8,7 @@ one caller can reach. The abuse backstop for guest-created accounts is
 keyed on the Cloudflare-resolved client IP: `Cf-Connecting-Ip` -> leftmost
 `X-Forwarded-For` -> `request.client.host`) plus the one-open-session-per-user
 partial unique index `uq_drill_sessions_user_open`. No Train-specific guest ceiling
-or filler-only mode is added.
+or foreign-only mode is added.
 
 Every time-dependent handler takes "now" from the `dev_now_utc` dependency
 rather than calling `datetime.now()` inline, so the dev clock override can
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import asdict
-from typing import Annotated, Final
+from typing import Annotated, Final, cast
 
 import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -32,10 +32,12 @@ from app.core.database import get_async_session
 from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.repositories import push_repository, train_repository
+from app.repositories.blunder_check_repository import GameInfoRow
 from app.repositories.train_repository import TrainSettingsRow
 from app.schemas.train import (
     ArchiveList,
     ClaimMedalsRequest,
+    GameInfo,
     OnboardingStep,
     PuzzleRevealResponse,
     ReviewRequest,
@@ -53,6 +55,7 @@ from app.schemas.train import (
     TrainPuzzle,
     TrainSessionResponse,
     TrainSettingsResponse,
+    TimeControlBucketWire,
     TrainSettingsUpdate,
     UnclaimedMedal,
     UnclaimedMedalsResponse,
@@ -68,6 +71,19 @@ from app.services.train_settings_service import TrainSettingsInvalidError, apply
 from app.users import current_active_user
 
 router = APIRouter(prefix="/train", tags=["train"])
+
+
+def _game_info_schema(info: GameInfoRow | None) -> GameInfo | None:
+    """Map the repository's neutral game facts to the wire schema (same shape blunder check sends)."""
+    if info is None:
+        return None
+    return GameInfo(
+        time_control_str=info.time_control_str,
+        time_control_bucket=cast(TimeControlBucketWire | None, info.time_control_bucket),
+        played_at=info.played_at,
+        mover_rating=info.mover_rating,
+    )
+
 
 #: The current UTC instant, dev-clock-shiftable. Real clock outside development.
 NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
@@ -92,7 +108,7 @@ async def compose_or_resume_session(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> TrainSessionResponse:
-    """Compose (or resume) a Train session: the user's SR items plus red herrings and sharp fillers.
+    """Compose (or resume) a Train session: the user's SR items plus red herrings and other players' blunders.
 
     The user id always comes from `current_active_user.id` — never from a
     request body or path parameter (V4/IDOR guard).
@@ -150,7 +166,7 @@ async def compose_or_resume_session(
         blob_pending_count=composed.blob_pending_count,
         puzzles=puzzles,
         solved_results=solved_results,
-        is_warmup=composed.is_warmup,
+        own_puzzle_count=composed.own_puzzle_count,
     )
 
 
@@ -320,7 +336,7 @@ async def reveal_puzzle(
         source=result.source,
         has_tactic_lines=result.has_tactic_lines,
         game_move_facepalm=result.game_move_facepalm,
-        motif=result.motif,
+        game_info=_game_info_schema(result.game_info),
     )
 
 
@@ -399,7 +415,7 @@ async def get_train_archive(
     Read-only, so no commit. The user id comes only from `current_active_user`
     (V4/IDOR guard) and guests are allowed. ACTIVE puzzles cannot be listed:
     `list` admits only `mastered` and `parked`. Items name the played mistake but
-    carry no best move or motif, so the answer stays out of the list.
+    carry no best move, so the answer stays out of the list.
     """
     try:
         page = await train_repository.get_archive_page(

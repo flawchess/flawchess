@@ -148,7 +148,7 @@ const SESSION_RESPONSE: TrainSessionResponse = {
     { position: 1, game_id: 100, ply: 20, fen: START_FEN, side_to_move: 'white', last_move_uci: 'd7d5' },
   ],
   solved_results: [],
-  is_warmup: false,
+  own_puzzle_count: 5,
 };
 
 const SETTINGS_RESPONSE: TrainSettingsResponse = {
@@ -568,7 +568,7 @@ const RESTORE_SESSION: TrainSessionResponse = {
   solved_results: [
     { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
   ],
-  is_warmup: false,
+  own_puzzle_count: 5,
 };
 
 /** Holds the next session compose open until `resolve` is called. */
@@ -748,6 +748,18 @@ describe('Train layout: D-16 tabs on the landing states', () => {
 
     await waitFor(() => expect(screen.getByTestId('train-start-screen')).not.toBeNull());
     expect(screen.getByTestId('train-tabs')).not.toBeNull();
+  });
+
+  it('the session error has a Retry button that loads the session again', async () => {
+    composeOrResumeSession.mockImplementationOnce(async () => {
+      throw new Error('compose failed');
+    });
+    renderTrainPage(['/train']);
+
+    fireEvent.click(await screen.findByTestId('btn-train-session-retry'));
+
+    await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
+    expect(composeOrResumeSession).toHaveBeenCalledTimes(2);
   });
 
   it('shows the tabs on the Archive while its request fails', async () => {

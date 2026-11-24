@@ -10,9 +10,10 @@
  * `sessionSolvedCount` both now seed from `solved_results` on the session
  * response — server data, not a device-local localStorage tally.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { createElement } from 'react';
 import type { ReactNode } from 'react';
 
@@ -75,7 +76,7 @@ function makeSession(overrides: Partial<TrainSessionResponse> = {}): TrainSessio
     blob_pending_count: 0,
     puzzles: [makePuzzle()],
     solved_results: [],
-    is_warmup: false,
+    own_puzzle_count: 5,
     ...overrides,
   };
 }
@@ -393,5 +394,170 @@ describe('useTrainSession — progress invalidation on every solve', () => {
       ([arg]) => arg?.queryKey === TRAIN_PROGRESS_QUERY_KEY,
     );
     expect(progressInvalidations).toHaveLength(3);
+  });
+});
+
+/**
+ * FLAWCHESS-24: the session load and the solve save repeat themselves up to twice when the
+ * connection drops (axios ERR_NETWORK), and fail at once for anything else. The wrapper sets
+ * `retryDelay: 0` so the repeats are immediate (the hook sets no delay of its own).
+ */
+function makeRetryWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
+  return function wrapper({ children }: { children: ReactNode }) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false, retryDelay: 0 } },
+    });
+    return createElement(QueryClientProvider, { client }, children);
+  };
+}
+
+function networkError(): AxiosError {
+  return new AxiosError('Network Error', AxiosError.ERR_NETWORK);
+}
+
+function timeoutError(): AxiosError {
+  return new AxiosError('timeout of 10000ms exceeded', AxiosError.ECONNABORTED);
+}
+
+function serverError(): AxiosError {
+  const config = { headers: new AxiosHeaders() };
+  const response = {
+    data: {},
+    status: 500,
+    statusText: 'Internal Server Error',
+    headers: {},
+    config,
+  };
+  return new AxiosError(
+    'Request failed with status code 500',
+    AxiosError.ERR_BAD_RESPONSE,
+    config,
+    null,
+    response,
+  );
+}
+
+const RETRY_SOLVE_BODY: SolveRequest = {
+  position: 1,
+  guess: 'critical',
+  played_move: 'e2e4',
+  move_quality: 'good',
+};
+
+describe('useTrainSession — network retries (FLAWCHESS-24)', () => {
+  beforeEach(() => {
+    vi.mocked(trainApi.composeOrResumeSession).mockReset();
+    vi.mocked(trainApi.solvePuzzle).mockReset();
+    onlineManager.setOnline(true);
+  });
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it('session: two ERR_NETWORK failures then success loads the session', async () => {
+    vi.mocked(trainApi.composeOrResumeSession)
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError())
+      .mockResolvedValue(makeSession());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    expect(result.current.isSessionError).toBe(false);
+    expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(3);
+  });
+
+  it('session: ERR_NETWORK forever errors after exactly 3 calls', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockRejectedValue(networkError());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.isSessionError).toBe(true));
+    expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ['an HTTP 500', serverError],
+    ['a timeout (ECONNABORTED)', timeoutError],
+  ])('session: %s errors after exactly 1 call', async (_label, makeError) => {
+    vi.mocked(trainApi.composeOrResumeSession).mockRejectedValue(makeError());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.isSessionError).toBe(true));
+    expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['an HTTP 500', serverError],
+    ['a timeout (ECONNABORTED)', timeoutError],
+  ])('solve: %s errors after exactly 1 call', async (_label, makeError) => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession());
+    vi.mocked(trainApi.solvePuzzle).mockRejectedValue(makeError());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    await act(async () => {
+      await expect(result.current.solvePuzzle(RETRY_SOLVE_BODY)).rejects.toThrow();
+    });
+    await waitFor(() => expect(result.current.isSolveError).toBe(true));
+    expect(trainApi.solvePuzzle).toHaveBeenCalledTimes(1);
+  });
+
+  it('session: going offline during the first attempt pauses the retry until reconnect', async () => {
+    // The mock flips the device offline and then rejects, so the retry finds it offline and
+    // waits (default networkMode). Offline BEFORE the first call would pause with zero calls.
+    vi.mocked(trainApi.composeOrResumeSession)
+      .mockImplementationOnce(() => {
+        onlineManager.setOnline(false);
+        return Promise.reject(networkError());
+      })
+      .mockResolvedValue(makeSession());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(1));
+    // Give the retry every chance to run; it must stay paused.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(1);
+    expect(result.current.isSessionError).toBe(false);
+    expect(result.current.isSessionPending).toBe(true);
+
+    act(() => onlineManager.setOnline(true));
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    expect(result.current.isSessionError).toBe(false);
+    expect(trainApi.composeOrResumeSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('solve: two ERR_NETWORK failures then success resolves and is counted once', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession());
+    vi.mocked(trainApi.solvePuzzle)
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError())
+      .mockResolvedValue(SOLVE_RESPONSE);
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    await act(async () => {
+      await result.current.solvePuzzle(RETRY_SOLVE_BODY);
+    });
+    expect(trainApi.solvePuzzle).toHaveBeenCalledTimes(3);
+    for (const call of vi.mocked(trainApi.solvePuzzle).mock.calls) {
+      expect(call).toEqual([1, RETRY_SOLVE_BODY]);
+    }
+    expect(result.current.sessionSolvedCount).toBe(1);
+    // Correct guess (1) + good move (2) = 3, added once.
+    expect(result.current.sessionScore).toBe(3);
+  });
+
+  it('solve: offline with ERR_NETWORK forever errors after exactly 3 calls, never waiting for reconnect', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession());
+    vi.mocked(trainApi.solvePuzzle).mockRejectedValue(networkError());
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeRetryWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    act(() => onlineManager.setOnline(false));
+    await act(async () => {
+      await expect(result.current.solvePuzzle(RETRY_SOLVE_BODY)).rejects.toThrow();
+    });
+    await waitFor(() => expect(result.current.isSolveError).toBe(true));
+    expect(trainApi.solvePuzzle).toHaveBeenCalledTimes(3);
   });
 });

@@ -259,7 +259,6 @@ def better_move_graded_moves(
         missed_pv_lines=missed_pv_lines,
         best_move=key_uci,
         ladder=None,
-        filler_solution_uci=None,
     )
     moves = server_graded_moves_for(
         source=DrillSource.SR_ITEM,

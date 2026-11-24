@@ -155,7 +155,6 @@ async def _seed_solves(
                         game_id=None,
                         ply=0,
                         source=int(source),
-                        sharp_puzzle_id=None,
                         correct_guess=correct_guess,
                         correct_move=quality != DrillMoveQuality.WRONG,
                         move_quality=int(quality),

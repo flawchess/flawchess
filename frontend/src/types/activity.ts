@@ -54,8 +54,8 @@ export interface ActivityStatsPayload {
   solves: (string | number | null)[][];
   /**
    * Personalized Puzzles solved puzzles by source, `fetch_puzzle_difficulty`: [source (0 SR
-   * item, 1 red herring, 2 sharp filler), solves, good, inaccuracy, correct_guess]. Sources
-   * with no solves are absent.
+   * item, 1 red herring, 2 retired lichess sharp filler, 3 similar player's blunder), solves,
+   * good, inaccuracy, correct_guess]. Sources with no solves are absent.
    */
   puzzle_difficulty: number[][];
   /**

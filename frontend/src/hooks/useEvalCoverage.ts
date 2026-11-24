@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
+import { withErrorBackoff } from '@/lib/pollBackoff';
 import type { EvalCoverageResponse } from '@/types/api';
 
 // Status poll (cheap eval-coverage count query). 1s for swift card flip / pill
@@ -37,6 +38,51 @@ interface UseEvalCoverageOptions {
   trackFullAnalysis?: boolean;
 }
 
+interface StallTracker {
+  lastAnalyzed: number;
+  stalls: number;
+  lastUpdatedAt: number;
+}
+
+/**
+ * The interval the poll would use on a healthy connection, or false once there is nothing
+ * left to watch. Mutates `stall` (the stall counter advances only on a new successful fetch,
+ * keyed by `dataUpdatedAt`); the error cadence is applied on top by `withErrorBackoff`.
+ */
+function scheduleEvalCoveragePoll(
+  data: EvalCoverageResponse | undefined,
+  dataUpdatedAt: number,
+  trackFullAnalysis: boolean,
+  stall: StallTracker,
+): number | false {
+  // Pre-data / new user (no games yet): keep polling.
+  if (!data || data.total_count === 0) return EVAL_COVERAGE_POLL_INTERVAL_MS;
+
+  // Entry-ply evals still running → always poll. Reset the background-stall tracker.
+  if (data.pct_complete < 100) {
+    stall.lastAnalyzed = data.analyzed_count;
+    stall.stalls = 0;
+    stall.lastUpdatedAt = 0;
+    return EVAL_COVERAGE_POLL_INTERVAL_MS;
+  }
+
+  // Readiness consumers stop here (original behavior).
+  if (!trackFullAnalysis) return false;
+
+  // Full analysis complete → nothing left to watch.
+  if (data.analyzed_count >= data.total_count) return false;
+
+  // Background full-analysis (tier-3) in progress: poll while it makes
+  // progress, back off once it stalls. Advance the counter only on a new fetch.
+  if (dataUpdatedAt !== stall.lastUpdatedAt) {
+    stall.stalls = data.analyzed_count > stall.lastAnalyzed ? 0 : stall.stalls + 1;
+    stall.lastAnalyzed = data.analyzed_count;
+    stall.lastUpdatedAt = dataUpdatedAt;
+  }
+  if (stall.stalls >= MAX_STALL_POLLS) return false;
+  return EVAL_COVERAGE_POLL_INTERVAL_MS;
+}
+
 /** Poll GET /imports/eval-coverage while Stockfish analysis is pending.
  *
  * Defaults to pct=100 / hasPendingEvals=false before the first fetch resolves, so the
@@ -51,6 +97,9 @@ interface UseEvalCoverageOptions {
  *   full analysis is incomplete (analyzed_count < total_count), backing off once
  *   progress stalls so stuck games don't poll forever.
  *
+ * While the query is in an error state the poll runs at most every 30 s
+ * (`withErrorBackoff`, FLAWCHESS-24) and returns to the cadence above after the next success.
+ *
  * All consumers on the same page share one in-flight request via the shared
  * queryKey ['imports', 'eval-coverage'] — TanStack Query deduplicates them.
  */
@@ -60,7 +109,7 @@ export function useEvalCoverage(options?: UseEvalCoverageOptions) {
   // Stall tracker for the trackFullAnalysis poll loop. dataUpdatedAt changes once
   // per successful fetch, so we advance the stall counter only on a genuine new
   // fetch — never on incidental re-renders that also re-run refetchInterval.
-  const stallRef = useRef({ lastAnalyzed: -1, stalls: 0, lastUpdatedAt: 0 });
+  const stallRef = useRef<StallTracker>({ lastAnalyzed: -1, stalls: 0, lastUpdatedAt: 0 });
 
   const query = useQuery<EvalCoverageResponse>({
     queryKey: ['imports', 'eval-coverage'],
@@ -69,34 +118,16 @@ export function useEvalCoverage(options?: UseEvalCoverageOptions) {
       return response.data;
     },
     staleTime: EVAL_COVERAGE_STALE_TIME_MS,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      // Pre-data / new user (no games yet): keep polling.
-      if (!data || data.total_count === 0) return EVAL_COVERAGE_POLL_INTERVAL_MS;
-
-      // Entry-ply evals still running → always poll. Reset the background-stall tracker.
-      if (data.pct_complete < 100) {
-        stallRef.current = { lastAnalyzed: data.analyzed_count, stalls: 0, lastUpdatedAt: 0 };
-        return EVAL_COVERAGE_POLL_INTERVAL_MS;
-      }
-
-      // Readiness consumers stop here (original behavior).
-      if (!trackFullAnalysis) return false;
-
-      // Full analysis complete → nothing left to watch.
-      if (data.analyzed_count >= data.total_count) return false;
-
-      // Background full-analysis (tier-3) in progress: poll while it makes
-      // progress, back off once it stalls. Advance the counter only on a new fetch.
-      const s = stallRef.current;
-      if (query.state.dataUpdatedAt !== s.lastUpdatedAt) {
-        s.stalls = data.analyzed_count > s.lastAnalyzed ? 0 : s.stalls + 1;
-        s.lastAnalyzed = data.analyzed_count;
-        s.lastUpdatedAt = query.state.dataUpdatedAt;
-      }
-      if (s.stalls >= MAX_STALL_POLLS) return false;
-      return EVAL_COVERAGE_POLL_INTERVAL_MS;
-    },
+    refetchInterval: (query) =>
+      withErrorBackoff(
+        scheduleEvalCoveragePoll(
+          query.state.data,
+          query.state.dataUpdatedAt,
+          trackFullAnalysis,
+          stallRef.current,
+        ),
+        query.state.status,
+      ),
   });
 
   const data = query.data;

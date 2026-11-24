@@ -34,6 +34,7 @@ const CLAUSE_INPUT: VerdictClauseInput = {
   moveTier: VERDICT.move_quality,
   isBest: true,
   fromOwnBlunder: true,
+  fromForeignGame: false,
   disagreement: false,
   keySan: null,
 };
@@ -66,8 +67,6 @@ function renderStrip(onExpand?: () => void): void {
         clause={verdictClauseParts(CLAUSE_INPUT)}
         sessionDate="2026-07-27"
         expiresOn={undefined}
-        isWarmup={false}
-        motif={null}
         alsoFineSanList=""
       />
     </TrainVerdictStrip>,

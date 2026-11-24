@@ -27,21 +27,36 @@ function timeControlLabel(bucket: string | null, timeControl: string | null): st
   return parts.length === 0 ? null : parts.join(' ');
 }
 
-function GameLine({ parts }: { parts: readonly (string | null)[] }): ReactElement | null {
+const DEFAULT_GAME_FOOTER_TEST_ID = 'blunder-check-game-footer';
+
+function GameLine({
+  parts,
+  testId = DEFAULT_GAME_FOOTER_TEST_ID,
+}: {
+  parts: readonly (string | null)[];
+  testId?: string;
+}): ReactElement | null {
   const present = parts.filter((part): part is string => part !== null);
   if (present.length === 0) return null;
   return (
-    <p className="text-sm text-muted-foreground" data-testid="blunder-check-game-footer">
+    <p className="text-sm text-muted-foreground" data-testid={testId}>
       Game: {present.join(FOOTER_SEPARATOR)}
     </p>
   );
 }
 
 /** A stranger's game: only the server's neutral facts, no names and no library fetch. */
-function ForeignGameFooter({ gameInfo }: { gameInfo: GameInfo | null }): ReactElement | null {
+export function ForeignGameFooter({
+  gameInfo,
+  testId,
+}: {
+  gameInfo: GameInfo | null;
+  testId?: string;
+}): ReactElement | null {
   if (gameInfo === null) return null;
   return (
     <GameLine
+      testId={testId}
       parts={[
         timeControlLabel(gameInfo.time_control_bucket, gameInfo.time_control_str),
         gameInfo.mover_rating === null ? null : `player rated ${gameInfo.mover_rating}`,

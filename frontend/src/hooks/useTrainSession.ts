@@ -65,13 +65,16 @@
  * own TanStack `data` (not a separate copy) so a retry's eventual success
  * surfaces through the same rendering path as a first-try success, with no
  * extra wiring; `resetSolve` clears it per-puzzle so a stale verdict/error
- * never bleeds into the next puzzle's initial render.
+ * never bleeds into the next puzzle's initial render. Both mutations also repeat
+ * themselves up to twice on a dropped connection (`retryOnNetworkError`), so a
+ * single network blip never reaches the user or Sentry.
  */
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
+import { retryOnNetworkError } from '@/lib/networkRetry';
 import { aggregateSessionScore, scorePuzzle } from '@/lib/trainScore';
 import type {
   SolveRequest,
@@ -181,6 +184,12 @@ export function useTrainSession(): UseTrainSessionResult {
 
   const sessionMutation = useMutation({
     mutationFn: trainApi.composeOrResumeSession,
+    // FLAWCHESS-24: repeat on a dropped connection. Safe because the compose is resume-safe: a
+    // repeat finds the open session (and an overlapping first request is held off by the
+    // uq_drill_sessions_user_open index, whose IntegrityError resumes the winner's session).
+    // Default networkMode and retryDelay (1 s, then 2 s) on purpose: offline, the retry pauses
+    // and the landing loads by itself on reconnect, with no button needed.
+    retry: retryOnNetworkError,
     onSuccess: (data) => {
       setSession(data);
       // ALWAYS seed at 0, never at solved_count — see
@@ -217,6 +226,15 @@ export function useTrainSession(): UseTrainSessionResult {
   const solveMutation = useMutation({
     mutationFn: ({ sessionId, body }: { sessionId: number; body: SolveRequest }) =>
       trainApi.solvePuzzle(sessionId, body),
+    // FLAWCHESS-24: repeat on a dropped connection. Safe because the server claims the row with
+    // an UPDATE guarded on solved_at IS NULL, so a repeat of the identical payload returns the
+    // stored outcome instead of scoring twice. Default retryDelay (1 s, then 2 s).
+    retry: retryOnNetworkError,
+    // 'always': a retry that finds the device offline must fail, not pause. A paused solve
+    // would leave "Checking your move…" up indefinitely (TrainSolveScreen forbids that) and
+    // could land after the user left the loop and re-read the session, counting the puzzle
+    // twice on screen. Offline it settles to the "Couldn't save your result." row with Retry.
+    networkMode: 'always',
     onSuccess: (data, variables) => {
       // The single scorePuzzle formula, never re-derived here.
       const points = scorePuzzle(data.correct_guess, data.move_quality);

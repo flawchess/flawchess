@@ -53,11 +53,19 @@ on `herring_pool_id` instead. NULL for every SR row and every row that predates
 the global herring pool (a herring's `herring_pool_id` is the only non-NULL
 case).
 
-A third `DrillSource` member, `SHARP_FILLER`, backs a static committed CC0
-lichess puzzle set (`app.services.sharp_filler`) rather
-than a table. `sharp_puzzle_id` is non-None only for a `SHARP_FILLER` row —
-`game_id` and `herring_pool_id` both stay NULL for it, mirroring how
-`herring_pool_id` is non-None only for a `RED_HERRING` row.
+A third `DrillSource` member, `LEGACY_SHARP_FILLER` (value 2), is RETIRED (Phase 263 D-03): it
+backed a static committed lichess puzzle set that has been deleted. Rows of that source remain
+as history only (solved ones still count toward session counts, points, weekly standings and
+streaks) and are never composed again. Such a row has no identity key at all: its former
+lichess PuzzleId column was dropped by migration c4e6a8b0d375, and
+`game_id` and `herring_pool_id` stay NULL for it. An unsolved legacy row from a session open at
+deploy is skipped on resume and never blocks the session from completing.
+
+A fourth member, `FOREIGN_BLUNDER` (Phase 263), fills a short session with a servable blunder from
+ANOTHER, non-guest user's game near the solver's rating. The row carries that game's `game_id`
+(`ON DELETE SET NULL`, as above) and the blunder's `ply`; `herring_pool_id` stays NULL. Its position, answer key and puzzle type are read live from the GAME OWNER's
+`game_flaws` / `game_positions` rows (never the solver's, never a snapshot, D-07). It grades on the
+SR path but has no `drill_items` row.
 """
 
 from __future__ import annotations
@@ -74,7 +82,6 @@ from sqlalchemy import (
     Index,
     SmallInteger,
     String,
-    Text,
     UniqueConstraint,
     text,
 )
@@ -85,12 +92,13 @@ from app.models.base import Base
 
 
 class DrillSource(IntEnum):
-    """Which pool a puzzle was drawn from (75/25 SR/herring mix, plus the static
-    sharp-filler set)."""
+    """Which pool a puzzle was drawn from (75/25 SR/herring mix, other users' blunders that
+    fill a short session; value 2 is the retired lichess sharp filler, history rows only)."""
 
     SR_ITEM = 0
     RED_HERRING = 1
-    SHARP_FILLER = 2
+    LEGACY_SHARP_FILLER = 2
+    FOREIGN_BLUNDER = 3
 
 
 class DrillGuess(IntEnum):
@@ -123,7 +131,7 @@ class DrillSolve(Base):
 
     __tablename__ = "drill_solves"
     __table_args__ = (
-        CheckConstraint("source IN (0, 1, 2)", name="ck_drill_solves_source"),
+        CheckConstraint("source IN (0, 1, 2, 3)", name="ck_drill_solves_source"),
         CheckConstraint("guess IS NULL OR guess IN (0, 1)", name="ck_drill_solves_guess"),
         CheckConstraint(
             "move_quality IS NULL OR move_quality IN (0, 1, 2)",
@@ -157,12 +165,6 @@ class DrillSolve(Base):
     herring_pool_id: Mapped[int | None] = mapped_column(
         ForeignKey("herring_pool.id", ondelete="SET NULL"), nullable=True
     )
-
-    # The lichess PuzzleId, opaque external identifier
-    # (TEXT, not an enumeration -- CLAUDE.md DB rule). No ForeignKey — the
-    # referent is a committed data file, not a table. Non-None only for a
-    # SHARP_FILLER row; NULL for every SR_ITEM/RED_HERRING row.
-    sharp_puzzle_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     source: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     # The user's raw pre-attempt guess, submitted by the client. NULL until

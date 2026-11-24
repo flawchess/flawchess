@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 262
+current_phase: 263
 status: completed
-stopped_at: Phase 262 complete — all phases complete
-last_updated: "2026-11-23T20:17:59.142Z"
-last_activity: 2026-11-23
-last_activity_desc: Phase 262 complete
-state_head: a1b4e688750933b17f0a0d4da3646792b8b4287c
+stopped_at: Phase 263 complete — all phases complete
+last_updated: "2026-11-24T04:07:50.243Z"
+last_activity: 2026-11-24
+last_activity_desc: Phase 263 complete
+state_head: c1da0e052f86fb1790af912113416a67aaf196d7
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 63
-  total_plans: 144
-  completed_plans: 140
+  total_plans: 154
+  completed_plans: 150
   percent: 97
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
@@ -21,14 +21,16 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 262
+Phase: 263
 Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-23 — Phase 262 complete
+Last activity: 2026-11-24 — Phase 263 complete
 
 Open threads carried forward (not blockers):
+
+- Phase 263 post-deploy: UAT items 7 (re-run 263-PROD-EXPLAIN.sql on prod, incl. LIMIT 200) and 8 (reveal of a lichess filler solved just before the deploy; finish such a session BEFORE deploying). Accepted as is: WR-03 score bubble on an exhausted day, out-of-band picks at level about 1000 and 2300+ (263-UAT.md).
 
 - Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
 
@@ -209,6 +211,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 263 added 2026-11-23 (explicit user request, "create a branch and worktree from main and add this as phase 263", after the seed was refined in chat the same day): **Similarly Rated Players' Blunders Replace the Lichess Fillers** (SEED-261120-jnw). Foreign blunders near the solver's rating fill a short personalized-puzzle session; the lichess filler serving path (CSV, service, generator, filler branches) is deleted, the solved `source = 2` rows stay as history, and the warm-up concept is retired. Written by hand as 263 (Phase 262 was still on its branch then; it merged to `main` later the same day and this branch was rebased onto it). Built in the worktree `../flawchess-263` on `gsd/phase-263-foreign-blunder-fillers`. Standalone phase, no open milestone; `current_phase` stays 261. Next: `/gsd-discuss-phase 263`.
 - Phase 262 added 2026-11-23 (explicit user request, "let's fix the gate in the same phase. Add a phase", after a readiness review of the seed with a replay of all 21,147 scored dev blunders): **Facepalm Promotions as Material and Key-Move Gate** (SEED-261122-s0j). Promotions credited as material in `line_material.py` (fixes the captured promoted queen too), the key-move term gated on the type rule instead of `loss > 0`, one refit with the owner checkpoint, and a prod material pass limited to rows with a promotion token. Written by hand as 262 (known mature-ROADMAP behavior). Standalone phase, no open milestone; `current_phase` stays 261. Next: `/gsd-discuss-phase 262`.
 - Phase 261 added 2026-11-22 (explicit user request, "can we add a new phase for" the seed, after Phase 259 merged and its switch and drop releases went live): **Blunder-Check Exploration Arm** (SEED-261121-t50). About 20% of blunder windows from a random draw with no facepalm-score cut, a serve-time record of the arm and the score inputs on `blunder_check_windows`, avatar feedback (score, type line, "hard to catch" line) and a calibration script. Written by hand as 261 because Phase 260 exists only on its worktree branch (`gsd/phase-260-facepalm-first-class-move-quality`) and `phase.add` on `main` would have reused 260. Expect a keep-both conflict in ROADMAP.md and here when Phase 260 squash-merges. Standalone phase, no open milestone; `current_phase` stays 259. Next: `/gsd-discuss-phase 261`.
 - Phase 259 added 2026-11-21 (explicit user request, "add phase 259 and start the discuss phase", after the owner reviewed the facepalm score of prod game 2883555 ply 47 and the seed was planted the same day): **Facepalm Score Refit on First Principles** (SEED-261121-tau). A stored best-reply Maia probability and a quiet-point material input replacing `decaying_mean`, one refit; the input is chosen by first principles, the AUC only has to stay in a similar range. Built in its own worktree in parallel with Phase 258; `current_phase` stays 258. Standalone phase, no open milestone.
@@ -992,6 +995,21 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 259]: 259-13: blunder-check cache version 6; render._loses_material reads material_loss; opponent line status counts material inputs
 - [Phase 259]: D-18 JIT outcome keep: disable_jit_for_transaction stays, docstring cites reports/blunder-check/facepalm-jit-259.md (comparison ratio 1.13 > 1.05)
 - [Phase 259]: Drop migration f3a7b9c1e259 applied on dev only; prod stays at e2f6a8b0d259 until plan 15's owner decision
+- [Phase 263]: A puzzle's game_flaws/game_positions rows are keyed by the game owner (Game.user_id); the solver id stays the access scope
+- [Phase 263]: Foreign puzzle game_id never reaches the wire (_wire_game_id), the drill_solves row keeps the real id
+- [Phase 263]: Lichess sharp-filler stage stays after the foreign stage until 263-07; foreign statement has no extra servability predicate (no full_evals_completed_at, no facepalm cut)
+- [Phase 263]: D-13 established user = hasGames and puzzles first_session_done; D-12 welcome (155 chars) exceeds the 145 phone budget, held to seven lines in the test, needs device check
+- [Phase 263]: 263-03: first_ever is computed once in _assemble_session_items and drives both the foreign draw's sharp preference and the first-session order; D-16 binds only with a foreign shortfall
+- [Phase 263]: 263-03: resume, completion and composition types read flaw rows through the game owner (Game.user_id == GameFlaw.user_id) via _OWNER_KEYED_SOURCES
+- [Phase 263]: 263-04: foreign footer nulls game_id before useLibraryGame and enables the shared reveal query for foreign verdicts only; analyzeOpens is 'game' only for sr_item or source-less stale verdicts
+- [Phase 263]: 263-05: retired filler Activity row labelled 'Sharp filler (retired)' (the longer D-19 example overflowed at 320/360px); Accuracy totals use the positive list _ACCURACY_SOURCES
+- [Phase 263]: 263-06: has_tactic_lines is false for a foreign blunder; GameInfo moved to app.schemas.train to avoid a schema import cycle; reveal not_found gate covers foreign orphans (D-09)
+- [Phase 263]: 263-07: eligibility is stamped after the session row is written (has_material=True, stamp-if-NULL), not by a pre-composition probe; the foreign stage is the only residual filler (D-02, D-03)
+- [Phase 263]: 263-07: flagged-session (is_warmup) tests and the guest warm-up router tests were moved onto the foreign stage instead of deleted; 263-09 retires them with the flag
+- [Phase 263]: 263-08: a stale client's solve on a retired lichess filler is classified sharp with no key (client tier recorded); its reveal answers 404; unsolved legacy rows are skipped on resume and excluded from completion
+- [Phase 263]: 263-09: drill_solves.sharp_puzzle_id dropped with drill_sessions.is_warmup in migration c4e6a8b0d375 (owner, 2026-11-23)
+- [Phase 263]: 263-09: own_puzzle_count derived per response (never persisted); resume completes an open session with a solve and nothing servable left
+- [Phase 263]: 263-10: prod EXPLAIN statements use foreign_game_limit(5)=40 games and solver 28; the gate ran clean with no formatter changes, serial full suite 7065 passed
 
 ### Pending Todos
 
@@ -1205,6 +1223,7 @@ None active.
 | 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
 | 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
 | 261123-lb8 | Blunder check scoring rebalance: safe 1 / blunder 2 / better move 1, no forfeit on a miss, better move after a miss | 2026-11-23 | cc0b2cc7c | [261123-lb8-blunder-check-scoring-rebalance](./quick/261123-lb8-blunder-check-scoring-rebalance/) |
+| 261124-5f3 | Sentry follow-ups: Train load and solve retry on dropped connections plus a Retry button, 30 s poll backoff on errors, silent skip of aborted chess.com games | 2026-11-24 | a61030d41 | [261124-5f3-sentry-follow-ups-train-network-retries-](./quick/261124-5f3-sentry-follow-ups-train-network-retries-/) |
 
 ## Deferred Items
 
@@ -1257,9 +1276,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-23T13:09:45.276Z
-**Stopped at:** Phase 262 complete — all phases complete
-**Resume file:** .planning/phases/262-facepalm-promotions-and-key-move-gate/262-CONTEXT.md
+**Last session:** 2026-11-23T22:20:27.440Z
+**Stopped at:** Phase 263 complete — all phases complete
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1562,6 +1581,16 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 259 P10 | 25 min | 2 tasks | 10 files |
 | Phase 259 P13 | 12 min | 3 tasks | 19 files |
 | Phase 259 P14 | 15 min | 2 tasks | 6 files |
+| Phase 263 P01 | 25min | 3 tasks | 14 files |
+| Phase 263 P02 | 20 min | 3 tasks | 23 files |
+| Phase 263 P03 | 40min | 2 tasks | 4 files |
+| Phase 263 P04 | 25min | 2 tasks | 12 files |
+| Phase 263 P05 | 15 min | 2 tasks | 8 files |
+| Phase 263 P06 | 30min | 2 tasks | 7 files |
+| Phase 263 P07 | 16min | 2 tasks | 8 files |
+| Phase 263 P08 | 50min | 2 tasks | 31 files |
+| Phase 263 P09 | 70min | 3 tasks | 16 files |
+| Phase 263 P10 | 85min | 2 tasks | 4 files |
 
 ## Performance Metrics
 

@@ -30,12 +30,11 @@ from app.main import app
 from app.models.train_settings import TrainSettings
 from app.services.train_scheduler import DEFAULT_BLUNDER_CHECK_PER_SESSION
 from tests.blunder_check_seed import register_user
-from tests.routers.test_train_two_mode_streak import (  # noqa: F401 - the autouse fixture must be in scope
+from tests.routers.test_train_two_mode_streak import (
     _compose_and_solve_puzzles,
     _delete_drill_sessions,
     _progress,
     _seed_streak_holder,
-    _sharp_fixture,
 )
 
 _SETTINGS = "/api/train/settings"
@@ -44,6 +43,12 @@ _PUZZLES_SIZE = 6
 _FAR_OUT_OF_RANGE_PUZZLES = 51
 _FAR_OUT_OF_RANGE_BC = 31
 _STORED_BC_SIZE = 4
+
+
+@pytest.fixture(autouse=True)
+def _filled_sessions(foreign_filler_pool: None) -> None:
+    """A user with no games still composes a full puzzle session: the committed stranger pool
+    (tests/conftest.py) is the only filler."""
 
 
 def _body(**overrides: object) -> dict[str, object]:

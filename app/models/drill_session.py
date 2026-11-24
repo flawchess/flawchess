@@ -21,7 +21,6 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -86,11 +85,6 @@ class DrillSession(Base):
     completed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Frozen at composition, same precedent as puzzle_count/requested_count
-    # above — is_warmup is computed exactly once (`len(surviving_sr_keys) == 0`)
-    # at composition time and never recomputed on resume, so the label provably
-    # cannot be shed mid-session even if the ES lottery lands material in between.
-    is_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # First time the user pressed Start/Resume on this session (first-write-wins).
     # Needed because /train composes and persists a session on page mount as a
     # status read, so a row alone does not mean the user ever entered the
