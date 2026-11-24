@@ -2,7 +2,7 @@
 id: SEED-261120-jnw
 status: closed
 closed: 2026-11-24
-closed_reason: shipped to main as Phase 263 (squash-merge b4c91bc60), not yet deployed
+closed_reason: shipped as Phase 263 (squash-merge b4c91bc60, release #508 on 2026-11-24)
 promoted_to: Phase 263 (2026-11-23)
 planted: 2026-11-20
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)

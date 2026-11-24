@@ -184,7 +184,7 @@ _Verifier: Claude (gsd-verifier)_
 ## Addendum 2026-11-24 (orchestrator, at phase close)
 
 Status moved from `human_needed` to `passed`: 263-UAT.md has 6 of 8 items passed (browser UAT plus the owner's
-acceptance). Items 7 (prod EXPLAIN) and 8 (old-filler reveal) are only reachable after the deploy and stay pending there.
+acceptance). Items 7 (prod EXPLAIN) and 8 (old-filler reveal) passed after release #508 on 2026-11-24.
 
 `covered_digest` was recomputed without re-running the verifier. The only covered file that changed since the
 verifier ran is `TrainStartScreen.tsx`, from merging `main` (quick task 261124-5f3: a Retry button in the error state).
