@@ -25,6 +25,7 @@ import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
+import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
@@ -89,10 +90,18 @@ let matchMediaMatches = true;
 // bubble/strip test does not also flip the action bar; the probe render sets it false.
 let smUpMatches = true;
 const SM_UP_QUERY = '(min-width: 640px)';
+// Models a landscape tablet (816x616): the lg gate is off but the side-layout query matches.
+// While set, every query except the sm one matches only TRAIN_SIDE_LAYOUT_QUERY.
+let sideLayoutOnly = false;
+function mediaMatches(query: string): boolean {
+  if (query === SM_UP_QUERY) return smUpMatches;
+  if (sideLayoutOnly) return query === TRAIN_SIDE_LAYOUT_QUERY;
+  return matchMediaMatches;
+}
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
-    matches: query === SM_UP_QUERY ? smUpMatches : matchMediaMatches,
+    matches: mediaMatches(query),
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -3862,6 +3871,25 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
       // The left slot no longer speaks the verdict.
       expect(screen.queryByTestId('train-bot-bubble')).toBeNull();
+    });
+
+    describe('side layout below the lg gate (landscape tablet, 816x616)', () => {
+      afterEach(() => {
+        sideLayoutOnly = false;
+      });
+
+      it('uses the side column, the game-info slot and the always-open verdict card', async () => {
+        sideLayoutOnly = true;
+        await renderScreen(makePuzzle());
+        expect(screen.getByTestId('train-prompt-panel')).not.toBeNull();
+        expect(screen.getByTestId('train-game-info-slot')).not.toBeNull();
+        fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+        await act(async () => {
+          fireEvent.click(screen.getByTestId('drop-e2e4'));
+        });
+        await screen.findByTestId('train-verdict-card');
+        expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+      });
     });
 
     it('the strip is collapsed again on the next puzzle\'s reveal, even after the user opened it', async () => {

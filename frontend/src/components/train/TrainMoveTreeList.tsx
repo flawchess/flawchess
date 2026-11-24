@@ -21,14 +21,15 @@ import type { ReactElement } from 'react';
 import { EngineLines, EngineLinesSkeleton } from '@/components/analysis/EngineLines';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { VariationTreePreview } from '@/components/analysis/VariationTree';
-import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { fenToPly } from '@/hooks/useTrainRevealTree';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
 
 /**
  * Height of the reveal move list: two wrapped token rows on mobile, four on
- * desktop (lg), without scrolling. A row is 24px (text-sm 20px line + py-0.5)
+ * desktop (lg), without scrolling. The `lg` step is deliberate: the 768-1023px landscape
+ * side-layout band is height-constrained (616px / 704px tall), so it keeps the two-row list. A row is 24px (text-sm 20px line + py-0.5)
  * with a 2px gap-y; the box adds 16px padding + 2px border (h-16 scrolls at
  * two rows). Mobile adds a little air under the second row (h-19, still on the
  * 4px grid).
@@ -52,12 +53,12 @@ function TrainStockfishRow({
   tree: TrainRevealTree;
   flipped: boolean;
 }): ReactElement {
-  const isDesktop = useIsDesktop();
+  const isSideLayout = useIsTrainSideLayout();
   const { sfLines } = useEngineDisplaySettings();
   return (
     <div data-testid="train-sf-row">
       {tree.pvLines.length === 0 ? (
-        <EngineLinesSkeleton rows={sfLines} compact={!isDesktop} />
+        <EngineLinesSkeleton rows={sfLines} compact={!isSideLayout} />
       ) : (
         <EngineLines
           pvLines={tree.pvLines}
@@ -68,7 +69,7 @@ function TrainStockfishRow({
           baseFen={tree.fen}
           flipped={flipped}
           onMoveClick={tree.playLine}
-          compact={!isDesktop}
+          compact={!isSideLayout}
         />
       )}
     </div>
@@ -76,15 +77,15 @@ function TrainStockfishRow({
 }
 
 /**
- * Bug fix (Phase 249 UAT): on desktop the reveal's action bar sits below this list in the
- * side column, and the Stockfish row appearing on the first step off the puzzle position
- * pushed it (and Next) down. Desktop holds the row's height at the puzzle position too, so
- * everything below stays put. Phones keep the collapsing row: their bar is fixed.
+ * Bug fix (Phase 249 UAT): in the side layout the reveal's action bar sits below this list in
+ * the side column, and the Stockfish row appearing on the first step off the puzzle position
+ * pushed it (and Next) down. The side layout holds the row's height at the puzzle position
+ * too, so everything below stays put. Phones keep the collapsing row: their bar is fixed.
  */
 function StockfishRowPlaceholder(): ReactElement | null {
-  const isDesktop = useIsDesktop();
+  const isSideLayout = useIsTrainSideLayout();
   const { sfLines } = useEngineDisplaySettings();
-  if (!isDesktop) return null;
+  if (!isSideLayout) return null;
   return (
     <div aria-hidden="true" className="invisible" data-testid="train-sf-row-placeholder">
       <EngineLinesSkeleton rows={sfLines} />
