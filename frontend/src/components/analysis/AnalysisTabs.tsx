@@ -835,6 +835,20 @@ export type AnalysisTabsProps = {
   statsTab: ReactNode;
 };
 
+/**
+ * Tab trigger classes: the icons hide (and the padding tightens) once the strip is narrower
+ * than its tabs need, so the labels stay readable. Bug fix: the last tab overflowed a 360px
+ * phone and the two-column layout (the panel is about 285px wide at 816px), and the page
+ * scrolled sideways. The threshold is icons plus padding (28px per tab) plus the labels, in
+ * `em` of the TabsList (the container, `text-sm`), which is larger at the phone type scale.
+ * Literal classes: Tailwind scans the source.
+ */
+const FOUR_TABS_TRIGGER_CLASS =
+  'gap-1 px-1 @max-[calc(112px+12.2em)]:px-0.5 @max-[calc(112px+12.2em)]:[&_svg]:hidden';
+/** With the Stats tab. */
+const FIVE_TABS_TRIGGER_CLASS =
+  'gap-1 px-1 @max-[calc(140px+14.5em)]:px-0.5 @max-[calc(140px+14.5em)]:[&_svg]:hidden';
+
 // The full tabbed panel (Moves | Eval | Maia | FlawChess [| Stats]) — the mobile
 // takeover's whole body AND the mid-range layout's right column (both reuse it
 // verbatim; only one layout tree renders at a time, so the Tabs mount exactly
@@ -853,6 +867,8 @@ export function AnalysisTabs({
   flawChessTab,
   statsTab,
 }: AnalysisTabsProps): ReactElement {
+  const hasStatsTab = evalChartReady || evalPending;
+  const triggerClass = hasStatsTab ? FIVE_TABS_TRIGGER_CLASS : FOUR_TABS_TRIGGER_CLASS;
   return (
     // Radix fires onValueChange on user selection only, never on mount.
     <Tabs
@@ -862,32 +878,32 @@ export function AnalysisTabs({
       }}
       className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
     >
-      <TabsList variant="underline" className="w-full shrink-0">
-        <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
+      <TabsList variant="underline" className="@container w-full shrink-0 text-sm">
+        <TabsTrigger value="moves" data-testid="analysis-tab-moves" className={triggerClass}>
           <ArrowLeftRight aria-hidden="true" />
           Moves
         </TabsTrigger>
         {/* Engine-colored tab nav: Eval = Stockfish blue, Maia = violet, FlawChess =
             gold — matching each surface's accent (theme.ts). */}
-        <TabsTrigger value="eval" data-testid="analysis-tab-eval" className="gap-1 px-1" style={{ color: STOCKFISH_ACCENT }}>
+        <TabsTrigger value="eval" data-testid="analysis-tab-eval" className={triggerClass} style={{ color: STOCKFISH_ACCENT }}>
           <Cpu aria-hidden="true" />
           Eval
         </TabsTrigger>
-        <TabsTrigger value="human" data-testid="analysis-tab-human" className="gap-1 px-1" style={{ color: MAIA_ACCENT }}>
+        <TabsTrigger value="human" data-testid="analysis-tab-human" className={triggerClass} style={{ color: MAIA_ACCENT }}>
           <User aria-hidden="true" />
           Maia
         </TabsTrigger>
         <TabsTrigger
           value="flawchess"
           data-testid="analysis-tab-flawchess"
-          className="gap-1 px-1"
+          className={triggerClass}
           style={{ color: FLAWCHESS_ENGINE_ACCENT }}
         >
           <ChessKnight aria-hidden="true" />
           FlawChess
         </TabsTrigger>
-        {(evalChartReady || evalPending) && (
-          <TabsTrigger value="stats" data-testid="analysis-tab-stats" className="gap-1 px-1">
+        {hasStatsTab && (
+          <TabsTrigger value="stats" data-testid="analysis-tab-stats" className={triggerClass}>
             <ChartNoAxesColumn aria-hidden="true" />
             Stats
           </TabsTrigger>
@@ -897,7 +913,7 @@ export function AnalysisTabs({
       {evalTab}
       {humanTab}
       {flawChessTab}
-      {(evalChartReady || evalPending) && statsTab}
+      {hasStatsTab && statsTab}
     </Tabs>
   );
 }
