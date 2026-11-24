@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 262
 status: completed
 stopped_at: Phase 262 complete — all phases complete
-last_updated: "2026-11-23T20:17:59.142Z"
+last_updated: "2026-11-24T03:18:07.521Z"
 last_activity: 2026-11-23
 last_activity_desc: Phase 262 complete
-state_head: a1b4e688750933b17f0a0d4da3646792b8b4287c
+state_head: a61030d41582117014313eff131f3fe8ff81dd4a
 progress:
   total_phases: 16
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-23 — Phase 262 complete
+Last activity: 2026-11-24 - Completed quick task 261124-5f3: Sentry follow-ups (Train retries, poll error backoff, silent aborted skip)
 
 Open threads carried forward (not blockers):
 
@@ -1205,6 +1205,7 @@ None active.
 | 189 | Facepalm score label in flaw card + eval chart tooltip (own line) | 2026-11-22 | b9fc7daab | — |
 | 261123-9cw | Settings toggle: Jump button stops only on your own highlights (default off) | 2026-11-23 | 344df62cf | [261123-9cw-add-a-settings-toggle-to-make-the-jump-b](./quick/261123-9cw-add-a-settings-toggle-to-make-the-jump-b/) |
 | 261123-lb8 | Blunder check scoring rebalance: safe 1 / blunder 2 / better move 1, no forfeit on a miss, better move after a miss | 2026-11-23 | cc0b2cc7c | [261123-lb8-blunder-check-scoring-rebalance](./quick/261123-lb8-blunder-check-scoring-rebalance/) |
+| 261124-5f3 | Sentry follow-ups: Train load and solve retry on dropped connections plus a Retry button, 30 s poll backoff on errors, silent skip of aborted chess.com games | 2026-11-24 | a61030d41 | [261124-5f3-sentry-follow-ups-train-network-retries-](./quick/261124-5f3-sentry-follow-ups-train-network-retries-/) |
 
 ## Deferred Items
 
