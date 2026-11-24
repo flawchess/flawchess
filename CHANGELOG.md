@@ -33,7 +33,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Bot speech bubbles on phones show the bot's avatar inside the bubble instead of a name row above it, so the bubble and its buttons take less height (Train, Bots, Endgames, Import, and Hilda's tour on the board).
 - Train on phones in landscape: the board uses the full screen height, the progress row sits above the bot's bubble, and the solution column scrolls beside the board with Next always on screen.
 - Train on portrait tablets and unfolded foldables: the solution's step, Analyze and Next buttons use the same bottom bar as on phones. Bot games between 640 and 800px wide now show their Resign bar too.
-- Unfolded foldables and small tablets in portrait (up to 767px wide) use the larger phone text sizes, so text no longer reads small on a Galaxy Z Fold inner screen.
+- Unfolded foldables use the larger phone text sizes in both orientations (portrait up to 767px wide, landscape below 1024px, which also covers phones held sideways), so text no longer reads small on a Galaxy Z Fold inner screen.
 - Train on unfolded foldables in portrait: the top menu is hidden during a drill and the bot's bubble uses the compact phone layout, as on phones.
 - Train in landscape: the side column grows into the width the board leaves, so the layout fills the screen on foldables of any size instead of leaving empty margins.
 - Phones, foldables and tablets below 1024px wide use the bottom tab bar (icon and label) in both orientations instead of the desktop top menu, which did not fit there. On short landscape screens the slim top header is dropped, and Train drills in landscape hide the bottom bar so the board gets the full height.

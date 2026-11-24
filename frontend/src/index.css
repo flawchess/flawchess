@@ -719,10 +719,13 @@
    Also in portrait up to just below md (768px): an unfolded foldable (Galaxy Z
    Fold8 inner screen, about 704px wide in portrait) is phone-like in how far it
    is held, but its CSS width is past sm, so it got the desktop type scale and
-   read small. Landscape and wider screens are untouched.
+   read small. The same goes for landscape below lg (an unfolded foldable or a
+   phone held sideways, e.g. 941x710 or 852x393), which also uses the phone app
+   frame there. Tablets in portrait from 768px and screens from lg keep the
+   desktop scale.
    Kept unlayered (outside @layer) so it wins over Tailwind utility-layer
    .text-xs / .text-sm / .text-base in the cascade. */
-@media (max-width: 639.98px), (max-width: 767.98px) and (orientation: portrait) {
+@media (max-width: 639.98px), (max-width: 767.98px) and (orientation: portrait), (max-width: 1023.98px) and (orientation: landscape) {
   .text-xs { font-size: 0.875rem; line-height: 1.25rem; }
   .text-sm { font-size: 1rem; line-height: 1.5rem; }
   .text-base { font-size: 1.125rem; line-height: 1.75rem; }
