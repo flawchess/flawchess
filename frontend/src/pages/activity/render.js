@@ -51,7 +51,7 @@ const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
    `arrays`) whose label sorts before the selected window's start. ISO dates
    compare correctly as plain strings, so no parsing is needed. This exists
    ONLY to strip the ROLLING_LEAD_IN_DAYS lookback the server ships so the
-   30-day MAU and the 7-day rolling accuracy are already correct on the
+   30-day MAU and the 7-day WAU are already correct on the
    window's first visible day — the lead-in itself must never be plotted. */
 function trimLeadIn(labels,...arrays){
   const cutoff=DAYS[D.window_start_index];
@@ -114,11 +114,10 @@ function retention(g){
   }
   return out;
 }
-function roll7(rows,numIdx,denIdx){
-  return rows.map((_,i)=>{ let a=0,b=0;
-    for(let j=Math.max(0,i-6);j<=i;j++){ a+=rows[j][numIdx]; b+=rows[j][denIdx]; }
-    return b?a/b:0; });
-}
+/* Per-day ratio of two parallel daily arrays. Daily on purpose, not rolling, so
+   a change shows up in the rate the day it ships. A day with nothing to divide
+   by is null: lineChart skips it, where a 0 would draw as a real drop. */
+function dailyRate(nums,dens){ return nums.map((n,i)=>dens[i]?n/dens[i]:null); }
 
 const totals=()=>({
   users:new Set(ACT.map(a=>a.u)).size,
@@ -360,14 +359,8 @@ function renderSolvesCard(){
     $("#acc-legend").innerHTML="";
     return;
   }
-  // Roll over the FULL expanded (lead-in-inclusive) arrays first, so the
-  // 7-day rolling accuracy is already correct on the window's first visible
-  // day, then trim the lead-in off everything before plotting.
-  const sv=expand(SOLVES,4);
-  const rowsS=sv.labels.map((_,i)=>[0,sv.cols[0][i],sv.cols[2][i],sv.cols[3][i]]);
-  const rolledMove=roll7(rowsS,2,1), rolledGuess=roll7(rowsS,3,1);
-  const [labels,solvesCount,usersCount,tMove,tGuess]=
-    trimLeadIn(sv.labels,sv.cols[0],sv.cols[1],rolledMove,rolledGuess);
+  const sv=expand(SOLVES,4), labels=sv.labels;
+  const [solvesCount,usersCount,rightMove,rightVerdict]=sv.cols;
 
   barChart($("#c-solves"),{labels,h:220,every:5,
     series:[{name:"Puzzles solved",values:solvesCount,color:c.s2}],
@@ -375,8 +368,8 @@ function renderSolvesCard(){
   legend("#acc-legend",[{name:"Right move",color:c.s3,line:1},{name:"Right verdict",color:c.s4,line:1}]);
   lineChart($("#c-acc"),{labels,h:220,every:5,pctAxis:true,yMax:1,
     fmt:v=>Math.round(v*100)+"%",series:[
-      {name:"Right move",values:tMove,color:c.s3},
-      {name:"Right verdict",values:tGuess,color:c.s4}]});
+      {name:"Right move",values:dailyRate(rightMove,solvesCount),color:c.s3},
+      {name:"Right verdict",values:dailyRate(rightVerdict,solvesCount),color:c.s4}]});
 }
 
 // Below this many solved puzzles a row's shares are too noisy to compare, so
@@ -430,27 +423,21 @@ function renderBlunderCheckWindowCards(){
     $("#bc-outcome-legend").innerHTML="";
   };
   if(!BCWIN.length){ empty(); return; }
-  // Roll over the FULL expanded (lead-in-inclusive) arrays first, so the
-  // 7-day rolling score is already correct on the window's first visible
-  // day, then trim the lead-in off everything before plotting.
-  const bw=expand(BCWIN,8), [nWin,nUsers,scored,possible,cleared,caught,missed,falseAlarm]=bw.cols;
-  const rowsB=bw.labels.map((_,i)=>[0,scored[i],possible[i]]);
-  const rolledScore=roll7(rowsB,1,2);
-  const [labels,tWin,tUsers,tScore,tCleared,tCaught,tMissed,tFalse]=
-    trimLeadIn(bw.labels,nWin,nUsers,rolledScore,cleared,caught,missed,falseAlarm);
+  const bw=expand(BCWIN,8), labels=bw.labels;
+  const [nWin,nUsers,scored,possible,cleared,caught,missed,falseAlarm]=bw.cols;
   if(!labels.length){ empty(); return; }
 
   barChart($("#c-bc-windows"),{labels,h:220,every:5,
-    series:[{name:"Sequences judged",values:tWin,color:c.s2}],
-    extra:i=>[{k:"Users",v:tUsers[i]}]});
+    series:[{name:"Sequences judged",values:nWin,color:c.s2}],
+    extra:i=>[{k:"Users",v:nUsers[i]}]});
   lineChart($("#c-bc-score"),{labels,h:220,every:5,pctAxis:true,yMax:1,
     fmt:v=>Math.round(v*100)+"%",
-    series:[{name:"Score % (7-day)",values:tScore,color:c.s3}]});
+    series:[{name:"Score %",values:dailyRate(scored,possible),color:c.s3}]});
   legend("#bc-outcome-legend",[{name:"Caught",color:c.win},{name:"Cleared",color:c.s2},
     {name:"False alarm",color:c.s4},{name:"Missed",color:c.loss}]);
   barChart($("#c-bc-outcomes"),{labels,h:240,every:5,series:[
-    {name:"Caught",values:tCaught,color:c.win},{name:"Cleared",values:tCleared,color:c.s2},
-    {name:"False alarm",values:tFalse,color:c.s4},{name:"Missed",values:tMissed,color:c.loss}]});
+    {name:"Caught",values:caught,color:c.win},{name:"Cleared",values:cleared,color:c.s2},
+    {name:"False alarm",values:falseAlarm,color:c.s4},{name:"Missed",values:missed,color:c.loss}]});
 }
 
 // Below this many judged windows a row's shares are too noisy to compare, so
@@ -555,8 +542,14 @@ function mount(){
     return [b,h];
   });
 
-  let rt=null;
-  const onResize=()=>{clearTimeout(rt);rt=setTimeout(draw,150);};
+  // Width only: mobile browsers fire `resize` when the URL bar collapses on
+  // scroll, and that redraw would drop a tooltip the user just tapped open.
+  let rt=null, lastWidth=window.innerWidth;
+  const onResize=()=>{
+    if(window.innerWidth===lastWidth) return;
+    lastWidth=window.innerWidth;
+    clearTimeout(rt);rt=setTimeout(draw,150);
+  };
   addEventListener("resize",onResize);
 
   const mq=matchMedia("(prefers-color-scheme: dark)");

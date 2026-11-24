@@ -30,7 +30,7 @@ Last activity: 2026-11-24 — Phase 263 complete
 
 Open threads carried forward (not blockers):
 
-- Phase 263 post-deploy: UAT items 7 (re-run 263-PROD-EXPLAIN.sql on prod, incl. LIMIT 200) and 8 (reveal of a lichess filler solved just before the deploy; finish such a session BEFORE deploying). Accepted as is: WR-03 score bubble on an exhausted day, out-of-band picks at level about 1000 and 2300+ (263-UAT.md).
+- Phase 263 accepted as is: WR-03 score bubble on an exhausted day, out-of-band picks at level about 1000 and 2300+ (263-UAT.md). Band draw at LIMIT 200 runs at 492 ms of a 500 ms budget on prod.
 
 - Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
 

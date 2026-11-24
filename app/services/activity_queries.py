@@ -48,7 +48,7 @@ RANGE_WINDOW_DAYS: Final[dict[RangeKey, int | None]] = {
 # The widest rolling window on the page is the 30-day MAU; 29 PRIOR days (its
 # own day already counts toward the 30) are enough lookback for the window's
 # first visible day to already be a correct 30-day MAU and a correct 7-day
-# rolling Train/solve accuracy, without shipping a whole extra window's worth
+# WAU, without shipping a whole extra window's worth
 # of data the client would have to plot and then hide.
 ROLLING_LEAD_IN_DAYS: Final[int] = 29
 
@@ -482,7 +482,7 @@ async def fetch_blunder_check_sessions(
 
 
 async def fetch_blunder_check_windows(
-    conn: AsyncConnection, lead_in_start: datetime.date, window_end: datetime.date
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> list[list[Any]]:
     """Blunder Check windows judged per day, with points and outcome mix.
 
@@ -490,9 +490,8 @@ async def fetch_blunder_check_windows(
     caught, missed, false_alarm]. A window is judged when `outcome IS NOT
     NULL`, bucketed by the day it ended: the same definition as
     `fetch_week_bc_aggregates` (app/repositories/train_leaderboard_repository.py),
-    so the dashboard and the weekly boards agree. Fetched from the lead-in
-    start (like `fetch_solves`) so the client's 7-day rolling score is already
-    full on the window's first visible day.
+    so the dashboard and the weekly boards agree. Bounded by the window start,
+    not the lead-in: the client plots each day on its own, nothing is rolled.
     """
     return _table(
         await _rows(
@@ -508,10 +507,10 @@ async def fetch_blunder_check_windows(
                    count(*) FILTER (WHERE w.outcome = :false_alarm) AS false_alarm
             FROM blunder_check_windows w
             WHERE w.outcome IS NOT NULL
-              AND w.ended_at >= CAST(:lead_in AS date) AND w.ended_at < CAST(:last AS date)
+              AND w.ended_at >= CAST(:start AS date) AND w.ended_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
-            lead_in=lead_in_start,
+            start=window_start,
             last=_end_exclusive(window_end),
             cleared=int(WindowOutcome.CLEARED),
             caught=int(WindowOutcome.CAUGHT),
@@ -652,7 +651,7 @@ async def fetch_train_funnel(
 
 
 async def fetch_solves(
-    conn: AsyncConnection, lead_in_start: datetime.date, window_end: datetime.date
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> list[list[Any]]:
     return _table(
         await _rows(
@@ -663,11 +662,11 @@ async def fetch_solves(
                    count(*) FILTER (WHERE correct_move) AS correct_move,
                    count(*) FILTER (WHERE correct_guess) AS correct_guess
             FROM drill_solves
-            WHERE solved_at IS NOT NULL AND solved_at >= CAST(:lead_in AS date)
+            WHERE solved_at IS NOT NULL AND solved_at >= CAST(:start AS date)
               AND solved_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
-            lead_in=lead_in_start,
+            start=window_start,
             last=_end_exclusive(window_end),
         )
     )

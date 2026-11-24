@@ -92,13 +92,13 @@ async def build_payload(
             train_funnel=await queries.fetch_train_funnel(
                 conn, window.window_start, window.data_start, end
             ),
-            solves=await queries.fetch_solves(conn, window.lead_in_start, end),
+            solves=await queries.fetch_solves(conn, window.window_start, end),
             puzzle_difficulty=await queries.fetch_puzzle_difficulty(conn, window.window_start, end),
             blunder_check_sessions=await queries.fetch_blunder_check_sessions(
                 conn, window.window_start, end, today=today
             ),
             blunder_check_windows=await queries.fetch_blunder_check_windows(
-                conn, window.lead_in_start, end
+                conn, window.window_start, end
             ),
             blunder_check_difficulty=await queries.fetch_blunder_check_difficulty(
                 conn, window.window_start, end
