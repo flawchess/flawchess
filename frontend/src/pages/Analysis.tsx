@@ -44,6 +44,7 @@ import { useAnalysisEngineLines } from '@/hooks/analysis/useAnalysisEngineLines'
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
 import { useExplainBar } from '@/hooks/analysis/useExplainBar';
 import { useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
+import { AnalysisMoreMenu } from '@/components/analysis/AnalysisMoreMenu';
 import { ExplainBar } from '@/components/analysis/ExplainBar';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
@@ -51,12 +52,14 @@ import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
 import { useMaiaEngine } from '@/hooks/useMaiaEngine';
 import { nextLineFen } from '@/lib/nextLineFen';
 import { onOff, trackFeature } from '@/lib/analytics';
+import { cn } from '@/lib/utils';
 import {
   useMaiaEloDefault,
   deriveRawDefault,
   clampToLadderBounds,
   FREE_PLAY_DEFAULT_ELO,
 } from '@/hooks/useMaiaEloDefault';
+import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useFlawChessEngine } from '@/hooks/useFlawChessEngine';
 import { useEngineAssetStatus } from '@/hooks/useEngineAssets';
 import { engineGateRequired } from '@/lib/engine/engineAssetProgress';
@@ -102,7 +105,6 @@ import {
   EloSelectorPanel,
   FlawChessCard,
   MoveListHeaderContent,
-  PgnFenMenu,
   HumanTab,
   FlawChessTab,
   MobileEngineLines,
@@ -165,9 +167,19 @@ const EVAL_BAR_NEUTRAL_FRACTION = 0.5;
  *  (App.tsx uses `md:max-desk3col:` so [0,768) stays locked for the takeover's footer chain,
  *  [768,1200) scrolls for the two-column layout). Note this is now above the shell's `sm`
  *  chrome breakpoint (640px). The app frame switches at lg (1024px), so below it the page
- *  sits under its own mobile header (AnalysisMobileHeader), in the takeover and in the
- *  mid-range two-column layout alike. */
+ *  page has no header and renders the phone footer, in the takeover and in the mid-range
+ *  two-column layout alike (see `hasPhoneFooter`). */
 const MOBILE_BREAKPOINT_PX = 768;
+
+/** The two-column layout's phone footer (below lg): pinned like the app's bottom tab bar. On a
+ *  short screen (a phone held sideways, below 560px tall) it stays in flow instead: pinned, it
+ *  would leave less height than the board needs, so the whole board could never be seen. */
+const MID_PHONE_FOOTER_CLASS = 'fixed inset-x-0 bottom-0 z-40 short:static';
+/** Bottom padding that lets the page end above the pinned footer (about 70px tall). */
+const MID_PHONE_FOOTER_CLEARANCE_CLASS = 'pb-24 short:pb-4';
+/** The tab panel's height when it fills the screen down to the pinned footer: the viewport less
+ *  the page's top padding (1rem), MID_PHONE_FOOTER_CLEARANCE_CLASS (6rem) and the notch. */
+const MID_PHONE_FOOTER_PANEL_HEIGHT = '100dvh - 7rem - env(safe-area-inset-top, 0px)';
 
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
  *  at/above this width the locked desktop 3-column grid engages; between
@@ -332,6 +344,10 @@ export default function Analysis() {
   const layoutMode = useAnalysisLayoutMode();
   const isMobile = layoutMode === 'mobile';
   const isMid = layoutMode === 'mid';
+  // Below lg the app shell has no header on this page (the nav header shows from lg), so the
+  // page renders the phone footer, whose More menu holds the exit and settings.
+  const isDesktopFrame = useIsDesktop();
+  const hasPhoneFooter = isMobile || (isMid && !isDesktopFrame);
 
   // The same non-dismissible gate Bots.tsx mounts,
   // now on the analysis board too. The lazy initializer form is load-bearing
@@ -2066,7 +2082,7 @@ export default function Analysis() {
     topPlayerColor,
     bottomPlayerColor,
     sharedPlayerBarProps: { pastedHeaders, gameData, playerClocks, position },
-    boardControlsProps: {
+    boardControlsProps: hasPhoneFooter ? null : {
       onBack: goBack,
       onForward: goForward,
       onReset: handleReset,
@@ -2171,8 +2187,36 @@ export default function Analysis() {
     <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} />
   );
   // Mobile: icon-only menu under the SF eval bar instead of the move-list header.
-  const pgnFenIconMenu = (
-    <PgnFenMenu onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} iconOnly />
+  const phoneMoreMenu = (
+    <AnalysisMoreMenu
+      onFlip={() => setBoardFlipped((f) => !f)}
+      onOpenPasteModal={() => setPasteModalOpen(true)}
+      fen={position}
+      getPgn={getPgn}
+    />
+  );
+  // The phone frame's board-controls footer (hasPhoneFooter): in flow at the end of the
+  // mobile takeover, pinned to the viewport in the two-column layout below lg.
+  const phoneFooterNode = (className: string) => (
+    <div
+      data-testid="analysis-mobile-footer"
+      className={cn('border-t border-border bg-background px-2 py-2 pb-safe', className)}
+    >
+      <BoardControls
+        onBack={goBack}
+        onForward={goForward}
+        onReset={handleReset}
+        canGoBack={currentNodeId !== null}
+        canReset={canReset}
+        canGoForward={canGoForward}
+        isGameMode={isGameMode}
+        onFastForwardStart={fastForward.start}
+        canFastForward={fastForward.canFastForward}
+        flat
+        labels
+        infoSlot={phoneMoreMenu}
+      />
+    </div>
   );
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
@@ -2191,7 +2235,7 @@ export default function Analysis() {
       movesTab={
         <MovesTab
           moveListKey={moveListKey}
-          moveListHeaderContent={isMobile ? null : moveListHeaderContent}
+          moveListHeaderContent={hasPhoneFooter ? null : moveListHeaderContent}
           variationTree={
             <VariationTreePanel
               variant="vertical"
@@ -2421,7 +2465,8 @@ export default function Analysis() {
   // ── Mid-range two-column layout (MOBILE_BREAKPOINT_PX .. desk3col) ─────────────
   // Two columns split 60/40:
   //   • left (60%):  the board (JS-sized to the column width), its flanking eval bars, the
-  //            player rows, and the board controls. (No eval chart here — mobile parity:
+  //            player rows, and from lg the board controls (below lg they are the phone
+  //            footer, pinned under both columns). (No eval chart here — mobile parity:
   //            it lives in the Eval tab; desktopBoardStage suppresses it when isMid.)
   //   • right (40%): the full tabbed panel (Moves | Eval | Maia | FlawChess | Stats) — the
   //            SAME analysisTabs the mobile takeover renders, reused verbatim. The eval
@@ -2438,17 +2483,21 @@ export default function Analysis() {
     // parent renders the move-tree list empty — the same reason the desktop movesCard
     // needs a height-bounded flex parent). Falls back to the bare board height, then to
     // auto, until the stage measures (a brief first-paint transient).
-    const tabPanelHeightStyle: CSSProperties | undefined = boardStageHeight
-      ? { height: Math.round(boardStageHeight) }
-      : boardWidth
-        ? { height: Math.round(boardWidth) }
-        : undefined;
+    // Below lg it also fills the space down to the pinned phone footer when that is more.
+    const tabPanelBasePx = Math.round(boardStageHeight || boardWidth);
+    const tabPanelHeightStyle: CSSProperties | undefined =
+      tabPanelBasePx === 0
+        ? undefined
+        : { height: hasPhoneFooter ? `max(${tabPanelBasePx}px, ${MID_PHONE_FOOTER_PANEL_HEIGHT})` : tabPanelBasePx };
     return (
-      <div data-testid="analysis-page" className="flex min-h-0 flex-1 flex-col bg-background">
+      <div
+        data-testid="analysis-page"
+        className={cn('flex min-h-0 flex-1 flex-col bg-background', hasPhoneFooter && 'pt-safe')}
+      >
         {pasteModalNode}
         {engineGateNode}
         <main
-          className="mx-auto w-full px-4 py-4 pb-20 md:px-6"
+          className={cn('mx-auto w-full px-4 py-4 md:px-6', hasPhoneFooter ? MID_PHONE_FOOTER_CLEARANCE_CLASS : 'pb-20')}
           style={{ maxWidth: DESKTOP_GRID_MAX_WIDTH_PX }}
         >
           {/* Game load error (CLAUDE.md isError branch). */}
@@ -2473,6 +2522,7 @@ export default function Analysis() {
             </div>
           </div>
         </main>
+        {hasPhoneFooter && phoneFooterNode(MID_PHONE_FOOTER_CLASS)}
       </div>
     );
   }
@@ -2480,13 +2530,15 @@ export default function Analysis() {
   // ── Mobile takeover layout (< MOBILE_BREAKPOINT_PX) ───────────────────────────
   // Board + eval bar, then a tab view (Moves | Eval | Maia | FlawChess [| Stats]) that
   // fills the space down to the in-flow board-controls footer. The Stockfish PV lines
-  // live at the top of the Eval tab (not above the board). The shell's back-button
-  // header + suppressed bottom nav (ProtectedLayout) complete the takeover.
+  // live at the top of the Eval tab (not above the board). The shell renders no header
+  // and no bottom nav here (ProtectedLayout); the footer's More menu holds the exit,
+  // settings, PGN/FEN tools and flip.
   if (isMobile) {
     return (
       <div
         data-testid="analysis-page"
-        className="flex min-h-0 flex-1 flex-col bg-background"
+        // pt-safe: no header above on phones, so the page itself clears the notch.
+        className="flex min-h-0 flex-1 flex-col bg-background pt-safe"
       >
         {pasteModalNode}
         {engineGateNode}
@@ -2517,12 +2569,9 @@ export default function Analysis() {
             rightEvalBar={rightEvalBarNode()}
             containerRef={containerRef}
           />
-          {/* Rendered even without player bars: the slot under the SF eval bar holds the
-              icon-only PGN/FEN menu, which replaces the mobile move-list header (UAT:
-              reclaims that header's vertical space). */}
-          <BoardFooterRow
-            player={
-              showPlayerBars ? (
+          {showPlayerBars && (
+            <BoardFooterRow
+              player={
                 <AnalysisPlayerBar
                   color={bottomPlayerColor}
                   pastedHeaders={pastedHeaders}
@@ -2530,10 +2579,9 @@ export default function Analysis() {
                   playerClocks={playerClocks}
                   position={position}
                 />
-              ) : null
-            }
-            rightSlot={pgnFenIconMenu}
-          />
+              }
+            />
+          )}
         </div>
 
         {/* Game load error (CLAUDE.md isError branch). */}
@@ -2565,25 +2613,7 @@ export default function Analysis() {
         <ExplainBar placement="mobile" {...explainBarControls} />
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
-        <div
-          data-testid="analysis-mobile-footer"
-          className="shrink-0 border-t border-border bg-background px-2 py-2 pb-safe"
-        >
-          <BoardControls
-            onBack={goBack}
-            onForward={goForward}
-            onReset={handleReset}
-            onFlip={() => setBoardFlipped((f) => !f)}
-            canGoBack={currentNodeId !== null}
-            canReset={canReset}
-            canGoForward={canGoForward}
-            isGameMode={isGameMode}
-            onFastForwardStart={fastForward.start}
-            canFastForward={fastForward.canFastForward}
-            flat
-            labels
-          />
-        </div>
+        {phoneFooterNode('shrink-0')}
       </div>
     );
   }

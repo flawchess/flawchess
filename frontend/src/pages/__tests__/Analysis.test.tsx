@@ -2380,11 +2380,21 @@ describe('Mobile Stats tab: present during analysis, then the MoveStats panel', 
     clientWidthSpy.mockRestore();
   });
 
-  // Board flip is a layout-agnostic re-render trigger (present in the mobile footer),
-  // unlike the desktop block's Maia toggle which is buried inside a tab here.
+  // Board flip (in the footer's More menu) is a re-render trigger that needs no tab
+  // switch, unlike the desktop block's Maia toggle which is buried inside a tab here.
+  // Radix menus open on Enter or pointerdown, never on a bare click.
   function forceRerender(): void {
-    fireEvent.click(screen.getByTestId('board-btn-flip'));
+    fireEvent.keyDown(screen.getByTestId('analysis-btn-more'), { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('analysis-menu-flip'));
   }
+
+  it('the footer has More instead of Flip, and no PGN/FEN button', () => {
+    renderAnalysis('/analysis');
+    const footer = screen.getByTestId('analysis-mobile-footer');
+    expect(within(footer).getByTestId('analysis-btn-more')).toBeTruthy();
+    expect(screen.queryByTestId('board-btn-flip')).toBeNull();
+    expect(screen.queryByTestId('analysis-btn-paste')).toBeNull();
+  });
 
   it('renders the Stats tab trigger while analysis is still pending — not only once evals land', () => {
     libraryGameState.data = buildGame({
@@ -3447,6 +3457,29 @@ describe('Explain bar placement', () => {
     expect(bars).toHaveLength(1);
     expect(bars[0]!.getAttribute('data-placement')).toBe('mid');
     expect(screen.queryByTestId('analysis-movelist-card')).toBeNull();
+  });
+
+  it('mid below lg (768-1023px, unfolded foldables): the phone footer replaces the in-column controls', () => {
+    stubMatchMedia((q) => /max-width:\s*1199px/.test(q));
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const footer = screen.getByTestId('analysis-mobile-footer');
+    expect(within(footer).getByTestId('analysis-btn-more')).toBeTruthy();
+    expect(screen.getAllByTestId('board-btn-forward')).toHaveLength(1);
+    expect(within(footer).getByTestId('board-btn-forward')).toBeTruthy();
+    expect(screen.queryByTestId('board-btn-flip')).toBeNull();
+    expect(screen.queryByTestId('analysis-btn-paste')).toBeNull();
+  });
+
+  it('mid from lg (1024-1199px): the in-column controls and the PGN/FEN menu stay, no phone footer', () => {
+    stubMatchMedia((q) => /max-width:\s*1199px/.test(q) || /min-width:\s*1024px/.test(q));
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    expect(screen.queryByTestId('analysis-mobile-footer')).toBeNull();
+    expect(screen.getByTestId('board-btn-flip')).toBeTruthy();
+    expect(screen.getByTestId('analysis-btn-paste')).toBeTruthy();
   });
 
   it('D-08: an inaccuracy ply shows no bar even with usable tactic-line data', () => {

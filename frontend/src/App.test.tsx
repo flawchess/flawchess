@@ -118,7 +118,7 @@ afterEach(() => {
   useTrainProgressSpy.mockClear();
 });
 
-import { NavHeader, MobileBottomBar, MobileMoreDrawer, MobileHeader, AnalysisMobileHeader } from './App';
+import { NavHeader, MobileBottomBar, MobileMoreDrawer, MobileHeader } from './App';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { MUTE_KEY } from '@/lib/sounds';
@@ -1586,25 +1586,6 @@ describe('settings overlay entry', () => {
 
     fireEvent.click(row);
     expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
-  });
-
-  it('mobile /analysis header: cogwheel opens the sheet in place without navigating', async () => {
-    render(
-      <MemoryRouter initialEntries={['/analysis']}>
-        <TooltipProvider>
-          <Routes>
-            <Route path="/analysis" element={<AnalysisMobileHeader />} />
-            <Route path="/settings" element={<div data-testid="settings-route-sentinel" />} />
-          </Routes>
-        </TooltipProvider>
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByTestId('btn-analysis-settings'));
-
-    expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
-    expect(screen.queryByTestId('settings-route-sentinel')).toBeNull();
-    expect(screen.getByTestId('analysis-mobile-header')).toBeTruthy();
   });
 });
 

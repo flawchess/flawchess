@@ -405,6 +405,7 @@ export const PANEL_TARGETS = [
   'bookmark-suggestions',
   'settings',
   'more-drawer',
+  'analysis-more',
   'train-verdict-strip',
   'blunder-check-verdict-strip',
   'opening-insights-more',

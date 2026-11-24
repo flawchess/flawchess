@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
-import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useSearchParams } from 'react-router';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +11,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Puzzle, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
+import { BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Puzzle, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -369,37 +369,6 @@ export function MobileHeader() {
   );
 }
 
-// ─── Analysis mobile header ───────────────────────────────────────────────────
-
-// The analysis page takes over the mobile shell: a back button (browser back) replaces
-// the logo, and the board controls replace the bottom nav bar (rendered by the page).
-export function AnalysisMobileHeader() {
-  const navigate = useNavigate();
-  return (
-    <header
-      data-testid="analysis-mobile-header"
-      className="block lg:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
-    >
-      {/* Wider tap target (w-16) so the back button matches the generous
-          board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-12 w-16 -ml-1"
-        onClick={() => navigate(-1)}
-        aria-label="Go back"
-        data-testid="btn-analysis-back"
-      >
-        <ArrowLeft className="h-6 w-6" />
-      </Button>
-      <span className="text-sm font-medium text-foreground">Analysis</span>
-      {/* Opens the settings sheet in place (no navigation, so the board and any
-          unsaved free-play tree stay put). ml-auto pins it top right, like the bot game. */}
-      <SettingsSheetButton testId="btn-analysis-settings" className="ml-auto h-12 w-12" />
-    </header>
-  );
-}
-
 // ─── Mobile bottom bar ────────────────────────────────────────────────────────
 
 // Shared by both MobileBottomBar branches (main nav / board controls) so the
@@ -660,7 +629,7 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
-  // The analysis page takes over the mobile shell (back-button header + board-controls
+  // The analysis page takes over the mobile shell (below lg: no header, and a board-controls
   // footer owned by the page), so it gets a full-height flex chain on mobile and the
   // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
   const isAnalysisRoute = location.pathname.startsWith('/analysis');
@@ -783,7 +752,6 @@ function ProtectedLayout() {
             range sidesteps that ordering dependency entirely. */}
         <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:h-auto short:block deskshort:h-auto deskshort:block">
           <NavHeader />
-          <AnalysisMobileHeader />
           <main className="flex-1 min-h-0 flex flex-col md:max-desk3col:block md:max-desk3col:flex-none short:block short:flex-none deskshort:block deskshort:flex-none">
             <Outlet />
           </main>

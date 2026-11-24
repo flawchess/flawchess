@@ -62,7 +62,8 @@ export type DesktopBoardStageProps = {
   topPlayerColor: 'white' | 'black';
   bottomPlayerColor: 'white' | 'black';
   sharedPlayerBarProps: SharedPlayerBarProps;
-  boardControlsProps: Omit<Parameters<typeof BoardControls>[0], 'flat' | 'size'>;
+  /** Null below lg, where the page renders the controls in its phone footer instead. */
+  boardControlsProps: Omit<Parameters<typeof BoardControls>[0], 'flat' | 'size'> | null;
   isMid: boolean;
   evalChartReady: boolean;
   evalPending: boolean;
@@ -162,12 +163,14 @@ export function DesktopBoardStage({
             the chart (bottom of the group), never the controls. Capped to the board
             group width by the parent's maxWidth, so it aligns to the board edges.
             Charcoal container (Card) to match the surrounding engine cards. */}
-        <Card className="w-full px-1">
-          <BoardControls {...boardControlsProps} flat size="wide" />
-        </Card>
+        {boardControlsProps !== null && (
+          <Card className="w-full px-1">
+            <BoardControls {...boardControlsProps} flat size="wide" />
+          </Card>
+        )}
 
         {/* Explain bar: mid layout only. In mid the move list lives in a tab that can be
-            hidden while the board controls stay visible, so the bar sits under them. The
+            hidden while the board stays visible, so the bar sits under it (and, from lg, its controls). The
             3-column desktop mounts the bar in the MovesCard footer and mobile mounts it
             above analysis-mobile-footer. */}
         {isMid && explainBar}

@@ -27,7 +27,8 @@ interface BoardControlsProps {
   onFastForward?: () => void;
   /** Enable state for the fast-forward button. Ignored when onFastForward is omitted. */
   canFastForward?: boolean;
-  /** Optional slot for an info icon rendered at the end of the bar */
+  /** Optional slot rendered at the end of the bar: an info icon, or a labelled column
+   * (Train's Analyze, the phone /analysis footer's More menu). */
   infoSlot?: React.ReactNode;
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
