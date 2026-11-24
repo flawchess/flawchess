@@ -1,13 +1,28 @@
 /**
  * TrainBotBubble — the ONE chat-row slot under the board.
- * Purely presentational: no data fetching, no Train domain logic. A left
- * avatar column (persona art + name) and a right speech bubble carrying
- * whatever copy/actions the caller passes — `resolveBubbleState` (the
- * caller's job, via `trainBubbleState.ts`) decides WHAT state is active;
- * this component only renders it.
+ * Purely presentational: no data fetching, no Train domain logic. A speech bubble
+ * carrying whatever copy/actions the caller passes, plus the persona's avatar —
+ * `resolveBubbleState` (the caller's job, via `trainBubbleState.ts`) decides WHAT
+ * state is active; this component only renders it.
+ *
+ * Two layouts, mounted exclusively through `useIsSmUp` (one placement in the DOM, the
+ * convention the reveal action bar uses): from `sm` up, an avatar + name column BESIDE the
+ * bubble with a left-pointing tail. On phones, the avatar is floated top-left INSIDE the
+ * bubble (no name row, no tail), so the bubble costs far less height. The landscape band
+ * (`useIsTrainSideBand`: 640-1023px wide in landscape) uses the same compact layout, since
+ * the Train side column there is narrow and the screen is short, and so does a portrait
+ * foldable (`useIsPortraitFoldable`: 640-767px wide in portrait). A CSS-only single node
+ * is not clean here: on phones the avatar must sit inside the bubble's border, while from
+ * `sm` up it lives in a column whose width comes from the name and which sets the row's
+ * minimum height; absolute positioning on `sm+` would lose both.
+ *
+ * Bug fix (Galaxy Z Fold8 cover screen): the old phone header row (55px avatar plus the name
+ * above the bubble, with an up-pointing tail) cost about 63px and pushed the blunder-check
+ * Ready button behind the bottom tab bar.
  */
 
 import type { ReactElement, ReactNode } from 'react';
+import { useIsPortraitFoldable, useIsSmUp, useIsTrainSideBand } from '@/hooks/useIsDesktop';
 import { cn } from '@/lib/utils';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -16,27 +31,36 @@ import { TRAIN_BUBBLE_BORDER, TRAIN_BUBBLE_NUDGE_BORDER } from '@/lib/theme';
 import type { TrainBubbleState } from '@/components/train/trainBubbleState';
 
 /**
- * Avatar size for the Train chat row, deliberately its own size; each surface
- * picks what fits its layout. 80px (`size-20`) on `sm+`, which must not
- * change.
- *
- * On phones (`max-sm`) the avatar column collapses into a compact avatar +
- * name header (55px) ABOVE the bubble instead of a column BESIDE it, so the
- * copy gets the whole bubble width.
+ * Avatar size for the Train chat row's `sm+` column, deliberately its own size; each
+ * surface picks what fits its layout. 80px (`size-20`), which must not change.
  */
-const TRAIN_BOT_AVATAR_CLASS = 'size-[55px] sm:size-20';
+const TRAIN_BOT_AVATAR_CLASS = 'size-20 text-3xl';
 
 /**
- * The /train landing's host bubble: one size step larger on both breakpoints
- * than the solve loop's avatar (which must not move).
+ * The /train landing's host bubble: one size step larger than the solve loop's avatar
+ * (which must not move).
  */
-const TRAIN_BOT_AVATAR_LARGE_CLASS = 'size-14 sm:size-24';
+const TRAIN_BOT_AVATAR_LARGE_CLASS = 'size-24 text-3xl';
+
+/**
+ * The phone avatar floated inside the bubble. Default is 40px (`size-10`), the height of
+ * two `text-sm` lines (2 x 20px), so the first two copy lines wrap beside it.
+ */
+const TRAIN_BOT_FLOAT_AVATAR_CLASS = 'size-10 text-xl';
+
+/** The large step's floated avatar: the 96/80 column ratio applied to 40px, about 48px, on the 4px grid. */
+const TRAIN_BOT_FLOAT_AVATAR_LARGE_CLASS = 'size-12 text-2xl';
 
 export type TrainBotAvatarSize = 'default' | 'large';
 
 const AVATAR_SIZE_CLASS: Record<TrainBotAvatarSize, string> = {
   default: TRAIN_BOT_AVATAR_CLASS,
   large: TRAIN_BOT_AVATAR_LARGE_CLASS,
+};
+
+const FLOAT_AVATAR_SIZE_CLASS: Record<TrainBotAvatarSize, string> = {
+  default: TRAIN_BOT_FLOAT_AVATAR_CLASS,
+  large: TRAIN_BOT_FLOAT_AVATAR_LARGE_CLASS,
 };
 
 export interface TrainBotBubbleProps {
@@ -55,11 +79,12 @@ export interface TrainBotBubbleProps {
   /** Optional action row (guess buttons, or Next/Solution/Analyze), rendered
    * as its own row INSIDE the bubble, below `children`. */
   actions?: ReactNode;
-  /** Avatar size step; only the /train landing page uses `'large'`. */
+  /** Avatar size step (column on `sm+`, floated avatar on phones); only the /train landing page uses `'large'`. */
   avatarSize?: TrainBotAvatarSize;
   /**
-   * Replaces the avatar + name column (the blunder-check countdown ring). It sits BESIDE the
-   * bubble on every breakpoint, phones included, so it costs no extra row under the board.
+   * Replaces the avatar (the blunder-check countdown ring). It sits BESIDE the bubble on
+   * every breakpoint, phones included, with the left-pointing tail, so it costs no extra row
+   * under the board. The compact floated-avatar layout does not apply to it.
    */
   leading?: ReactNode;
 }
@@ -99,7 +124,15 @@ export function TrainBotBubble({
   avatarSize = 'default',
   leading,
 }: TrainBotBubbleProps): ReactElement {
+  const isSmUp = useIsSmUp();
+  const isSideBand = useIsTrainSideBand();
   const sideBySide = leading !== undefined;
+  // Phones without a leading slot: the avatar floats inside the bubble. Also the landscape
+  // band (640-1023px wide in landscape), where the Train side column is narrow and
+  // an avatar + name column beside the bubble wrapped short copy onto four lines.
+  // And a portrait foldable (640-767px wide in portrait), which reads like a phone.
+  const isPortraitFoldable = useIsPortraitFoldable();
+  const compact = !sideBySide && (!isSmUp || isSideBand || isPortraitFoldable);
   const isNudge = state === 'drop-nudge';
   // `resolveBubbleState` ranks `intro` above `drop-nudge`, so a piece dropped
   // while Hilda's guess step is up keeps the intro copy: a nudge must not
@@ -111,22 +144,17 @@ export function TrainBotBubble({
 
   return (
     <div
-      className={cn(
-        'flex w-full',
-        sideBySide ? 'flex-row items-start gap-3' : 'flex-col gap-2 sm:flex-row sm:items-start sm:gap-3',
-      )}
+      className={cn('flex w-full', !compact && 'flex-row items-start gap-3')}
+      role={compact ? 'group' : undefined}
+      aria-label={compact ? persona.name : undefined}
       data-testid="train-bot-bubble"
       data-state={state}
       data-nudge={isNudge ? 'true' : undefined}
     >
-      {sideBySide ? (
-        leading
-      ) : (
-        <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:gap-1">
-          <TrainBotAvatar
-            persona={persona}
-            className={cn('text-xl sm:text-3xl', AVATAR_SIZE_CLASS[avatarSize])}
-          />
+      {sideBySide && leading}
+      {!sideBySide && !compact && (
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <TrainBotAvatar persona={persona} className={AVATAR_SIZE_CLASS[avatarSize]} />
           <span className="text-sm font-medium text-foreground" data-testid="train-bot-name">
             {persona.name}
           </span>
@@ -136,30 +164,38 @@ export function TrainBotBubble({
         key={nudgeNonce}
         className={cn(
           'relative min-w-0 flex-1 rounded-2xl border-2 bg-background px-4 py-3',
+          // Contains the floated avatar.
+          compact && 'flow-root',
           !prefersReducedMotion() && pulses && 'animate-train-bubble-nudge',
         )}
         style={{ borderColor }}
       >
         {/* Tail — a rotated square clipped to two of its borders, the classic
             CSS speech-bubble triangle, so it always tracks the bubble's
-            current border color. Points left at the avatar column on `sm+`;
-            on phones the avatar header sits ABOVE the bubble, so the tail
-            points up from the top-left corner instead. */}
-        <div
-          aria-hidden="true"
-          className={cn(
-            'absolute h-3 w-3 rotate-45 bg-background',
-            sideBySide
-              ? '-left-[7px] top-4 border-b-2 border-l-2'
-              : 'max-sm:-top-[7px] max-sm:left-4 max-sm:border-l-2 max-sm:border-t-2 sm:-left-[7px] sm:top-4 sm:border-b-2 sm:border-l-2',
-          )}
-          style={{ borderColor }}
-        />
+            current border color. Points left at the avatar column; the compact
+            phone layout has the avatar inside the bubble, so it has no tail. */}
+        {!compact && (
+          <div
+            aria-hidden="true"
+            className="absolute -left-[7px] top-4 h-3 w-3 rotate-45 border-b-2 border-l-2 bg-background"
+            style={{ borderColor }}
+          />
+        )}
+        {compact && (
+          <TrainBotAvatar
+            persona={persona}
+            className={cn('float-left mr-3', FLOAT_AVATAR_SIZE_CLASS[avatarSize])}
+          />
+        )}
         <div className="text-sm" data-testid="train-bot-copy">
           {children}
         </div>
         {/* The action row sits bottom-RIGHT inside the bubble, where a phone
-            thumb reaches it. */}
+            thumb reaches it. On phones it is NOT cleared past the floated avatar:
+            a flex container establishes its own formatting context, so it is laid
+            out beside the float (narrowed) with `justify-end` putting the buttons
+            at the bottom right next to the avatar. It drops below the avatar only
+            when the copy is taller than the avatar or the buttons do not fit beside it. */}
         {actions !== undefined && (
           <div className="mt-2 flex flex-wrap justify-end gap-2">{actions}</div>
         )}

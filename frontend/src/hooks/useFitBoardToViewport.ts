@@ -90,6 +90,13 @@ export function useFitBoardToViewport({
     // well as the board's own resize.
     const observer = new ResizeObserver(measure);
     if (column !== null) observer.observe(column);
+    // Bug fix (Train landscape band): chrome ABOVE the column can change without resizing the
+    // column or the window. The drills hide the nav header from an effect after their first
+    // render, so the column moved up but kept the fit measured under the header, leaving the
+    // board ~50px too small on a 616px-tall foldable. The body resizes whenever anything above
+    // the column appears or goes, so observing it re-measures then (the fit converges, so an
+    // extra measurement is a no-op).
+    observer.observe(document.body);
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();

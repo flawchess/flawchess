@@ -164,8 +164,9 @@ const EVAL_BAR_NEUTRAL_FRACTION = 0.5;
  *  (768px) — MUST stay in sync with the shell's height-lock unlock band in ProtectedLayout
  *  (App.tsx uses `md:max-desk3col:` so [0,768) stays locked for the takeover's footer chain,
  *  [768,1200) scrolls for the two-column layout). Note this is now above the shell's `sm`
- *  chrome breakpoint (640px), so the 640–768 slice shows the takeover under the desktop nav
- *  header — functionally fine (locked shell, full nav available). */
+ *  chrome breakpoint (640px). The app frame switches at lg (1024px), so below it the page
+ *  sits under its own mobile header (AnalysisMobileHeader), in the takeover and in the
+ *  mid-range two-column layout alike. */
 const MOBILE_BREAKPOINT_PX = 768;
 
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):

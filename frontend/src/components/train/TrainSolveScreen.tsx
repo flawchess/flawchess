@@ -43,11 +43,7 @@ import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainReveal } from '@/components/train/TrainReveal';
 import { TrainRevealGameFooter } from '@/components/train/TrainRevealGameFooter';
 import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
-import {
-  TrainRevealActionBar,
-  TrainRevealControlsRow,
-  TrainRevealFooter,
-} from '@/components/train/TrainRevealActionBar';
+import { TrainRevealControlsRow, TrainRevealFooter } from '@/components/train/TrainRevealActionBar';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import type {
   ServerGradedMove,
@@ -59,7 +55,7 @@ import type {
 } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsDesktop, useIsSmUp } from '@/hooks/useIsDesktop';
+import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealEvalReading, RevealUserMove } from '@/hooks/useTrainRevealTree';
 import { useTrainLiveAlternatives } from '@/hooks/useTrainLiveAlternatives';
@@ -138,6 +134,15 @@ import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
 import {
+  SHORT_SIDE_BOARD_GUTTER_PX,
+  SHORT_SIDE_FOOTER_RESET_CLASS,
+  SHORT_SIDE_FRAME_CLASS,
+  SHORT_SIDE_STICKY_FOOTER_CLASS,
+  SHORT_SIDE_TOP_RESET_CLASS,
+  TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+  TRAIN_SIDE_ROW_GAP_CLASS,
+} from '@/lib/trainSideLayout';
+import {
   SEV_INACCURACY,
   SEV_MISTAKE,
   ZONE_DANGER,
@@ -204,12 +209,13 @@ const TRAIN_BOARD_MIN_WIDTH_PX = 240;
  */
 const TRAIN_BOARD_BOTTOM_GUTTER_PX = 40;
 /*
- * Below Tailwind's `lg` breakpoint the board is WIDTH-bound only — the height
- * fit (`useFitBoardToViewport`) runs on desktop alone (`useIsDesktop`).
+ * In the stacked layout (below the side-layout gate, see lib/trainSideLayout.ts) the
+ * board is WIDTH-bound only — the height fit (`useFitBoardToViewport`) runs in the side
+ * layout alone (`useIsTrainSideLayout`).
  * Folding the phone bottom bar into the fit's gutter would shrink the board
  * to its 240px floor on a 375x667 phone and leave wide empty margins beside
  * it, so the board is full-width and the bot bubble scrolls underneath the
- * pinned board. Below `lg` the measured column is also `display: contents`
+ * pinned board. Stacked, the measured column is also `display: contents`
  * (see the JSX), so the fit could not measure it there anyway.
  */
 /*
@@ -252,12 +258,12 @@ const GAME_INFO_SLOT_CLASS = 'min-h-11 w-full';
  * full height, which ends with the game-info slot (44px) and its 12px gap, so
  * this bottom margin puts the footer back on the board's bottom edge.
  */
-const NEXT_FOOTER_CLASS = 'mt-auto mb-14';
+const NEXT_FOOTER_CLASS = `mt-auto mb-14 ${SHORT_SIDE_FOOTER_RESET_CLASS} ${SHORT_SIDE_STICKY_FOOTER_CLASS}`;
 /**
- * The desktop right column before the reveal (the bot bubble). Same box as
+ * The side layout's right column before the reveal (the bot bubble). Same box as
  * TrainReveal's own root, which replaces it, so the board never moves.
  */
-const PROMPT_SIDE_CLASS = 'flex w-full flex-col items-center gap-4 lg:mt-8 lg:max-w-sm';
+const PROMPT_SIDE_CLASS = `flex w-full flex-col items-center gap-4 trainside:mt-8 ${SHORT_SIDE_TOP_RESET_CLASS} ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
 
 /**
  * Synthetic search depth handed to `EvalBar` for a terminal
@@ -735,13 +741,18 @@ export function TrainSolveScreen({
   // tour's scroll-to-cards effect.
   const screenRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef<HTMLDivElement>(null);
-  const isDesktop = useIsDesktop();
-  // Exactly one reveal action bar is mounted. On desktop it is split across
-  // the reveal column (controls row + Next footer), on tablets the in-flow bar under the board; below `sm` it
-  // is the fixed bottom bar fed by the published payload. Mounting more than
+  // Bug fix (Galaxy Z Fold8 landscape, 816x616 / 933x704): below 1024px the drill fell into
+  // the phone stack under the desktop nav header, the width-bound 600px board overflowed the
+  // viewport bottom and the bubble sat below the fold; the side column and the height fit now
+  // engage on the trainside gate (1024px and up, or 768px and up in landscape).
+  const isSideLayout = useIsTrainSideLayout();
+  // Exactly one reveal action bar is mounted. In the side layout it is split across
+  // the reveal column (controls row + Next footer); in the stacked layout it is the
+  // fixed bottom bar fed by the published payload. Bug fix (Galaxy Z Fold8 inner
+  // screen, portrait): the stacked layout from `sm` up had a cramped in-flow bar under
+  // the board; it now uses the bottom bar like phones do. Mounting more than
   // one (CSS-hidden) would duplicate btn-train-next / btn-train-analyze /
   // train-reveal-action-bar testids in the DOM.
-  const isSmUp = useIsSmUp();
 
   // The played move's classified quality — derived once here and
   // shared by the board overlay below AND the reveal's chips (marks), so the two
@@ -933,7 +944,7 @@ export function TrainSolveScreen({
     settings,
     hasVerdict: verdict !== null,
     analyzeOpens,
-    isDesktop,
+    isDesktop: isSideLayout,
     // A reveal restored after the Analyze round trip is the one the user already
     // saw: it never starts a tour part.
     isRestored: restoredSolve !== null,
@@ -973,13 +984,15 @@ export function TrainSolveScreen({
   useEffect(() => {
     if (tourActive) puzzleTelemetry.markTourActive();
   }, [tourActive, puzzleTelemetry]);
+  // A phone in landscape: a small gutter, so the board gets the screen's height.
+  const isShortSide = useIsTrainShortSide();
   const boardMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef,
     maxPx: TRAIN_BOARD_MAX_WIDTH_PX,
     minPx: TRAIN_BOARD_MIN_WIDTH_PX,
-    gutterPx: TRAIN_BOARD_BOTTOM_GUTTER_PX,
-    enabled: isDesktop,
+    gutterPx: isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : TRAIN_BOARD_BOTTOM_GUTTER_PX,
+    enabled: isSideLayout,
   });
   const [engineTimedOut, setEngineTimedOut] = useState(false);
   // Bumped by a manual engine retry so the readiness-timeout effect below
@@ -1391,14 +1404,17 @@ export function TrainSolveScreen({
   // On phones the reveal bar replaces the main nav
   // buttons in the fixed bottom bar for the WHOLE reveal, from the moment the
   // verdict lands (`showReveal`); null before it and on unmount, so a stale
-  // payload can never press Next for a puzzle no longer on screen. The sm+ hosts
-  // render the same bar in the page flow below.
+  // payload can never press Next for a puzzle no longer on screen. The same
+  // applies to portrait tablets and unfolded foldables (the whole stacked
+  // layout); the side layout renders the bar in its reveal column instead.
   const revealCanReset = !revealTree.isAtRoot;
   const revealCanGoBack = revealTree.canGoBack;
   const revealCanGoForward = revealTree.canGoForward;
   const mobileBoardControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
-      verdict !== null && showReveal && !isSmUp
+      // The stacked layout (phones, portrait tablets, unfolded foldables) publishes to the
+      // fixed bottom bar; the side layout renders the bar as the reveal column's footer.
+      verdict !== null && showReveal && !isSideLayout
         ? {
             onBack: revealGoBack,
             onForward: revealGoForward,
@@ -1415,7 +1431,7 @@ export function TrainSolveScreen({
     [
       verdict,
       showReveal,
-      isSmUp,
+      isSideLayout,
       revealGoBack,
       revealGoForward,
       handleRewind,
@@ -1746,9 +1762,9 @@ export function TrainSolveScreen({
 
   // Bug fix (Phase 249 UAT): this block (the bot bubble and its engine states)
   // used to sit under the board on desktop, with the right column existing
-  // only once the reveal opened, so the board jumped left on every reveal. On
-  // desktop it now renders in that right column, which the reveal then takes
-  // over; below `lg` it stays under the board.
+  // only once the reveal opened, so the board jumped left on every reveal. In
+  // the side layout it now renders in that right column, which the reveal then
+  // takes over; stacked, it stays under the board.
   // A landed verdict is never displaced by the engine-error or
   // engine-loading branches. On the instant path the verdict is
   // server-final while the background grade still runs, so a Worker error (e.g. a
@@ -1817,52 +1833,14 @@ export function TrainSolveScreen({
         </>
       );
 
-  return (
-    <div
-      // The board column's fitted width, published as a custom property so the
-      // MOBILE stack can cap itself with a class (`max-w-[var(...)]`) that
-      // `lg:max-w-none` can still override — an inline `max-width` could not be
-      // beaten by a breakpoint utility. Below `lg` this makes the reveal panel
-      // exactly as wide as the board column, which the sticky pinning below
-      // depends on: a wider reveal would scroll past the pinned column's
-      // background and show two strips of moving cards flanking the board.
-      style={{ '--train-col-max': `${boardMaxWidthPx}px` } as CSSProperties}
-      ref={screenRef}
-      className="mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 lg:mx-0 lg:max-w-none lg:flex-row lg:items-start lg:justify-center lg:gap-8"
-      data-testid="train-solve-screen"
-    >
-      <div
-        ref={columnRef}
-        // Desktop: the left column (progress + board + bot bubble), measured
-        // by `useFitBoardToViewport`. Below `lg` it is `display: contents` so
-        // the pinned block below becomes a direct child of the page-long outer
-        // container — a sticky element only sticks within its parent's box,
-        // and this column ends at the bubble, which is exactly where the board
-        // must stay pinned while the reveal beneath it is read.
-        className="max-lg:contents lg:flex lg:w-full lg:flex-col lg:items-center lg:gap-3"
-        style={{ maxWidth: boardMaxWidthPx }}
-      >
-      <div
-        // Mobile: the progress row + board pin to the top of the viewport so
-        // the board never scrolls out of sight while the bot bubble and the
-        // reveal panel are read beneath it — the reveal's arrows/spotlight are
-        // meaningless when the board they annotate is off screen. Desktop
-        // already sits the reveal in its own column, so the whole treatment is
-        // `max-lg:`. The opaque background is what the scrolled-under content
-        // passes behind. The bot bubble is deliberately OUTSIDE
-        // this pinned block (it scrolls away behind the board) so the pinned
-        // strip stays short on phones. The block has no bottom padding of its
-        // own: the outer container's gap alone separates the board from the
-        // bubble's avatar.
-        ref={pinnedRef}
-        className="flex w-full flex-col items-center gap-3 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background"
-        data-testid="train-pinned-board"
-      >
-      {/* One compact row — "n of m", the bar, "x / y pts".
-          On phones (below `sm`) the mobile header is suppressed during play,
-          so the row spans only the board and the settings cogwheel takes the
-          corner above the eval-bar slot (same `w-5` + `gap-2` geometry as the
-          board row below). At `sm`+ the desktop nav carries its own cog. */}
+  // One compact row — "n of m", the bar, "x / y pts".
+  // On phones (below `sm`) the mobile header is suppressed during play,
+  // so the row spans only the board and the settings cogwheel takes the
+  // corner above the eval-bar slot (same `w-5` + `gap-2` geometry as the
+  // board row below). At `sm`+ the desktop nav carries its own cog.
+  // Short side layout (a phone in landscape): the row tops the side column instead, so the
+  // board column holds the board alone and gets the screen's full height.
+  const progressRow = (
       <div className="flex w-full items-center gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <p className="shrink-0 text-sm font-semibold" data-testid="train-progress">
@@ -1885,13 +1863,120 @@ export function TrainSolveScreen({
       </div>
         {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
             keeps the row at its text height, so the board is not pushed down). */}
-        <div className="flex w-5 shrink-0 justify-center sm:hidden">
+        <div className="flex w-5 shrink-0 justify-center lg:hidden">
           <SettingsSheetButton
             testId="btn-train-settings"
             className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"
           />
         </div>
       </div>
+  );
+
+  // The reveal column (only rendered while `showReveal`).
+  const revealNode = (
+    <TrainReveal
+      puzzle={puzzle}
+      sessionId={trainSession.session?.session_id ?? null}
+      verdict={verdict}
+      isSolveError={trainSession.isSolveError}
+      onRetrySolve={trainSession.retrySolve}
+      onNext={handleNext}
+      gradingEngine={gradingEngine}
+      playedMoveUci={lastPlayedUci}
+      gradeResult={gradeResult}
+      instantGrade={instantGrade}
+      chips={chips}
+      activeChip={revealTree.activeChip}
+      onChipSelect={handleChipSelect}
+      treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
+      onGameMoveUciChange={setGameMoveUci}
+      onGameMoveFacepalmChange={setGameMoveFacepalm}
+      onGameMoveLineStateChange={setGameMoveLineState}
+      alsoFineMoves={alsoFineMoves}
+      tourTarget={tourTarget}
+      verdictBot={verdictBot}
+      verdictOpening={verdictOpening}
+      isBest={playedIsBest}
+      sessionDate={trainSession.session?.session_date}
+      expiresOn={trainSession.session?.expires_on}
+      onStripExpand={handleStripExpand}
+      // Exactly one bar: the bottom-bar payload publishes in the stacked layout,
+      // these render in the side layout.
+      controlsRow={
+        verdict !== null && isSideLayout ? (
+          <TrainRevealControlsRow
+            onRewind={handleRewind}
+            onBack={revealGoBack}
+            onForward={revealGoForward}
+            canRewind={revealCanReset}
+            canGoBack={revealCanGoBack}
+            canGoForward={revealCanGoForward}
+            onFlip={handleFlipBoard}
+          />
+        ) : undefined
+      }
+      showGameFooter={!isSideLayout || isShortSide}
+      header={isShortSide ? progressRow : undefined}
+      nextButton={
+        verdict !== null && isSideLayout ? (
+          <TrainRevealFooter
+            onNext={handleBarNext}
+            analyzeTo={analyzeTo}
+            onAnalyzeClick={handleBarAnalyzeClick}
+            spotlightAnalyze={tourTarget === 'analyze'}
+            className={NEXT_FOOTER_CLASS}
+          />
+        ) : undefined
+      }
+    />
+  );
+
+  return (
+    <div
+      // The board column's fitted width, published as a custom property so the
+      // MOBILE stack can cap itself with a class (`max-w-[var(...)]`) that
+      // `trainside:max-w-none` can still override — an inline `max-width` could not be
+      // beaten by a breakpoint utility. Stacked, this makes the reveal panel
+      // exactly as wide as the board column, which the sticky pinning below
+      // depends on: a wider reveal would scroll past the pinned column's
+      // background and show two strips of moving cards flanking the board.
+      style={{ '--train-col-max': `${boardMaxWidthPx}px` } as CSSProperties}
+      ref={screenRef}
+      className={`mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 trainside:mx-0 trainside:max-w-none trainside:flex-row trainside:items-start trainside:justify-center ${TRAIN_SIDE_ROW_GAP_CLASS}`}
+      data-testid="train-solve-screen"
+    >
+      <div
+        ref={columnRef}
+        // Side layout: the left column (progress + board + bot bubble), measured
+        // by `useFitBoardToViewport`. Stacked it is `display: contents` so
+        // the pinned block below becomes a direct child of the page-long outer
+        // container — a sticky element only sticks within its parent's box,
+        // and this column ends at the bubble, which is exactly where the board
+        // must stay pinned while the reveal beneath it is read.
+        // `min-w-0`: the board sizes from this column's width, so the column must be able to
+        // shrink below the board's current size. Bug fix (near-square foldables, e.g. 820x791): with
+        // the default `min-width: auto` the board kept its height-fitted size and the row
+        // overflowed by up to 44px next to the side column's 272px floor.
+        className="contents trainside:flex trainside:w-full trainside:min-w-0 trainside:flex-col trainside:items-center trainside:gap-3"
+        style={{ maxWidth: boardMaxWidthPx }}
+      >
+      <div
+        // Stacked layout: the progress row + board pin to the top of the viewport so
+        // the board never scrolls out of sight while the bot bubble and the
+        // reveal panel are read beneath it — the reveal's arrows/spotlight are
+        // meaningless when the board they annotate is off screen. The side
+        // layout already sits the reveal in its own column, so the treatment is
+        // reset there (`trainside:`). The opaque background is what the scrolled-under content
+        // passes behind. The bot bubble is deliberately OUTSIDE
+        // this pinned block (it scrolls away behind the board) so the pinned
+        // strip stays short on phones. The block has no bottom padding of its
+        // own: the outer container's gap alone separates the board from the
+        // bubble's avatar.
+        ref={pinnedRef}
+        className="sticky top-0 z-10 flex w-full flex-col items-center gap-3 bg-background trainside:static trainside:z-auto trainside:bg-transparent"
+        data-testid="train-pinned-board"
+      >
+      {!isShortSide && progressRow}
       <div
         ref={boardRef}
         className={cn(
@@ -1967,31 +2052,10 @@ export function TrainSolveScreen({
           )}
         </div>
       </div>
-      {/* The reveal's action bar under the board on tablets (`sm` up to `lg`).
-          Phones get the same bar in the fixed bottom bar through the published
-          payload; desktop gets it as the reveal column's footer (below), so
-          nothing sits under the desktop board before or after the reveal and
-          the height-fitted board never changes size. */}
-      {verdict !== null && showReveal && isSmUp && !isDesktop && (
-        <TrainRevealActionBar
-          onRewind={handleRewind}
-          onBack={revealGoBack}
-          onForward={revealGoForward}
-          canRewind={revealCanReset}
-          canGoBack={revealCanGoBack}
-          canGoForward={revealCanGoForward}
-          analyzeTo={analyzeTo}
-          onAnalyzeClick={handleBarAnalyzeClick}
-          onNext={handleBarNext}
-          framed
-          spotlightAnalyze={tourTarget === 'analyze'}
-          className="w-full"
-        />
-      )}
-      {/* Desktop: the game info sits under the board, not in the sidebar (Phase
+      {/* Side layout: the game info sits under the board, not in the sidebar (Phase
           249 UAT). The slot is always there, so the height-fitted board is the
           same size before and after the reveal fills it. */}
-      {isDesktop && (
+      {isSideLayout && !isShortSide && (
         <div className={GAME_INFO_SLOT_CLASS} data-testid="train-game-info-slot">
           {verdict !== null && showReveal && (
             <TrainRevealGameFooter
@@ -2003,69 +2067,23 @@ export function TrainSolveScreen({
         </div>
       )}
       </div>
-      {!isDesktop && promptArea}
+      {!isSideLayout && promptArea}
       </div>
-      {isDesktop && !showReveal && (
+      {isSideLayout && !showReveal && (
         <div className={PROMPT_SIDE_CLASS} data-testid="train-prompt-panel">
+          {isShortSide && progressRow}
           {promptArea}
         </div>
       )}
-      {showReveal && (
-        <TrainReveal
-          puzzle={puzzle}
-          sessionId={trainSession.session?.session_id ?? null}
-          verdict={verdict}
-          isSolveError={trainSession.isSolveError}
-          onRetrySolve={trainSession.retrySolve}
-          onNext={handleNext}
-          gradingEngine={gradingEngine}
-          playedMoveUci={lastPlayedUci}
-          gradeResult={gradeResult}
-          instantGrade={instantGrade}
-          chips={chips}
-          activeChip={revealTree.activeChip}
-          onChipSelect={handleChipSelect}
-          treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
-          onGameMoveUciChange={setGameMoveUci}
-          onGameMoveFacepalmChange={setGameMoveFacepalm}
-          onGameMoveLineStateChange={setGameMoveLineState}
-          alsoFineMoves={alsoFineMoves}
-          tourTarget={tourTarget}
-          verdictBot={verdictBot}
-          verdictOpening={verdictOpening}
-          isBest={playedIsBest}
-          sessionDate={trainSession.session?.session_date}
-          expiresOn={trainSession.session?.expires_on}
-          onStripExpand={handleStripExpand}
-          // `isSmUp` keeps the one-bar invariant explicit: the phone payload
-          // publishes exactly when it is false.
-          controlsRow={
-            verdict !== null && isDesktop && isSmUp ? (
-              <TrainRevealControlsRow
-                onRewind={handleRewind}
-                onBack={revealGoBack}
-                onForward={revealGoForward}
-                canRewind={revealCanReset}
-                canGoBack={revealCanGoBack}
-                canGoForward={revealCanGoForward}
-                onFlip={handleFlipBoard}
-              />
-            ) : undefined
-          }
-          showGameFooter={!isDesktop}
-          nextButton={
-            verdict !== null && isDesktop && isSmUp ? (
-              <TrainRevealFooter
-                onNext={handleBarNext}
-                analyzeTo={analyzeTo}
-                onAnalyzeClick={handleBarAnalyzeClick}
-                spotlightAnalyze={tourTarget === 'analyze'}
-                className={NEXT_FOOTER_CLASS}
-              />
-            ) : undefined
-          }
-        />
-      )}
+      {showReveal &&
+        (isShortSide ? (
+          // Short side layout: the reveal column scrolls inside a frame as tall as the board.
+          <div className={SHORT_SIDE_FRAME_CLASS} data-testid="train-reveal-short-frame">
+            {revealNode}
+          </div>
+        ) : (
+          revealNode
+        ))}
     </div>
   );
 }

@@ -45,7 +45,17 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
 // bottom bar, which these tests do not mount); jsdom has no matchMedia.
 // `desktop` is flipped per test for the tablet verdict strip (Phase 251 UAT).
 const viewport = vi.hoisted(() => ({ desktop: true }));
-vi.mock('@/hooks/useIsDesktop', () => ({ useIsDesktop: () => viewport.desktop, useIsSmUp: () => true }));
+// The drill layout must key on the side-layout gate alone: the lg hook is pinned to false.
+vi.mock('@/hooks/useIsDesktop', () => ({
+  useIsDesktop: () => false,
+  useIsSmUp: () => true,
+  useIsTrainSideLayout: () => viewport.desktop,
+  // The desktop-path tests model a desktop side column (avatar + name beside the bubble), not
+  // the landscape band's compact bubble, which TrainBotBubble.test covers.
+  useIsTrainSideBand: () => false,
+  useIsPortraitFoldable: () => false,
+  useIsTrainShortSide: () => false,
+}));
 
 vi.mock('@/lib/sounds', () => ({ playSound: vi.fn(), unlockAudio: vi.fn() }));
 

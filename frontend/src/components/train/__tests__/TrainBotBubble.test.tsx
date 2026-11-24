@@ -3,9 +3,11 @@
  * The presentational contract: avatar (real-art vs emoji fallback), name,
  * actions slot, testids, and `data-state`/`data-nudge`. Asserts the nudge
  * through the copy swap and the `data-nudge` attribute, never through the
- * animation class — an animation-class
- * assertion would be environment-dependent on whether `window.matchMedia`
- * is stubbed, which this isolated component test deliberately does not do.
+ * animation class where it can be avoided.
+ *
+ * The module-scope matchMedia stub answers only the `sm` query ("(min-width: 640px)")
+ * from a settable flag (default false: the phone layout) and every other query false,
+ * so `prefersReducedMotion()` stays off and the pulse class remains observable.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -13,25 +15,165 @@ import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 
+import { PORTRAIT_FOLDABLE_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+
+const SM_UP_QUERY = '(min-width: 640px)';
+let smUp = false;
+/** The Train side-layout query; with `lg` (1024px) answering false this is the landscape band. */
+let trainSide = false;
+/** The portrait foldable query (640-767px wide, portrait). */
+let portraitFoldable = false;
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches:
+      query === SM_UP_QUERY
+        ? smUp
+        : query === TRAIN_SIDE_LAYOUT_QUERY
+          ? trainSide
+          : query === PORTRAIT_FOLDABLE_QUERY
+            ? portraitFoldable
+            : false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
 afterEach(() => {
   cleanup();
+  smUp = false;
+  trainSide = false;
+  portraitFoldable = false;
 });
 
 const PERSONA = PERSONA_REGISTRY['wall-1800']; // Hilda — has curated art
 
 describe('TrainBotBubble', () => {
-  it('renders the persona name and avatar, and the copy children', () => {
+  it('renders the avatar and the copy children', () => {
     render(
       <TrainBotBubble persona={PERSONA} state="prompt">
         Is there only one good move, or several?
       </TrainBotBubble>,
     );
 
-    expect(screen.getByTestId('train-bot-name').textContent).toBe(PERSONA.name);
     expect(screen.getByTestId('train-bot-copy').textContent).toBe(
       'Is there only one good move, or several?',
     );
     expect(screen.getByTestId('train-bot-avatar')).not.toBeNull();
+  });
+
+  describe('phone layout (below sm)', () => {
+    it('floats the avatar inside the bubble with no name row, no tail, and the name as the group label', () => {
+      const { container } = render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      expect(screen.queryByTestId('train-bot-name')).toBeNull();
+      const root = screen.getByTestId('train-bot-bubble');
+      expect(root.getAttribute('role')).toBe('group');
+      expect(root.getAttribute('aria-label')).toBe(PERSONA.name);
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(true);
+      expect(avatar.className).toContain('float-left');
+      expect(avatar.className).toContain('size-10');
+      expect(container.querySelector('.rotate-45')).toBeNull();
+    });
+
+    it('renders the actions row inside the bubble', () => {
+      render(
+        <TrainBotBubble persona={PERSONA} state="prompt" actions={<button type="button">Ready</button>}>
+          copy
+        </TrainBotBubble>,
+      );
+
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(screen.getByRole('button', { name: 'Ready' }))).toBe(true);
+    });
+
+    it('uses the larger floated avatar for the large size step', () => {
+      render(
+        <TrainBotBubble persona={PERSONA} state="prompt" avatarSize="large">
+          copy
+        </TrainBotBubble>,
+      );
+
+      expect(screen.getByTestId('train-bot-avatar').className).toContain('size-12');
+    });
+
+    it('keeps the leading variant beside the bubble with the tail and no avatar', () => {
+      const { container } = render(
+        <TrainBotBubble persona={PERSONA} state="prompt" leading={<span data-testid="leading-ring" />}>
+          copy
+        </TrainBotBubble>,
+      );
+
+      expect(screen.getByTestId('leading-ring')).not.toBeNull();
+      expect(screen.queryByTestId('train-bot-avatar')).toBeNull();
+      expect(container.querySelector('.rotate-45')).not.toBeNull();
+    });
+  });
+
+  describe('landscape band (side layout below lg)', () => {
+    it('uses the compact floated avatar even though the window is sm+', () => {
+      smUp = true;
+      trainSide = true;
+      const { container } = render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(true);
+      expect(screen.queryByTestId('train-bot-name')).toBeNull();
+      expect(container.querySelector('.rotate-45')).toBeNull();
+      expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe(PERSONA.name);
+    });
+  });
+
+  describe('portrait foldable (640-767px wide, portrait)', () => {
+    it('uses the compact floated avatar like a phone', () => {
+      smUp = true;
+      portraitFoldable = true;
+      render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(true);
+      expect(screen.queryByTestId('train-bot-name')).toBeNull();
+    });
+  });
+
+  describe('sm+ layout', () => {
+    it('shows the visible name under the avatar column, beside the bubble, with the tail', () => {
+      smUp = true;
+      const { container } = render(
+        <TrainBotBubble persona={PERSONA} state="prompt">
+          copy
+        </TrainBotBubble>,
+      );
+
+      expect(screen.getByTestId('train-bot-name').textContent).toBe(PERSONA.name);
+      const avatar = screen.getByTestId('train-bot-avatar');
+      const bubbleBox = screen.getByTestId('train-bot-copy').parentElement as HTMLElement;
+      expect(bubbleBox.contains(avatar)).toBe(false);
+      expect(avatar.className).toContain('size-20');
+      expect(container.querySelector('.rotate-45')).not.toBeNull();
+      expect(screen.getByTestId('train-bot-bubble').getAttribute('role')).toBeNull();
+    });
   });
 
   it('renders the real-art <img> when resolveAvatarSrc resolves', () => {
@@ -85,9 +227,9 @@ describe('TrainBotBubble', () => {
 
   // During the intro, `resolveBubbleState` ranks `intro`
   // above `drop-nudge`, so a drop while Hilda's guess step is up keeps the
-  // intro copy — the bubble must still pulse (it nudges the bubble
-  // without destroying the current intro step). No matchMedia stub in this
-  // file, so `prefersReducedMotion()` is false and the class is observable.
+  // intro copy — the bubble must still pulse (it nudges the bubble without
+  // destroying the current intro step). The matchMedia stub answers false to the
+  // reduced-motion query, so the class is observable.
   it('pulses on an intro-state nudge without the nudge border or data-nudge', () => {
     const { container } = render(
       <TrainBotBubble persona={PERSONA} state="intro" nudgeNonce={1}>

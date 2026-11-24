@@ -13,6 +13,11 @@
  * interaction), so the arrows and moves it covers become readable. While
  * hidden, Hilda's badge in the board corner brings the current step back. The
  * tour itself only advances through the reveal bar's Next.
+ *
+ * Compact panel: Hilda's avatar floats top-left INSIDE the panel with the copy wrapping
+ * around it, and the step counter floats in the top-right corner. The old panel held the
+ * avatar and the counter in a column beside the copy (there was no name label), so this
+ * one covers less of the board.
  */
 import { Fragment } from 'react';
 import type { ReactElement } from 'react';
@@ -68,7 +73,7 @@ function TourCopy({ copy }: { copy: string }): ReactElement {
 function TourStepCount({ step, stepCount }: { step: number; stepCount: number }): ReactElement | null {
   if (stepCount <= 1) return null;
   return (
-    <span className="text-sm text-muted-foreground" data-testid="train-tour-step-count">
+    <span className="float-right ml-2 text-sm text-muted-foreground" data-testid="train-tour-step-count">
       {step + 1} / {stepCount}
     </span>
   );
@@ -109,15 +114,15 @@ export function TrainTourOverlay({
   }
   return (
     <div
-      className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-start gap-3 rounded-xl border-2 bg-background/85 px-3 py-2 backdrop-blur-sm"
+      className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flow-root rounded-xl border-2 bg-background/85 px-3 py-2 backdrop-blur-sm"
       style={{ borderColor: TRAIN_BUBBLE_BORDER }}
+      role="group"
+      aria-label={persona.name}
       data-testid="train-tour-overlay"
     >
-      <div className="flex shrink-0 flex-col items-center gap-1">
-        <TrainBotAvatar persona={persona} className="size-10 text-xl" />
-        <TourStepCount step={step} stepCount={stepCount} />
-      </div>
-      <p className="min-w-0 flex-1 text-sm" data-testid="train-bot-walkthrough">
+      <TrainBotAvatar persona={persona} className="float-left mr-3 size-10 text-xl" />
+      <TourStepCount step={step} stepCount={stepCount} />
+      <p className="text-sm" data-testid="train-bot-walkthrough">
         <TourCopy copy={copy} />
       </p>
     </div>

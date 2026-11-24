@@ -40,7 +40,12 @@ import {
   shouldShowNoHumanRatedGames,
 } from '@/components/ui/no-human-rated-games-state';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
-import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
+import {
+  getBoardContainerClassName,
+  OPENINGS_MOBILE_CONTENT_COLUMN_CLASS,
+  OPENINGS_MOBILE_ROW_CLASS,
+  OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS,
+} from '@/lib/openingsBoardLayout';
 import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
@@ -54,7 +59,7 @@ import { OpeningsDesktopSidebar } from './openings/OpeningsDesktopSidebar';
 import { OpeningsMobileDrawers } from './openings/OpeningsMobileDrawers';
 import { useOpeningsChartData } from './openings/useOpeningsChartData';
 import { ChessboardInfoCopy } from './openings/ChessboardInfoCopy';
-import { OpeningsMobileBoardPanel } from './openings/OpeningsMobileBoardPanel';
+import { OpeningsMobileBoardPanel, OpeningsMobileOpeningLine } from './openings/OpeningsMobileBoardPanel';
 import { ExplorerTab } from './openings/ExplorerTab';
 import { GamesTab } from './openings/GamesTab';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
@@ -545,7 +550,9 @@ export function OpeningsPage() {
 
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
+      {/* max-lg:short:py-2: a phone held sideways (below 560px tall) keeps the small top
+          padding past md, so the height-fitted board gets those pixels. */}
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6 max-lg:short:py-2">
         {/* Desktop: full-width subnav above the sidebar strip + board/content row
             (matches the Library page). Tabs wraps SidebarLayout so the subnav spans both the
             strip and the content; TabsContent stays inside SidebarLayout to keep Tabs context. */}
@@ -663,140 +670,152 @@ export function OpeningsPage() {
           </OpeningsDesktopSidebar>
         </Tabs>
 
-        {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern) */}
+        {/* Mobile (below lg): stacked in portrait; in landscape the board column sits on the
+            left and the content column (subnav, opening name, move list, tab content) on the
+            right. See lib/openingsBoardLayout.ts. */}
         <div className="lg:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
-          {/* Full-width, non-sticky sub-navigation (like the Library page). The filter
-              affordance lives in the board settings column on Moves/Games, and as a
-              sticky Filters button on Stats (rendered just below). */}
-          <div
-            className="flex items-center gap-2 h-[40px] rounded-md"
-            data-testid="openings-mobile-subnav"
-          >
-            <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
-              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
-                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                Moves
-                {activeTab === 'explorer' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info-mobile" side="bottom">
-                      {TAB_INFO.explorer.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                <Swords className="mr-1.5 h-4 w-4" />
-                Games
-                {activeTab === 'games' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
-                      {TAB_INFO.games.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
-                <BarChart2 className="mr-1.5 h-4 w-4" />
-                Stats
-                {showStatsTabDot && (
-                  <RouteDot testid="openings-stats-notification-dot-mobile" variant="corner" />
-                )}
-              </TabsTrigger>
-            </TabsList>
-          </div>
+          <div className={OPENINGS_MOBILE_ROW_CLASS} data-testid="openings-mobile-layout">
+            {/* Board column — only on the Moves + Games subtabs. First in the DOM so it is the
+                left column in landscape; in portrait the subnav and the Stats row move above
+                it with `order` (OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS). */}
+            <OpeningsMobileBoardPanel
+              activeTab={activeTab}
+              mobileBoardRef={mobileBoardRef}
+              position={chess.position}
+              onPieceDrop={chess.makeMove}
+              flipped={boardFlipped}
+              lastMove={chess.lastMove}
+              arrows={boardArrows}
+              onBack={chess.goBack}
+              onForward={chess.goForward}
+              onReset={() => { chess.reset(); setGamesOffset(0); }}
+              onFlip={() => setBoardFlipped((f) => !f)}
+              canGoBack={chess.currentPly > 0}
+              canGoForward={chess.currentPly < chess.moveHistory.length}
+              onOpenFilterDrawer={openFilterDrawer}
+              filtersNotificationDot={mobileFiltersDot}
+              filterColor={filters.color}
+              onTogglePlayedAs={() => {
+                const newColor: Color = filters.color === 'white' ? 'black' : 'white';
+                // Only the played-as step completes when the colour toggle is used.
+                setFilters({ ...filters, color: newColor });
+                setGamesOffset(0);
+                setBoardFlipped(newColor === 'black');
+                recordPlayedAs();
+                trackFeature('filter-change', { target: 'played-as', value: newColor });
+                if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+              }}
+              showPlayedAsDot={showPlayedAsDot}
+              onOpenBookmarkDrawer={openBookmarkDrawer}
+              showAnalyzeButton={showAnalyzeButton}
+              onAnalyzePosition={handleAnalyzePosition}
+            />
 
-          {/* Sticky row on the non-board Stats subtab, styled like the Library page. The
-              colour switch shares it with the Filters button so there is one sticky row,
-              not two overlapping top-0 ones. On Moves/Games the filter button lives in the
-              board settings column instead, so it is not rendered here. */}
-          {activeTab === 'stats' && (
-            <div className="sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm">
-              {/* relative wrapper: the played-as route dot sits on the switch. onAnyClick records the
-                  step on a click of the already selected colour too, which the switch's own handler
-                  ignores, so the dot never survives a click on its own site. */}
-              <span className="relative inline-flex">
-                <OpeningColorSwitch
-                  idPrefix="mobile"
-                  selected={filters.color}
-                  onSelect={handleStatsColorChange}
-                  onAnyClick={recordPlayedAs}
-                />
-                {showPlayedAsDot && <RouteDot testid="played-as-notification-dot-mobile" variant="corner" />}
-              </span>
-              <Button
-                variant="brand-outline"
-                // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
-                className="relative min-h-11 sm:min-h-0"
-                onClick={openFilterDrawer}
-                data-testid="subnav-filter-button"
-                aria-label="Open filters"
+            <div className={OPENINGS_MOBILE_CONTENT_COLUMN_CLASS} data-testid="openings-mobile-content-column">
+              {/* Full-width, non-sticky sub-navigation (like the Library page). The filter
+                  affordance lives in the board settings column on Moves/Games, and as a
+                  sticky Filters button on Stats (rendered just below). */}
+              <div
+                className={`flex items-center gap-2 h-[40px] rounded-md ${OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS}`}
+                data-testid="openings-mobile-subnav"
               >
-                <SlidersHorizontal className="mr-2 h-4 w-4" />
-                Filters
-                {mobileFiltersDot}
-              </Button>
+                <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
+                  <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                    <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                    Moves
+                    {activeTab === 'explorer' && (
+                      <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                        <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info-mobile" side="bottom">
+                          {TAB_INFO.explorer.text}
+                        </InfoPopover>
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                    <Swords className="mr-1.5 h-4 w-4" />
+                    Games
+                    {activeTab === 'games' && (
+                      <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                        <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
+                          {TAB_INFO.games.text}
+                        </InfoPopover>
+                      </span>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
+                    <BarChart2 className="mr-1.5 h-4 w-4" />
+                    Stats
+                    {showStatsTabDot && (
+                      <RouteDot testid="openings-stats-notification-dot-mobile" variant="corner" />
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              {/* Sticky row on the non-board Stats subtab, styled like the Library page. The
+                  colour switch shares it with the Filters button so there is one sticky row,
+                  not two overlapping top-0 ones. On Moves/Games the filter button lives in the
+                  board settings column instead, so it is not rendered here. */}
+              {activeTab === 'stats' && (
+                <div className={`sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm ${OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS}`}>
+                  {/* relative wrapper: the played-as route dot sits on the switch. onAnyClick records the
+                      step on a click of the already selected colour too, which the switch's own handler
+                      ignores, so the dot never survives a click on its own site. */}
+                  <span className="relative inline-flex">
+                    <OpeningColorSwitch
+                      idPrefix="mobile"
+                      selected={filters.color}
+                      onSelect={handleStatsColorChange}
+                      onAnyClick={recordPlayedAs}
+                    />
+                    {showPlayedAsDot && <RouteDot testid="played-as-notification-dot-mobile" variant="corner" />}
+                  </span>
+                  <Button
+                    variant="brand-outline"
+                    // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
+                    className="relative min-h-11 sm:min-h-0"
+                    onClick={openFilterDrawer}
+                    data-testid="subnav-filter-button"
+                    aria-label="Open filters"
+                  >
+                    <SlidersHorizontal className="mr-2 h-4 w-4" />
+                    Filters
+                    {mobileFiltersDot}
+                  </Button>
+                </div>
+              )}
+
+              <OpeningsMobileOpeningLine
+                activeTab={activeTab}
+                opening={chess.opening}
+                moveHistory={chess.moveHistory}
+                currentPly={chess.currentPly}
+                onMoveClick={chess.goToMove}
+              />
+
+              <OpeningsMobileDrawers
+                filterDrawerOpen={sidebar.filterDrawerOpen}
+                onFilterDrawerOpenChange={handleFilterDrawerOpenChange}
+                localFilters={localFilters}
+                setLocalFilters={setLocalFilters}
+                onApplyMobileFilters={handleMobileFiltersApply}
+                bookmarkDrawerOpen={sidebar.bookmarkDrawerOpen}
+                onBookmarkDrawerOpenChange={handleBookmarkDrawerOpenChange}
+                localBookmarks={localBookmarks}
+                onReorderBookmarks={handleReorder}
+                onLoadBookmark={handleLoadBookmarkFromSidebar}
+                onLocalMatchSideChange={handleLocalMatchSideChange}
+                onOpenSuggestions={openSuggestions}
+                onOpenBookmarkDialog={openBookmarkDialog}
+              />
+
+              <TabsContent value="explorer" className="mt-2">{explorerTabEl}</TabsContent>
+              <TabsContent value="games" className="mt-2">{gamesTabEl}</TabsContent>
+              <TabsContent value="stats" className="mt-2">{statsTabEl}</TabsContent>
             </div>
-          )}
-
-          {/* Non-sticky board block — only visible on Moves + Games subtabs */}
-          <OpeningsMobileBoardPanel
-            activeTab={activeTab}
-            mobileBoardRef={mobileBoardRef}
-            position={chess.position}
-            onPieceDrop={chess.makeMove}
-            flipped={boardFlipped}
-            lastMove={chess.lastMove}
-            arrows={boardArrows}
-            onBack={chess.goBack}
-            onForward={chess.goForward}
-            onReset={() => { chess.reset(); setGamesOffset(0); }}
-            onFlip={() => setBoardFlipped((f) => !f)}
-            canGoBack={chess.currentPly > 0}
-            canGoForward={chess.currentPly < chess.moveHistory.length}
-            onOpenFilterDrawer={openFilterDrawer}
-            filtersNotificationDot={mobileFiltersDot}
-            filterColor={filters.color}
-            onTogglePlayedAs={() => {
-              const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-              // Only the played-as step completes when the colour toggle is used.
-              setFilters({ ...filters, color: newColor });
-              setGamesOffset(0);
-              setBoardFlipped(newColor === 'black');
-              recordPlayedAs();
-              trackFeature('filter-change', { target: 'played-as', value: newColor });
-              if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-            }}
-            showPlayedAsDot={showPlayedAsDot}
-            onOpenBookmarkDrawer={openBookmarkDrawer}
-            showAnalyzeButton={showAnalyzeButton}
-            onAnalyzePosition={handleAnalyzePosition}
-            opening={chess.opening}
-            moveHistory={chess.moveHistory}
-            currentPly={chess.currentPly}
-            onMoveClick={chess.goToMove}
-          />
-
-          <OpeningsMobileDrawers
-            filterDrawerOpen={sidebar.filterDrawerOpen}
-            onFilterDrawerOpenChange={handleFilterDrawerOpenChange}
-            localFilters={localFilters}
-            setLocalFilters={setLocalFilters}
-            onApplyMobileFilters={handleMobileFiltersApply}
-            bookmarkDrawerOpen={sidebar.bookmarkDrawerOpen}
-            onBookmarkDrawerOpenChange={handleBookmarkDrawerOpenChange}
-            localBookmarks={localBookmarks}
-            onReorderBookmarks={handleReorder}
-            onLoadBookmark={handleLoadBookmarkFromSidebar}
-            onLocalMatchSideChange={handleLocalMatchSideChange}
-            onOpenSuggestions={openSuggestions}
-            onOpenBookmarkDialog={openBookmarkDialog}
-          />
-
-          <TabsContent value="explorer" className="mt-2">{explorerTabEl}</TabsContent>
-          <TabsContent value="games" className="mt-2">{gamesTabEl}</TabsContent>
-          <TabsContent value="stats" className="mt-2">{statsTabEl}</TabsContent>
+          </div>
         </Tabs>
         </div>
       </main>

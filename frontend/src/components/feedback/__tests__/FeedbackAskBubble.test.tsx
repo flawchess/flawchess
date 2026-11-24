@@ -140,7 +140,8 @@ describe('FeedbackAskBubble', () => {
     renderHost();
 
     expect(screen.getByTestId('feedback-ask-import')).not.toBeNull();
-    expect(screen.getByText('Hilda the Hippo')).not.toBeNull();
+    // The phone layout (no matchMedia in jsdom) drops the visible name; the bubble root carries it.
+    expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe('Hilda the Hippo');
     const copy = screen.getByTestId('feedback-ask-copy');
     expect(copy.textContent).toBe(feedbackAskCopy(ACTIVE_DAYS));
     expect(copy.textContent).toContain('for 7 days now');

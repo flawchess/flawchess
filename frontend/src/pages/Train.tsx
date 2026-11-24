@@ -52,12 +52,28 @@ import { parseTrainRoute, TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 
+/** Top padding of an immersive Train screen in the landscape band (no nav header above it). */
+const TRAIN_SIDE_BAND_PAGE_TOP_CLASS = 'trainside:max-lg:pt-3';
+
+/** Bottom padding of an immersive Train screen in the short side layout (a phone in landscape):
+ * the drills' height fit keeps only a small gutter there, so the page padding shrinks with it. */
+const TRAIN_SHORT_SIDE_PAGE_BOTTOM_CLASS = 'trainside:short:pb-2';
+
 /** The page wrapper's classes while a session view is on screen (the loop or a
  * restored reveal); it drops the phone top padding (see the comment at the
  * call site). Module-level so the branching stays out of `TrainPage`'s own
  * gated complexity. */
 function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
-  return cn('px-4 py-6 md:px-6', (showLoop || restoredActive) && 'max-sm:pt-0');
+  // The landscape band hides the nav header during a drill (ProtectedLayout), so the top
+  // padding shrinks there too: the short screen's height goes to the board.
+  return cn(
+    'px-4 py-6 md:px-6',
+    // Below lg (the phone frame) the header is hidden during a drill, so the progress row
+    // starts at the top edge.
+    (showLoop || restoredActive) && 'max-lg:pt-0',
+    showLoop && TRAIN_SIDE_BAND_PAGE_TOP_CLASS,
+    showLoop && TRAIN_SHORT_SIDE_PAGE_BOTTOM_CLASS,
+  );
 }
 
 /** The wrapper's classes on the tab views: the same max-w-7xl on every tab. */
@@ -288,7 +304,9 @@ export default function TrainPage(): ReactElement {
         </div>
       )}
       {isToday && blunderCheckActive && (
-        <div className="mt-4" data-testid="train-blunder-check-panel">
+        // The margin spaces the panel from the tab bar, which an immersive drill hides. Bug fix
+        // (phone landscape): it pushed the board 16px down, as much as a short screen can spare.
+        <div className={cn(!blunderImmersive && 'mt-4')} data-testid="train-blunder-check-panel">
           <BlunderCheckTab onImmersiveChange={setBlunderImmersive} onExit={exitBlunderCheck} />
         </div>
       )}

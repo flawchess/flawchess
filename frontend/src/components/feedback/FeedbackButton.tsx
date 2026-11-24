@@ -31,9 +31,9 @@ export function FeedbackButton() {
     <>
       <div
         className={[
-          // Desktop only: mobile (<sm) never used feedback and the button
-          // crowded the MobileBottomBar / board controls
-          'hidden sm:block',
+          // Desktop frame only (lg up): below it the bottom tab bar / board controls
+          // sit where the button would, and it crowded them
+          'hidden lg:block',
           'fixed bottom-4 right-4 z-20',
           // Safe-area: compose with bottom offset for iOS home indicator in PWA mode
           'pb-safe',

@@ -499,7 +499,7 @@ describe('TrainStartScreen — six landing states', () => {
 
   it('Tank the Ox speaks the greeting in a bot bubble, and the old "Train" heading is gone', () => {
     renderScreen();
-    expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
+    expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe('Tank the Ox');
     expect(screen.getByTestId('train-tagline').textContent).toBe(
       "Welcome to boot camp, recruit! You'll learn from the mistakes in your own games and train your instinct for when a position hides a tactic. Hilda will show you the ropes.",
     );
@@ -513,7 +513,7 @@ describe('TrainStartScreen — six landing states', () => {
       introSeenAt: mockTrainSettingsData.intro_seen_at,
     });
     renderScreen();
-    expect(screen.getByTestId('train-bot-name').textContent).toBe(expected.persona.name);
+    expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe(expected.persona.name);
     expect(screen.getByTestId('train-tagline').textContent).toBe(expected.copy);
     // Rotation must actually have moved off the fixed host for this date, or
     // the test would pass trivially against Tank.
@@ -524,7 +524,7 @@ describe('TrainStartScreen — six landing states', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
     renderScreen({ session: { ...BASE_SESSION, session_date: '2026-07-26' } });
     const nextDay = landingHost({ sessionDate: '2026-07-26', introSeenAt: 'x' });
-    expect(screen.getByTestId('train-bot-name').textContent).toBe(nextDay.persona.name);
+    expect(screen.getByTestId('train-bot-bubble').getAttribute('aria-label')).toBe(nextDay.persona.name);
     expect(nextDay.persona.id).not.toBe(
       landingHost({ sessionDate: BASE_SESSION.session_date, introSeenAt: 'x' }).persona.id,
     );

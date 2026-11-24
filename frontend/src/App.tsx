@@ -57,6 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
+import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -263,7 +264,10 @@ export function NavHeader() {
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
 
   return (
-    <header className="hidden sm:block bg-background border-b border-border px-6 overflow-hidden">
+    <header
+      className="hidden lg:block bg-background border-b border-border px-6 overflow-hidden"
+      data-testid="nav-header"
+    >
       <div className="mx-auto flex max-w-7xl items-stretch justify-between">
         <div className="flex items-center">
           <Link to="/openings" className="flex items-center gap-1 mr-3" data-testid="nav-home">
@@ -335,7 +339,7 @@ export function MobileHeader() {
   return (
     <header
       data-testid="mobile-header"
-      className="block sm:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
+      className="block lg:hidden short:hidden pt-safe flex items-center justify-between px-4 py-1 bg-background border-b border-border overflow-hidden"
     >
       <Link
         to="/openings"
@@ -374,7 +378,7 @@ export function AnalysisMobileHeader() {
   return (
     <header
       data-testid="analysis-mobile-header"
-      className="block sm:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
+      className="block lg:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
     >
       {/* Wider tap target (w-16) so the back button matches the generous
           board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
@@ -400,8 +404,20 @@ export function AnalysisMobileHeader() {
 
 // Shared by both MobileBottomBar branches (main nav / board controls) so the
 // fixed positioning, breakpoint, and border/background stay byte-identical.
-const MOBILE_BOTTOM_BAR_CLASSES =
-  'fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe';
+const MOBILE_BOTTOM_BAR_BASE_CLASSES =
+  'fixed bottom-0 inset-x-0 flex z-40 bg-background border-t border-border pb-safe';
+// The phone frame's bottom tab bar: everything below lg (phones, foldables and tablets in
+// either orientation, all held in the hand). The desktop nav header takes over from lg.
+const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} lg:hidden`;
+/**
+ * The board-controls bar shows at every width while a payload is published: the
+ * publishers decide when it applies (the Train reveals publish in their stacked
+ * layout, which also covers portrait tablets and unfolded foldables; the bot game
+ * publishes in its mobile layout, below 800px). Bug fix: it used to hide from `sm`
+ * up, which left a 640-799px bot game without Resign and the stacked Train reveal
+ * with a cramped in-flow bar under the board (Galaxy Z Fold8 inner screen, portrait).
+ */
+const MOBILE_BOARD_CONTROLS_BAR_CLASSES = MOBILE_BOTTOM_BAR_BASE_CLASSES;
 
 /**
  * A payload may omit `onReset` (the bot game has no Reset action), but
@@ -482,7 +498,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
     return (
       <div
         data-testid="mobile-board-controls-bar"
-        className={cn(MOBILE_BOTTOM_BAR_CLASSES, 'items-center px-2 py-2')}
+        className={cn(MOBILE_BOARD_CONTROLS_BAR_CLASSES, 'items-center px-2 py-2')}
       >
         {renderBoardControlsBar(boardControls)}
       </div>
@@ -653,6 +669,14 @@ function ProtectedLayout() {
   // needs the vertical space on small screens. Set by BotsGame and
   // TrainSolveScreen via useMarkPlayActive().
   const playActive = usePlayActive();
+  // The desktop nav header only shows from lg, where its labelled items fit; below it the
+  // phone frame (phone header + bottom tab bar) applies at any orientation. A Train drill in
+  // the side layout (a foldable, tablet or phone in landscape) also drops the bottom tab bar,
+  // so the height-fitted board gets the full height of the short screen; the drill shows its
+  // own settings cog, as phones do with their header suppressed during play.
+  const isTrainSideLayout = useIsTrainSideLayout();
+  const hideBottomBar = playActive && isTrainSideLayout && location.pathname.startsWith('/train');
+  const boardControlsActive = useMobileBoardControls() != null;
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
@@ -789,10 +813,12 @@ function ProtectedLayout() {
           <MobileHeader />
         </>
       )}
-      <main className="pb-16 sm:pb-0">
+      {/* The fixed board-controls bar can show from `sm` up too, so the page keeps its
+          bottom padding while one is published. */}
+      <main className={hideBottomBar ? undefined : cn('pb-16', !boardControlsActive && 'lg:pb-0')}>
         <Outlet />
       </main>
-      <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />
+      {!hideBottomBar && <MobileBottomBar onMoreClick={() => setMoreOpen(true)} />}
       <MobileMoreDrawer open={moreOpen} onOpenChange={setMoreOpen} />
       <InstallPromptBanner />
       {/* The floating feedback bubble sits over the board's bottom right corner

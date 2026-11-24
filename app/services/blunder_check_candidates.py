@@ -201,7 +201,7 @@ def _blunder_candidate(
     if entry is None or entry[1] != _BLUNDER_LABEL:
         return None
     es_before, es_played, es_ref = blunder_es(game.all_moves, flaw.ply)
-    # Phase 249 UAT: only blunders from an undecided game (eval within +/- 3); a miss is judged
+    # Phase 249 UAT: only blunders from an undecided game (user-side eval in -2..+3); a miss is judged
     # on the position before the opponent's gift, so big missed gifts stay in.
     if not blunder_position_undecided(flaw.is_miss, es_before, es_ref):
         return None

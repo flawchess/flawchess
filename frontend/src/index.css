@@ -35,6 +35,19 @@
    BOARD_HEIGHT_LOCK_MIN_PX in hooks/analysis/useBoardStageSize.ts. */
 @custom-variant deskshort (@media (min-width: 1200px) and (max-height: 879.98px));
 
+/* trainside gates the Train drills' (blunder check, personalized puzzles) side-column
+   layout: 1024px and up at any orientation, or 640px and up in landscape (width greater
+   than height), which covers unfolded foldables and phones held sideways. Block form
+   with @slot, not the parenthesised shorthand: the shorthand splits its argument on
+   top-level commas, and this query is a comma-separated list.
+   MUST match TRAIN_SIDE_LAYOUT_QUERY in lib/trainSideLayout.ts (the JS twin
+   useIsTrainSideLayout reads it); lib/__tests__/trainSideLayout.test.ts enforces it. */
+@custom-variant trainside {
+    @media (min-width: 1024px), (min-width: 640px) and (orientation: landscape) {
+        @slot;
+    }
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -701,11 +714,18 @@
 /* Mobile typography bump.
    Below the sm: breakpoint, lift Tailwind's default type scale by one tier so
    labels, filter chips, table captions, and body copy match typical mobile-app
-   sizing. Desktop (>=640px) is untouched. Spacing tokens are not touched, so
-   chess board, filter row, and grid layouts stay put.
+   sizing. Spacing tokens are not touched, so chess board, filter row, and grid
+   layouts stay put.
+   Also in portrait up to just below md (768px): an unfolded foldable (Galaxy Z
+   Fold8 inner screen, about 704px wide in portrait) is phone-like in how far it
+   is held, but its CSS width is past sm, so it got the desktop type scale and
+   read small. The same goes for landscape below lg (an unfolded foldable or a
+   phone held sideways, e.g. 941x710 or 852x393), which also uses the phone app
+   frame there. Tablets in portrait from 768px and screens from lg keep the
+   desktop scale.
    Kept unlayered (outside @layer) so it wins over Tailwind utility-layer
    .text-xs / .text-sm / .text-base in the cascade. */
-@media (max-width: 639.98px) {
+@media (max-width: 639.98px), (max-width: 767.98px) and (orientation: portrait), (max-width: 1023.98px) and (orientation: landscape) {
   .text-xs { font-size: 0.875rem; line-height: 1.25rem; }
   .text-sm { font-size: 1rem; line-height: 1.5rem; }
   .text-base { font-size: 1.125rem; line-height: 1.75rem; }

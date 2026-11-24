@@ -29,7 +29,7 @@
 
 import { useEffect } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { useTrainRevealQuery } from '@/hooks/useTrainRevealQuery';
 import { Button } from '@/components/ui/button';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
@@ -40,6 +40,11 @@ import { TrainVerdictDetails } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
+import {
+  SHORT_SIDE_SCROLLER_CLASS,
+  SHORT_SIDE_TOP_RESET_CLASS,
+  TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+} from '@/lib/trainSideLayout';
 import { cn } from '@/lib/utils';
 import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { verdictClauseParts, verdictStripLine } from '@/lib/trainBotCopy';
@@ -164,6 +169,8 @@ export interface TrainRevealProps {
    * board instead of in this column (Phase 249 UAT). Defaults to true.
    */
   showGameFooter?: boolean;
+  /** Rendered first in the reveal column (the progress row, in the short side layout). */
+  header?: ReactNode;
 }
 
 export function TrainReveal({
@@ -195,9 +202,12 @@ export function TrainReveal({
   controlsRow,
   nextButton,
   showGameFooter = true,
+  header,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
-  const isDesktop = useIsDesktop();
+  // Same gate as TrainSolveScreen, which hands this component the side-column controls row
+  // and footer under it.
+  const isSideLayout = useIsTrainSideLayout();
 
   // Disabled until the solve POST has landed — no speculative
   // pre-attempt fetch, no answer-key data reachable before this gate flips.
@@ -343,25 +353,32 @@ export function TrainReveal({
     ) : null;
 
   return (
-    // lg:mt-8: on desktop the board column starts with its one-line progress
+    // trainside:mt-8: in the side layout the board column starts with its one-line progress
     // row (20px text row + the pinned block's 12px `gap-3` = 32px before the
     // board itself), so this offset top-aligns the verdict card with the TOP OF
     // THE BOARD, not the progress text. Bug fix (Phase 249 UAT): it was 46px,
     // sized for an older two-row progress block, and sat the card 14px low.
     // Keep in sync with TrainSolveScreen's progress block.
     <div
-      className="flex w-full flex-col gap-4 lg:mt-8 lg:max-w-sm lg:self-stretch"
+      className={cn(
+        'flex w-full flex-col gap-4 trainside:mt-8 trainside:self-stretch',
+        SHORT_SIDE_TOP_RESET_CLASS,
+        // Short side layout: TrainSolveScreen frames the column, which scrolls inside it.
+        SHORT_SIDE_SCROLLER_CLASS,
+        TRAIN_SIDE_COLUMN_WIDTH_CLASS,
+      )}
       data-testid="train-reveal"
     >
+      {header}
       {/* 1. The verdict surface. Phones: the one-line strip
           (bot avatar + total + clause), collapsed on every reveal; its tap opens
-          the full feedback. Desktop: the same card always open, avatar floated
+          the full feedback. Side layout: the same card always open, avatar floated
           beside the verdict. Both carry the SAME `TrainVerdictDetails` body, so
           the clause vocabulary and the guess feedback can never drift between
           them. The points shown come from the server's verdict fields via
           `scorePuzzle`; `isBest` only selects wording. */}
       {verdictBot !== null && verdictOpening !== null && (
-        isDesktop ? (
+        isSideLayout ? (
           <TrainVerdictCard persona={verdictBot} spotlight={tourSpotlightVerdict} renderDetails={renderVerdictDetails} />
         ) : (
           <TrainVerdictStrip

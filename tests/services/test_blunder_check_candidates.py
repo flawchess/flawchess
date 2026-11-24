@@ -30,6 +30,7 @@ from app.services import blunder_check_rules
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
     BLUNDER_MAX_PRE_EVAL_CP,
+    BLUNDER_MIN_PRE_EVAL_CP,
     BLUNDER_MIN_OPENING_PLY,
     BLUNDER_MIN_PLY,
     FACEPALM_SCORE_MIN,
@@ -46,7 +47,7 @@ MISTAKE_SEVERITY = _SEVERITY_INT["mistake"]
 GAME_ID = 1
 HOLD_CP = 100
 # Miss fixtures start level so the opponent's gift (+300) is a blunder yet leaves the user's
-# pre-blunder position inside the undecided band (+/- 300).
+# pre-blunder position inside the undecided band (-200..+300).
 LEVEL_CP = 0
 GIFT_CP = 300
 FLAT_ROWS = 17
@@ -242,8 +243,8 @@ class TestFacepalmPredicate:
 
 
 class TestUndecidedPosition:
-    """Phase 249 UAT: only blunders from an undecided game (+/- 300, no mate); a miss is judged
-    on the position before the opponent's gift."""
+    """Phase 249 UAT: only blunders from an undecided game (user-side eval -200..+300, no
+    mate); a miss is judged on the position before the opponent's gift, within +/- 300."""
 
     @staticmethod
     def _allowed_from(pre_cp: int) -> list[int]:
@@ -251,16 +252,28 @@ class TestUndecidedPosition:
         return [pre_cp] * 6 + [pre_cp - 600] * 3
 
     def test_blunder_at_the_band_edge_is_a_candidate(self) -> None:
-        for pre_cp in (BLUNDER_MAX_PRE_EVAL_CP, -BLUNDER_MAX_PRE_EVAL_CP):
+        for pre_cp in (BLUNDER_MAX_PRE_EVAL_CP, BLUNDER_MIN_PRE_EVAL_CP):
             assert len(_blunders(_judge(self._allowed_from(pre_cp), [_Flaw(ply=6)]))) == 1
 
     def test_blunder_just_outside_the_band_is_excluded(self) -> None:
-        for pre_cp in (BLUNDER_MAX_PRE_EVAL_CP + 1, -BLUNDER_MAX_PRE_EVAL_CP - 1):
+        for pre_cp in (BLUNDER_MAX_PRE_EVAL_CP + 1, BLUNDER_MIN_PRE_EVAL_CP - 1):
             assert _blunders(_judge(self._allowed_from(pre_cp), [_Flaw(ply=6)])) == ()
 
     def test_blunder_inside_the_wider_es_band_but_outside_plus_three_is_excluded(self) -> None:
         # +500 is inside the D-05 ES band (0.86 < 0.90) but the game is already decided.
         assert _blunders(_judge(self._allowed_from(500), [_Flaw(ply=6)])) == ()
+
+    def test_band_is_tighter_on_the_losing_side(self) -> None:
+        # Already losing by more than 2: the better move loses too, so it is not worth finding.
+        assert BLUNDER_MIN_PRE_EVAL_CP > -BLUNDER_MAX_PRE_EVAL_CP
+        assert _blunders(_judge(self._allowed_from(-BLUNDER_MAX_PRE_EVAL_CP), [_Flaw(ply=6)])) == ()
+
+    def test_miss_keeps_the_symmetric_band_before_the_gift(self) -> None:
+        # White at -250 before black's gift to +300: the better move is not losing, so it stays.
+        evals = [-250] * 7 + [300, -250]
+        assert len(_blunders(_judge(evals, [_Flaw(ply=8, is_miss=True)]))) == 1
+        lost = [-BLUNDER_MAX_PRE_EVAL_CP - 1] * 7 + [300, -BLUNDER_MAX_PRE_EVAL_CP - 1]
+        assert _blunders(_judge(lost, [_Flaw(ply=8, is_miss=True)])) == ()
 
     def test_blunder_from_a_mate_score_is_excluded(self) -> None:
         positions = _positions(self._allowed_from(LEVEL_CP))
