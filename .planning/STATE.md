@@ -4,10 +4,10 @@ milestone: v2.29
 current_phase: 263
 status: completed
 stopped_at: Phase 263 complete — all phases complete
-last_updated: "2026-11-24T21:04:36.682Z"
+last_updated: "2026-11-24T22:20:51.887Z"
 last_activity: 2026-11-24
 last_activity_desc: Phase 263 complete
-state_head: 55898b19c6aca37b248ce1ef2f5845835b92bd00
+state_head: fe116ce55b17b9f7786cf24626962c55acfe0700
 progress:
   total_phases: 17
   completed_phases: 63
@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-24 - Completed quick task 261124-u98: Openings landscape layout below lg: board left, tab content right
+Last activity: 2026-11-24 - Completed quick task 261124-w90: Mobile analysis header removed, More menu in the footer
 
 Open threads carried forward (not blockers):
 
@@ -1226,6 +1226,7 @@ None active.
 | 261124-5f3 | Sentry follow-ups: Train load and solve retry on dropped connections plus a Retry button, 30 s poll backoff on errors, silent skip of aborted chess.com games | 2026-11-24 | a61030d41 | [261124-5f3-sentry-follow-ups-train-network-retries-](./quick/261124-5f3-sentry-follow-ups-train-network-retries-/) |
 | 261124-ply | Foldable layout: compact phone bot bubble and landscape side column for Train | 2026-11-24 | cb97d4cfd | [261124-ply-foldable-layout-compact-phone-bot-bubble](./quick/261124-ply-foldable-layout-compact-phone-bot-bubble/) |
 | 261124-u98 | Openings landscape layout below lg: board left, tab content right | 2026-11-24 | 55898b19c | [261124-u98-openings-landscape-layout-below-lg-board](./quick/261124-u98-openings-landscape-layout-below-lg-board/) |
+| 261124-w90 | Mobile analysis: header removed below 768px, More menu in the footer | 2026-11-24 | fe116ce55 | [261124-w90-mobile-analysis-remove-header-more-menu-](./quick/261124-w90-mobile-analysis-remove-header-more-menu-/) |
 
 ## Deferred Items
 
