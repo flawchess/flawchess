@@ -29,6 +29,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Foldables and tablets below 1024px wide: buttons, chips, filter toggles and the Train tabs keep their large phone touch size instead of shrinking to the compact desktop size.
 - Analysis on phones: the top header is gone, so the move list and the other tabs get more room. A More button replaces Flip in the bottom bar and holds Flip board, Settings, the PGN/FEN tools and Leave analysis.
 - Analysis on unfolded foldables and tablets below 1024px wide uses the same bottom bar with the More button. The top header and the controls under the board are gone, and the tabs fill the height beside the board.
 - Analysis on unfolded foldables in landscape: the board is sized to the screen height, so the bar that explains a mistake is no longer cut off by the bottom bar, and the page no longer scrolls. The tabs take all the width the board leaves and their content starts at the board's top edge. This also holds with a larger display zoom, where long tactic tags no longer overlap in the move list.

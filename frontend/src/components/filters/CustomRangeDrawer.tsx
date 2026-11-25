@@ -155,7 +155,7 @@ export function CustomRangeDrawer({
             type="button"
             variant="brand-outline"
             size="lg"
-            className="flex-1 min-h-11 sm:min-h-0"
+            className="flex-1 min-h-11 lg:min-h-0"
             data-testid="btn-clear-custom-range"
             onClick={() => setLocalRange(undefined)}
           >
@@ -165,7 +165,7 @@ export function CustomRangeDrawer({
             type="button"
             variant="default"
             size="lg"
-            className="flex-1 min-h-11 sm:min-h-0"
+            className="flex-1 min-h-11 lg:min-h-0"
             data-testid="btn-apply-custom-range"
             disabled={!localRange?.from}
             onClick={handleApply}

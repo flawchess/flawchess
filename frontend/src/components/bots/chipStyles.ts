@@ -9,14 +9,14 @@
  * reference). Don't re-type them inline.
  */
 
-/** Shape + type + transition. `h-10` on touch, `sm:h-7` on desktop — a
+/** Shape + type + transition. `h-10` on touch, `lg:h-7` on desktop — a
  * DELIBERATE MILD DEVIATION from the 44px WCAG 2.5.5 / Apple HIG minimum
  * (`h-11`), taken specifically to lift the Bots setup screen's primary Start
  * CTA above the fold. 40px is the FLOOR — do not go
  * lower than `h-10` for any chip on this screen. This one constant covers
  * every chip here (TC, colour, and `PlayStyleControl`'s Human/Light/Deep
  * presets), so this is the only place the chip height is expressed. */
-export const CHIP_BASE_CLASS = 'rounded border h-10 sm:h-7 text-sm transition-colors';
+export const CHIP_BASE_CLASS = 'rounded border h-10 lg:h-7 text-sm transition-colors';
 
 /** Selected state. */
 export const CHIP_ACTIVE_CLASS =

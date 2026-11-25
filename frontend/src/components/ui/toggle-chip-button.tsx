@@ -36,7 +36,7 @@ export function ToggleChipButton({
       aria-label={ariaLabel}
       aria-pressed={active}
       className={cn(
-        'rounded border h-11 sm:h-7 text-sm transition-colors',
+        'rounded border h-11 lg:h-7 text-sm transition-colors',
         active
           ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
           : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',

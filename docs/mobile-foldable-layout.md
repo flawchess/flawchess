@@ -8,6 +8,7 @@ Last updated: 2026-11-25
 
 - [x] Bottom tab bar instead of the desktop header below 1024px, both orientations (261124-ply)
 - [x] Phone text sizes on unfolded foldables (261124-ply)
+- [x] Touch-sized buttons, chips, filter toggles and the Train tabs on unfolded foldables: their compact desktop size starts at `lg` instead of `sm`/`md` (2026-11-25). Train drill at 933x617 and 816x528: no page scroll, board unchanged (489px, 436px)
 - [x] Target sizes and OS-bar gotcha documented, sizes measured from device screenshots (261125-v4k)
 - [x] Header removed on Library and Endgames (owner, 2026-11-25): `MobileTopBar` in `App.tsx`, `HEADERLESS_ROUTES`. Settings is in the More drawer. An impersonating superuser gets the pill in a slim row at the top of the page
 - [ ] Header on Train and the Bots list: decision open. It costs 45px and shows the logo, page name and settings cog (also in the More drawer)

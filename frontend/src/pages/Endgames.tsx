@@ -279,7 +279,7 @@ export function EndgamesPage() {
           trackFeature('filter-change', { target: 'endgame-type', value: category });
         }}
       >
-        <SelectTrigger size="sm" aria-label="Endgame type" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
+        <SelectTrigger size="sm" aria-label="Endgame type" data-testid="filter-endgame-type" className="min-h-11 lg:min-h-0 w-full sm:w-[160px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

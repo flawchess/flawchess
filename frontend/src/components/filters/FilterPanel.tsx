@@ -415,9 +415,9 @@ export function FilterPanel({
             data-testid="filter-played-as"
             className="w-full"
           >
-            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 sm:min-h-0 flex-1 text-sm">Either</ToggleGroupItem>
-            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0 flex-1 text-sm">White</ToggleGroupItem>
-            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0 flex-1 text-sm">Black</ToggleGroupItem>
+            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 lg:min-h-0 flex-1 text-sm">Either</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 lg:min-h-0 flex-1 text-sm">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 lg:min-h-0 flex-1 text-sm">Black</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}
@@ -457,7 +457,7 @@ export function FilterPanel({
                 Anchor the SelectTrigger (<button>) instead.
               */}
               <PopoverAnchor asChild>
-                <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
+                <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 lg:min-h-0 w-full">
                   {/* Render resolved range label when custom is active; preset label otherwise. */}
                   {filters.recency === 'custom'
                     ? formatCustomRangeLabel(filters.customRange)
@@ -619,9 +619,9 @@ export function FilterPanel({
             data-testid="filter-opponent"
             className="w-full"
           >
-            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
-            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
+            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 lg:min-h-0 flex-1 text-sm">Human</ToggleGroupItem>
+            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 lg:min-h-0 flex-1 text-sm">Bot</ToggleGroupItem>
+            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 lg:min-h-0 flex-1 text-sm">Both</ToggleGroupItem>
           </ToggleGroup>
         </div>
       )}
@@ -643,9 +643,9 @@ export function FilterPanel({
             data-testid="filter-rated"
             className="w-full"
           >
-            <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
-            <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
-            <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
+            <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 lg:min-h-0 flex-1 text-sm">All</ToggleGroupItem>
+            <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 lg:min-h-0 flex-1 text-sm">Rated</ToggleGroupItem>
+            <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 lg:min-h-0 flex-1 text-sm">Casual</ToggleGroupItem>
           </ToggleGroup>
           <NativeGamesHint show={showPastedChip} />
         </div>
@@ -672,7 +672,7 @@ export function FilterPanel({
               type="button"
               variant="brand-outline"
               size="lg"
-              className="w-full min-h-11 sm:min-h-0"
+              className="w-full min-h-11 lg:min-h-0"
               data-testid="btn-reset-filters"
               onClick={() => {
                 onChange(resetFilterState(filters));
