@@ -58,6 +58,18 @@ export const SHORT_VIEWPORT_QUERY = '(max-height: 559.98px)';
  * screen; this keeps a small gap above the bottom edge and gives the rest to the board. */
 export const SHORT_SIDE_BOARD_GUTTER_PX = 12;
 
+/** The shortest landscape-band screen whose Train solutions use the app's bottom bar, as on
+ * phones in portrait (`useIsTrainBandBar`). Between phones held sideways (about 440px at most),
+ * where the bar would take a fifth of the board's height, and a foldable with a larger display
+ * zoom (816x528 inside the OS bars). */
+export const TRAIN_BAND_BAR_MIN_HEIGHT_PX = 500;
+
+/** Bottom gutter of the Train drills' height fit where the solutions use the bottom bar: the bar
+ * (71px) plus a 9px gap, less the 28px eval-bar slot, which the fit already leaves free (the board
+ * is that much lower than the fitted column is wide). It applies before the solution too, so the
+ * board keeps its size when the bar appears. */
+export const BAND_BAR_BOARD_GUTTER_PX = 52;
+
 /** Short side layout (a phone in landscape): the progress row and the game info move from the
  * board column to the top and foot of the side column, so the board column holds the board
  * alone. The side column's top offset (it top-aligns with the board under the progress row) and

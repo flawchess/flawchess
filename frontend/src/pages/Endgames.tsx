@@ -33,7 +33,8 @@ import { EndgamesProcessingState } from '@/components/EndgamesProcessingState';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
-const PAGE_SIZE = 20;
+// Divisible by 2 and 3, so a full page leaves no hole in the game grid.
+const PAGE_SIZE = 24;
 
 const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   mixed: 'Mixed',
@@ -264,9 +265,11 @@ export function EndgamesPage() {
   // ── Games tab content ────────────────────────────────────────────────────────
 
   // ── Endgame type dropdown (used in Games tab) ──────────────────────────────
+  // Above the list from lg (labelled); in the sticky Filters row below lg, where the
+  // label has no room.
   const endgameTypeDropdown = (
-    <div className="flex items-center gap-2">
-      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame Type</p>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <p className="hidden text-sm text-muted-foreground whitespace-nowrap lg:block">Endgame Type</p>
       <Select
         value={selectedCategory}
         onValueChange={(v) => {
@@ -276,7 +279,7 @@ export function EndgamesPage() {
           trackFeature('filter-change', { target: 'endgame-type', value: category });
         }}
       >
-        <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
+        <SelectTrigger size="sm" aria-label="Endgame type" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -302,7 +305,7 @@ export function EndgamesPage() {
           evalContext="endgame-entry"
         />
       )}
-      {endgameTypeDropdown}
+      <div className="hidden lg:block">{endgameTypeDropdown}</div>
       {gamesLoading ? (
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading games...</p>
@@ -323,6 +326,7 @@ export function EndgamesPage() {
           offset={gamesOffset}
           limit={PAGE_SIZE}
           onPageChange={setGamesOffset}
+          multiColumn
           matchLabel={statsData ? (
             <>
               {gamesData.matched_count} of {statsData.endgame_games}{' '}
@@ -387,7 +391,7 @@ export function EndgamesPage() {
 
   return (
     <div data-testid="endgames-page" className="flex min-h-0 flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 lg:py-6 lg:pb-6 lg:px-6">
 
         {/* Desktop: full-width subnav above the sidebar strip + content (matches
             the Library page; the subnav spans both the strip and content
@@ -396,7 +400,7 @@ export function EndgamesPage() {
         <Tabs
           value={activeTab}
           onValueChange={(val) => navigate(`/endgames/${val}`)}
-          className="hidden md:flex"
+          className="hidden lg:flex"
         >
           <EvalCoverageHeader />
           <TabsList variant="brand" className="w-full mb-4" data-testid="endgames-tabs">
@@ -438,7 +442,7 @@ export function EndgamesPage() {
         </Tabs>
 
         {/* Mobile: single column */}
-        <div className="md:hidden flex flex-col min-w-0">
+        <div className="lg:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
           <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
             {/* Full-width, non-sticky sub-navigation (like the Library page). The
@@ -475,10 +479,11 @@ export function EndgamesPage() {
               <>
                 {/* Sticky Filters button, styled like the Library page. The full-width
                     subnav above is non-sticky; this button pins on scroll. */}
-                <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+                <div className="sticky top-0 z-20 flex items-center gap-2 py-2 bg-background/80 backdrop-blur-sm">
+                  {endgameTypeDropdown}
                   <Button
                     variant="brand-outline"
-                    className="relative"
+                    className="relative shrink-0"
                     onClick={() => setMobileFiltersOpen(true)}
                     data-testid="btn-open-filter-drawer"
                     aria-label="Open filters"
@@ -521,7 +526,7 @@ export function EndgamesPage() {
             <TabsContent value="stats">
               {statisticsContent}
             </TabsContent>
-            <TabsContent value="games" className="mt-4">
+            <TabsContent value="games" className="mt-1">
               {gamesContent}
             </TabsContent>
           </Tabs>

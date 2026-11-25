@@ -91,8 +91,10 @@ vi.mock('@/components/board/LazyMiniBoard', () => ({
   // Serialize the scrubbed-ply squareMarkers so corner-badge tier tests can assert
   // which glyph (gem/great/best/good/severity) the miniboard would render.
   LazyMiniBoard: ({
+    size,
     squareMarkers,
   }: {
+    size: number;
     squareMarkers?: {
       square: string;
       severity?: string;
@@ -105,7 +107,7 @@ vi.mock('@/components/board/LazyMiniBoard', () => ({
     const tierOf = (m: NonNullable<typeof squareMarkers>[number]): string =>
       m.gem ? 'gem' : m.great ? 'great' : m.best ? 'best' : m.good ? 'good' : (m.severity ?? '');
     return (
-      <div data-testid="stub-mini-board">
+      <div data-testid="stub-mini-board" data-size={size}>
         {(squareMarkers ?? []).map((m) => (
           <span key={m.square} data-testid={`mini-board-marker-${tierOf(m)}`} />
         ))}
@@ -518,11 +520,59 @@ describe('LibraryGameCard Facepalm row split and cycling (D-02, D-04)', () => {
 });
 
 describe('LibraryGameCard eval chart heights (D-16, D-25)', () => {
-  it('gives the desktop chart the derived height class and leaves the mobile chart at h-[114px]', () => {
+  it('gives the desktop chart the derived height class and gives the body below lg its own heights', () => {
     renderCard(<LibraryGameCard game={makeGame([])} />);
     const heights = screen.getAllByTestId('stub-eval-chart-height').map((el) => el.textContent);
     expect(heights).toContain(DESKTOP_EVAL_CHART_HEIGHT_CLASS);
-    expect(heights).toContain('h-[114px]');
+    expect(heights).toContain('h-[114px] md:h-[134px]');
+  });
+});
+
+describe('LibraryGameCard miniboard size below lg', () => {
+  const origMatchMedia = window.matchMedia;
+  const origInnerWidth = window.innerWidth;
+
+  afterEach(() => {
+    window.matchMedia = origMatchMedia;
+    Object.defineProperty(window, 'innerWidth', { value: origInnerWidth, configurable: true });
+  });
+
+  /** Board size in the body below lg (the first of the two bodies) at this viewport width. */
+  function boardSizeAt(width: number, game: GameFlawCard): number {
+    Object.defineProperty(window, 'innerWidth', { value: width, configurable: true });
+    window.matchMedia = vi.fn().mockImplementation((query: string) => {
+      const minWidth = /min-width:\s*(\d+)px/.exec(query)?.[1];
+      return {
+        matches: minWidth !== undefined && width >= Number(minWidth),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+    }) as unknown as typeof window.matchMedia;
+    renderCard(<LibraryGameCard game={game} />);
+    return Number(screen.getAllByTestId('stub-mini-board')[0]!.dataset.size);
+  }
+
+  const RESULT_FEN = '8/8/8/8/8/8/8/8';
+  const analyzed = (): GameFlawCard => ({ ...makeGame([]), result_fen: RESULT_FEN });
+  const unanalyzed = (): GameFlawCard => ({
+    ...analyzed(),
+    analysis_state: 'no_engine_analysis',
+    eval_series: null,
+    flaw_markers: null,
+    phase_transitions: null,
+  });
+
+  it.each([
+    ['half the screen on phones', 475, 238],
+    ['two columns on the zoomed inner screen', 616, 232],
+    ['two columns on the inner screen', 704, 304],
+  ])('analyzed: %s', (_name, width, expected) => {
+    expect(boardSizeAt(width, analyzed())).toBe(expected);
+  });
+
+  it.each([616, 704])('unanalyzed at %dpx: no second column, so the small board', (width) => {
+    expect(boardSizeAt(width, unanalyzed())).toBe(130);
   });
 });
 

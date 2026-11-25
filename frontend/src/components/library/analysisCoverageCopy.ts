@@ -30,3 +30,8 @@ export const ANALYSIS_COVERAGE_INFO_COPY =
   'Full Stockfish analysis lets FlawChess classify blunders, mistakes, and inaccuracies. ' +
   'To analyze a single game right away, use the "Analyze" button on its card. ' +
   'Signing up unlocks automatic background analysis of all your games — no per-game clicking needed.';
+
+/** Few games analyzed yet: guests get the sign-up CTA. False with no games at all. */
+export function isCoverageBelowThreshold(analyzedN: number, totalN: number): boolean {
+  return totalN > 0 && analyzedN / totalN < LOW_COVERAGE_THRESHOLD;
+}

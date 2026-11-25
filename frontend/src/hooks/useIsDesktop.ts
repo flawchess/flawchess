@@ -11,8 +11,11 @@
  */
 import { useEffect, useState } from 'react';
 import {
+  BAND_BAR_BOARD_GUTTER_PX,
   PORTRAIT_FOLDABLE_QUERY,
+  SHORT_SIDE_BOARD_GUTTER_PX,
   SHORT_VIEWPORT_QUERY,
+  TRAIN_BAND_BAR_MIN_HEIGHT_PX,
   TRAIN_SIDE_LAYOUT_QUERY,
 } from '@/lib/trainSideLayout';
 
@@ -24,6 +27,9 @@ const DESKTOP_BREAKPOINT_PX = 1024;
 /** Tailwind's default `sm` breakpoint: where the Train reveal's in-flow action
  * bar takes over from the fixed phone bottom bar. */
 const SM_BREAKPOINT_PX = 640;
+
+/** Keeps a `max-height` query exclusive at fractional viewport heights (as in `559.98px`). */
+const SUBPIXEL_PX = 0.02;
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => {
@@ -42,7 +48,8 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-function useMinWidth(minWidthPx: number): boolean {
+/** True from `minWidthPx` up, for a JS gate that mirrors a `min-[...px]:` CSS split. */
+export function useMinWidth(minWidthPx: number): boolean {
   return useMediaQuery(`(min-width: ${minWidthPx}px)`);
 }
 
@@ -55,6 +62,12 @@ export function useIsDesktop(): boolean {
  * phone Train reveal action bar instead of CSS-hiding the other copy). */
 export function useIsSmUp(): boolean {
   return useMinWidth(SM_BREAKPOINT_PX);
+}
+
+/** True when the viewport is shorter than `heightPx`. Asked as "too short", not "tall enough",
+ * so an environment without `matchMedia` reads as a normal screen. */
+export function useIsShorterThan(heightPx: number): boolean {
+  return useMediaQuery(`(max-height: ${heightPx - SUBPIXEL_PX}px)`);
 }
 
 /** True when the Train drills use their side-column layout (1024px and up, or 640px and up in
@@ -82,6 +95,24 @@ export function useIsTrainShortSide(): boolean {
   const isSideLayout = useIsTrainSideLayout();
   const isShort = useMediaQuery(SHORT_VIEWPORT_QUERY);
   return isSideLayout && isShort;
+}
+
+/** True when the Train solutions put their actions into the app's bottom bar although the side
+ * layout is on: the landscape band (below lg), except phones held sideways, which are too short
+ * for it. The stacked layout always uses the bottom bar. */
+export function useIsTrainBandBar(): boolean {
+  const isSideBand = useIsTrainSideBand();
+  const isTooShort = useIsShorterThan(TRAIN_BAND_BAR_MIN_HEIGHT_PX);
+  return isSideBand && !isTooShort;
+}
+
+/** The bottom gutter of the Train drills' height fit (`useFitBoardToViewport`), given the
+ * drill's own default. */
+export function useTrainBoardGutter(defaultPx: number): number {
+  const isBandBar = useIsTrainBandBar();
+  const isShortSide = useIsTrainShortSide();
+  if (isBandBar) return BAND_BAR_BOARD_GUTTER_PX;
+  return isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : defaultPx;
 }
 
 /** True on a portrait foldable or small tablet (640-767px wide, portrait), which reads like a

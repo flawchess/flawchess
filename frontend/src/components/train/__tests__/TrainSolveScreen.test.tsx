@@ -28,7 +28,7 @@ import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import {
   PORTRAIT_FOLDABLE_QUERY,
-  SHORT_VIEWPORT_QUERY,
+  SHORT_VIEWPORT_QUERY, TRAIN_BAND_BAR_MIN_HEIGHT_PX,
   TRAIN_SIDE_LAYOUT_QUERY,
 } from '@/lib/trainSideLayout';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
@@ -100,8 +100,12 @@ const SM_UP_QUERY = '(min-width: 640px)';
 let sideLayoutOnly = false;
 // Models a phone in landscape (852x393): set together with `sideLayoutOnly`.
 let shortViewport = false;
+// Below the band bar's minimum height (a phone in landscape): the actions stay in the column.
+let tooShortForBandBar = false;
+const TOO_SHORT_FOR_BAND_BAR_QUERY = `(max-height: ${TRAIN_BAND_BAR_MIN_HEIGHT_PX - 0.02}px)`;
 function mediaMatches(query: string): boolean {
   if (query === SHORT_VIEWPORT_QUERY) return shortViewport;
+  if (query === TOO_SHORT_FOR_BAND_BAR_QUERY) return tooShortForBandBar;
   // No test here models a portrait foldable; TrainBotBubble.test covers its compact bubble.
   if (query === PORTRAIT_FOLDABLE_QUERY) return false;
   if (query === SM_UP_QUERY) return smUpMatches;
@@ -3890,24 +3894,32 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       afterEach(() => {
         sideLayoutOnly = false;
         shortViewport = false;
+        tooShortForBandBar = false;
       });
 
-      it('uses the side column, the game-info slot and the always-open verdict card', async () => {
+      it('uses the side column and the always-open verdict card, with the actions in the bottom bar', async () => {
         sideLayoutOnly = true;
         await renderScreen(makePuzzle());
         expect(screen.getByTestId('train-prompt-panel')).not.toBeNull();
-        expect(screen.getByTestId('train-game-info-slot')).not.toBeNull();
+        // No slot under the board: the board gets its height, the game info joins the column.
+        expect(screen.queryByTestId('train-game-info-slot')).toBeNull();
         fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
         await act(async () => {
           fireEvent.click(screen.getByTestId('drop-e2e4'));
         });
         await screen.findByTestId('train-verdict-card');
         expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+        expect(screen.queryByTestId('train-reveal-controls-row')).toBeNull();
+        expect(screen.queryByTestId('train-reveal-actions-footer')).toBeNull();
+        const bar = screen.getByTestId('train-reveal-action-bar');
+        expect(screen.getByTestId('train-solve-screen').contains(bar)).toBe(false);
+        expect(screen.getAllByTestId('btn-train-next')).toHaveLength(1);
       });
 
       it('on a short screen (phone landscape) the progress row and game info leave the board column', async () => {
         sideLayoutOnly = true;
         shortViewport = true;
+        tooShortForBandBar = true;
         await renderScreen(makePuzzle());
         const pinned = screen.getByTestId('train-pinned-board');
         // The board column holds the board alone; the progress row tops the side column.

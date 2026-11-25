@@ -57,10 +57,10 @@ export function LibraryPage({
           A <main> here would produce nested <main> landmarks (invalid HTML).
           The Stats subtab (GlobalStatsPage) deliberately renders NO own <main>/max-w
           wrapper so it spans the same width as the Games/Flaws subtabs. */}
-      <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
+      <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 lg:py-6 lg:px-6">
 
         {/* Desktop: Tabs above content */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/library/${val}`)}>
             <TabsList variant="brand" className="w-full" data-testid="library-tabs">
               <TabsTrigger value="import" data-testid="tab-import" className="flex-1">
@@ -102,7 +102,7 @@ export function LibraryPage({
         </div>
 
         {/* Mobile: sticky subnav row + content */}
-        <div className="md:hidden flex flex-col min-w-0">
+        <div className="lg:hidden flex flex-col min-w-0">
           <Tabs
             value={activeTab}
             onValueChange={(val) => {

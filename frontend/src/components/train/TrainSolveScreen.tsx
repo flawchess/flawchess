@@ -55,7 +55,12 @@ import type {
 } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import {
+  useIsTrainBandBar,
+  useIsTrainShortSide,
+  useIsTrainSideLayout,
+  useTrainBoardGutter,
+} from '@/hooks/useIsDesktop';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealEvalReading, RevealUserMove } from '@/hooks/useTrainRevealTree';
 import { useTrainLiveAlternatives } from '@/hooks/useTrainLiveAlternatives';
@@ -134,7 +139,6 @@ import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
 import {
-  SHORT_SIDE_BOARD_GUTTER_PX,
   SHORT_SIDE_FOOTER_RESET_CLASS,
   SHORT_SIDE_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
@@ -748,9 +752,10 @@ export function TrainSolveScreen({
   // viewport bottom and the bubble sat below the fold; the side column and the height fit now
   // engage on the trainside gate (1024px and up, or 768px and up in landscape).
   const isSideLayout = useIsTrainSideLayout();
-  // Exactly one reveal action bar is mounted. In the side layout it is split across
-  // the reveal column (controls row + Next footer); in the stacked layout it is the
-  // fixed bottom bar fed by the published payload. Bug fix (Galaxy Z Fold8 inner
+  const isBandBar = useIsTrainBandBar();
+  // Exactly one reveal action bar is mounted. On desktop (and on a phone held sideways) it is
+  // split across the reveal column (controls row + Next footer); in the stacked layout and the
+  // landscape band it is the fixed bottom bar fed by the published payload. Bug fix (Galaxy Z Fold8 inner
   // screen, portrait): the stacked layout from `sm` up had a cramped in-flow bar under
   // the board; it now uses the bottom bar like phones do. Mounting more than
   // one (CSS-hidden) would duplicate btn-train-next / btn-train-analyze /
@@ -986,14 +991,15 @@ export function TrainSolveScreen({
   useEffect(() => {
     if (tourActive) puzzleTelemetry.markTourActive();
   }, [tourActive, puzzleTelemetry]);
-  // A phone in landscape: a small gutter, so the board gets the screen's height.
   const isShortSide = useIsTrainShortSide();
+  const actionsInSide = isSideLayout && !isBandBar;
+  const gutterPx = useTrainBoardGutter(TRAIN_BOARD_BOTTOM_GUTTER_PX);
   const boardMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef,
     maxPx: TRAIN_BOARD_MAX_WIDTH_PX,
     minPx: TRAIN_BOARD_MIN_WIDTH_PX,
-    gutterPx: isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : TRAIN_BOARD_BOTTOM_GUTTER_PX,
+    gutterPx,
     enabled: isSideLayout,
   });
   const [engineTimedOut, setEngineTimedOut] = useState(false);
@@ -1408,15 +1414,14 @@ export function TrainSolveScreen({
   // verdict lands (`showReveal`); null before it and on unmount, so a stale
   // payload can never press Next for a puzzle no longer on screen. The same
   // applies to portrait tablets and unfolded foldables (the whole stacked
-  // layout); the side layout renders the bar in its reveal column instead.
+  // layout and the landscape band); elsewhere the side layout renders the bar in
+  // its reveal column instead.
   const revealCanReset = !revealTree.isAtRoot;
   const revealCanGoBack = revealTree.canGoBack;
   const revealCanGoForward = revealTree.canGoForward;
   const mobileBoardControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
-      // The stacked layout (phones, portrait tablets, unfolded foldables) publishes to the
-      // fixed bottom bar; the side layout renders the bar as the reveal column's footer.
-      verdict !== null && showReveal && !isSideLayout
+      verdict !== null && showReveal && !actionsInSide
         ? {
             onBack: revealGoBack,
             onForward: revealGoForward,
@@ -1433,7 +1438,7 @@ export function TrainSolveScreen({
     [
       verdict,
       showReveal,
-      isSideLayout,
+      actionsInSide,
       revealGoBack,
       revealGoForward,
       handleRewind,
@@ -1902,10 +1907,9 @@ export function TrainSolveScreen({
       sessionDate={trainSession.session?.session_date}
       expiresOn={trainSession.session?.expires_on}
       onStripExpand={handleStripExpand}
-      // Exactly one bar: the bottom-bar payload publishes in the stacked layout,
-      // these render in the side layout.
+      // Exactly one bar: the bottom-bar payload, or these.
       controlsRow={
-        verdict !== null && isSideLayout ? (
+        verdict !== null && actionsInSide ? (
           <TrainRevealControlsRow
             onRewind={handleRewind}
             onBack={revealGoBack}
@@ -1917,10 +1921,10 @@ export function TrainSolveScreen({
           />
         ) : undefined
       }
-      showGameFooter={!isSideLayout || isShortSide}
+      showGameFooter={!isSideLayout || isShortSide || isBandBar}
       header={isShortSide ? progressRow : undefined}
       nextButton={
-        verdict !== null && isSideLayout ? (
+        verdict !== null && actionsInSide ? (
           <TrainRevealFooter
             onNext={handleBarNext}
             analyzeTo={analyzeTo}
@@ -2057,8 +2061,9 @@ export function TrainSolveScreen({
       </div>
       {/* Side layout: the game info sits under the board, not in the sidebar (Phase
           249 UAT). The slot is always there, so the height-fitted board is the
-          same size before and after the reveal fills it. */}
-      {isSideLayout && !isShortSide && (
+          same size before and after the reveal fills it. Above the bottom bar (and on a
+          short screen) it is in the reveal column, and the board gets the slot's height. */}
+      {isSideLayout && !isShortSide && !isBandBar && (
         <div className={GAME_INFO_SLOT_CLASS} data-testid="train-game-info-slot">
           {verdict !== null && showReveal && (
             <TrainRevealGameFooter

@@ -5,6 +5,7 @@ import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { cn } from '@/lib/utils';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { VariationTree } from '@/components/analysis/VariationTree';
 import type { VariationTreeProps } from '@/components/analysis/VariationTree';
@@ -833,7 +834,16 @@ export type AnalysisTabsProps = {
   humanTab: ReactNode;
   flawChessTab: ReactNode;
   statsTab: ReactNode;
+  /** The two-column layout: the strip is as tall as the row above the board, so the
+   *  tab content starts at the board's top edge. */
+  alignToBoard?: boolean;
 };
+
+/** Padding and gap around the tab strip. Aligned: no top padding, so the 32px strip and the 4px
+ *  gap make up the 36px above the board (BOARD_HEADER_ROW_MIN_CLASS plus its 8px gap, see
+ *  AnalysisBoardStage.tsx). */
+const TABS_SPACING_CLASS = 'gap-2 pt-2';
+const TABS_SPACING_ALIGNED_CLASS = 'gap-1';
 
 /**
  * Tab trigger classes: the icons hide (and the padding tightens) once the strip is narrower
@@ -866,6 +876,7 @@ export function AnalysisTabs({
   humanTab,
   flawChessTab,
   statsTab,
+  alignToBoard = false,
 }: AnalysisTabsProps): ReactElement {
   const hasStatsTab = evalChartReady || evalPending;
   const triggerClass = hasStatsTab ? FIVE_TABS_TRIGGER_CLASS : FOUR_TABS_TRIGGER_CLASS;
@@ -876,7 +887,10 @@ export function AnalysisTabs({
       onValueChange={(tab) => {
         if (isAnalysisTabId(tab)) trackFeature('tab-switch', { target: tab });
       }}
-      className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
+      className={cn(
+        'flex min-h-0 flex-1 flex-col px-2',
+        alignToBoard ? TABS_SPACING_ALIGNED_CLASS : TABS_SPACING_CLASS,
+      )}
     >
       <TabsList variant="underline" className="@container w-full shrink-0 text-sm">
         <TabsTrigger value="moves" data-testid="analysis-tab-moves" className={triggerClass}>

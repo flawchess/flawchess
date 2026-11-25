@@ -438,6 +438,19 @@ describe('FlawsTab', () => {
       );
     });
 
+    it('puts as many cards per row as fit at 340px or more', () => {
+      mockFlawsResult = {
+        data: { flaws: [], matched_count: 42, offset: 0, limit: 20 },
+        isLoading: false,
+        isError: false,
+      };
+      renderFlawsTab();
+      // Sized by the list width, so unfolding or rotating needs no breakpoint.
+      const grid = screen.getAllByTestId('flaw-grid')[0]!;
+      const columnClasses = Array.from(grid.classList).filter((c) => c.includes('grid-cols-'));
+      expect(columnClasses).toEqual(['grid-cols-[repeat(auto-fill,minmax(min(21.25rem,100%),1fr))]']);
+    });
+
     it('renders matched count row', () => {
       mockFlawsResult = {
         data: { flaws: [], matched_count: 42, offset: 0, limit: 20 },

@@ -4,10 +4,9 @@
  * desktop controls row only: on phones and tablets the board always faces the
  * user's side on a solution screen (Phase 249 UAT).
  *
- * Phones and tablets get one bar (`TrainRevealActionBar`): the fixed phone
+ * Phones, foldables and tablets get one bar (`TrainRevealActionBar`) in the fixed
  * bottom bar (`MobileBottomBar` renders it from the published
- * `mobileBoardControls` payload) and an in-flow instance under the board on
- * tablets (`sm` up to `lg`, `framed`). Desktop splits it across the sidebar:
+ * `mobileBoardControls` payload). Desktop splits it across the sidebar:
  * `TrainRevealControlsRow` (the board controls with flip) between the line chips and the
  * move list, and `TrainRevealFooter` (Analyze left of Next, half the column
  * each) at the foot of the column.
@@ -19,7 +18,7 @@
  */
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import { Search } from 'lucide-react';
+import { ArrowRight, Search } from 'lucide-react';
 import { BoardControls, LABELLED_BUTTON_CLASS } from '@/components/board/BoardControls';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -49,34 +48,23 @@ interface RevealNavProps extends RevealControlsProps {
 
 export interface TrainRevealActionBarProps extends Omit<RevealNavProps, 'onFlip'> {
   onNext: () => void;
-  /**
-   * Wrap the board controls in the analysis board's charcoal
-   * container, as tall as Analyze and Next beside it. The in-flow tablet host
-   * sets it; the phone bottom bar instead renders the /analysis mobile footer's
-   * icon-over-label columns, with Analyze as one more column.
-   */
-  framed?: boolean;
 }
 
-/** Tap target for the two labelled buttons: 48px on phones, compact from `sm`. */
-const ACTION_BUTTON_CLASS = 'h-12 shrink-0 px-3 sm:h-8';
-
-/** The framed container matches the `sm:h-8` action buttons; the controls fill its inner height. */
+/** The framed container matches the `h-8` footer buttons; the controls fill its inner height. */
 const FRAMED_CONTAINER_CLASS = 'h-8 min-w-0 flex-1 px-1';
 /** Framed controls share the container's width, for a wide hit area. */
 const FRAMED_CONTROL_BUTTON_CLASS = 'h-full flex-1';
 
 type AnalyzeLinkProps = Pick<RevealNavProps, 'analyzeTo' | 'onAnalyzeClick' | 'spotlightAnalyze'> & {
-  /** Replaces the tablet bar's sizing (the desktop footer's half-width button). */
   className?: string;
 };
 
-/** The outline Analyze button (tablet bar beside the framed controls, desktop footer). */
+/** The outline Analyze button (desktop footer). */
 function FramedAnalyze({
   analyzeTo,
   onAnalyzeClick,
   spotlightAnalyze = false,
-  className = ACTION_BUTTON_CLASS,
+  className,
 }: AnalyzeLinkProps): ReactElement | null {
   if (analyzeTo === null) return null;
   return (
@@ -179,13 +167,12 @@ export function TrainRevealActionBar(props: TrainRevealActionBarProps): ReactEle
     analyzeTo,
     onAnalyzeClick,
     onNext,
-    framed = false,
     spotlightAnalyze = false,
     className,
   } = props;
   // Phone bottom bar: Analyze reads as one more board-control column, the same
   // ghost icon-over-label shape as Start/Back/Fwd. It rides in the controls'
-  // own row (infoSlot) so all four columns share the width equally.
+  // own row (infoSlot) so all columns share the width equally.
   const labelledAnalyze = analyzeTo !== null && (
     <Button
       asChild
@@ -203,39 +190,41 @@ export function TrainRevealActionBar(props: TrainRevealActionBarProps): ReactEle
       </Link>
     </Button>
   );
+  // Next is the last column in the same shape, filled as the bar's one primary action.
+  const labelledNext = (
+    <Button
+      variant="default"
+      className={LABELLED_BUTTON_CLASS}
+      data-testid="btn-train-next"
+      onClick={onNext}
+    >
+      <ArrowRight className="h-5 w-5" aria-hidden="true" />
+      <span className="text-sm">Next</span>
+    </Button>
+  );
   return (
     <div
       data-testid="train-reveal-action-bar"
-      className={cn('flex items-center gap-2', className)}
+      className={cn('flex items-center', className)}
     >
-      {framed ? (
-        <>
-          <FramedControls {...props} />
-          <FramedAnalyze {...props} />
-        </>
-      ) : (
-        <BoardControls
-          flat
-          labels
-          forwardLabel="Fwd"
-          onReset={onRewind}
-          onBack={onBack}
-          onForward={onForward}
-          canReset={canRewind}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          infoSlot={labelledAnalyze}
-          className="min-w-0 flex-1"
-        />
-      )}
-      <Button
-        variant="default"
-        className={ACTION_BUTTON_CLASS}
-        data-testid="btn-train-next"
-        onClick={onNext}
-      >
-        Next
-      </Button>
+      <BoardControls
+        flat
+        labels
+        forwardLabel="Fwd"
+        onReset={onRewind}
+        onBack={onBack}
+        onForward={onForward}
+        canReset={canRewind}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        infoSlot={
+          <>
+            {labelledAnalyze}
+            {labelledNext}
+          </>
+        }
+        className="min-w-0 flex-1"
+      />
     </div>
   );
 }

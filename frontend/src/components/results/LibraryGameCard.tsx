@@ -51,6 +51,7 @@ import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import { isSeverityNarrowed } from '@/lib/flawSeverityFilter';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
+import { useIsSmUp, useMinWidth } from '@/hooks/useIsDesktop';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { Button } from '@/components/ui/button';
 import { trackFeature } from '@/lib/analytics';
@@ -81,6 +82,28 @@ interface LibraryGameCardProps {
 }
 
 const MOBILE_BOARD_SIZE = 130;
+
+/** Two-column body of an analyzed card below lg (unfolded foldables, tablets): the board on the
+ *  left, the game info, eval chart and accuracy row stacked on the right. From 600px, the width
+ *  of the Fold's inner screen with a larger display zoom being 616px. Matches the
+ *  `min-[600px]:` classes of the body below. */
+const TWO_COLUMN_MIN_WIDTH_PX = 600;
+/** Board size there: about the right column's height, a multiple of 8 for whole-pixel squares.
+ *  Leaves 304px beside it on the Fold's inner screen in portrait, as wide as a phone's card. */
+const TWO_COLUMN_BOARD_SIZE = 304;
+/** Smaller below 640px, where the right column would get narrower than a phone's card. */
+const TWO_COLUMN_BOARD_SIZE_NARROW = 232;
+
+/** Miniboard size of the body below lg: half the viewport on phones; from 600px it depends on
+ *  whether the card has an eval chart to fill a column beside the board. */
+function useCardBoardSize(hasTwoColumns: boolean): number {
+  const phoneSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
+  const isTwoColumnWidth = useMinWidth(TWO_COLUMN_MIN_WIDTH_PX);
+  const isSmUp = useIsSmUp();
+  if (!isTwoColumnWidth) return phoneSize;
+  if (!hasTwoColumns) return MOBILE_BOARD_SIZE;
+  return isSmUp ? TWO_COLUMN_BOARD_SIZE : TWO_COLUMN_BOARD_SIZE_NARROW;
+}
 
 // Severity-coded last-move square overlay on the hover miniboard: inaccuracy is
 // yellow; blunder/mistake get red/orange at the same alpha. The flaw itself is a
@@ -512,7 +535,7 @@ export function LibraryGameCard({
   }, [highlight, cycle, game.flaw_markers, categoryPlies]);
 
   // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed size.
-  const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
+  const cardBoardSize = useCardBoardSize(isAnalyzed);
 
   // Tactic motifs: collect unique (orientation, motif-label) pairs from user flaw
   // markers so the chip row shows one chip per distinct orientation+label. BOTH
@@ -680,6 +703,8 @@ export function LibraryGameCard({
     scrubPly != null && perPly ? Math.min(Math.max(scrubPly, 0), perPly.length - 1) : null;
   const hoverEntry = activePly != null ? perPly?.[activePly] : undefined;
   const boardFen = hoverEntry?.fen ?? game.result_fen ?? null;
+  // Body below lg from 600px: the board on the left, info, eval chart and accuracy on the right.
+  const hasTwoColumns = isAnalyzed && boardFen != null;
   const hoverSeverity = activePly != null ? flawByPly.get(activePly) : undefined;
   // Highlight the scrubbed move's from/to squares (only while hovering — at rest
   // the board shows the final position with no single "last move" to mark).
@@ -909,14 +934,14 @@ export function LibraryGameCard({
   // Metadata items
   const dateItem = game.played_at && (
     <span className="inline-flex items-center gap-1">
-      <Calendar className="h-3.5 w-3.5" />
+      <Calendar className="h-3.5 w-3.5 shrink-0" />
       {formatDate(game.played_at)}
     </span>
   );
 
   const timeControlItem = game.time_control_bucket && (
     <span className="inline-flex items-center gap-1">
-      <Clock className="h-3.5 w-3.5" />
+      <Clock className="h-3.5 w-3.5 shrink-0" />
       <span className="capitalize">{game.time_control_bucket}</span>
       {game.time_control_str ? ` ${formatTimeControl(game.time_control_str)}` : ''}
     </span>
@@ -924,7 +949,7 @@ export function LibraryGameCard({
 
   const moveCountItem = game.ply_count !== null && (
     <span className="inline-flex items-center gap-1">
-      <Hash className="h-3.5 w-3.5" />
+      <Hash className="h-3.5 w-3.5 shrink-0" />
       {plysToFullMoves(game.ply_count)} Moves
     </span>
   );
@@ -936,24 +961,10 @@ export function LibraryGameCard({
     </span>
   );
 
-  // Shared game-info block (same order on every game card):
-  //   line 1: "<TC name> <base>[+inc]"
-  //   line 2: "# n Moves" — on its own line below TC
-  //   line 3: date
-  //   line 4: termination (result chip + reason)
-  const metadata = (
-    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-      {timeControlItem}
-      {moveCountItem}
-      {dateItem}
-      {terminationItem}
-    </div>
-  );
-
   // Desktop-only one-line metadata strip: opening · TC · moves · date · result.
   // Spans the full card width on top of the board; the date lives here (not the
   // header) so it isn't duplicated on adjacent rows.
-  // Used only by the desktop body; does not affect the shared `metadata` or mobile rendering.
+  // Used only by the desktop body; does not affect the body below lg.
   const desktopMetaStrip = (
     <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
       <BookOpen className="h-3.5 w-3.5 shrink-0" />
@@ -1057,39 +1068,22 @@ export function LibraryGameCard({
     </div>
   );
 
-  // Mobile flaw block (full-width, stacked): the MoveStats accuracy card + compact
-  // summary row (chevron expands the full two-sided table), then the tags card.
-  // Desktop renders its own MoveStats + tags card in the two-column body below. The
-  // display:contents wrapper marks the cycle-driving controls so the outside-pointer
-  // handler keeps the locked highlight alive while the user clicks chips/cells, yet
-  // undims when they click anywhere else.
-  const flawContent =
-    game.analysis_state === 'analyzed' ? (
-      <div data-testid={`flaw-controls-${game.game_id}`} className="contents">
-        {/* Accuracy card + compact 7-column summary row; the chevron
-            (move-stats-expand-toggle) reveals the full two-sided 8-row table. */}
-        <MoveStats
-          game={game}
-          gameId={game.game_id}
-          collapsed={!mobileMoveStatsExpanded}
-          showCompactRow
-          onToggleCollapse={() => setMobileMoveStatsExpanded((v) => !v)}
-          activeRef={activeCellRef}
-          outlinedRefs={outlinedCellRefs}
-          onCellActivate={handleMoveStatsCellActivate}
-          onCellHover={handleMoveStatsCellHover}
-        />
-        {hasTags && renderTagsBlock()}
-      </div>
-    ) : (
-      <NoAnalysisState
-        gameId={game.game_id}
-        isAnalyzed={isAnalyzed}
-        isInFlight={isInFlight}
-        onInFlightChange={setInFlight}
-        activeEvalStatus={game.active_eval_status}
-      />
-    );
+  // Below-lg accuracy card + compact 7-column summary row; the chevron
+  // (move-stats-expand-toggle) reveals the full two-sided 8-row table. Desktop renders
+  // its own MoveStats in the two-column body below.
+  const compactMoveStats = (
+    <MoveStats
+      game={game}
+      gameId={game.game_id}
+      collapsed={!mobileMoveStatsExpanded}
+      showCompactRow
+      onToggleCollapse={() => setMobileMoveStatsExpanded((v) => !v)}
+      activeRef={activeCellRef}
+      outlinedRefs={outlinedCellRefs}
+      onCellActivate={handleMoveStatsCellActivate}
+      onCellHover={handleMoveStatsCellHover}
+    />
+  );
 
   // Analyze button (analyzed games only). Opens /analysis?game_id=X[&ply=Y]; ply is
   // the scrubbed slider position, omitted when the slider rests on the end position.
@@ -1119,57 +1113,97 @@ export function LibraryGameCard({
       {/* Banded header (desktop single-line, mobile two-line) */}
       {header}
 
-      {/* Mobile body: board+info row, eval chart block, flaw block. Switches to the
-          desktop two-column body at lg (1024px) — one breakpoint later than the previous
-          md so tablets/narrow desktops keep the stacked layout and the eval chart isn't
-          compressed in the three-lane desktop row. */}
+      {/* Body below lg. Phones: board+info row, then the eval chart, accuracy row and tags at
+          full width. From 600px an analyzed card has two columns: the board,
+          and beside it the info, eval chart and accuracy row. Same DOM order in both. The
+          desktop body starts at lg (1024px), so tablets/narrow desktops keep this one and the
+          eval chart isn't compressed in the three-lane desktop row. */}
       <div className="flex flex-col gap-2 lg:hidden px-4 py-4">
-        <div className="flex gap-3 items-start">
+        <div
+          className={cn(
+            'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2',
+            // The last row takes a taller board's spare height, so the rows stay packed.
+            hasTwoColumns && 'min-[600px]:grid-rows-[auto_auto_1fr]',
+          )}
+        >
           {boardFen && (
-            <LazyMiniBoard
-              fen={boardFen}
-              flipped={game.user_color === 'black'}
-              size={mobileBoardSize}
-              arrows={boardArrows}
-              squareMarkers={squareMarkers}
-              lastMove={lastMove}
-              lastMoveColor={lastMoveColor}
-            />
+            <div className={cn(hasTwoColumns && 'min-[600px]:row-span-3')}>
+              <LazyMiniBoard
+                fen={boardFen}
+                flipped={game.user_color === 'black'}
+                size={cardBoardSize}
+                arrows={boardArrows}
+                squareMarkers={squareMarkers}
+                lastMove={lastMove}
+                lastMoveColor={lastMoveColor}
+              />
+            </div>
           )}
-          <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className={cn('min-w-0 flex flex-col gap-1', !boardFen && 'col-span-2')}>
             {openingLine}
-            {metadata}
+            {/* Shared game-info block: stacked beside the board on phones, wrapped in rows in
+                the wider column. */}
+            <div
+              className={cn(
+                'flex flex-col gap-1 text-sm text-muted-foreground',
+                hasTwoColumns && 'min-[600px]:flex-row min-[600px]:flex-wrap min-[600px]:gap-x-3',
+              )}
+            >
+              {timeControlItem}
+              {moveCountItem}
+              {dateItem}
+              {terminationItem}
+            </div>
           </div>
-        </div>
-        {/* Eval chart — full-width, analyzed games only (mobile parity with desktop col 2) */}
-        {game.analysis_state === 'analyzed' &&
-          game.eval_series &&
-          game.flaw_markers &&
-          game.phase_transitions && (
-            <EvalChart
-              gameId={game.game_id}
-              evalSeries={game.eval_series}
-              flawMarkers={game.flaw_markers}
-              phaseTransitions={game.phase_transitions}
-              moves={game.moves ?? []}
-              flipped={game.user_color === 'black'}
-              userColor={userColor}
-              onActivePlyChange={setScrubPly}
-              highlightedPlies={highlightedPlies}
-              outlinedPlies={outlinedPlies}
-              initialPly={initialPly}
-              commandedPly={commandedPly}
-              commandSeq={commandSeq}
-              // Chart + 16px slider row = MOBILE_BOARD_SIZE (130px), so the eval
-              // block matches the miniboard height. Literal arbitrary value so
-              // Tailwind's JIT scanner emits the class.
-              heightClass="h-[114px]"
-            />
+          {/* Eval chart — analyzed games only (parity with desktop col 2) */}
+          {game.analysis_state === 'analyzed' &&
+            game.eval_series &&
+            game.flaw_markers &&
+            game.phase_transitions && (
+              <div className={cn('col-span-2 min-w-0', hasTwoColumns && 'min-[600px]:col-span-1')}>
+                <EvalChart
+                  gameId={game.game_id}
+                  evalSeries={game.eval_series}
+                  flawMarkers={game.flaw_markers}
+                  phaseTransitions={game.phase_transitions}
+                  moves={game.moves ?? []}
+                  flipped={game.user_color === 'black'}
+                  userColor={userColor}
+                  onActivePlyChange={setScrubPly}
+                  highlightedPlies={highlightedPlies}
+                  outlinedPlies={outlinedPlies}
+                  initialPly={initialPly}
+                  commandedPly={commandedPly}
+                  commandSeq={commandSeq}
+                  // md: the game info takes one line less in the wider column there, and the
+                  // chart fills the height up to TWO_COLUMN_BOARD_SIZE.
+                  heightClass="h-[114px] md:h-[134px]"
+                />
+              </div>
+            )}
+          {/* The flaw-controls wrappers mark the cycle-driving controls so the outside-pointer
+              handler keeps the locked highlight alive while the user clicks chips/cells, yet
+              undims when they click anywhere else. */}
+          {isAnalyzed && (
+            <div
+              data-testid={`flaw-controls-${game.game_id}`}
+              className={cn('col-span-2 min-w-0', hasTwoColumns && 'min-[600px]:col-span-1')}
+            >
+              {compactMoveStats}
+            </div>
           )}
-        {/* Full-width flaw block on mobile */}
-        <div className="flex flex-col gap-2">
-          {flawContent}
         </div>
+        {isAnalyzed ? (
+          hasTags && <div data-testid={`flaw-controls-${game.game_id}`}>{renderTagsBlock()}</div>
+        ) : (
+          <NoAnalysisState
+            gameId={game.game_id}
+            isAnalyzed={isAnalyzed}
+            isInFlight={isInFlight}
+            onInFlightChange={setInFlight}
+            activeEvalStatus={game.active_eval_status}
+          />
+        )}
         {/* Analyze button — mobile, below eval chart. Analyzed games only. */}
         {isAnalyzed && (
           <div className="lg:hidden flex gap-2">

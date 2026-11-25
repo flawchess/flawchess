@@ -3,10 +3,10 @@
  *
  * Laid out like the personalized-puzzle reveal on phones and desktop (Phase 249 UAT): the
  * shared stage (progress row, board, eval bar), the reveal actions (rewind, back, forward,
- * Analyze, Next: split across the side column on desktop, with flip in its controls row; under
- * the board on tablets; in the fixed bottom bar on phones) and a
- * panel with the host's verdict card, the Your / Best / Game line chips (`TrainLineChips`), the
- * one move list (`TrainMoveTreeList`) and the game footer. The board follows the reveal move
+ * Analyze, Next: split across the side column on desktop, with flip in its controls row; in the
+ * fixed bottom bar on phones, foldables and tablets) and a panel with the host's verdict card,
+ * the Your / Best / Game line chips (`TrainLineChips`), the one move list (`TrainMoveTreeList`)
+ * and the game footer. The board follows the reveal move
  * tree (`useTrainRevealTree`), wired the way TrainReveal wires it. Every chip's line is a
  * browser-engine search, run one after another on the session's shared engine. Analyze
  * deep-links to /analysis at the blunder position (internal link, so no Umami attribute,
@@ -37,7 +37,7 @@ import { TrainRevealControlsRow, TrainRevealFooter } from '@/components/train/Tr
 import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import { useBoardNavigationInput } from '@/hooks/useBoardNavigationInput';
-import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import { useIsTrainBandBar, useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import type { TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
@@ -211,7 +211,7 @@ interface SolutionShellProps {
   onNext: () => void;
   renderEvalBar?: (flipped: boolean) => ReactNode;
   /** The chips and move list, given the board's orientation and the desktop controls row
-   * that goes between them (falsy in the stacked layout). */
+   * that goes between them (falsy where the bottom bar has the controls). */
   renderLines: (flipped: boolean, controlsRow: ReactNode) => ReactNode;
   footer: ReactNode;
   boardRef: RefObject<HTMLDivElement | null>;
@@ -258,9 +258,9 @@ function SolutionVerdict({ copy, avatar, showHeading = true }: SolutionVerdictPr
 
 /**
  * The reveal layout shared by the three solution kinds: stage, action bar (split across the
- * side column in the side layout: controls row above the move list, Next as the footer;
- * published to the fixed bottom bar in the stacked layout, so exactly one is mounted) and the
- * verdict panel.
+ * side column on desktop: controls row above the move list, Next as the footer;
+ * published to the fixed bottom bar in the stacked layout and the landscape band, so exactly one
+ * is mounted) and the verdict panel.
  */
 function SolutionShell({
   progress,
@@ -285,12 +285,14 @@ function SolutionShell({
   // shows the game info twice or never.
   const isSideLayout = useIsTrainSideLayout();
   const isShortSide = useIsTrainShortSide();
+  const isBandBar = useIsTrainBandBar();
+  // Exactly one bar: the fixed bottom bar (stacked layout and landscape band), or the side
+  // column's controls row and footer (desktop, and phones held sideways).
+  const actionsInSide = isSideLayout && !isBandBar;
   const { onRewind, onBack, onForward, canRewind, canGoBack, canGoForward } = nav;
   const mobileControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
-      // The stacked layout (phones, and portrait tablets / unfolded foldables) publishes to
-      // the fixed bottom bar; the side layout puts the controls in its side column.
-      isSideLayout
+      actionsInSide
         ? null
         : {
             onBack,
@@ -304,7 +306,7 @@ function SolutionShell({
             onAnalyzeClick,
           },
     [
-      isSideLayout,
+      actionsInSide,
       onBack,
       onForward,
       onRewind,
@@ -318,10 +320,8 @@ function SolutionShell({
   );
   usePublishMobileBoardControls(mobileControls);
 
-  // Exactly one bar: the bottom-bar payload publishes in the stacked layout, these in the side one.
-  const onDesktop = isSideLayout;
-  // Side layout: the controls sit between the chips and the move list.
-  const controlsRow = onDesktop && (
+  // The controls sit between the chips and the move list.
+  const controlsRow = actionsInSide && (
     <TrainRevealControlsRow
       onRewind={onRewind}
       onBack={onBack}
@@ -378,10 +378,10 @@ function SolutionShell({
           )}
           {renderLines(flipped, controlsRow)}
           {/* The side layout shows the game info under the board instead (underBoard), except
-              on a short screen, where the board column holds the board alone. */}
-          {(!isSideLayout || isShortSide) && footer}
-          {/* Side layout: Analyze and Next are the side column's footer, on the board's bottom edge. */}
-          {onDesktop && (
+              on a short screen and above the bottom bar, where the board gets the height. */}
+          {(!isSideLayout || isShortSide || isBandBar) && footer}
+          {/* Analyze and Next are the side column's footer, on the board's bottom edge. */}
+          {actionsInSide && (
             <TrainRevealFooter
               onNext={onNext}
               analyzeTo={analyzeTo}

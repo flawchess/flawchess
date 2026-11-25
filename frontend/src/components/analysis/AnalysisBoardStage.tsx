@@ -9,6 +9,7 @@ import {
 import { AnalysisPlayerBar, BoardHeaderRow, BoardFooterRow } from '@/components/analysis/AnalysisPlayerBar';
 import type { AnalysisPlayerBarProps } from '@/components/analysis/AnalysisPlayerBar';
 import { BOARD_EVAL_BARS_ALLOWANCE_PX } from '@/components/board/boardSize';
+import { cn } from '@/lib/utils';
 
 /**
  * AnalysisBoardStage — the board row and the desktop/mid JS-sized board column.
@@ -71,7 +72,18 @@ export type DesktopBoardStageProps = {
   tagsPanelProps: Omit<TagsPanelProps, 'withHighlight' | 'section'>;
   /** The contextual Explain bar, rendered only in the mid layout (under the board controls). */
   explainBar?: ReactNode;
+  /** Keeps the Explain bar's height free while it is hidden. The board below lg is sized to the
+   *  screen height, so without it the board would resize on every move that has no flaw. */
+  reserveExplainBarSlot?: boolean;
 };
+
+/** The mid Explain bar's height (58px): its lg buttons, padding and border. */
+const EXPLAIN_BAR_SLOT_CLASS = 'w-full min-h-14.5';
+
+/** In the mid layout the row above the board is at least 28px (its height with player bars at the
+ *  phone type scale), in free play too, so the tab strip beside it can match (AnalysisTabs.tsx).
+ *  Bug fix: it applied below lg only, so from lg the tab content started below the board's top. */
+const BOARD_HEADER_ROW_MIN_CLASS = 'flex min-h-7 flex-col justify-center';
 
 // Desktop board column. The outer div is the measured "stage" (see
 // `useBoardStageSize`): a full-width, viewport-height-locked box. Inside sits ONE
@@ -105,6 +117,7 @@ export function DesktopBoardStage({
   evalChartPanelProps,
   tagsPanelProps,
   explainBar,
+  reserveExplainBarSlot = false,
 }: DesktopBoardStageProps): ReactElement {
   return (
     <div
@@ -121,7 +134,7 @@ export function DesktopBoardStage({
       >
         {/* Source caps (Maia/SF) over the bars + top player (game mode, or an
             ephemeral pasted PGN). */}
-        <div className="w-full">
+        <div className={cn('w-full', isMid && BOARD_HEADER_ROW_MIN_CLASS)}>
           <BoardHeaderRow
             flawChessEnabled={flawChessEnabled}
             showPlayerBars={showPlayerBars}
@@ -173,7 +186,8 @@ export function DesktopBoardStage({
             hidden while the board stays visible, so the bar sits under it (and, from lg, its controls). The
             3-column desktop mounts the bar in the MovesCard footer and mobile mounts it
             above analysis-mobile-footer. */}
-        {isMid && explainBar}
+        {isMid &&
+          (reserveExplainBarSlot ? <div className={EXPLAIN_BAR_SLOT_CLASS}>{explainBar}</div> : explainBar)}
 
         {/* EvalChart with slider — game mode only, aligned to the board width.
             highlightedPlies: dims non-matching markers on tags-panel hover.

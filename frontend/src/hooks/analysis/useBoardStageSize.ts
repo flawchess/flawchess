@@ -57,12 +57,62 @@ type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
 const BOARD_WIDTH_LOCK_MIN_PX = 1200;
 const BOARD_HEIGHT_LOCK_MIN_PX = 880;
 
+/** The mid layout's floor under height pressure when the phone footer is pinned; under it the
+ *  page scrolls. Below BOARD_MIN_WIDTH on purpose: an unfolded foldable has about 617px of
+ *  height once the OS status bar and taskbar are gone. */
+const PINNED_FOOTER_BOARD_MIN_PX = 280;
+
+/** The board column's largest share of the row in the mid layout below lg, and the gap between
+ *  the columns (Analysis.tsx's `gap-4`). The column itself is only as wide as the board, so the
+ *  tabs take the rest; a share of the page, not of the column, keeps that from feeding back. */
+const MID_BOARD_COLUMN_MAX_SHARE = 0.6;
+const MID_COLUMN_GAP_PX = 16;
+
+/** Width the board column may take in the mid layout below lg. */
+function maxMidBoardColumnWidth(main: HTMLElement): number {
+  const { paddingLeft, paddingRight } = window.getComputedStyle(main);
+  const padding = (parseFloat(paddingLeft) || 0) + (parseFloat(paddingRight) || 0);
+  return (main.clientWidth - padding - MID_COLUMN_GAP_PX) * MID_BOARD_COLUMN_MAX_SHARE;
+}
+
+/**
+ * The mid layout's board size when the phone footer is pinned (below lg): the screen height
+ * left between the stage's top and the footer, less the rows around the board. `<main>`'s
+ * bottom padding is the footer's height plus a gap (and the safe area), see Analysis.tsx.
+ *
+ * Bug fix (Galaxy Z Fold8 landscape, 933x617 inside the OS bars): the board was sized by width
+ * alone, so the Explain bar under it was cut off by the footer. DevTools presets hid this,
+ * because they give the page the full 933x704 screen.
+ */
+function pinnedFooterBoardSize(
+  stage: HTMLElement,
+  main: HTMLElement | null,
+  widthBudget: number,
+  chrome: number,
+): number {
+  const clearance = main ? parseFloat(window.getComputedStyle(main).paddingBottom) || 0 : 0;
+  const stageTop = stage.getBoundingClientRect().top + window.scrollY;
+  const heightBudget = document.documentElement.clientHeight - stageTop - chrome - clearance;
+  return Math.max(
+    0,
+    Math.floor(Math.min(widthBudget, BOARD_MAX_WIDTH, Math.max(PINNED_FOOTER_BOARD_MIN_PX, heightBudget))),
+  );
+}
+
 export interface UseBoardStageSizeOptions {
   layoutMode: AnalysisLayoutMode;
   /** The board's own board-box wrapper (from useAnalysisBoard) — its clientHeight is the
    *  chrome-free board box height the effect subtracts to derive non-board "chrome". */
   containerRef: RefObject<HTMLDivElement | null>;
   isGameMode: boolean;
+  /** The mid layout below lg, whose board column is only as wide as the board: the width budget
+   *  comes from `<main>` there, since one read from the column would shrink the board a bit more
+   *  on every measurement. */
+  isColumnBoardWide: boolean;
+  /** The mid layout below lg, whose board-controls footer is pinned to the viewport. False on
+   *  a phone held sideways: the footer is in flow there and the page scrolls, so the board is
+   *  width-driven. */
+  hasPinnedFooter: boolean;
   /** Whole game object, read only as an effect-rerun trigger (see the effect's own
    *  comment) — the board-group chrome mounts asynchronously once the game loads, so a
    *  transition needs a re-measure even though the ResizeObserver watches the fixed-size
@@ -83,7 +133,7 @@ export interface UseBoardStageSizeResult {
  * budget. See the file header for scope and why this is genuinely new.
  */
 export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardStageSizeResult {
-  const { layoutMode, containerRef, isGameMode, gameData } = options;
+  const { layoutMode, containerRef, isGameMode, isColumnBoardWide, hasPinnedFooter, gameData } = options;
 
   // Desktop board sizing: the stage box is a fixed-size, locked
   // band that never resizes with the board — inside it, the board fits to whichever of
@@ -124,7 +174,13 @@ export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardSt
       // Reserve the bars allowance AND both slider-slack margins so the board group ends up
       // narrower than its track and centers with EVAL_SLIDER_SLACK_PX of breathing room on
       // each side — room the eval-chart slider's thumb overhang needs to avoid being clipped.
-      const widthBudget = el.clientWidth - BOARD_EVAL_BARS_ALLOWANCE_PX - EVAL_SLIDER_SLACK_PX * 2;
+      const main = el.closest('main');
+      const columnWidth = isColumnBoardWide && main ? maxMidBoardColumnWidth(main) : el.clientWidth;
+      const widthBudget = columnWidth - BOARD_EVAL_BARS_ALLOWANCE_PX - EVAL_SLIDER_SLACK_PX * 2;
+      if (hasPinnedFooter) {
+        setBoardWidth(pinnedFooterBoardSize(el, main, widthBudget, chrome));
+        return;
+      }
       const heightBudget = locked ? el.clientHeight - chrome : Infinity;
       const raw = computeBoardSize(widthBudget, heightBudget, BOARD_MAX_WIDTH);
       // Draw the desktop board 20px smaller than its natural fit (floored at
@@ -144,6 +200,9 @@ export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardSt
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
+    // Below lg the stage is as wide as the board, so only `<main>` follows the page's width.
+    const main = stage.closest('main');
+    if (isColumnBoardWide && main) observer.observe(main);
     // A viewport resize that crosses the width/height lock thresholds also flips the
     // `locked` branch above; observe window resize too so those crossings recompute even
     // if the stage's own box happens not to change on the same frame.
@@ -162,7 +221,9 @@ export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardSt
     // layoutMode (not just isMobile): the desktop stage mounts in BOTH the mid and desktop
     // trees, so crossing the desk3col breakpoint remounts it — re-run to re-observe the new
     // stage node (else the observer stays bound to the unmounted one and boardWidth goes stale).
-  }, [layoutMode, containerRef, isGameMode, gameData]);
+    // isColumnBoardWide/hasPinnedFooter: crossing lg, or the footer's minimum screen height,
+    // inside the mid layout switches the budgets.
+  }, [layoutMode, containerRef, isGameMode, isColumnBoardWide, hasPinnedFooter, gameData]);
 
   return { boardStageRef, boardWidth, boardStageHeight };
 }

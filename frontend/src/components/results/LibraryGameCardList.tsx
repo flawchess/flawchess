@@ -74,8 +74,9 @@ export function LibraryGameCardList({
 
   return (
     <section aria-label="Game results" data-testid="library-game-card-list" className="space-y-3">
-      {/* Matched-count row with coverage badge top-right */}
-      <div className="flex items-center justify-between gap-3">
+      {/* Matched-count row with coverage badge top-right. Below lg the counts sit in the
+          page's control bar (LibraryMobileFilterBar). */}
+      <div className="hidden lg:flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {matchedCount} game{matchedCount === 1 ? '' : 's'} matched
         </p>

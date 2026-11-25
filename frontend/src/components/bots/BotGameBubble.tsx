@@ -36,12 +36,12 @@ import { botLineCopy, type BotLineKey } from '@/lib/botGameCopy';
  * shared with `TrainBotBubble`'s Train-specific sizes; each surface picks
  * its own.
  *
- * 72px on phones, 84px on `sm` and above: the bot's face is the point of
+ * 72px in the phone frame, 84px on desktop (`lg`): the bot's face is the point of
  * the immersive layout. The mobile cost is accepted (every px here is a px
  * the copy box and the board width do not get), and the height is constant
  * either way, so the fixed bubble slot measures the same on every render.
  */
-export const BOT_GAME_AVATAR_CLASS = 'size-18 sm:size-21';
+export const BOT_GAME_AVATAR_CLASS = 'size-18 lg:size-21';
 
 /**
  * The copy node's fixed-height + type-size classes: the min-height
@@ -49,13 +49,14 @@ export const BOT_GAME_AVATAR_CLASS = 'size-18 sm:size-21';
  * `null` and never grows when it is set — the board's fit-to-viewport
  * measurement (`useFitBoardToViewport`) sees a constant height either way.
  *
- * `index.css` lifts `.text-sm` to 1rem/1.5rem below the `sm` breakpoint (the
- * mobile typography bump), so two lines are 48px on phones, not Tailwind's
+ * `index.css` lifts `.text-sm` to 1rem/1.5rem on phones and unfolded foldables (the
+ * mobile typography bump), so two lines are 48px there, not Tailwind's
  * default 40px. A single `min-h-10` would let the slot grow from 60px to 68px
- * the moment a line landed and push the board down 8px. `min-h-12` below `sm`
- * and `min-h-10` at `sm+` track the same 639.98px boundary the stylesheet uses.
+ * the moment a line landed and push the board down 8px. Bug fix: the switch sat at
+ * `sm`, so unfolded foldables got the 48px text in a 40px slot and the board moved.
+ * `lg` is the first width where no orientation gets the lifted text.
  */
-export const BOT_GAME_BUBBLE_COPY_CLASS = 'flex min-h-12 items-center text-sm sm:min-h-10';
+export const BOT_GAME_BUBBLE_COPY_CLASS = 'flex min-h-12 items-center text-sm lg:min-h-10';
 
 /**
  * The generic offer sentence, used ONLY by the persona-less bubble form below.

@@ -37,16 +37,10 @@ interface SidebarLayoutProps {
   sideContent?: ReactNode;
   /** Extra content rendered in the strip below the panel icons (e.g. color toggle) */
   stripExtra?: ReactNode;
-  /**
-   * Tailwind breakpoint at which the desktop layout activates. Pages with a wide
-   * board column (Openings) need "lg" so the main content column doesn't get
-   * squeezed too narrow at md (768px).
-   */
-  breakpoint?: 'md' | 'lg';
   children: ReactNode;
 }
 
-export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideContent, stripExtra, breakpoint = 'md', children }: SidebarLayoutProps) {
+export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideContent, stripExtra, children }: SidebarLayoutProps) {
   const activePanelConfig = panels.find(p => p.id === activePanel);
   const panelRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -170,10 +164,9 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
     </div>
   );
 
-  // Tailwind JIT requires complete class strings — branch on the prop rather than interpolating.
-  const wrapperClass = breakpoint === 'lg'
-    ? `hidden lg:flex lg:flex-row lg:min-h-0 lg:flex-1 lg:relative ${hasSideContent ? 'lg:items-start' : 'lg:items-stretch'}`
-    : `hidden md:flex md:flex-row md:min-h-0 md:flex-1 md:relative ${hasSideContent ? 'md:items-start' : 'md:items-stretch'}`;
+  // Shown from lg, where the app's desktop frame starts; below it the pages render their phone
+  // layout (bottom bar, filter buttons). Tailwind JIT requires complete class strings.
+  const wrapperClass = `hidden lg:flex lg:flex-row lg:min-h-0 lg:flex-1 lg:relative ${hasSideContent ? 'lg:items-start' : 'lg:items-stretch'}`;
 
   // No panels and no side content: nothing for a strip to hold, so render the main
   // column alone (Endgames Stats tab hides its filter UI). The column

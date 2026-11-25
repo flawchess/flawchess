@@ -17,8 +17,8 @@
 }
 
 /* short releases the /analysis page's 100dvh lock below ~560px viewport
-   height at ANY width, so the whole page scrolls instead of clipping content.
-   559.98px makes >=560px the locked band and <560px the release band. */
+   height (App.tsx scopes it to landscape), so the whole page scrolls instead of
+   clipping content. 559.98px makes >=560px the locked band and <560px the release band. */
 @custom-variant short (@media (max-height: 559.98px));
 
 /* deskshort releases the same lock for the desktop 3-column grid (>= desk3col

@@ -74,7 +74,7 @@ export function StatsTab({
           (Out of the opening), like the Library Stats TC switch. Phones render the same
           switch inside the sticky Filters row in Openings.tsx (one sticky row, not two).
           No ancestor may set overflow-* or the bar stops sticking. */}
-      <StickyTcBar showOnMobile={false} desktopBreakpoint="lg" testId="opening-stats-color-bar">
+      <StickyTcBar showOnMobile={false} testId="opening-stats-color-bar">
         <OpeningColorSwitch idPrefix="desktop" selected={color} onSelect={onColorChange} />
       </StickyTcBar>
       <div className="flex flex-col gap-6">

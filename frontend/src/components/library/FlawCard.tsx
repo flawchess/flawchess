@@ -1,11 +1,6 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import {
-  Search,
-  Calendar,
-  Clock,
-  Cpu,
-  ExternalLink,
-} from 'lucide-react';
+import { Search, Clock } from 'lucide-react';
 import {
   SEV_BLUNDER,
   SEV_MISTAKE,
@@ -24,26 +19,30 @@ import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { isFacepalmBlunder } from '@/lib/facepalm';
 import { FacepalmBadgePopover } from '@/components/library/FacepalmBadgePopover';
-import { TagChip, TagLegend } from '@/components/library/TagChip';
+import { ChipPopover } from '@/components/library/ChipPopover';
+import { TagChip } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
-import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
+import {
+  TACTIC_FAMILY_FOR_MOTIF,
+  tacticDepthBadge,
+  tacticMotifDefinition,
+  tacticMotifLabel,
+} from '@/lib/tacticComparisonMeta';
+import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
+import { getTagFamily } from '@/lib/tagVisuals';
+import { cn } from '@/lib/utils';
 import { formatMoveNotation } from '@/lib/openingInsights';
-import { formatFlawEvalParts } from '@/lib/formatFlawEval';
-import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
+import { useFlawBoardSize } from '@/hooks/useFlawBoardSize';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
-import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
+import type { FlawListItem, FlawSeverity, FlawTag, TacticOrientation } from '@/types/library';
 
 // Standalone component (sibling to LibraryGameCard — does not import from it).
 
-// Board sizes. Desktop is enlarged: the flaw grid is 2-up (more width per card),
-// and the board spans the full card-body height with the metadata + tags stacked
-// beside it on the right. Mobile keeps the smaller base (resolved to 50% viewport
-// by useMiniBoardSize).
-const DESKTOP_BOARD_SIZE = 200;
-const MOBILE_BOARD_SIZE = 132;
+/** Move times below this show one decimal ("8.4s"), longer ones whole seconds ("62s"). */
+const MOVE_TIME_DECIMAL_MAX_SECONDS = 10;
 
 // Severity → accent color mapping (left-spine and board arrow color)
 const SEVERITY_COLOR: Record<FlawSeverity, string> = {
@@ -79,8 +78,13 @@ function formatClock(clockSec: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// Hover affordance for the severity chip when it is the facepalm popover trigger, so it reads as tappable.
+// Hover affordance for a chip that is a popover trigger, so it reads as tappable.
 const FLAW_CHIP_TRIGGER_CLASS = 'transition-all hover:-translate-y-px hover:brightness-125';
+
+/** Seconds spent on the flawed move. */
+function formatMoveTime(seconds: number): string {
+  return `${seconds.toFixed(seconds < MOVE_TIME_DECIMAL_MAX_SECONDS ? 1 : 0)}s`;
+}
 
 /**
  * The one severity chip of a Flaws card (260-G2): "??? Facepalm" for a facepalm blunder, "?? Blunder" for
@@ -113,19 +117,146 @@ function FlawSeverityChip({ flaw }: { flaw: FlawListItem }) {
   );
 }
 
-/**
- * FlawCard — one flawed-move card for the Flaws subtab grid.
- *
- * Replicates the LibraryGameCard visual language: banded header with the
- * opponent + exact-ply platform deep-link, a miniboard with the flaw-move
- * arrow, standard-notation move + user-POV eval swing, one severity chip (the facepalm popover trigger on a scored blunder),
- * family-colored tag chips, TagLegend, and metadata. An Analyze button below
- * the body opens /analysis at the flaw ply.
- *
- * Security: user-provided strings (usernames, platform_url) are React children
- * or href (auto-escaped). platform link uses target=_blank + rel=noopener
- * noreferrer (reverse-tabnabbing guard).
- */
+/** Explanation popover body: "<bold term>: definition". */
+function Definition({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <>
+      <span className="font-bold">{term}</span>: {children}
+    </>
+  );
+}
+
+/** A tactic chip, cut off only where the column is too narrow for its label; hover or tap explains the motif. */
+function FlawTacticChip({
+  flaw,
+  motif,
+  orientation,
+}: {
+  flaw: FlawListItem;
+  motif: string | null;
+  orientation: 'missed' | 'allowed';
+}) {
+  // A family-less motif has no chip (TacticMotifChip renders nothing), so no empty trigger either.
+  if (motif == null || TACTIC_FAMILY_FOR_MOTIF[motif] == null) return null;
+  const term = `${orientation}: ${tacticMotifLabel(motif)}`;
+  const definition = tacticMotifDefinition(motif);
+  return (
+    <ChipPopover
+      testId={`flaw-tactic-${orientation}-${flaw.game_id}-${flaw.ply}`}
+      ariaLabel={`${term}. ${definition}`}
+      content={<Definition term={term}>{definition}</Definition>}
+    >
+      <span className={cn('inline-flex min-w-0 max-w-full rounded-full', FLAW_CHIP_TRIGGER_CLASS)}>
+        <TacticMotifChip
+          motif={motif}
+          gameId={flaw.game_id}
+          orientation={orientation}
+          noTruncate
+          fitWidth
+        />
+      </span>
+    </ChipPopover>
+  );
+}
+
+/** Timing and phase tags are context that nearly every flaw has, so they come last. */
+function isContextTag(tag: FlawTag): boolean {
+  const family = getTagFamily(tag);
+  return family === 'tempo' || family === 'phase';
+}
+
+/** A tag chip; hover or tap explains it. */
+function FlawTagChip({ flaw, tag }: { flaw: FlawListItem; tag: FlawTag }) {
+  return (
+    <ChipPopover
+      testId={`flaw-tag-${tag}-${flaw.game_id}-${flaw.ply}`}
+      ariaLabel={`${tag}. ${TAG_DEFINITIONS[tag]}`}
+      content={<Definition term={tag}>{TAG_DEFINITIONS[tag]}</Definition>}
+    >
+      <span className={cn('inline-flex rounded-full', FLAW_CHIP_TRIGGER_CLASS)}>
+        <TagChip tag={tag} gameId={flaw.game_id} showDefinitionPopover={false} />
+      </span>
+    </ChipPopover>
+  );
+}
+
+/** The chips below the details: tactics, opportunity and impact, then timing and phase. */
+function FlawTags({ flaw, showMissed, showAllowed }: {
+  flaw: FlawListItem;
+  showMissed: boolean;
+  showAllowed: boolean;
+}) {
+  const tags = [...flaw.tags].sort((a, b) => Number(isContextTag(a)) - Number(isContextTag(b)));
+  if (tags.length === 0 && !showMissed && !showAllowed) return null;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1" data-testid="flaw-card-tags">
+      {showMissed && (
+        <FlawTacticChip flaw={flaw} motif={flaw.missed_tactic_motif} orientation="missed" />
+      )}
+      {showAllowed && (
+        <FlawTacticChip flaw={flaw} motif={flaw.allowed_tactic_motif} orientation="allowed" />
+      )}
+      {tags.map((tag) => (
+        <FlawTagChip key={tag} flaw={flaw} tag={tag} />
+      ))}
+    </div>
+  );
+}
+
+/** Platform icon, linked to the exact ply on the platform when there is a URL. */
+function FlawPlatformLink({ flaw }: { flaw: FlawListItem }) {
+  const url = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
+  const icon = <PlatformIcon platform={flaw.platform} className="h-4 w-4" />;
+  if (!url) return <span className="text-muted-foreground">{icon}</span>;
+  return (
+    <Tooltip content="Open at this move on platform">
+      <a
+        href={url}
+        data-umami-event="outbound-platform-flaw"
+        data-umami-event-platform={flaw.platform}
+        target="_blank"
+        rel="noopener noreferrer"
+        // Padding with a matching negative margin: a larger tap target, same layout.
+        className="-m-2 p-2 text-brand-brown-light transition-colors hover:text-brand-brown-highlight"
+        aria-label="Open at this move on platform"
+        data-testid={`flaw-card-platform-link-${flaw.game_id}-${flaw.ply}`}
+      >
+        {icon}
+      </a>
+    </Tooltip>
+  );
+}
+
+/** The one-line rows beside the board: clock, opponent, date. */
+function FlawDetails({ flaw }: { flaw: FlawListItem }) {
+  // Opponent: the side the user is NOT playing.
+  const isWhite = flaw.user_color === 'white';
+  const opponentName = (isWhite ? flaw.black_username : flaw.white_username) ?? '?';
+  const opponentRating = isWhite ? flaw.black_rating : flaw.white_rating;
+  const clockText = [
+    flaw.clock_seconds != null ? formatClock(flaw.clock_seconds) : null,
+    flaw.move_seconds != null ? formatMoveTime(flaw.move_seconds) : null,
+  ]
+    .filter((part) => part != null)
+    .join(' · ');
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 text-sm text-muted-foreground">
+      {clockText !== '' && (
+        <span className="flex min-w-0 items-center gap-1">
+          <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{clockText}</span>
+        </span>
+      )}
+      {/* A long name is cut off, the rating stays. */}
+      <span className="flex min-w-0 gap-1" title={opponentName}>
+        <span className="truncate">vs {opponentName}</span>
+        {opponentRating !== null && <span className="shrink-0">({opponentRating})</span>}
+      </span>
+      {flaw.played_at && <span className="truncate">{formatDate(flaw.played_at)}</span>}
+    </div>
+  );
+}
+
 /**
  * Props for FlawCard.
  *
@@ -138,10 +269,20 @@ export interface FlawCardProps {
   tacticOrientation?: TacticOrientation;
 }
 
+/**
+ * FlawCard — one flawed-move card for the Flaws subtab grid. One layout at every width:
+ *
+ *   header:  severity chip (the facepalm popover trigger on a scored blunder), move, platform link
+ *   body:    miniboard with the flaw-move and best-move arrows | details and tags; each tag
+ *            explains itself on hover or tap
+ *   footer:  full-width Analyze button
+ *
+ * Security: user-provided strings (usernames, platform_url) are React children
+ * or href (auto-escaped). platform link uses target=_blank + rel=noopener
+ * noreferrer (reverse-tabnabbing guard).
+ */
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
-  // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed
-  // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
-  const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
+  const { ref: contentRef, boardSize } = useFlawBoardSize();
 
   const flipped = flaw.user_color === 'black';
   const severityColor = SEVERITY_COLOR[flaw.severity];
@@ -208,225 +349,6 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     ? formatMoveNotation(flaw.ply, flaw.move_san)
     : `Ply ${flaw.ply}`;
 
-  // Eval swing — user-POV negated for black. Rendered as
-  // "<move> <padding> <Cpu icon><before> to <after>".
-  const { before: evalBefore, after: evalAfter } = formatFlawEvalParts(
-    flaw.eval_cp_before,
-    flaw.eval_mate_before,
-    flaw.eval_cp_after,
-    flaw.eval_mate_after,
-    flaw.user_color,
-  );
-
-  // Opponent: the side the user is NOT playing.
-  const whiteName = flaw.white_username ?? '?';
-  const blackName = flaw.black_username ?? '?';
-  const opponentName = flaw.user_color === 'white' ? blackName : whiteName;
-  const opponentRating =
-    flaw.user_color === 'white'
-      ? flaw.black_rating !== null
-        ? `(${flaw.black_rating})`
-        : ''
-      : flaw.white_rating !== null
-        ? `(${flaw.white_rating})`
-        : '';
-  // Square glyph: white square = white-piece side, black square = black-piece side.
-  const opponentGlyph = flaw.user_color === 'white' ? '□' : '■';
-
-  // Analyze button — opens /analysis?game_id=X&ply=Y at the flaw ply.
-  const buttonRow = (
-    <div className="flex gap-2">
-      <Button asChild variant="brand-outline" className="flex-1">
-        {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
-        <Link
-          to={buildGameAnalysisUrl(flaw.game_id, flaw.ply)}
-          data-testid="btn-flaw-analyze"
-          aria-label="Analyze game"
-          // Internal Link: track in onClick, never data-umami-event (frontend/CLAUDE.md).
-          onClick={() => trackFeature('action', { target: 'analyze' })}
-        >
-          <Search className="h-4 w-4 mr-1" />
-          Analyze
-        </Link>
-      </Button>
-    </div>
-  );
-
-  // Platform icon + exact-ply deep link
-  const flawUrl = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
-  const platformIconAndLink = (
-    <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
-      <PlatformIcon platform={flaw.platform} className="h-4 w-4" />
-      {flawUrl ? (
-        <Tooltip content="Open at this move on platform">
-          <a
-            href={flawUrl}
-            data-umami-event="outbound-platform-flaw"
-            data-umami-event-platform={flaw.platform}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-            aria-label="Open at this move on platform"
-            data-testid={`flaw-card-platform-link-${flaw.game_id}-${flaw.ply}`}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </Tooltip>
-      ) : null}
-    </span>
-  );
-
-  // HEADER — banded title bar via CardHeader (compact size).
-  // rounded-t-md because the card uses overflowVisible (needed for any future
-  // tooltip children that escape the card border).
-  // Shows only the opponent: "vs <glyph><name> <rating>" on both desktop and mobile.
-  const header = (
-    <CardHeader as="h4" size="compact" className="rounded-t-md">
-      <span className="truncate text-foreground min-w-0">
-        <span className="text-muted-foreground font-normal">vs </span>
-        {opponentGlyph} {opponentName} {opponentRating}
-      </span>
-      {platformIconAndLink}
-    </CardHeader>
-  );
-
-  // Metadata items
-  const dateItem = flaw.played_at && (
-    <span className="inline-flex items-center gap-1">
-      <Calendar className="h-3.5 w-3.5" />
-      {formatDate(flaw.played_at)}
-    </span>
-  );
-
-  // Clock/move-time line: "<Clock icon> mm:ss · Move Ns" on desktop, "· Ns" on mobile.
-  // Renders the clock part only when clock_seconds is non-null; the move-time part
-  // only when move_seconds is non-null. When both are null the item is falsy and
-  // omitted from the metadata block.
-  const clockMoveItem = (flaw.clock_seconds != null || flaw.move_seconds != null) && (
-    <span className="inline-flex items-center gap-1">
-      <Clock className="h-3.5 w-3.5" />
-      {flaw.clock_seconds != null && formatClock(flaw.clock_seconds)}
-      {flaw.clock_seconds != null && flaw.move_seconds != null && <span>&middot;</span>}
-      {flaw.move_seconds != null && (
-        <span>
-          {/* "Move" prefix on desktop only; mobile shows just the time. */}
-          <span className="hidden sm:inline">Move </span>
-          {flaw.move_seconds.toFixed(1)}s
-        </span>
-      )}
-    </span>
-  );
-
-  // Shared game-info block (mobile body):
-  //   line 1: clock/move-time (when available)
-  //   line 2: date
-  // No TC or move count (replaced by clock context); no termination text.
-  const metadata = (
-    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-      {clockMoveItem}
-      {dateItem}
-    </div>
-  );
-
-  // Move notation + user-POV eval swing — stacked on two lines (mobile body, beside
-  // the board). "<move>" / "<Cpu icon><before> to <after>".
-  const moveEvalBlock = (
-    <div className="flex flex-col gap-0.5 text-sm">
-      <span className="text-foreground font-medium">{moveNotation}</span>
-      <span className="inline-flex items-center gap-1 text-muted-foreground">
-        <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        {evalBefore} to {evalAfter}
-      </span>
-    </div>
-  );
-
-  // Desktop right-column metadata — four lines stacked above the badges:
-  //   line 1: move
-  //   line 2: engine eval drop
-  //   line 3: clock & move-time
-  //   line 4: date
-  const desktopMeta = (
-    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-      {/* line 1: move */}
-      <span className="text-foreground font-medium">{moveNotation}</span>
-      {/* line 2: engine eval drop */}
-      <span className="inline-flex items-center gap-1">
-        <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        {evalBefore} to {evalAfter}
-      </span>
-      {/* line 3: clock & move-time (omitted when both clock and move-time are null) */}
-      {clockMoveItem}
-      {/* line 4: date */}
-      {dateItem}
-    </div>
-  );
-
-  // Tactic motifs explained by the legend — orientation-prefixed list matching the
-  // chips above. Reused for the legend prop and the row-2 render guard so the legend
-  // appears next to the context tags only when there's something to explain.
-  const legendMotifs = (() => {
-    const motifs: string[] = [];
-    if (tacticOrientation !== 'allowed' && flaw.missed_tactic_motif != null) {
-      motifs.push(flaw.missed_tactic_motif);
-    }
-    if (tacticOrientation !== 'missed' && flaw.allowed_tactic_motif != null) {
-      motifs.push(flaw.allowed_tactic_motif);
-    }
-    return motifs;
-  })();
-
-  // Tags row — the one severity chip (Facepalm / Blunder / Mistake), then the tactic-motif chip(s), then a second
-  // (basis-full) line carrying the family-colored context flaw-tag chips followed by a
-  // single brown Tags-icon legend explaining every tag listed except severity.
-  // Shared by the mobile (full-width row) and desktop
-  // (right-of-board column) bodies. Always rendered (every flaw has a severity).
-  const tagsRow = (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {/* One severity chip, singular and count-less (one flaw per card). */}
-      <FlawSeverityChip flaw={flaw} />
-
-      {/* Tactic motif chips — dual-chip matrix.
-          Orientation controls which chip(s) render:
-          'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
-          Each chip carries the orientation prefix in its label/aria/testid. */}
-      {tacticOrientation !== 'allowed' &&
-        flaw.missed_tactic_motif != null && (
-          <TacticMotifChip
-            motif={flaw.missed_tactic_motif}
-            gameId={flaw.game_id}
-            orientation="missed"
-          />
-        )}
-      {tacticOrientation !== 'missed' &&
-        flaw.allowed_tactic_motif != null && (
-          <TacticMotifChip
-            motif={flaw.allowed_tactic_motif}
-            gameId={flaw.game_id}
-            orientation="allowed"
-          />
-        )}
-
-      {/* Context flaw-tag chips + the shared Tags-icon legend — basis-full forces them
-          onto their own line below the severity + tactic chips (context tags always start
-          on a new row). The single legend explains both the tactic motifs (row 1) and the
-          context tags, and sits at the very end after the context tags. Rendered whenever
-          there are context tags or motifs to explain. */}
-      {(flaw.tags.length > 0 || legendMotifs.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 basis-full">
-          {flaw.tags.map((tag) => (
-            <TagChip key={tag} tag={tag} gameId={flaw.game_id} showDefinitionPopover={false} />
-          ))}
-          <TagLegend
-            variant="icon"
-            tags={flaw.tags}
-            tacticMotifs={legendMotifs}
-            gameId={flaw.game_id}
-          />
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <Card
       as="article"
@@ -434,47 +356,44 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       overflowVisible
       data-testid={`flaw-card-${flaw.game_id}-${flaw.ply}`}
     >
-      {header}
+      {/* rounded-t-md because overflowVisible turns the card's own corner clip off. */}
+      <CardHeader as="h4" size="compact" className="rounded-t-md px-3 py-1.5">
+        <FlawSeverityChip flaw={flaw} />
+        <span className="min-w-0 truncate text-foreground">{moveNotation}</span>
+        <span className="ml-auto flex shrink-0 items-center">
+          <FlawPlatformLink flaw={flaw} />
+        </span>
+      </CardHeader>
 
-      {/* Mobile body: board + move/eval/metadata in a row, tags wrap onto a full-width
-          row below (basis-full). */}
-      <div className="flex flex-wrap gap-3 items-start p-3 sm:hidden">
-        <LazyMiniBoard
-          fen={flaw.fen}
-          flipped={flipped}
-          size={mobileBoardSize}
-          arrows={boardArrows.length > 0 ? boardArrows : undefined}
-        />
-        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-          {moveEvalBlock}
-          {metadata}
-        </div>
-        <div className="basis-full">{tagsRow}</div>
-      </div>
-      {/* Button row (mobile, sm:hidden) — full-width row below the card body */}
-      <div className="sm:hidden px-3 pb-3">{buttonRow}</div>
-
-      {/* Desktop body: the enlarged board on the left spans the full card-body height;
-          the right column stacks the four-line metadata, the severity + tactic/context
-          tags and the Analyze button. */}
-      <div className="hidden sm:flex gap-3 items-start p-3">
-        <div className="shrink-0">
-          <LazyMiniBoard
-            fen={flaw.fen}
-            flipped={flipped}
-            size={DESKTOP_BOARD_SIZE}
-            arrows={boardArrows.length > 0 ? boardArrows : undefined}
-          />
-        </div>
-        <div className="flex-1 min-w-0 flex flex-col gap-2">
-          {desktopMeta}
-          {tagsRow}
-          {/* Button row (desktop): a new line below the context tags inside the
-              right column, not below the board. */}
-          {buttonRow}
+      <div className="p-3">
+        <div ref={contentRef} className="flex flex-col gap-2.5">
+          <div className="flex gap-3">
+            <LazyMiniBoard
+              fen={flaw.fen}
+              flipped={flipped}
+              size={boardSize}
+              arrows={boardArrows.length > 0 ? boardArrows : undefined}
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <FlawDetails flaw={flaw} />
+              <FlawTags flaw={flaw} showMissed={showMissedTactic} showAllowed={showAllowedTactic} />
+            </div>
+          </div>
+          <Button asChild variant="brand-outline" className="w-full">
+            {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
+            <Link
+              to={buildGameAnalysisUrl(flaw.game_id, flaw.ply)}
+              data-testid="btn-flaw-analyze"
+              aria-label="Analyze game"
+              // Internal Link: track in onClick, never data-umami-event (frontend/CLAUDE.md).
+              onClick={() => trackFeature('action', { target: 'analyze' })}
+            >
+              <Search className="h-4 w-4 mr-1" />
+              Analyze
+            </Link>
+          </Button>
         </div>
       </div>
-
     </Card>
   );
 }

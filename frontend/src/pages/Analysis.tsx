@@ -59,7 +59,7 @@ import {
   clampToLadderBounds,
   FREE_PLAY_DEFAULT_ELO,
 } from '@/hooks/useMaiaEloDefault';
-import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { useIsDesktop, useIsShorterThan } from '@/hooks/useIsDesktop';
 import { useFlawChessEngine } from '@/hooks/useFlawChessEngine';
 import { useEngineAssetStatus } from '@/hooks/useEngineAssets';
 import { engineGateRequired } from '@/lib/engine/engineAssetProgress';
@@ -113,6 +113,7 @@ import {
   StatsTab,
   AnalysisTabs,
 } from '@/components/analysis/AnalysisTabs';
+import { takeoverBoardBlockMaxWidth } from '@/lib/analysisTakeoverBoard';
 import { BoardRow, DesktopBoardStage } from '@/components/analysis/AnalysisBoardStage';
 import {
   StockfishCard,
@@ -171,15 +172,24 @@ const EVAL_BAR_NEUTRAL_FRACTION = 0.5;
  *  two-column layout alike (see `hasPhoneFooter`). */
 const MOBILE_BREAKPOINT_PX = 768;
 
-/** The two-column layout's phone footer (below lg): pinned like the app's bottom tab bar. On a
- *  short screen (a phone held sideways, below 560px tall) it stays in flow instead: pinned, it
- *  would leave less height than the board needs, so the whole board could never be seen. */
-const MID_PHONE_FOOTER_CLASS = 'fixed inset-x-0 bottom-0 z-40 short:static';
-/** Bottom padding that lets the page end above the pinned footer (about 70px tall). */
-const MID_PHONE_FOOTER_CLEARANCE_CLASS = 'pb-24 short:pb-4';
+/** The shortest screen on which the two-column layout (below lg) pins its phone footer: the
+ *  footer with its clearance and the top padding (84px), the rows around the board (138px in
+ *  game mode) and the board's 280px floor (useBoardStageSize). Shorter ones are phones held
+ *  sideways: pinned, the footer would leave less height than the board needs, so it stays in
+ *  flow there and the page scrolls.
+ *
+ *  Bug fix (Galaxy Z Fold8 landscape with a larger display zoom, 816x528 inside the OS bars):
+ *  this used the `short` variant (560px), so the foldable scrolled like a phone. */
+const MID_PINNED_FOOTER_MIN_HEIGHT_PX = 502;
+/** The two-column layout's phone footer, pinned like the app's bottom tab bar. */
+const MID_PINNED_FOOTER_CLASS = 'fixed inset-x-0 bottom-0 z-40';
+/** Bottom padding that lets the page end above the pinned footer (71px tall plus the safe area),
+ *  with a 5px gap. useBoardStageSize reads it back as the footer's share of the height. */
+const MID_PINNED_FOOTER_CLEARANCE_CLASS = 'pb-safe-offset-19';
 /** The tab panel's height when it fills the screen down to the pinned footer: the viewport less
- *  the page's top padding (1rem), MID_PHONE_FOOTER_CLEARANCE_CLASS (6rem) and the notch. */
-const MID_PHONE_FOOTER_PANEL_HEIGHT = '100dvh - 7rem - env(safe-area-inset-top, 0px)';
+ *  MID_PINNED_FOOTER_CLEARANCE_CLASS (0.5rem + 4.75rem) and the safe areas. */
+const MID_PHONE_FOOTER_PANEL_HEIGHT =
+  '100dvh - 5.25rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)';
 
 /** The desk3col grid breakpoint (mirrors `--breakpoint-desk3col: 1200px` in index.css):
  *  at/above this width the locked desktop 3-column grid engages; between
@@ -189,21 +199,6 @@ const MID_PHONE_FOOTER_PANEL_HEIGHT = '100dvh - 7rem - env(safe-area-inset-top, 
  *  named constant since it gates a different concern (which layout tree renders, not the
  *  board's height lock). */
 const DESK3COL_BREAKPOINT_PX = 1200;
-
-/** Mobile board size ceiling — 80px below the shared BOARD_MAX_WIDTH. The mobile layout
- *  is a vertical stack (board on top, tabs below), so a full-size board crowded the tab
- *  panel; a smaller board leaves more of the viewport for the tabs. The board is square and
- *  width-driven on mobile, so this caps its height too. */
-const MOBILE_BOARD_MAX_WIDTH = BOARD_MAX_WIDTH - 80;
-
-/** Max width of the mobile board block (the board + its two flanking eval bars + the
- *  wrapper's `px-2` side padding). Caps the `flex-1` board container at the mobile board
- *  ceiling so the board FILLS its container instead of capping short inside a wider one —
- *  which otherwise leaves a gap between the board's right edge and the SF eval bar and
- *  pushes the player clock labels past the board's right border. `MOBILE_BOARD_MAX_WIDTH`
- *  (board) + `BOARD_EVAL_BARS_ALLOWANCE_PX` (bars + gaps) + 16 (`px-2` both sides,
- *  border-box). Combined with `92vw` at the call site so narrow phones still shrink to fit. */
-const MOBILE_BOARD_BLOCK_MAX_PX = MOBILE_BOARD_MAX_WIDTH + BOARD_EVAL_BARS_ALLOWANCE_PX + 16;
 
 /** Fixed width (px) of each side-panel grid track. Mirrors the `360px` literals in the
  *  `desk3col:grid-cols-[360px_1fr_360px]` template and `desk3col:w-[360px]` columns below. */
@@ -348,6 +343,8 @@ export default function Analysis() {
   // page renders the phone footer, whose More menu holds the exit and settings.
   const isDesktopFrame = useIsDesktop();
   const hasPhoneFooter = isMobile || (isMid && !isDesktopFrame);
+  const isTooShortToPinFooter = useIsShorterThan(MID_PINNED_FOOTER_MIN_HEIGHT_PX);
+  const hasPinnedFooter = isMid && hasPhoneFooter && !isTooShortToPinFooter;
 
   // The same non-dismissible gate Bots.tsx mounts,
   // now on the analysis board too. The lazy initializer form is load-bearing
@@ -1954,6 +1951,8 @@ export default function Analysis() {
     layoutMode,
     containerRef,
     isGameMode,
+    isColumnBoardWide: isMid && hasPhoneFooter,
+    hasPinnedFooter,
     gameData,
   });
 
@@ -2123,6 +2122,7 @@ export default function Analysis() {
     },
     // Rendered only in the mid layout (DesktopBoardStage ignores it elsewhere).
     explainBar: <ExplainBar placement="mid" {...explainBarControls} />,
+    reserveExplainBarSlot: isMid && hasPhoneFooter && isGameMode,
   };
 
   // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
@@ -2196,7 +2196,7 @@ export default function Analysis() {
     />
   );
   // The phone frame's board-controls footer (hasPhoneFooter): in flow at the end of the
-  // mobile takeover, pinned to the viewport in the two-column layout below lg.
+  // mobile takeover, pinned to the viewport in the two-column layout below lg (hasPinnedFooter).
   const phoneFooterNode = (className: string) => (
     <div
       data-testid="analysis-mobile-footer"
@@ -2230,6 +2230,7 @@ export default function Analysis() {
   // src/components/analysis/AnalysisTabs.tsx.
   const analysisTabs = (
     <AnalysisTabs
+      alignToBoard={isMid}
       evalChartReady={evalChartReady}
       evalPending={evalPending}
       movesTab={
@@ -2485,6 +2486,13 @@ export default function Analysis() {
     // auto, until the stage measures (a brief first-paint transient).
     // Below lg it also fills the space down to the pinned phone footer when that is more.
     const tabPanelBasePx = Math.round(boardStageHeight || boardWidth);
+    // Below lg the board is fitted to the screen height, so it can be narrower than its 60%:
+    // the column is then exactly the board group and the tabs take the rest of the row. Same
+    // condition as useBoardStageSize's isColumnBoardWide.
+    const boardColumnStyle: CSSProperties | undefined =
+      hasPhoneFooter && boardWidth > 0
+        ? { gridTemplateColumns: `${boardWidth + BOARD_EVAL_BARS_ALLOWANCE_PX}px minmax(0, 1fr)` }
+        : undefined;
     const tabPanelHeightStyle: CSSProperties | undefined =
       tabPanelBasePx === 0
         ? undefined
@@ -2497,7 +2505,11 @@ export default function Analysis() {
         {pasteModalNode}
         {engineGateNode}
         <main
-          className={cn('mx-auto w-full px-4 py-4 md:px-6', hasPhoneFooter ? MID_PHONE_FOOTER_CLEARANCE_CLASS : 'pb-20')}
+          className={cn(
+            'mx-auto w-full px-4 md:px-6',
+            hasPhoneFooter ? 'pt-2' : 'pt-4 pb-20',
+            hasPhoneFooter && (hasPinnedFooter ? MID_PINNED_FOOTER_CLEARANCE_CLASS : 'pb-4'),
+          )}
           style={{ maxWidth: DESKTOP_GRID_MAX_WIDTH_PX }}
         >
           {/* Game load error (CLAUDE.md isError branch). */}
@@ -2509,7 +2521,10 @@ export default function Analysis() {
           {/* Two columns split 60/40: the board stage on the left (60%), the full
               tabbed panel (Moves | Eval | Maia | FlawChess | Stats) on the right (40%) —
               the same tabs the mobile takeover uses, reused verbatim via analysisTabs. */}
-          <div className="grid grid-cols-[3fr_2fr] items-start gap-4">
+          <div
+            className="grid grid-cols-[3fr_2fr] items-start gap-4"
+            style={boardColumnStyle}
+          >
             {/* Left column — the board stage (board + board controls, JS-sized to the
                 column width). The controls live inside desktopBoardStage under the board;
                 the eval chart is NOT here — it lives in the right column's Eval tab
@@ -2522,7 +2537,7 @@ export default function Analysis() {
             </div>
           </div>
         </main>
-        {hasPhoneFooter && phoneFooterNode(MID_PHONE_FOOTER_CLASS)}
+        {hasPhoneFooter && phoneFooterNode(hasPinnedFooter ? MID_PINNED_FOOTER_CLASS : '')}
       </div>
     );
   }
@@ -2543,16 +2558,14 @@ export default function Analysis() {
         {pasteModalNode}
         {engineGateNode}
         {/* Board + eval bar. */}
-        {/* Board block: source caps + top player, board, bottom player. max-w-[92vw]
-            shrinks the board a touch so the name/clock strips top and bottom stay on
-            screen. Free play has no players — the caps show alone. */}
+        {/* Board block: source caps + top player, board, bottom player. Free play has no players — the caps show alone. */}
         <div
           className="mx-auto flex w-full shrink-0 flex-col gap-1 px-2 pt-2"
-          // Cap at the board's natural block width (board + bars) so the flex-1 board
-          // container never exceeds BOARD_MAX_WIDTH — the board then fills it, the SF eval
-          // bar hugs the board's right edge, and the clock labels right-align to that edge
-          // (min() with 92vw keeps narrow phones shrinking to fit).
-          style={{ maxWidth: `min(92vw, ${MOBILE_BOARD_BLOCK_MAX_PX}px)` }}
+          // Caps the block, so the board fills it and the SF eval bar and the clocks stay on the
+          // board's edge. By height too, so the tabs keep a minimum (analysisTakeoverBoard.ts).
+          style={{
+            maxWidth: takeoverBoardBlockMaxWidth({ hasPlayerRows: showPlayerBars, hasExplainBar: isGameMode }),
+          }}
         >
           <BoardHeaderRow
             flawChessEnabled={flawChessEnabled}

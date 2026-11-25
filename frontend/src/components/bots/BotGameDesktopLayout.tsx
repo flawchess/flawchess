@@ -5,8 +5,15 @@ import { BotDrawOfferActions } from '@/components/bots/BotDrawOfferActions';
 import { resolvePlayerRow, type BotPlayerRowInputs } from '@/components/bots/botPlayerRow';
 import type { BotLineKey } from '@/lib/botGameCopy';
 
-/** Fixed width of the desktop right column (clocks + move list + controls). */
-const DESKTOP_SIDE_COLUMN_PX = 320;
+/** Grid columns of the board and the side column. The board takes its height-fitted width
+ * first, capped so the side column (gap included) keeps its floor:
+ * desktop: a fixed 320px side column. Below `lg` (unfolded foldables and phones in landscape):
+ * the width the board leaves, between 272px and 448px like the Train drills' side column. */
+function gridColumns(boardPx: number, isDesktop: boolean): string {
+  return isDesktop
+    ? `min(${boardPx}px, 100% - 20.5rem) 20rem`
+    : `min(${boardPx}px, 100% - 17.5rem) minmax(0, 28rem)`;
+}
 
 export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
   /** Current board-orientation toggle (mirrors `ChessBoard`'s own `flipped`
@@ -24,22 +31,25 @@ export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
   onAcceptDraw: () => void;
   onDeclineDraw: () => void;
   board: ReactElement;
-  boardControls: ReactElement;
   moveList: ReactElement;
-  controls: ReactElement;
+  /** The row under the board (board controls, resign). `null` below `lg`, where the fixed
+   * bottom bar carries those actions. */
+  inPageControls: { boardControls: ReactElement; resign: ReactElement } | null;
   boardPx: number;
 }
 
 /**
- * BotGameDesktopLayout: two stacked rows sharing the same
- * board-column + side-column widths. The top row is the board (flanked
- * above and below by a `PlayerBar`, ordered by board orientation so the side
- * facing away from the user is on top) beside the avatar-and-bubble row over
- * a move list that flex-fills the remaining height — `items-stretch` makes
- * the side column exactly the board's height, so the move-list box bottom
- * lines up with the board's bottom. The bottom row puts the shared board
- * controls under the board and the resign-only control row under the side
- * column.
+ * BotGameDesktopLayout: desktop, and any landscape screen below `lg` that is wide enough for
+ * two columns (unfolded foldables). The left column is the board between its two `PlayerBar`s,
+ * ordered by board orientation so the side facing away from the user is on top. The side
+ * column holds the avatar-and-bubble row over the move list and sits in the board's own grid
+ * row: the avatar starts at the board's top edge and the move-list box ends at its bottom
+ * edge. On desktop a last row puts the shared board controls under the board and the
+ * resign-only control row under the side column; below `lg` there is none, see
+ * `inPageControls`.
+ *
+ * Bug fix: the side column's content is absolutely positioned. In flow, a very long move list
+ * stretched the row instead of scrolling, and the height fit then shrank the board to its floor.
  *
  * This component owns every branch the layout needs (orientation ordering,
  * the bubble/draw-offer construction; the guest gate on the user's rating
@@ -60,9 +70,8 @@ export function BotGameDesktopLayout({
   onAcceptDraw,
   onDeclineDraw,
   board,
-  boardControls,
   moveList,
-  controls,
+  inPageControls,
   boardPx,
 }: BotGameDesktopLayoutProps): ReactElement {
   const rowInputs: BotPlayerRowInputs = {
@@ -84,26 +93,29 @@ export function BotGameDesktopLayout({
   ) : undefined;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-row items-stretch justify-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1" style={{ maxWidth: boardPx }}>
-          <PlayerBar {...topRow} rating={null} fen={fen} />
-          {board}
-          <PlayerBar {...bottomRow} rating={null} fen={fen} />
-        </div>
-        <div className="flex shrink-0 flex-col gap-3" style={{ width: DESKTOP_SIDE_COLUMN_PX }}>
+    <div
+      className="grid justify-center gap-x-2 gap-y-1"
+      style={{ gridTemplateColumns: gridColumns(boardPx, inPageControls !== null) }}
+    >
+      <div className="col-start-1 row-start-1 min-w-0">
+        <PlayerBar {...topRow} rating={null} fen={fen} />
+      </div>
+      <div className="col-start-1 row-start-2 min-w-0">{board}</div>
+      <div className="relative col-start-2 row-start-2 min-w-0" data-testid="bot-game-side-column">
+        <div className="absolute inset-0 flex flex-col gap-3">
           <BotGameBubble persona={persona} line={botLine} actions={drawOfferActions} />
           {moveList}
         </div>
       </div>
-      <div className="flex flex-row justify-center gap-2">
-        <div className="min-w-0 flex-1" style={{ maxWidth: boardPx }}>
-          {boardControls}
-        </div>
-        <div className="shrink-0" style={{ width: DESKTOP_SIDE_COLUMN_PX }}>
-          {controls}
-        </div>
+      <div className="col-start-1 row-start-3 min-w-0">
+        <PlayerBar {...bottomRow} rating={null} fen={fen} />
       </div>
+      {inPageControls !== null && (
+        <>
+          <div className="col-start-1 row-start-4 mt-1 min-w-0">{inPageControls.boardControls}</div>
+          <div className="col-start-2 row-start-4 mt-1 min-w-0">{inPageControls.resign}</div>
+        </>
+      )}
     </div>
   );
 }

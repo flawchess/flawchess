@@ -254,7 +254,7 @@ export function GlobalStatsPage() {
         </SidebarLayout>
 
         {/* Mobile: single column */}
-        <div className="md:hidden flex flex-col gap-4 min-w-0">
+        <div className="lg:hidden flex flex-col gap-4 min-w-0">
           <EvalCoverageHeader />
           {/* Sticky control bar: the Library Stats TC switch (left) and the filter
               button (right) in one row. The label drops on narrow phones so four TCs
