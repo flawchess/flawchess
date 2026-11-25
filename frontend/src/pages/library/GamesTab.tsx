@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
+import { LibraryMobileFilterBar } from '@/components/library/LibraryMobileFilterBar';
 import {
   DEFAULT_FILTERS,
   areFiltersEqual,
@@ -447,33 +448,20 @@ export function GamesTab() {
         {mainContent}
       </SidebarLayout>
 
-      {/* Mobile layout: sticky filter buttons + Drawers + stacked content */}
-      <div className="md:hidden flex flex-col gap-4">
-        {/* Sticky row with separate Filters + Tags buttons */}
-        <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
-          <Button
-            variant="brand-outline"
-            className="relative"
-            onClick={() => handleMobileFiltersOpenChange(true)}
-            aria-label="Open filters"
-            data-testid="btn-filters"
-          >
-            <SlidersHorizontal className="mr-2 h-4 w-4" />
-            Filters
-            {gameDotNode}
-          </Button>
-          <Button
-            variant="brand-outline"
-            className="relative"
-            onClick={() => handleMobileFlawFiltersOpenChange(true)}
-            aria-label="Open tags"
-            data-testid="btn-flaw-filters"
-          >
-            <Tags className="mr-2 h-4 w-4" />
-            Tags
-            {flawDotNode}
-          </Button>
-        </div>
+      {/* Mobile layout (below lg): sticky control bar + Drawers + stacked content */}
+      <div className="lg:hidden flex flex-col gap-2">
+        <LibraryMobileFilterBar
+          matchLabel={gamesData != null ? `${matchedCount} game${matchedCount === 1 ? '' : 's'} matched` : null}
+          analyzedN={analyzedCount}
+          totalN={totalCount}
+          isCoverageError={isCoverageError}
+          isGuest={isGuest}
+          filtersButton={{ testId: 'btn-filters', ariaLabel: 'Open filters' }}
+          filtersDot={gameDotNode}
+          onOpenFilters={() => handleMobileFiltersOpenChange(true)}
+          tagsDot={flawDotNode}
+          onOpenTags={() => handleMobileFlawFiltersOpenChange(true)}
+        />
 
         {/* Game-filters drawer */}
         <MobileFilterDrawer

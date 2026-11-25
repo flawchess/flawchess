@@ -12,6 +12,35 @@ Rules specific to `frontend/` (React 19 + TypeScript + Vite 8, react-chessboard 
 - **Minimum font size is `text-sm`** — never use `text-xs` (or smaller) in new code. Even for badges, captions, metadata, footnotes, and "supporting" labels — `text-sm` is the floor. Sub-`text-sm` becomes unreadable on real devices and at high DPI. If a row feels too dense at `text-sm`, fix the layout (more whitespace, fewer columns, shorter labels), don't shrink the type. Applies to all Tailwind utilities (`text-xs`, raw `font-size` < 14px, `[font-size:0.75rem]`, etc.) and to UI copy on both desktop and mobile.
   - **Exception: hover/tap-activated info tooltips** (Radix popover bodies with the HelpCircle trigger pattern — `MetricStatPopover`, `ScoreConfidenceTooltip`, `EvalConfidenceTooltip`, `AchievableScorePopover`, etc.) may use `text-xs`; these are short, transient, opt-in surfaces where denser text reads as a visual aside rather than primary content.
 
+## Layout Targets (phones & foldables)
+
+Every page must work well on the screens below. Reference foldable: Samsung Galaxy Z Fold8 (device scale 2.625). Progress per page: `docs/mobile-foldable-layout.md`; update its checkboxes with every layout change.
+
+**DevTools device presets are too tall: they give the page the whole screen.** On a real device the OS keeps a status bar at the top and a navigation bar or taskbar at the bottom (Fold8, both screens: about 41px + 47px), and a browser tab loses its toolbar on top of that. A layout that just fits a preset is cut off on the device. **Always check at the usable height**, the installed-PWA size below (CSS px):
+
+| Target | DevTools preset (full screen) | Check at (usable) | Frame |
+|---|---|---|---|
+| Phone, portrait (minimum: iPhone SE) | 375x667 | 375x647, and 375x553 in Safari | phone |
+| Fold cover screen, portrait | 475x751 | 475x663 (measured) | phone |
+| Fold inner screen, portrait | 704x933 | 704x845 | phone |
+| Fold inner screen, landscape | 933x704 | 933x617 (measured) | phone, two columns on board pages |
+| Fold with a larger display zoom (scale 3) | 416x657, 616x816, 816x616 | 416x569, 616x728, 816x528 | same as above |
+| Desktop | | 1280x800 and up | desktop |
+
+- The measured rows come from device screenshots and reproduce them in an iframe (rest: same 88px OS bars). To re-measure, compare a known CSS distance, e.g. the 28px move rows, with the screenshot.
+- The OS bars sit outside the web view, so `env(safe-area-inset-*)` does not report them and CSS cannot subtract them. Size against the real viewport (`dvh`/`svh`, `useFitBoardToViewport`, measured boxes), never against a preset's height.
+- Usable heights land near 560px, the `short:` threshold meant for phones held sideways. Check that `short:` rules do the right thing at 816x528 and 375x553.
+- Slots that appear and disappear (Explain bar, bubble lines) need their height reserved, so a height-fitted board doesn't resize between moves.
+
+Not targets: phones and the cover screen in landscape. They must stay usable (nothing unreachable), but need no optimization.
+
+- **The phone frame runs below `lg` (1024px) in both orientations**: bottom bar instead of the desktop nav header, phone text sizes (see `index.css`). Switch between phone and desktop layouts at `lg`, not `sm`/`md`, so unfolding or rotating never mixes the two frames. Some older pages still split at `md`.
+- **Board pages go side by side in landscape below `lg`**: board left and sized to the screen height, everything else on the right, with the side column growing into the spare width. Use the `trainside:` variant and its JS twins in `hooks/useIsDesktop.ts` (`useIsTrainSideLayout`, `useIsTrainSideBand`); fit the board with `useFitBoardToViewport`. Don't add a new breakpoint.
+- **Full-height board screens drop the header** (Analysis, Openings, bot game, Train drills) and must not scroll just to reach the board, a clock or an action. Back, Settings and secondary board tools move into a **More** button (three vertical dots, upward menu) in the last column of the bottom bar, e.g. `AnalysisMoreMenu`, `BotGameMoreMenu`. Primary actions stay in the bar itself.
+- **Scrolling pages**: Library and Endgames have no header (`HEADERLESS_ROUTES` in `App.tsx`); Train and the bot list still do. Keep or drop it case by case. Ask, don't decide alone.
+- **Clear the fixed bottom bar once.** `main` already adds `pb-16` for it, so account for that before adding page padding, include the safe-area inset (`pb-safe*`), and make sure nothing interactive sits under the bar.
+- **Verify in the browser**, not only in tests: same-origin iframes at the usable sizes above (`resize_window` is unreliable). Check horizontal overflow, page scroll height and what the bottom bar covers.
+
 ## UI & Components
 
 - **Mobile friendly UI** — use responsive design patterns (Tailwind breakpoints, flexible layouts) so all pages and components work well on small screens.

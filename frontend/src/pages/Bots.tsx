@@ -50,6 +50,7 @@ import { PersonaDetailSurface } from '@/components/bots/PersonaDetailSurface';
 import { personaFor, type Persona } from '@/lib/personas/personaRegistry';
 import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
+import { useIsDesktop, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 import { useResultDialogHold } from '@/hooks/useResultDialogHold';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { feedbackAskDays } from '@/lib/feedbackAsk';
@@ -57,6 +58,7 @@ import { useBotPersonaWins, BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPer
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
+import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { removePendingStore } from '@/lib/botPendingStore';
 import { isStorableBotGame } from '@/lib/botGamePgn';
@@ -64,15 +66,6 @@ import { resolvePlayerName } from '@/lib/playerName';
 import { playSound, unlockAudio } from '@/lib/sounds';
 import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import type { CurrentStrength } from '@/types/users';
-
-/** Width at which the two-column desktop layout kicks in. Below this the
- * board / clocks / controls stack in a single column (bot clock above the
- * board, user clock below, per lichess convention) and the move list is
- * hidden; at/above it the clocks + move list + game controls move into a side
- * column beside the board. Sized to comfortably fit the board-column
- * (BOT_BOARD_MAX_WIDTH_PX) + side-column (DESKTOP_SIDE_COLUMN_PX) group plus
- * page padding and a scrollbar. */
-const DESKTOP_BREAKPOINT_PX = 800;
 
 /** Max rendered width of the bot-game board, in px. Shared between the
  * `ChessBoard maxWidth` prop and the single-column stack's `max-width` so the
@@ -85,31 +78,23 @@ const DESKTOP_BREAKPOINT_PX = 800;
  * measured-chrome approach as the Train solve screen. */
 const BOT_BOARD_MAX_WIDTH_PX = 600;
 
+/** The same cap below `lg`, high enough that only the screen binds the board there (the
+ * stacked layout on an unfolded foldable or a tablet in portrait). */
+const BOT_BOARD_PHONE_FRAME_MAX_PX = 1000;
+
 /** Floor for the viewport-height shrink — below it the page scrolls instead of
  * shrinking the board into unusability (mirrors TRAIN_BOARD_MIN_WIDTH_PX). */
 const BOT_BOARD_MIN_WIDTH_PX = 240;
 
 /** Space kept free between the page container's bottom edge and the viewport
- * bottom. The container's own bottom padding (pb-20 / sm:pb-4) is already
- * measured as chrome, so this is only visual breathing room, kept small to pay
- * for the taller control rows (see the vertical-budget note on the page
- * container's className) rather than letting them eat the board's width. */
+ * bottom on desktop. The container's own bottom padding is already
+ * measured as chrome, so this is only visual breathing room. */
 const BOT_BOARD_BOTTOM_GUTTER_PX = 12;
 
-function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT_PX}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT_PX}px)`);
-    const update = () => setIsDesktop(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return isDesktop;
-}
+/** The same gutter below `lg`: `main`'s `pb-16` (App.tsx), which sits outside the measured
+ * container and, with the container's own bottom padding, clears the fixed action bar, plus
+ * 8px. Bug fix: that padding was not counted, so the page scrolled 28-52px on every phone. */
+const BOT_BOARD_PHONE_FRAME_GUTTER_PX = 64 + 8;
 
 /**
  * `personaFor` returns `undefined` for a
@@ -174,7 +159,7 @@ interface BotsGameProps {
    * settings, via `BotsPage`'s existing `handleStart` — the single existing
    * start path (never a second one, never `game.newGame()`). */
   onRematch: (settings: BotGameSettings) => void;
-  /** The mobile back arrow — returns to the roster
+  /** "Back to bots" in the bottom bar's More menu — returns to the roster
    * WITHOUT clearing the in-progress snapshot (see `BotsPage`'s
    * `handleBackToRoster` doc comment for the accepted trade-off). */
   onBackToRoster: () => void;
@@ -202,7 +187,10 @@ function BotsGame({
 }: BotsGameProps): ReactElement {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // Three layouts: desktop (two columns, in-page controls), two columns with the fixed bottom
+  // bar (landscape below `lg`), stacked with the fixed bottom bar (everything else).
   const isDesktop = useIsDesktop();
+  const isSideLayout = useIsTrainSideLayout();
   // The board shrinks to whatever vertical room the viewport actually leaves
   // (same measured-chrome approach as the Train solve screen). `pageRef` is the
   // page container — a stable element across the desktop/mobile layout switch,
@@ -213,9 +201,9 @@ function BotsGame({
   const boardPx = useFitBoardToViewport({
     columnRef: pageRef,
     boardRef,
-    maxPx: BOT_BOARD_MAX_WIDTH_PX,
+    maxPx: isDesktop ? BOT_BOARD_MAX_WIDTH_PX : BOT_BOARD_PHONE_FRAME_MAX_PX,
     minPx: BOT_BOARD_MIN_WIDTH_PX,
-    gutterPx: BOT_BOARD_BOTTOM_GUTTER_PX,
+    gutterPx: isDesktop ? BOT_BOARD_BOTTOM_GUTTER_PX : BOT_BOARD_PHONE_FRAME_GUTTER_PX,
   });
   // Suppress the mobile app header while the game board is on screen — the
   // board + clocks need the vertical space (ProtectedLayout reads this flag).
@@ -386,6 +374,23 @@ function BotsGame({
   );
   const handleResetView = useCallback((): void => viewPly(0), [viewPly]);
 
+  // Below `lg` the fixed bottom bar carries the game's actions in place of the main nav
+  // (`BotGameMobileBar`). Bug fix: it was published by the stacked layout only, so an unfolded
+  // foldable in landscape kept the nav bar, which covered the board controls and Resign.
+  usePublishMobileBoardControls(
+    isDesktop
+      ? null
+      : {
+          onResign: game.resign,
+          onBack: handleBack,
+          onForward: handleForward,
+          onFlip: handleFlip,
+          onLeave: onBackToRoster,
+          canGoBack: viewedPly > 0,
+          canGoForward: viewedPly < liveGamePly,
+        },
+  );
+
   // The ONE shared `personaFor` lookup — resolved once per
   // render and reused by both layouts' player rows, the bubble, and the
   // result surfaces below, rather than each re-implementing the
@@ -455,8 +460,8 @@ function BotsGame({
     />
   );
   // Reduced to the resign trigger — there is no user-side Offer draw button
-  // (with its cooldown) or in-game mute toggle at any breakpoint. Desktop-only
-  // (`BotGameDesktopLayout`); mobile's equivalent resign trigger lives inside `BotGameMobileBar`.
+  // (with its cooldown) or in-game mute toggle at any breakpoint. Desktop-only;
+  // below `lg` the resign trigger lives inside `BotGameMobileBar`.
   const controls = <GameControls onResignConfirmed={game.resign} />;
 
   return (
@@ -464,9 +469,9 @@ function BotsGame({
       ref={pageRef}
       data-testid="bots-page"
       onPointerDown={handleFirstInteraction}
-      // Bottom-nav clearance — same pb-20 sm:pb-4
-      // pattern as SetupScreen.tsx's root; see that comment for the full
-      // clearance arithmetic. Horizontal padding is deliberately tighter than
+      // Below `lg` the bottom padding (20px plus the safe-area inset) and `main`'s `pb-16`
+      // together clear the fixed action bar (83px), see BOT_BOARD_PHONE_FRAME_GUTTER_PX. The
+      // top inset is here because the game hides the app header. Horizontal padding is deliberately tighter than
       // the usual p-4: every px of it comes straight off the board's width at
       // the narrower desktop widths.
       //
@@ -474,12 +479,12 @@ function BotsGame({
       // (`useFitBoardToViewport`), so every px of vertical chrome on this page
       // is a px off the board's WIDTH — it shrinks away from the screen edges
       // and leaves side gutters. Raising the control rows to 48px tap targets
-      // cost ~36px, reclaimed here (`py-2` on mobile) plus the mobile stack's
+      // cost ~36px, reclaimed here (8px top padding on mobile) plus the mobile stack's
       // `gap-2` and a halved BOT_BOARD_BOTTOM_GUTTER_PX. Keep that budget in
       // mind before adding height anywhere in this column.
-      className="mx-auto flex max-w-5xl flex-col gap-4 px-2 py-2 pb-20 sm:py-4 sm:pb-4"
+      className="mx-auto flex max-w-5xl flex-col gap-4 px-2 pt-safe-offset-2 pb-safe-offset-5 lg:py-4"
     >
-      {isDesktop ? (
+      {isSideLayout ? (
         <BotGameDesktopLayout
           persona={personaOrNull(persona)}
           playerName={playerName}
@@ -495,15 +500,13 @@ function BotsGame({
           onAcceptDraw={game.acceptBotDraw}
           onDeclineDraw={game.declineBotDraw}
           board={board}
-          boardControls={boardControls}
           moveList={moveList}
-          controls={controls}
+          inPageControls={isDesktop ? { boardControls, resign: controls } : null}
           boardPx={boardPx}
         />
       ) : (
-        // Mobile layout: back arrow, bubble, board flanked by the two player
-        // rows (the same rows as desktop / the analysis board), and the
-        // four-action bar published from this component's own mount.
+        // Stacked layout: bubble, then the board flanked by the two player
+        // rows (the same rows as desktop / the analysis board).
         <BotGameMobileLayout
           persona={personaOrNull(persona)}
           playerName={playerName}
@@ -514,15 +517,8 @@ function BotsGame({
           blackClockMs={game.blackClockMs}
           flipped={flipped}
           fen={game.position}
-          onBackToRoster={onBackToRoster}
           bubble={bubble}
           board={board}
-          onResign={game.resign}
-          onBack={handleBack}
-          onForward={handleForward}
-          onFlip={handleFlip}
-          canGoBack={viewedPly > 0}
-          canGoForward={viewedPly < liveGamePly}
           boardPx={boardPx}
         />
       )}
@@ -674,7 +670,7 @@ export default function BotsPage(): ReactElement {
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
-  // The mobile back arrow — mechanically identical to
+  // "Back to bots" — mechanically identical to
   // `handleNewGame` above (unmounts `BotsGame`, falls through to the setup
   // view), but a DIFFERENT intent: this is a mid-game exit, not a post-
   // result "play again". Deliberately does NOT call `clearSnapshot`, so the

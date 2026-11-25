@@ -90,6 +90,8 @@ interface TacticMotifChipProps {
    * the full text, so they pass `noTruncate`; mobile keeps abbreviating.
    */
   noTruncate?: boolean;
+  /** Shrink to the container, ending the label in an ellipsis there (Flaws card). */
+  fitWidth?: boolean;
   /**
    * Override the store-derived active-filter ring with a precise all-axes
    * (family + orientation + depth) match computed by the caller (LibraryGameCard,
@@ -110,7 +112,7 @@ interface TacticMotifChipProps {
  * flaw-tag chips (which render with `showDefinitionPopover={false}`). On the Games card the
  * chip is a highlight/cycle control (onHover dims non-matching eval-chart markers,
  * onActivate cycles the chart through this motif's flaw plies), matching TagChip.
- * On FlawCard (no callbacks) it is a plain decorative span. The parent renders it
+ * On FlawCard (no callbacks) it is a plain span inside a ChipPopover trigger. The parent renders it
  * only for a non-null motif.
  *
  * Colors come from TACTIC_FAMILY_COLORS (theme.ts TAC_* constants) — no hardcoded oklch
@@ -127,6 +129,7 @@ export function TacticMotifChip({
   selected,
   testId: testIdOverride,
   noTruncate,
+  fitWidth = false,
   filterRingActive,
 }: TacticMotifChipProps) {
   const family = TACTIC_FAMILY_FOR_MOTIF[motif];
@@ -210,6 +213,7 @@ export function TacticMotifChip({
         // text-xs deliberately deviates from the CLAUDE.md text-sm floor to match the
         // flaw-tag chips (TagChip).
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold',
+        fitWidth && 'min-w-0 max-w-full',
         interactive && 'cursor-pointer transition-all hover:-translate-y-px',
         ringActive && ACTIVE_FILTER_RING_CLASS,
       )}
@@ -262,7 +266,7 @@ export function TacticMotifChip({
     >
       {/* Count-first when repeated, matching TagChip + severity badges. */}
       {count != null && count > 1 && <span>{count}</span>}
-      {visibleLabel}
+      {fitWidth ? <span className="truncate">{visibleLabel}</span> : visibleLabel}
     </span>
   );
 }

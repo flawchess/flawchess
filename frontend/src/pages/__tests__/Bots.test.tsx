@@ -68,6 +68,9 @@ import {
   type BotGameSnapshot,
 } from '@/lib/botGameSnapshot';
 import { MUTE_KEY } from '@/lib/sounds';
+import { BotGameMobileBar } from '@/components/bots/BotGameMobileBar';
+import { useMobileBoardControls } from '@/lib/mobileBoardControls';
+import { TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 import { BOT_PENDING_STORE_KEY_PREFIX, enqueuePendingStore } from '@/lib/botPendingStore';
 import { MAX_STORE_RETRIES } from '@/hooks/useStoreBotGame';
 
@@ -276,11 +279,11 @@ vi.mock('@/components/board/ChessBoard', () => ({
 // below can flip `matches` to `true` for its own tests and restore this
 // file's mobile-reporting default afterward — every other suite in this file
 // relies on `useIsDesktop()` reporting `false`.
-function installMatchMediaStub(matches: boolean): void {
+function installMatchMediaStub(matches: boolean | ((query: string) => boolean)): void {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches,
+      matches: typeof matches === 'function' ? matches(query) : matches,
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -330,7 +333,30 @@ function axiosError(status: number): Error {
  * would-be retry windows, so an unbounded loop fails it loudly. */
 const MUTATION_RETRY_DELAY_MS = 10;
 
-function renderBots() {
+/** Stands in for App.tsx's MobileBottomBar, which sits outside the page's tree: renders the
+ * bot bar from whatever the page published, and nothing when it published nothing. */
+function PublishedBotBar() {
+  const controls = useMobileBoardControls();
+  if (controls?.onResign == null || controls.onLeave == null) return null;
+  return (
+    <BotGameMobileBar
+      onResign={controls.onResign}
+      onBack={controls.onBack}
+      onForward={controls.onForward}
+      onFlip={controls.onFlip}
+      onLeave={controls.onLeave}
+      canGoBack={controls.canGoBack}
+      canGoForward={controls.canGoForward}
+    />
+  );
+}
+
+/** Radix DropdownMenu opens on pointerdown or Enter, never on a bare click. */
+async function openMoreMenu(): Promise<void> {
+  fireEvent.keyDown(await screen.findByTestId('bot-game-btn-more'), { key: 'Enter' });
+}
+
+function renderBots({ withBar = false }: { withBar?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -342,6 +368,7 @@ function renderBots() {
       <MemoryRouter initialEntries={['/bots']}>
         <TooltipProvider>
           <BotsPage />
+          {withBar && <PublishedBotBar />}
         </TooltipProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -737,7 +764,7 @@ describe('Bots — bot draw-offer actions render inside the bubble', () => {
   });
 });
 
-describe('Bots — mobile chrome removed, back arrow wired', () => {
+describe('Bots — mobile chrome removed, bottom bar wired', () => {
   it('renders no in-page board-control row, resign row, offer-draw button or mute button on mobile', async () => {
     renderBots();
     await startFromSetup();
@@ -756,26 +783,36 @@ describe('Bots — mobile chrome removed, back arrow wired', () => {
     expect(screen.queryByTestId('board-btn-mute')).toBeNull();
   });
 
-  it('the mobile back arrow calls the new handler and returns to the roster without an instant restart', async () => {
+  it('renders no back arrow or settings row above the board', async () => {
     renderBots();
     await startFromSetup();
 
+    expect(screen.queryByTestId('bots-back')).toBeNull();
+    expect(screen.queryByTestId('btn-bots-settings')).toBeNull();
+  });
+
+  it('Back to bots in the More menu returns to the roster without an instant restart', async () => {
+    renderBots({ withBar: true });
+    await startFromSetup();
+
+    await openMoreMenu();
     fireEvent.click(screen.getByTestId('bots-back'));
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
     // Mechanically the same non-instant-restart contract as "New game":
-    // the back arrow never calls game.newGame() to restart in place.
+    // it never calls game.newGame() to restart in place.
     expect(fakeGame.newGame).not.toHaveBeenCalled();
   });
 });
 
 describe('Bots — mobile settings sheet', () => {
   it('opens the settings sheet in place mid-game and the sound switch writes the locked mute key', async () => {
-    renderBots();
+    renderBots({ withBar: true });
     await startFromSetup();
 
-    fireEvent.click(screen.getByTestId('btn-bots-settings'));
+    await openMoreMenu();
+    fireEvent.click(screen.getByTestId('bot-game-menu-settings'));
 
     expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
     // No navigation: the game page stays mounted underneath the sheet.
@@ -797,11 +834,13 @@ describe('Bots — desktop layout', () => {
     installMatchMediaStub(false);
   });
 
-  it('renders no settings cogwheel in the desktop layout (desktop uses the header cogwheel)', async () => {
-    renderBots();
+  it('keeps its controls in the page and publishes no bottom bar', async () => {
+    renderBots({ withBar: true });
     await startFromSetup();
 
-    expect(screen.queryByTestId('btn-bots-settings')).toBeNull();
+    expect(screen.queryByTestId('bot-game-mobile-bar')).toBeNull();
+    expect(screen.getAllByTestId('board-btn-resign')).toHaveLength(1);
+    expect(screen.getByTestId('board-btn-reset')).toBeTruthy();
   });
 
   it('renders two player rows: the bot with its name and calibrated label, the player with its name and rounded estimate', async () => {
@@ -881,6 +920,31 @@ describe('Bots — desktop layout', () => {
     await startFromSetup();
 
     expect(screen.queryByTestId('board-btn-mute')).toBeNull();
+  });
+});
+
+// An unfolded foldable in landscape (941x710): two columns, but the actions sit in the fixed
+// bottom bar. The page used to render the desktop layout there, with the nav bar covering its
+// board controls and Resign.
+describe('Bots — landscape layout below lg', () => {
+  beforeEach(() => {
+    installMatchMediaStub((query) => query === TRAIN_SIDE_LAYOUT_QUERY);
+  });
+
+  afterEach(() => {
+    installMatchMediaStub(false);
+  });
+
+  it('shows the side column and publishes the bottom bar, with no in-page controls', async () => {
+    renderBots({ withBar: true });
+    await startFromSetup();
+
+    expect(screen.getByTestId('bot-game-side-column')).toBeTruthy();
+    expect(screen.getByTestId('bot-move-list')).toBeTruthy();
+    expect(await screen.findByTestId('bot-game-mobile-bar')).toBeTruthy();
+    // One Resign and no in-page reset: the in-page controls row is not mounted.
+    expect(screen.getAllByTestId('board-btn-resign')).toHaveLength(1);
+    expect(screen.queryByTestId('board-btn-reset')).toBeNull();
   });
 });
 
@@ -1359,14 +1423,18 @@ describe('Bot board passes lastMove through to ChessBoard', () => {
 describe('BotsGame — bottom-nav clearance', () => {
   // The clearance is a two-site invariant: SetupScreen's root AND the in-game
   // BotsGame root both need it. SetupScreen's half is pinned in
-  // SetupScreen.test.tsx; this is the other half. Without it, dropping pb-20
+  // SetupScreen.test.tsx; this is the other half. Without it, dropping the padding
   // from Bots.tsx left the whole suite green.
-  it('the bots-page root carries pb-20 sm:pb-4 so the fixed bottom nav never occludes the board', async () => {
+  it('the bots-page root pads for the fixed bar below lg only (on top of the pb-16 of main) and for the safe area', async () => {
     renderBots();
     await startFromSetup();
 
     const className = screen.getByTestId('bots-page').className;
-    expect(className).toContain('pb-20');
-    expect(className).toContain('sm:pb-4');
+    expect(className).toContain('pb-safe-offset-5');
+    expect(className).toContain('lg:py-4');
+    // Bug fix: pb-20 counted the bar twice (the page scrolled), sm:pb-4 left it uncleared on
+    // unfolded foldables (the bar covered the player row).
+    expect(className).not.toContain('pb-20');
+    expect(className).not.toContain('sm:pb-4');
   });
 });

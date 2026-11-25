@@ -26,7 +26,7 @@ Plan: Not started
 
 Status: All phases complete
 
-Last activity: 2026-11-24 - Completed quick task 261124-w90: Mobile analysis header removed, More menu in the footer
+Last activity: 2026-11-25 - Completed quick task 261125-v4k: Foldables, bot game bottom bar and two columns, Analysis landscape fit
 
 Open threads carried forward (not blockers):
 
@@ -1227,6 +1227,7 @@ None active.
 | 261124-ply | Foldable layout: compact phone bot bubble and landscape side column for Train | 2026-11-24 | cb97d4cfd | [261124-ply-foldable-layout-compact-phone-bot-bubble](./quick/261124-ply-foldable-layout-compact-phone-bot-bubble/) |
 | 261124-u98 | Openings landscape layout below lg: board left, tab content right | 2026-11-24 | 55898b19c | [261124-u98-openings-landscape-layout-below-lg-board](./quick/261124-u98-openings-landscape-layout-below-lg-board/) |
 | 261124-w90 | Mobile analysis: header removed below 768px, More menu in the footer | 2026-11-24 | fe116ce55 | [261124-w90-mobile-analysis-remove-header-more-menu-](./quick/261124-w90-mobile-analysis-remove-header-more-menu-/) |
+| 261125-v4k | Foldables: bot game bottom bar and two columns, Analysis landscape fit | 2026-11-25 | cd0d06f57 | [261125-v4k-foldable-bot-game-and-analysis-landscape](./quick/261125-v4k-foldable-bot-game-and-analysis-landscape/) |
 
 ## Deferred Items
 

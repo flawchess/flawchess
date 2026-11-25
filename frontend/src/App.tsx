@@ -131,12 +131,11 @@ const ADMIN_NAV_ITEM = { to: '/admin', label: 'Admin', Icon: Shield } as const;
 // same conditional-append pattern on both nav surfaces below.
 const ACTIVITY_NAV_ITEM = { to: '/activity', label: 'Activity', Icon: Activity } as const;
 
+// Titles in the phone header. Pages without it (HEADERLESS_ROUTES) need no entry.
 const ROUTE_TITLES: Record<string, string> = {
-  '/library': 'Library',
   '/train': 'Train',
   '/bots': 'Bots',
   '/openings': 'Opening',
-  '/endgames': 'Endgame',
   '/admin': 'Admin',
   '/analysis': 'Analysis',
   '/activity': 'Activity',
@@ -369,6 +368,32 @@ export function MobileHeader() {
   );
 }
 
+// The scrolling pages without the phone header (owner decision 2026-11-25): the bottom bar
+// already names the section and the More drawer holds Settings.
+const HEADERLESS_ROUTES = ['/library', '/endgames'] as const;
+
+/**
+ * Top of the phone frame: the phone header, or on the header-less pages only the notch inset.
+ * An impersonating superuser keeps the pill there, in a slim row of its own, so the session
+ * stays visible and one tap ends it.
+ */
+export function MobileTopBar() {
+  const location = useLocation();
+  const { data: profile } = useUserProfile();
+  if (!HEADERLESS_ROUTES.some((route) => location.pathname.startsWith(route))) {
+    return <MobileHeader />;
+  }
+  return (
+    <div className="pt-safe lg:hidden" data-testid="mobile-headerless-top">
+      {profile?.impersonation && (
+        <div className="flex justify-end px-4 pt-2">
+          <ImpersonationPill impersonation={profile.impersonation} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Mobile bottom bar ────────────────────────────────────────────────────────
 
 // Shared by both MobileBottomBar branches (main nav / board controls) so the
@@ -381,8 +406,9 @@ const MOBILE_BOTTOM_BAR_CLASSES = `${MOBILE_BOTTOM_BAR_BASE_CLASSES} lg:hidden`;
 /**
  * The board-controls bar shows at every width while a payload is published: the
  * publishers decide when it applies (the Train reveals publish in their stacked
- * layout, which also covers portrait tablets and unfolded foldables; the bot game
- * publishes in its mobile layout, below 800px). Bug fix: it used to hide from `sm`
+ * layout, which also covers portrait tablets and unfolded foldables, and in the landscape band
+ * from 500px tall; the bot game
+ * publishes below lg). Bug fix: it used to hide from `sm`
  * up, which left a 640-799px bot game without Resign and the stacked Train reveal
  * with a cramped in-flow bar under the board (Galaxy Z Fold8 inner screen, portrait).
  */
@@ -431,6 +457,7 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         onBack={boardControls.onBack}
         onForward={boardControls.onForward}
         onFlip={boardControls.onFlip}
+        onLeave={boardControls.onLeave ?? (() => {})}
         canGoBack={boardControls.canGoBack}
         canGoForward={boardControls.canGoForward}
       />
@@ -640,12 +667,17 @@ function ProtectedLayout() {
   const playActive = usePlayActive();
   // The desktop nav header only shows from lg, where its labelled items fit; below it the
   // phone frame (phone header + bottom tab bar) applies at any orientation. A Train drill in
-  // the side layout (a foldable, tablet or phone in landscape) also drops the bottom tab bar,
-  // so the height-fitted board gets the full height of the short screen; the drill shows its
-  // own settings cog, as phones do with their header suppressed during play.
+  // the side layout (a foldable, tablet or phone in landscape) also drops the bottom tab bar;
+  // the drill shows its own settings cog, as phones do with their header suppressed during
+  // play. Its solutions publish their controls to the bar, which shows then (the drills keep
+  // the bar's height free, see BAND_BAR_BOARD_GUTTER_PX).
   const isTrainSideLayout = useIsTrainSideLayout();
-  const hideBottomBar = playActive && isTrainSideLayout && location.pathname.startsWith('/train');
   const boardControlsActive = useMobileBoardControls() != null;
+  const hideBottomBar =
+    playActive &&
+    isTrainSideLayout &&
+    !boardControlsActive &&
+    location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);
 
   // The standalone launch's active route push to /train. The manifest
@@ -735,7 +767,9 @@ function ProtectedLayout() {
             column scroll internally instead of the page.
             Three range-scoped variants UNLOCK it: `md:max-desk3col:` (the
             768-desk3col two-column band — that layout is a scrolling page),
-            `short:` (<560px tall, a safety-valve override at ANY width) and
+            `short:landscape:` (<560px tall and wider than high, e.g. a phone held
+            sideways; a small phone in portrait, iPhone SE in Safari at 375x553,
+            must keep the lock or its tab panel collapses to its padding) and
             `deskshort:` (>=desk3col wide AND <880px tall: below that the locked
             3-column grid no longer fits and would clip content with no scroll
             path). deskshort must stay width-scoped: unlocking the mobile
@@ -750,9 +784,9 @@ function ProtectedLayout() {
             build, so a bare `md:h-auto` would win the cascade at >=1200px and
             silently keep desktop unlocked. Scoping to the explicit [768,1200)
             range sidesteps that ordering dependency entirely. */}
-        <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:h-auto short:block deskshort:h-auto deskshort:block">
+        <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:landscape:h-auto short:landscape:block deskshort:h-auto deskshort:block">
           <NavHeader />
-          <main className="flex-1 min-h-0 flex flex-col md:max-desk3col:block md:max-desk3col:flex-none short:block short:flex-none deskshort:block deskshort:flex-none">
+          <main className="flex-1 min-h-0 flex flex-col md:max-desk3col:block md:max-desk3col:flex-none short:landscape:block short:landscape:flex-none deskshort:block deskshort:flex-none">
             <Outlet />
           </main>
         </div>
@@ -776,11 +810,7 @@ function ProtectedLayout() {
     <>
       <FeatureRouteRecorder />
       <NavHeader />
-      {!isOpeningsRoute && !playActive && (
-        <>
-          <MobileHeader />
-        </>
-      )}
+      {!isOpeningsRoute && !playActive && <MobileTopBar />}
       {/* The fixed board-controls bar can show from `sm` up too, so the page keeps its
           bottom padding while one is published. */}
       <main className={hideBottomBar ? undefined : cn('pb-16', !boardControlsActive && 'lg:pb-0')}>

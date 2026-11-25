@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { FlawSeverityFilter } from '@/types/library';
@@ -193,6 +193,32 @@ describe('GamesTab', () => {
       const panels = screen.getAllByTestId('stub-library-filter-panel');
       // Desktop sidebar panel + mobile drawer
       expect(panels.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('control bar below lg', () => {
+    it('shows the match count and the analysis coverage next to the filter buttons', () => {
+      mockGamesResult = {
+        data: { games: [], matched_count: 7, offset: 0, limit: 20 },
+        isLoading: false,
+        isError: false,
+      };
+      mockCoverage = { analyzedCount: 3, totalCount: 15, isError: false };
+      renderGamesTab();
+      const bar = within(screen.getByTestId('library-mobile-filter-bar'));
+      expect(bar.getByText('7 games matched')).toBeTruthy();
+      expect(bar.getByTestId('eval-coverage-line').textContent).toContain('3of15analyzed');
+      expect(bar.getByTestId('btn-filters')).toBeTruthy();
+      expect(bar.getByTestId('btn-flaw-filters')).toBeTruthy();
+    });
+
+    it('shows no match count while games load, and an error when coverage fails', () => {
+      mockGamesResult = { data: undefined, isLoading: true, isError: false };
+      mockCoverage = { analyzedCount: 0, totalCount: 0, isError: true };
+      renderGamesTab();
+      const bar = within(screen.getByTestId('library-mobile-filter-bar'));
+      expect(bar.queryByText(/matched/)).toBeNull();
+      expect(bar.getByTestId('eval-coverage-badge-error')).toBeTruthy();
     });
   });
 

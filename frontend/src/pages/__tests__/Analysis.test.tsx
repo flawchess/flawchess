@@ -3472,6 +3472,23 @@ describe('Explain bar placement', () => {
     expect(screen.queryByTestId('analysis-btn-paste')).toBeNull();
   });
 
+  it('mid below lg: the footer is pinned, except on a phone held sideways (816x528 is a zoomed foldable)', () => {
+    /** `max-height` queries match as in a viewport this tall. */
+    const renderAtHeight = (height: number): HTMLElement => {
+      stubMatchMedia((q) => {
+        const maxHeight = /max-height:\s*([\d.]+)px/.exec(q)?.[1];
+        return maxHeight !== undefined ? height <= Number(maxHeight) : /max-width:\s*1199px/.test(q);
+      });
+      seedOwnerBlunderLines();
+      renderAnalysis('/analysis?game_id=1&ply=2');
+      return screen.getByTestId('analysis-mobile-footer');
+    };
+
+    expect(renderAtHeight(528).className).toMatch(/\bfixed\b/);
+    cleanup();
+    expect(renderAtHeight(430).className).not.toMatch(/\bfixed\b/);
+  });
+
   it('mid from lg (1024-1199px): the in-column controls and the PGN/FEN menu stay, no phone footer', () => {
     stubMatchMedia((q) => /max-width:\s*1199px/.test(q) || /min-width:\s*1024px/.test(q));
     seedOwnerBlunderLines();

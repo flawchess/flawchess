@@ -198,6 +198,8 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   useIsTrainSideBand: () => false,
   useIsPortraitFoldable: () => false,
   useIsTrainShortSide: () => false,
+  useIsTrainBandBar: () => false,
+  useTrainBoardGutter: (defaultPx: number) => defaultPx,
 }));
 
 const playSound = vi.hoisted(() => vi.fn());

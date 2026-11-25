@@ -3,10 +3,10 @@
  * FlawCard vitest suite.
  *
  * Tests:
- * 1. CardHeader renders white + black usernames with ratings
+ * 1. Opponent name and rating (not the user's)
  * 2. Ratings in parentheses; omitted (no empty parens) when null
  * 3. Move notation: ply=2 (white) → "2. Nxd4", ply=3 (black) → "2... c5"
- * 4. Board at size 132 with a flaw-move arrow when move_san is set
+ * 4. One layout: board size from the card width, tags beside the board
  * 5. data-testid on root article: flaw-card-{game_id}-{ply}
  * 6. Platform link testid and aria-label present
  * 7. Unified Analyze button (btn-flaw-analyze) replaces Explore + Game pair
@@ -66,6 +66,9 @@ vi.mock('react-router', async () => {
 });
 
 import { FlawCard } from '../FlawCard';
+import { flawBoardSize } from '@/hooks/useFlawBoardSize';
+import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
+import { tacticMotifDefinition } from '@/lib/tacticComparisonMeta';
 import type { FlawListItem } from '@/types/library';
 import { BEST_MOVE_ARROW } from '@/lib/theme';
 
@@ -170,7 +173,7 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('FlawCard', () => {
-  describe('CardHeader — opponent-only', () => {
+  describe('Opponent row', () => {
     it('renders "vs <opponent>" — the opponent name only, not the user', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
@@ -231,12 +234,11 @@ describe('FlawCard', () => {
   });
 
   describe('Game-info block (clock + move time, no TC/moves/termination)', () => {
-    it('renders "mm:ss · Move Ns" and drops TC, move count, and termination', () => {
+    it('renders "mm:ss · Ns" and drops TC, move count, and termination', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
-      // clock_seconds=125 → "2:05"; move_seconds=8.4 → "Move 8.4s"
-      expect(article.textContent).toContain('2:05');
-      expect(article.textContent).toContain('Move 8.4s');
+      // clock_seconds=125 → "2:05"; move_seconds=8.4 → "8.4s"
+      expect(article.textContent).toContain('2:05 · 8.4s');
       // Replaced segments must be gone.
       expect(article.textContent).not.toContain('rapid');
       expect(article.textContent).not.toContain('10+5');
@@ -244,27 +246,87 @@ describe('FlawCard', () => {
       expect(article.textContent).not.toContain('resignation');
     });
 
-    it('omits the "Move Ns" suffix when move_seconds is null', () => {
+    it('shows long move times in whole seconds', () => {
+      render(<FlawCard flaw={makeFlaw({ move_seconds: 62 })} />);
+      expect(screen.getByTestId('flaw-card-42-2').textContent).toContain('2:05 · 62s');
+    });
+
+    it('omits the move time when move_seconds is null', () => {
       render(<FlawCard flaw={makeFlaw({ move_seconds: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).toContain('2:05');
-      expect(article.textContent).not.toContain('Move 8.4s');
+      expect(article.textContent).not.toContain('8.4s');
     });
 
     it('omits the clock line entirely when both clock fields are null', () => {
       render(<FlawCard flaw={makeFlaw({ clock_seconds: null, move_seconds: null })} />);
       const article = screen.getByTestId('flaw-card-42-2');
       expect(article.textContent).not.toContain('2:05');
-      expect(article.textContent).not.toContain('Move 8.4s');
+      expect(article.textContent).not.toContain('8.4s');
     });
   });
 
-  describe('Miniboard', () => {
-    it('renders a board at size 132', () => {
+  describe('one layout at every width', () => {
+    it('sizes the board from the card width, in steps of 8px within its limits', () => {
+      expect(flawBoardSize(0)).toBe(152); // unknown width (first render)
+      expect(flawBoardSize(293)).toBe(160); // narrowest grid card (321px)
+      expect(flawBoardSize(400)).toBe(216);
+      expect(flawBoardSize(700)).toBe(216);
+    });
+
+    it('renders one board, one Analyze button and one copy of the tags', () => {
       render(<FlawCard flaw={makeFlaw()} />);
-      // LazyMiniBoard renders a div with explicit width/height style=132px
-      const boardContainers = document.querySelectorAll('[style*="width: 132px"]');
-      expect(boardContainers.length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('[style*="width: 152px"]').length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId('btn-flaw-analyze')).toHaveLength(1);
+      expect(screen.getAllByTestId('flaw-card-tags')).toHaveLength(1);
+    });
+
+    it('puts the tags beside the board and Analyze in a row of its own below', () => {
+      render(<FlawCard flaw={makeFlaw()} />);
+      const tags = screen.getByTestId('flaw-card-tags');
+      const boardRow = document.querySelector('[style*="width: 152px"]')!.parentElement!;
+      const analyze = screen.getByTestId('btn-flaw-analyze');
+      expect(boardRow.contains(tags)).toBe(true);
+      expect(boardRow.contains(analyze)).toBe(false);
+      expect(boardRow.nextElementSibling).toBe(analyze);
+    });
+  });
+
+  describe('tags', () => {
+    it('shows every tag as a chip, timing and phase last', () => {
+      render(<FlawCard flaw={makeFlaw({ tags: ['unrushed', 'opening', 'lucky'] })} />);
+      expect(screen.getByTestId('flaw-card-tags').textContent).toBe('luckyunrushedopening');
+      for (const tag of ['lucky', 'unrushed', 'opening']) {
+        expect(screen.getByTestId(`chip-${tag}-42`)).toBeDefined();
+      }
+    });
+
+    it('shows no eval swing', () => {
+      render(<FlawCard flaw={makeFlaw()} />);
+      expect(screen.getByTestId('flaw-card-42-2').textContent).not.toContain('+4.7');
+    });
+
+    it('explains a tag on tap', () => {
+      render(<FlawCard flaw={makeFlaw({ tags: ['unrushed'] })} />);
+      fireEvent.click(screen.getByTestId('flaw-tag-unrushed-42-2'));
+      expect(screen.getByTestId('flaw-tag-unrushed-42-2-popover').textContent).toContain(
+        TAG_DEFINITIONS.unrushed,
+      );
+    });
+
+    it('shows the full tactic label and explains it on tap', () => {
+      render(<FlawCard flaw={makeFlaw({ allowed_tactic_motif: 'hanging-piece' })} />);
+      const trigger = screen.getByTestId('flaw-tactic-allowed-42-2');
+      expect(trigger.textContent).toBe('allowed: hanging-piece');
+      fireEvent.click(trigger);
+      expect(screen.getByTestId('flaw-tactic-allowed-42-2-popover').textContent).toContain(
+        tacticMotifDefinition('hanging-piece'),
+      );
+    });
+
+    it('is absent without tags and tactics', () => {
+      render(<FlawCard flaw={makeFlaw({ tags: [] })} />);
+      expect(screen.queryByTestId('flaw-card-tags')).toBeNull();
     });
   });
 
@@ -327,8 +389,6 @@ describe('FlawCard', () => {
   describe('unified Analyze button (btn-flaw-analyze)', () => {
     // A single Analyze button (no Game modal) opens
     // /analysis?game_id=X&ply=Y.
-    // buttonRow renders in BOTH mobile (sm:hidden) and desktop (hidden sm:flex) wrappers;
-    // jsdom ignores CSS so both buttons appear in the DOM. Use getAllByTestId.
 
     it('renders btn-flaw-analyze with aria-label "Analyze game"', () => {
       render(<FlawCard flaw={makeFlaw()} />);
@@ -376,10 +436,6 @@ describe('FlawCard', () => {
       allowed_tactic_confidence: 85,
     };
 
-    // NOTE: the card renders the tags row in BOTH a mobile (sm:hidden) and a desktop
-    // (hidden sm:flex) body, so every chip testid appears twice in jsdom (which ignores
-    // CSS visibility). Use getAllByTestId / queryAllByTestId rather than the single-element
-    // getByTestId — same convention as LibraryGameCard.test.tsx.
     it('Either + both motifs: renders missed chip AND allowed chip', () => {
       render(
         <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
@@ -447,7 +503,7 @@ describe('FlawCard', () => {
       expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
     });
 
-    it('no per-chip Popover rendered (narration = chip label + TagLegend)', () => {
+    it('popovers stay closed until a chip is used', () => {
       const { container } = render(
         <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
       );
@@ -506,9 +562,9 @@ describe('FlawCard', () => {
       );
     });
 
-    it('renders one trigger per body copy (mobile and desktop)', () => {
+    it('renders one trigger', () => {
       render(<FlawCard flaw={scoredBlunder(ABOVE_CUT_SCORE)} />);
-      expect(screen.getAllByTestId(TRIGGER_TESTID)).toHaveLength(2);
+      expect(screen.getAllByTestId(TRIGGER_TESTID)).toHaveLength(1);
     });
 
     it('an unscored blunder has no trigger and reads "Blunder"', () => {

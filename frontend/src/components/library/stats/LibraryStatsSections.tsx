@@ -325,8 +325,8 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
 
   return (
     <section className="space-y-4" data-testid="flaw-stats-section" aria-label={FLAW_STATS_TITLE}>
-      {/* md:h-8: the StickyTcBar overlays this row on desktop (see StickyTcBar). */}
-      <h2 className={cn(SECTION_HEADING_CLASS, 'md:flex md:h-8 md:items-center')}>
+      {/* lg:h-8: the StickyTcBar overlays this row on desktop (see StickyTcBar). */}
+      <h2 className={cn(SECTION_HEADING_CLASS, 'lg:flex lg:h-8 lg:items-center')}>
         {FLAW_STATS_TITLE}
       </h2>
       {renderBody()}

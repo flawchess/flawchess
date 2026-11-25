@@ -44,7 +44,8 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
 // The reveal action bar renders under the board from `sm` up (phones publish it to the fixed
 // bottom bar, which these tests do not mount); jsdom has no matchMedia.
 // `desktop` is flipped per test for the tablet verdict strip (Phase 251 UAT).
-const viewport = vi.hoisted(() => ({ desktop: true }));
+// `bandBar` models a foldable in landscape (with `desktop`: the side layout is on there too).
+const viewport = vi.hoisted(() => ({ desktop: true, bandBar: false }));
 // The drill layout must key on the side-layout gate alone: the lg hook is pinned to false.
 vi.mock('@/hooks/useIsDesktop', () => ({
   useIsDesktop: () => false,
@@ -55,6 +56,8 @@ vi.mock('@/hooks/useIsDesktop', () => ({
   useIsTrainSideBand: () => false,
   useIsPortraitFoldable: () => false,
   useIsTrainShortSide: () => false,
+  useIsTrainBandBar: () => viewport.bandBar,
+  useTrainBoardGutter: (defaultPx: number) => defaultPx,
 }));
 
 vi.mock('@/lib/sounds', () => ({ playSound: vi.fn(), unlockAudio: vi.fn() }));
@@ -117,6 +120,7 @@ vi.mock('@/components/board/ChessBoard', () => ({
   },
 }));
 
+import { PublishedRevealBar } from '@/components/train/__tests__/PublishedRevealBar';
 import { BlunderCheckSolution } from '@/components/train/blunder-check/BlunderCheckSolution';
 
 /** 1. e4 e5 played, white to move: d4 is the key, Nf3 the played blunder. */
@@ -197,6 +201,8 @@ function renderSolution(
         onAnalyze={vi.fn()}
         restoredTree={null}
       />
+      {/* The fixed bottom bar of the app shell. */}
+      <PublishedRevealBar />
       <LocationProbe />
     </TooltipProvider>
       </MemoryRouter>,
@@ -226,6 +232,7 @@ beforeEach(() => {
 
 afterEach(() => {
   viewport.desktop = true;
+  viewport.bandBar = false;
   cleanup();
 });
 
@@ -449,6 +456,22 @@ describe('verdict strip below desktop (Phase 251 UAT)', () => {
     renderSolution(blunderSolution(), scriptedEngine());
     expect(screen.getByTestId('train-verdict-card')).not.toBeNull();
     expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+  });
+});
+
+describe('foldable in landscape: the actions are in the bottom bar', () => {
+  it('drops the controls row and footer from the side column and moves the game info into it', () => {
+    viewport.bandBar = true;
+    renderSolution(herringSolution({ is_own: false, game_info: FOREIGN_INFO }), scriptedEngine());
+
+    const panel = screen.getByTestId('blunder-check-solution-panel');
+    expect(screen.getByTestId('train-verdict-card')).not.toBeNull();
+    expect(screen.queryByTestId('train-reveal-controls-row')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-actions-footer')).toBeNull();
+    expect(screen.queryByTestId('blunder-check-game-info-slot')).toBeNull();
+    expect(within(panel).getByTestId('blunder-check-game-footer')).not.toBeNull();
+    const bar = screen.getByTestId('train-reveal-action-bar');
+    expect(screen.getByTestId('blunder-check-solution').contains(bar)).toBe(false);
   });
 });
 

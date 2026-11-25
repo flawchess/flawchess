@@ -18,6 +18,9 @@ interface GameCardProps {
   game: GameRecord;
   /** When set, renders a full-width Analyze button opening the game at this ply. */
   analyzePly?: number;
+  /** Phone layout (two-line header, "# n" without "Moves") at every width, for a card in a
+   *  multi-column grid. */
+  compact?: boolean;
 }
 
 const MOBILE_BOARD_SIZE = 105;
@@ -48,7 +51,7 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-export function GameCard({ game, analyzePly }: GameCardProps) {
+export function GameCard({ game, analyzePly, compact = false }: GameCardProps) {
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
@@ -109,12 +112,14 @@ export function GameCard({ game, analyzePly }: GameCardProps) {
   // the termination row carries the result chip.
   const header = (
     <CardHeader as="h4" size="compact">
-      <span className="hidden sm:block truncate text-foreground min-w-0">
-        {firstSide.glyph} {firstSide.name} {firstSide.rating}
-        <span className="mx-1.5 text-muted-foreground font-normal">vs</span>
-        {secondSide.glyph} {secondSide.name} {secondSide.rating}
-      </span>
-      <div className="flex sm:hidden min-w-0 flex-1 flex-col text-foreground">
+      {!compact && (
+        <span className="hidden sm:block truncate text-foreground min-w-0">
+          {firstSide.glyph} {firstSide.name} {firstSide.rating}
+          <span className="mx-1.5 text-muted-foreground font-normal">vs</span>
+          {secondSide.glyph} {secondSide.name} {secondSide.rating}
+        </span>
+      )}
+      <div className={cn('flex min-w-0 flex-1 flex-col text-foreground', !compact && 'sm:hidden')}>
         <span className="truncate">
           {firstSide.glyph} {firstSide.name} {firstSide.rating}
         </span>
@@ -155,7 +160,7 @@ export function GameCard({ game, analyzePly }: GameCardProps) {
       <Hash className="h-3.5 w-3.5" />
       {plysToFullMoves(game.ply_count)}
       {/* "Moves" label is desktop-only; mobile shows just "# <n>" to save width. */}
-      <span className="hidden sm:inline">&nbsp;Moves</span>
+      {!compact && <span className="hidden sm:inline">&nbsp;Moves</span>}
     </span>
   );
 
@@ -197,7 +202,7 @@ export function GameCard({ game, analyzePly }: GameCardProps) {
       {header}
 
       {/* Mobile layout: board + opening/metadata below the header */}
-      <div className="flex gap-3 items-start sm:hidden px-4 py-3">
+      <div className={cn('flex gap-3 items-start px-4 py-3', !compact && 'sm:hidden')}>
         {game.result_fen && (
           <LazyMiniBoard
             fen={game.result_fen}
@@ -212,19 +217,21 @@ export function GameCard({ game, analyzePly }: GameCardProps) {
       </div>
 
       {/* Desktop layout: board left, opening + metadata stacked right */}
-      <div className="hidden sm:flex gap-3 items-center px-4 py-3">
-        {game.result_fen && (
-          <LazyMiniBoard
-            fen={game.result_fen}
-            flipped={game.user_color === 'black'}
-            size={DESKTOP_BOARD_SIZE}
-          />
-        )}
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {openingLine}
-          {metadata}
+      {!compact && (
+        <div className="hidden sm:flex gap-3 items-center px-4 py-3">
+          {game.result_fen && (
+            <LazyMiniBoard
+              fen={game.result_fen}
+              flipped={game.user_color === 'black'}
+              size={DESKTOP_BOARD_SIZE}
+            />
+          )}
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
+            {openingLine}
+            {metadata}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Full-width Analyze button — opens the game in game mode at the ply currently
           shown on the opening board. Only rendered when an analyzePly is supplied. */}

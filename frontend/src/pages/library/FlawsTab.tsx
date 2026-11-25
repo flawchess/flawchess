@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
+import { LibraryMobileFilterBar } from '@/components/library/LibraryMobileFilterBar';
 import {
   DEFAULT_FILTERS,
   areFiltersEqual,
@@ -39,7 +40,11 @@ import type { TacticDepthValue } from '@/lib/tacticDepth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 20;
+/** Divisible by 1 to 4 columns, so a full page leaves no hole in the grid. */
+const PAGE_SIZE = 24;
+/** As many columns as fit with cards at least 340px wide, sized by the list (like GameCardList, but
+ *  wider: at 704px, a foldable's inner screen in portrait, two cards are too narrow for the tags). */
+const FLAW_GRID_CLASS = 'grid grid-cols-[repeat(auto-fill,minmax(min(21.25rem,100%),1fr))] gap-4';
 
 // Filter-independent probe for "does the user have ANY engine-analyzed games":
 // no date/TC/platform restriction, both opponent types, no flaw filter. Module
@@ -282,6 +287,7 @@ export function FlawsTab() {
   const totalGames = Math.max(totalCount, totalImported);
   const matchedCount = flawsData?.matched_count ?? 0;
   const flaws = flawsData?.flaws ?? [];
+  const matchLabel = `${matchedCount} flaw${matchedCount === 1 ? '' : 's'} matched`;
 
   const noGamesImported = !flawsLoading && !flawsError && totalGames === 0;
   const noMatchedFlaws =
@@ -400,10 +406,9 @@ export function FlawsTab() {
       {!flawsError && (
         <section aria-label="Flaw results" data-testid="flaw-list">
           {flawsData != null && (
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <p className="text-sm text-muted-foreground">
-                {matchedCount} flaw{matchedCount === 1 ? '' : 's'} matched
-              </p>
+            // Below lg the counts sit in the control bar (LibraryMobileFilterBar).
+            <div className="hidden lg:flex items-center justify-between gap-3 mb-4">
+              <p className="text-sm text-muted-foreground">{matchLabel}</p>
               <EvalCoverageBadge
                 analyzedN={analyzedCount}
                 totalN={totalCount}
@@ -427,7 +432,7 @@ export function FlawsTab() {
 
           {matchedCount > 0 && (
             <div
-              className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+              className={FLAW_GRID_CLASS}
               data-testid="flaw-grid"
             >
               {flaws.map((flaw) => (
@@ -470,33 +475,20 @@ export function FlawsTab() {
         {mainContent}
       </SidebarLayout>
 
-      {/* Mobile layout: sticky filter buttons + Drawers + stacked content */}
-      <div className="md:hidden flex flex-col gap-4">
-        {/* Sticky row with separate Filters + Tags buttons */}
-        <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
-          <Button
-            variant="brand-outline"
-            className="relative"
-            onClick={() => handleMobileFiltersOpenChange(true)}
-            aria-label="Open game filters"
-            data-testid="btn-game-filters"
-          >
-            <SlidersHorizontal className="mr-2 h-4 w-4" />
-            Filters
-            {gameDotNode}
-          </Button>
-          <Button
-            variant="brand-outline"
-            className="relative"
-            onClick={() => handleMobileFlawFiltersOpenChange(true)}
-            aria-label="Open tags"
-            data-testid="btn-flaw-filters"
-          >
-            <Tags className="mr-2 h-4 w-4" />
-            Tags
-            {flawDotNode}
-          </Button>
-        </div>
+      {/* Mobile layout (below lg): sticky control bar + Drawers + stacked content */}
+      <div className="lg:hidden flex flex-col gap-2">
+        <LibraryMobileFilterBar
+          matchLabel={flawsData != null ? matchLabel : null}
+          analyzedN={analyzedCount}
+          totalN={totalCount}
+          isCoverageError={isCoverageError}
+          isGuest={isGuest}
+          filtersButton={{ testId: 'btn-game-filters', ariaLabel: 'Open game filters' }}
+          filtersDot={gameDotNode}
+          onOpenFilters={() => handleMobileFiltersOpenChange(true)}
+          tagsDot={flawDotNode}
+          onOpenTags={() => handleMobileFlawFiltersOpenChange(true)}
+        />
 
         {/* Game-filters drawer */}
         <MobileFilterDrawer

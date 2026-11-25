@@ -205,8 +205,8 @@ export function OverallSection({ tcs, children }: OverallSectionProps) {
       data-testid="endgame-overall-section"
       aria-label={`Endgame Overall Performance, ${TC_LABELS[tcStats.tc]}`}
     >
-      {/* md:h-8: the page's StickyTcBar overlays this row on desktop (see StickyTcBar). */}
-      <div className="flex flex-wrap items-center justify-between gap-2 md:h-8">
+      {/* lg:h-8: the page's StickyTcBar overlays this row on desktop (see StickyTcBar). */}
+      <div className="flex flex-wrap items-center justify-between gap-2 lg:h-8">
         <h2 className="font-brand text-lg font-semibold text-foreground">Endgame Overall Performance</h2>
       </div>
       <p className="text-sm text-muted-foreground">

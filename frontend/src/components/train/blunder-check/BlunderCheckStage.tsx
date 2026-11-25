@@ -18,11 +18,15 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { BlunderCheckScore } from '@/components/train/blunder-check/BlunderCheckScore';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsTrainShortSide, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import {
+  useIsTrainBandBar,
+  useIsTrainShortSide,
+  useIsTrainSideLayout,
+  useTrainBoardGutter,
+} from '@/hooks/useIsDesktop';
 import { BLUNDER_CHECK_BOARD_MAX_WIDTH_PX } from '@/lib/blunderCheckDrill';
 import type { DrillProgress } from '@/lib/blunderCheckDrill';
 import {
-  SHORT_SIDE_BOARD_GUTTER_PX,
   SHORT_SIDE_FOOTER_RESET_CLASS,
   SHORT_SIDE_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
@@ -131,7 +135,9 @@ interface BlunderCheckStageProps {
   actionBar?: ReactNode;
   /**
    * Side layout only: under the board (the solution's game info). Its slot is held on every
-   * side-layout screen, so the fitted board width never changes.
+   * side-layout screen, so the fitted board width never changes. Not on a short screen nor
+   * where the solution uses the bottom bar (`useIsTrainBandBar`): there the caller puts it in
+   * the side column and the board gets the slot's height.
    */
   underBoard?: ReactNode;
   /** The bot bubble: under the board when stacked, in the side column in the side layout. */
@@ -165,14 +171,16 @@ export function BlunderCheckStage({
   // viewport bottom and the bubble sat below the fold; the side column and the height fit now
   // engage on the trainside gate (1024px and up, or 768px and up in landscape).
   const isSideLayout = useIsTrainSideLayout();
-  // A phone in landscape: a small gutter, so the board gets the screen's height.
   const isShortSide = useIsTrainShortSide();
+  // The landscape band's solutions use the bottom bar; its height is kept free on every screen.
+  const isBandBar = useIsTrainBandBar();
+  const gutterPx = useTrainBoardGutter(BOARD_BOTTOM_GUTTER_PX);
   const columnMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef: boardRowRef,
     maxPx: BLUNDER_CHECK_BOARD_MAX_WIDTH_PX,
     minPx: BOARD_MIN_WIDTH_PX,
-    gutterPx: isShortSide ? SHORT_SIDE_BOARD_GUTTER_PX : BOARD_BOTTOM_GUTTER_PX,
+    gutterPx,
     enabled: isSideLayout,
   });
 
@@ -235,7 +243,7 @@ export function BlunderCheckStage({
             </div>
           </div>
           {actionBar}
-          {isSideLayout && !isShortSide && (
+          {isSideLayout && !isShortSide && !isBandBar && (
             <div className={GAME_INFO_SLOT_CLASS} data-testid="blunder-check-game-info-slot">
               {underBoard}
             </div>

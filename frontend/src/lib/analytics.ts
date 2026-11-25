@@ -406,6 +406,7 @@ export const PANEL_TARGETS = [
   'settings',
   'more-drawer',
   'analysis-more',
+  'bot-game-more',
   'train-verdict-strip',
   'blunder-check-verdict-strip',
   'opening-insights-more',

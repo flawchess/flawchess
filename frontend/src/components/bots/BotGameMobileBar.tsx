@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { ChevronLeft, ChevronRight, Flag, Repeat2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BotGameMoreMenu } from '@/components/bots/BotGameMoreMenu';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
-import { trackFeature } from '@/lib/analytics';
 import {
   Dialog,
   DialogContent,
@@ -18,13 +18,14 @@ export interface BotGameMobileBarProps {
   onBack: () => void;
   onForward: () => void;
   onFlip: () => void;
+  onLeave: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
 }
 
 /**
  * BotGameMobileBar: the mobile bot game's
- * fixed four-action bottom bar (Resign / Back / Forward / Flip), published
+ * fixed four-action bottom bar (Resign / Back / Forward / More), published
  * through the `usePublishMobileBoardControls` seam in place of the main nav.
  *
  * A new component rather than a prop on the shared `BoardControls` row, so the
@@ -32,9 +33,9 @@ export interface BotGameMobileBarProps {
  *
  * The Resign trigger and its two-step confirm dialog mirror `GameControls.tsx`
  * (same three testids: `board-btn-resign`, `resign-confirm-dialog`,
- * `board-btn-resign-confirm`). Back/Forward/Flip reuse the
- * `board-btn-back` / `board-btn-forward` / `board-btn-flip` testids from
- * `BoardControls`.
+ * `board-btn-resign-confirm`). Back/Forward reuse the
+ * `board-btn-back` / `board-btn-forward` testids from `BoardControls`. More holds
+ * flip, settings and the way back to the bot list (`BotGameMoreMenu`).
  *
  * All four actions render in the MAIN NAV's shape — icon over label, `flex-1`
  * columns across the bar — so the bar the bot game swaps in reads as the same
@@ -52,6 +53,7 @@ export function BotGameMobileBar({
   onBack,
   onForward,
   onFlip,
+  onLeave,
   canGoBack,
   canGoForward,
 }: BotGameMobileBarProps): ReactElement {
@@ -122,18 +124,7 @@ export function BotGameMobileBar({
         <ChevronRight className="size-5" aria-hidden="true" />
         <span className="text-sm">Next</span>
       </Button>
-      <Button
-        variant="ghost"
-        className={BOT_BAR_BUTTON_CLASS}
-        onClick={() => {
-          onFlip();
-          trackFeature('board-tool', { target: 'flip' });
-        }}
-        data-testid="board-btn-flip"
-      >
-        <Repeat2 className="size-5" aria-hidden="true" />
-        <span className="text-sm">Flip</span>
-      </Button>
+      <BotGameMoreMenu onLeave={onLeave} onFlip={onFlip} />
     </div>
   );
 }

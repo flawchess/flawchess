@@ -17,7 +17,7 @@ export interface MobileBoardControls {
   onForward: () => void;
   /**
    * Optional because the bot game's
-   * four-action payload (Resign/Back/Forward/Flip) has no reset control.
+   * four-action payload (Resign/Back/Forward/More) has no reset control.
    * Every other publisher (Train, Analysis, Openings) still supplies it.
    */
   onReset?: () => void;
@@ -35,6 +35,8 @@ export interface MobileBoardControls {
    * bar.
    */
   onResign?: () => void;
+  /** Bot game only: the More menu's "Back to bots". Published together with `onResign`. */
+  onLeave?: () => void;
   /**
    * The Train reveal bar: presence of `onNext` selects
    * `TrainRevealActionBar` in `MobileBottomBar`, ahead of the bot-game branch.
@@ -108,6 +110,7 @@ export function usePublishMobileBoardControls(controls: PublishedBoardControls |
     canReset = NOOP_PAYLOAD.canReset,
     // No default — undefined is the meaningful "not the bot bar" value.
     onResign,
+    onLeave,
     // Same rule for the Train reveal bar's fields.
     onNext,
     analyzeTo,
@@ -128,6 +131,7 @@ export function usePublishMobileBoardControls(controls: PublishedBoardControls |
       canGoForward,
       canReset,
       onResign,
+      onLeave,
       onNext,
       analyzeTo,
       onAnalyzeClick,
@@ -144,6 +148,7 @@ export function usePublishMobileBoardControls(controls: PublishedBoardControls |
     canGoForward,
     canReset,
     onResign,
+    onLeave,
     onNext,
     analyzeTo,
     onAnalyzeClick,

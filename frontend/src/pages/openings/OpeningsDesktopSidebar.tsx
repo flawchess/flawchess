@@ -147,7 +147,6 @@ export function OpeningsDesktopSidebar({
 
   return (
     <SidebarLayout
-      breakpoint="lg"
       panels={[
         {
           id: 'filters',

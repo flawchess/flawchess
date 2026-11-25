@@ -48,7 +48,9 @@ export function TrainFlawFixedBanner({ fen, flipped }: TrainFlawFixedBannerProps
 
   return (
     <Card
-      className={`flex items-center gap-3 p-3 ${FLAW_FIXED_GLOW}`}
+      // `shrink-0`. Bug fix (816x528): in the short side layout's scrolling column the banner was
+      // squashed to a sliver, since a Card clips its overflow and so may shrink.
+      className={`flex shrink-0 items-center gap-3 p-3 ${FLAW_FIXED_GLOW}`}
       style={{ color: FLAWCHESS_ENGINE_ACCENT }}
       data-testid="train-flaw-fixed-banner"
     >

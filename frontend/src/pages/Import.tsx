@@ -446,7 +446,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     // LibraryPage's TabsContent already adds mt-1 (mobile) / mt-4
     // (desktop) above this element, so: phones 4+4 = 8px, desktop 16+0 = 16px.
     // The bottom keeps the page's original 24px.
-    <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 pt-1 pb-6 md:pt-0 md:px-6 space-y-8">
+    <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 pt-1 pb-6 lg:pt-0 lg:px-6 space-y-8">
       <EvalCoverageHeader />
       {/* The ask wins on Import whenever it is active and replaces both the
           welcome and the explore variant (guests are never eligible, so the
