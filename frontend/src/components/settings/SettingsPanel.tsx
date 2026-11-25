@@ -64,7 +64,7 @@ function CountToggleGroup({ id, label, value, options, testId }: CountToggleGrou
             key={option}
             value={String(option)}
             data-testid={`${testId}-${option}`}
-            className="flex-1 min-h-11 sm:min-h-0 text-sm"
+            className="flex-1 min-h-11 lg:min-h-0 text-sm"
           >
             {option}
           </ToggleGroupItem>

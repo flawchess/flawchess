@@ -57,7 +57,7 @@ export function TrainSubnav({
 
   return (
     <Tabs value={active} onValueChange={handleValueChange}>
-      <TabsList variant="brand" className="w-full max-md:!h-10 max-md:!p-0" data-testid="train-tabs">
+      <TabsList variant="brand" className="w-full max-lg:!h-10 max-lg:!p-0" data-testid="train-tabs">
         <TabsTrigger value="today" className="flex-1" data-testid="tab-train-today">
           <CalendarCheck className={TAB_ICON_CLASS} />
           Today

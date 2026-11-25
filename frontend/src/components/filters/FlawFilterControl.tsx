@@ -200,7 +200,7 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
       aria-pressed={selected}
       aria-label={`Filter flaws by tag: ${tag}`}
       className={cn(
-        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        'inline-flex items-center gap-1 h-11 lg:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
         !selected
           && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
       )}
@@ -238,7 +238,7 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
       aria-pressed={selected}
       aria-label={`Filter flaws by severity: ${label}`}
       className={cn(
-        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        'inline-flex items-center gap-1 h-11 lg:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
         !selected
           && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
       )}
@@ -289,7 +289,7 @@ function BestMoveFilterButton({
       aria-pressed={selected}
       aria-label={ariaLabel}
       className={cn(
-        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+        'inline-flex items-center gap-1 h-11 lg:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
         !selected
           && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
       )}
@@ -347,7 +347,7 @@ function TacticFamilyGroup({
             aria-pressed={selected}
             aria-label={`Filter flaws by tactic motif: ${name}`}
             className={cn(
-              'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
+              'inline-flex items-center gap-1 h-11 lg:h-7 rounded-full px-3 py-0.5 text-sm border transition-colors',
               !selected
                 && 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
             )}
@@ -638,21 +638,21 @@ export function FlawFilterControl({
             <ToggleGroupItem
               value="either"
               data-testid="filter-tactic-orientation-either"
-              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+              className="min-h-11 lg:min-h-0 flex-1 text-sm"
             >
               Either
             </ToggleGroupItem>
             <ToggleGroupItem
               value="missed"
               data-testid="filter-tactic-orientation-missed"
-              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+              className="min-h-11 lg:min-h-0 flex-1 text-sm"
             >
               Missed
             </ToggleGroupItem>
             <ToggleGroupItem
               value="allowed"
               data-testid="filter-tactic-orientation-allowed"
-              className="min-h-11 sm:min-h-0 flex-1 text-sm"
+              className="min-h-11 lg:min-h-0 flex-1 text-sm"
             >
               Allowed
             </ToggleGroupItem>

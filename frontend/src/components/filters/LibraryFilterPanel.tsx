@@ -58,7 +58,7 @@ interface LibraryFilterPanelProps {
  *
  * Desktop: rendered inside a <aside> sidebar.
  * Mobile: rendered inside the Drawer (same component, no separate mobile copy).
- * The `h-11 sm:h-7` touch-target height is preserved on both form factors.
+ * The `h-11 lg:h-7` touch-target height is preserved on both form factors.
  *
  * Staged-apply model: edits update the caller's pending state only; Apply commits
  * pending to the store and closes the panel.

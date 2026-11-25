@@ -193,14 +193,14 @@ export function PasteModal({ open, onOpenChange, onLoad, onSaved }: PasteModalPr
                 <ToggleGroupItem
                   value="white"
                   data-testid="paste-side-white"
-                  className="min-h-11 sm:min-h-0 flex-1 text-sm"
+                  className="min-h-11 lg:min-h-0 flex-1 text-sm"
                 >
                   White
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="black"
                   data-testid="paste-side-black"
-                  className="min-h-11 sm:min-h-0 flex-1 text-sm"
+                  className="min-h-11 lg:min-h-0 flex-1 text-sm"
                 >
                   Black
                 </ToggleGroupItem>

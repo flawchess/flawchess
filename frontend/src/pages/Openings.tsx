@@ -775,7 +775,7 @@ export function OpeningsPage() {
                   <Button
                     variant="brand-outline"
                     // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
-                    className="relative min-h-11 sm:min-h-0"
+                    className="relative min-h-11 lg:min-h-0"
                     onClick={openFilterDrawer}
                     data-testid="subnav-filter-button"
                     aria-label="Open filters"

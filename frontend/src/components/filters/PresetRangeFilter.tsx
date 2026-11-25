@@ -101,7 +101,7 @@ export function PresetRangeFilter({
               data-testid={`${testIdPrefix}-preset-${preset.key}`}
               aria-pressed={isActive}
               className={cn(
-                'rounded border h-11 sm:h-7 text-sm transition-colors',
+                'rounded border h-11 lg:h-7 text-sm transition-colors',
                 isActive
                   ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
                   : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',

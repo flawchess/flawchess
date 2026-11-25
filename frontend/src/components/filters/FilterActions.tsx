@@ -47,7 +47,7 @@ export function FilterActions({
           type="button"
           variant="brand-outline"
           size="lg"
-          className="flex-1 min-h-11 sm:min-h-0"
+          className="flex-1 min-h-11 lg:min-h-0"
           data-testid={resetTestId}
           aria-label={resetLabel}
           onClick={handleReset}
@@ -57,7 +57,7 @@ export function FilterActions({
         <Button
           type="button"
           size="lg"
-          className="flex-1 min-h-11 sm:min-h-0"
+          className="flex-1 min-h-11 lg:min-h-0"
           data-testid={applyTestId}
           aria-label="Apply"
           onClick={handleApply}

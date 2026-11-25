@@ -49,7 +49,7 @@ export function OpeningColorSwitch({ idPrefix, selected, onSelect, onAnyClick }:
             type="button"
             variant={isSelected ? 'default' : 'brand-outline'}
             aria-pressed={isSelected}
-            className="min-h-11 gap-1.5 px-2.5 sm:min-h-0"
+            className="min-h-11 gap-1.5 px-2.5 lg:min-h-0"
             onClick={() => handleClick(color)}
             data-testid={`opening-color-switch-${idPrefix}-${color}`}
           >

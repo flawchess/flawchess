@@ -119,7 +119,7 @@ export function ImportFilterCard() {
                   aria-label={`${TIME_CONTROL_LABELS[tc]} time control`}
                   aria-pressed={active}
                   className={cn(
-                    'rounded border h-11 sm:h-7 text-sm transition-colors',
+                    'rounded border h-11 lg:h-7 text-sm transition-colors',
                     active
                       ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
                       : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
@@ -157,7 +157,7 @@ export function ImportFilterCard() {
                 value={String(cap)}
                 data-testid={`import-filter-cap-${cap}`}
                 aria-pressed={settings.game_cap === cap}
-                className="min-h-11 sm:min-h-0 flex-1 text-sm"
+                className="min-h-11 lg:min-h-0 flex-1 text-sm"
               >
                 {cap.toLocaleString()}
               </ToggleGroupItem>

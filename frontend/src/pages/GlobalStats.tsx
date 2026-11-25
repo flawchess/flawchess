@@ -264,7 +264,7 @@ export function GlobalStatsPage() {
             <Button
               variant="brand-outline"
               // Same height as the TC buttons beside it (min-h-11 below sm, see TcSwitch).
-              className="relative ml-auto min-h-11 min-w-11 shrink-0 sm:min-h-0"
+              className="relative ml-auto min-h-11 min-w-11 shrink-0 lg:min-h-0"
               onClick={() => handleMobileFiltersOpenChange(true)}
               aria-label="Open filters"
               data-testid="btn-filters"
