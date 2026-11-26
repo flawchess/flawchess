@@ -1,8 +1,8 @@
 /**
  * TrainStreakCard — the Train landing's Today card (sketch 014 variant B): the
  * session streak drawn inside a 3-layer flame on the left; on the right the
- * weekly tally and the 0-7 freeze meter; beneath them one launcher row per mode
- * (`TrainModeLauncherRow`), which are the both-required streak checklist (D-08).
+ * weekly tally and the 0-7 freeze meter. The per-mode launcher rows (the streak checklist, D-08)
+ * live on the mode cards (`TrainModeSettings`) beside this card on desktop, below it on a phone.
  * Under the weekly tally sits the rank line: the viewer's Points rank this week
  * (`#4 this week`) as a link to the Leaderboard tab, left out with no rank.
  * Self-contained: calls `useTrainProgress()` and `useTrainLeaderboard()`
@@ -19,17 +19,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router';
-import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { FreezeMeter } from '@/components/train/FreezeMeter';
 import { StreakFlame } from '@/components/train/StreakFlame';
-import { TrainModeLauncherRow } from '@/components/train/TrainModeLauncherRow';
-import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
+import { TRAIN_LANDING_CARD_MIN_H_CLASS } from '@/components/train/landingStyles';
 import { useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
-import { useDismissBlunderCheckNotice, useTrainProgress } from '@/hooks/useTrainProgress';
+import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import {
   FREEZE_CAP,
@@ -40,10 +37,9 @@ import {
 } from '@/lib/streakArrival';
 import type { StreakArrival } from '@/lib/streakArrival';
 import { trackFeature } from '@/lib/analytics';
-import { LAUNCH_NOTICE_TINT_CLASS } from '@/lib/theme';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { cn } from '@/lib/utils';
-import type { TrainModeProgress, TrainModeState, TrainProgressResponse } from '@/types/train';
+import type { TrainProgressResponse } from '@/types/train';
 
 /** A freeze earned together with a streak tick pops in once the ignite settles. */
 const EARNED_AFTER_IGNITE_DELAY_MS = 1300;
@@ -173,113 +169,7 @@ function buildStreakVisuals({
   };
 }
 
-/**
- * What the landing knows about today's puzzle session. The session response is the
- * authority for what the Start button does (fresh, resume or done) and for the count
- * left, so it overrides the server's per-mode estimate for the puzzles row. A server
- * `off` (session size 0) always wins.
- */
-export interface PuzzlesLanding {
-  state: TrainModeState;
-  /** Puzzles left in today's session. */
-  left: number;
-  /** Points scored in today's session, shown once it is done. */
-  pointsToday: number;
-}
-
-export interface TrainStreakCardProps {
-  puzzlesLanding?: PuzzlesLanding;
-  /** Disables the puzzles Start / Resume (the session is loading or has no puzzles). */
-  puzzlesStartDisabled?: boolean;
-  /** Puts the feature-route dot on the puzzles Start / Resume button. */
-  showRouteDot?: boolean;
-  /** Called by an off row's Turn on button; no button renders without it. */
-  onTurnOn?: (mode: TrainLauncherMode) => void;
-}
-
-/**
- * The puzzles row's progress. Without a landing the count left is the server's
- * `waiting_count` estimate, an upper bound that can exceed one session, so it is capped
- * at the session size.
- */
-function puzzlesRowProgress(
-  server: TrainModeProgress,
-  landing: PuzzlesLanding | undefined,
-): TrainModeProgress {
-  if (server.state === 'off') return server;
-  if (landing === undefined) return { ...server, remaining: Math.min(server.remaining, server.size) };
-  return { ...server, state: landing.state, remaining: landing.left };
-}
-
-/**
- * The launch notice (D-21): introduces blunder check to existing streak holders (the "New:"
- * pitch that used to sit under the Blunder Check row, Phase 251 UAT) and tells them it now
- * counts toward the streak, with the amount set in the mode's settings row (beside the card on desktop, below it on a phone, so the copy names the row, not a direction). The server decides when it shows (existing streak users, 14-day window, hidden
- * after a blunder-check completion or amount change); dismissing hides it at once and tells the
- * server.
- */
-function BlunderCheckNotice(): ReactElement {
-  const dismiss = useDismissBlunderCheckNotice();
-  return (
-    <div
-      className={cn('col-span-2 flex items-start gap-2 rounded-md py-2 pl-3 pr-1', LAUNCH_NOTICE_TINT_CLASS)}
-      data-testid="train-blunder-check-notice"
-    >
-      <p className="flex-1 self-center text-sm">
-        New: Blunder Check. Call each move of a real game before it is played: good or blunder? It
-        now counts toward your streak, and you can set the amount or turn it off in the Blunder Check settings.
-      </p>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="flex-shrink-0"
-        aria-label="Dismiss"
-        data-testid="btn-train-blunder-check-notice-dismiss"
-        onClick={() => {
-          trackFeature('action', { target: 'train-blunder-check-notice-dismiss' });
-          dismiss.mutate();
-        }}
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </Button>
-    </div>
-  );
-}
-
-/** The two launcher rows, the streak checklist (D-08). */
-function TrainLauncherRows({
-  data,
-  puzzlesLanding,
-  puzzlesStartDisabled,
-  showRouteDot,
-  onTurnOn,
-}: { data: TrainProgressResponse } & TrainStreakCardProps): ReactElement {
-  return (
-    <div className="col-span-2 flex flex-col gap-3" data-testid="train-launcher-rows">
-      <TrainModeLauncherRow
-        mode="puzzles"
-        progress={puzzlesRowProgress(data.modes.puzzles, puzzlesLanding)}
-        pointsToday={puzzlesLanding?.pointsToday ?? 0}
-        disabled={puzzlesStartDisabled}
-        showRouteDot={showRouteDot}
-        onTurnOn={onTurnOn}
-      />
-      <TrainModeLauncherRow
-        mode="blunder_check"
-        progress={data.modes.blunder_check}
-        pointsToday={data.modes.blunder_check.points_today}
-        onTurnOn={onTurnOn}
-      />
-    </div>
-  );
-}
-
-export function TrainStreakCard({
-  puzzlesLanding,
-  puzzlesStartDisabled = false,
-  showRouteDot = false,
-  onTurnOn,
-}: TrainStreakCardProps): ReactElement {
+export function TrainStreakCard(): ReactElement {
   const { data, isPending, isError } = useTrainProgress();
   const profile = useUserProfile();
   const arrival = useStreakArrival(
@@ -317,11 +207,10 @@ export function TrainStreakCard({
     );
   }
 
-  // Flame | details on one row, the launcher rows full card width beneath
-  // (both Start buttons sit above the phone fold on this one card).
+  // Flame | details on one row.
   return (
-    <Card as="section" className="w-full" data-testid="train-streak-card">
-      <CardBody className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
+    <Card as="section" className={cn('w-full', TRAIN_LANDING_CARD_MIN_H_CLASS)} data-testid="train-streak-card">
+      <CardBody className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4">
         <div>{visuals?.flame ?? <div className="aspect-[100/122] w-full" aria-hidden="true" />}</div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-1.5 text-sm font-semibold">
@@ -342,16 +231,6 @@ export function TrainStreakCard({
           <TrainRankLine />
           {details}
         </div>
-        {data?.blunder_check_notice === true && <BlunderCheckNotice />}
-        {data !== undefined && (
-          <TrainLauncherRows
-            data={data}
-            puzzlesLanding={puzzlesLanding}
-            puzzlesStartDisabled={puzzlesStartDisabled}
-            showRouteDot={showRouteDot}
-            onTurnOn={onTurnOn}
-          />
-        )}
       </CardBody>
     </Card>
   );

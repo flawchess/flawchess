@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 /**
- * TrainModeSettings.test.tsx — the per-mode settings rows under the Today card (sketch 014
- * variant B, D-08). Rendered through a harness that owns the one shared settings draft the
+ * TrainModeSettings.test.tsx — the per-mode cards on the Train landing (D-08): the launcher row,
+ * the pitch and the collapsed settings footer. Rendered through a harness that owns the one shared settings draft the
  * way `TrainStartScreen` does, next to the schedule card, so "one draft, one PUT" is tested
  * across the two components. Real timers (see TrainScheduleSettings.test.tsx for why).
  */
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router';
+import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
+import type { TrainModeSettingsProps } from '@/components/train/TrainModeSettings';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -102,11 +105,13 @@ function progressData(
   };
 }
 
-function Harness() {
+type LauncherProps = Omit<TrainModeSettingsProps, 'settingsDraft'>;
+
+function Harness(props: LauncherProps) {
   const settingsDraft = useTrainSettingsDraft();
   return (
     <>
-      <TrainModeSettings settingsDraft={settingsDraft} />
+      <TrainModeSettings settingsDraft={settingsDraft} {...props} />
       <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={true} />
       {/* Stands in for the launcher's Turn on, which writes the size through the same draft. */}
       <button
@@ -122,14 +127,25 @@ function Harness() {
 
 const TURN_ON_SIZE = 6;
 
-function renderHarness(): void {
+const startPuzzles = vi.fn();
+const startBlunderCheck = vi.fn();
+
+function renderHarness(props: LauncherProps = {}): void {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
+            {children}
+          </TrainTodayActionsContext.Provider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
   }
-  render(<Harness />, { wrapper: Wrapper });
+  render(<Harness {...props} />, { wrapper: Wrapper });
 }
 
 async function advanceDebounce(): Promise<void> {
@@ -163,6 +179,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  startPuzzles.mockReset();
+  startBlunderCheck.mockReset();
   vi.mocked(trainApi.getSettings).mockReset();
   vi.mocked(trainApi.updateSettings).mockReset();
   vi.mocked(useInstallPrompt).mockReset();
@@ -555,5 +573,131 @@ describe('Umami tracking of the size sliders', () => {
     await openRow('puzzles');
     await advanceDebounce();
     expect(track.mock.calls).toEqual([]);
+  });
+});
+
+describe('mode cards: launcher row and pitch (D-08, D-09)', () => {
+  function setModes(
+    puzzles: Partial<TrainModeProgress>,
+    blunderCheck: Partial<TrainBlunderCheckModeProgress>,
+  ): void {
+    progressMock = { data: progressData(puzzles, blunderCheck), isPending: false, isError: false };
+  }
+
+  it('each card holds its launcher row, the pitch and the settings toggle, puzzles first', () => {
+    setModes({ remaining: 6, pending: 6 }, {});
+    renderHarness();
+
+    for (const slug of ['puzzles', 'blunder-check'] as const) {
+      const card = screen.getByTestId(`train-mode-settings-${slug}`);
+      const row = screen.getByTestId(`train-launcher-row-${slug}`);
+      const pitch = screen.getByTestId(`train-mode-pitch-${slug}`);
+      const toggle = screen.getByTestId(`btn-train-mode-settings-${slug}`);
+      expect(card.contains(row) && card.contains(pitch) && card.contains(toggle)).toBe(true);
+      expect(row.compareDocumentPosition(pitch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(pitch.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    const puzzles = screen.getByTestId('train-mode-settings-puzzles');
+    const blunderCheck = screen.getByTestId('train-mode-settings-blunder-check');
+    expect(puzzles.compareDocumentPosition(blunderCheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the pitch shows while the card is collapsed', () => {
+    renderHarness();
+
+    expect(screen.queryByTestId('filter-puzzles-per-session')).toBeNull();
+    expect(screen.getByTestId('train-mode-pitch-puzzles').textContent).toBe(
+      'Your own blunders as puzzles: find the move you missed in the game.',
+    );
+    expect(screen.getByTestId('train-mode-pitch-blunder-check').textContent).toContain('good or blunder?');
+  });
+
+  it('shows the mode name in place of the launcher row while the progress has not loaded', () => {
+    progressMock = { data: undefined, isPending: true, isError: false };
+    renderHarness();
+
+    expect(screen.queryByTestId('train-launcher-row-puzzles')).toBeNull();
+    expect(screen.getByTestId('train-mode-settings-puzzles').textContent).toContain('Personalized Puzzles');
+    expect(screen.getByTestId('train-mode-settings-blunder-check').textContent).toContain('Blunder Check');
+  });
+
+  it('Blunder Check Start calls startBlunderCheck, puzzles Start calls startPuzzles', () => {
+    setModes({ remaining: 6, pending: 6 }, { state: 'pending', remaining: 6 });
+    renderHarness();
+
+    fireEvent.click(screen.getByTestId('btn-train-blunder-check-start'));
+    expect(startBlunderCheck).toHaveBeenCalledTimes(1);
+    expect(startPuzzles).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-train-start'));
+    expect(startPuzzles).toHaveBeenCalledTimes(1);
+  });
+
+  it('Blunder Check in progress shows Resume with the remaining count', () => {
+    setModes({}, { state: 'in_progress', remaining: 4 });
+    renderHarness();
+
+    expect(screen.getByTestId('btn-train-blunder-check-start').textContent).toBe('Resume');
+    expect(screen.getByTestId('train-launcher-badge-blunder-check').textContent).toBe('4');
+  });
+
+  it('Blunder Check done shows the points recap and no button', () => {
+    setModes({}, { state: 'done', remaining: 0, pending: 0, points_today: 17 });
+    renderHarness();
+
+    expect(screen.getByTestId('train-launcher-done-blunder-check').textContent).toBe('Done today, 17 points');
+    expect(screen.queryByTestId('btn-train-blunder-check-start')).toBeNull();
+  });
+
+  it('a mode that is off shows a muted Off row (no Turn on without a handler)', () => {
+    setModes({}, { state: 'off', size: 0, remaining: 0, pending: 0 });
+    renderHarness();
+
+    expect(screen.getByTestId('train-launcher-row-blunder-check').dataset.state).toBe('off');
+    expect(screen.getByTestId('train-launcher-status-blunder-check').textContent).toBe('Off');
+    expect(screen.queryByTestId('btn-train-launcher-turn-on-blunder-check')).toBeNull();
+  });
+
+  it('passes onTurnOn through to an off row', () => {
+    const onTurnOn = vi.fn();
+    setModes({ state: 'off', size: 0, remaining: 0, pending: 0 }, {});
+    renderHarness({ onTurnOn });
+
+    fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
+    expect(onTurnOn).toHaveBeenCalledWith('puzzles');
+  });
+
+  it('the landing session overrides the puzzles row: resume, done with its points, left count', () => {
+    setModes({ remaining: 40, pending: 40 }, {});
+    renderHarness({ puzzlesLanding: { state: 'in_progress', left: 8, pointsToday: 0 } });
+    expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('8');
+    cleanup();
+
+    renderHarness({ puzzlesLanding: { state: 'done', left: 0, pointsToday: 9 } });
+    expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 9 points');
+    expect(screen.queryByTestId('btn-train-start')).toBeNull();
+  });
+
+  it('without a landing session the puzzles count is the waiting estimate capped at the session size', () => {
+    setModes({ size: 6, remaining: 40, pending: 40 }, {});
+    renderHarness();
+
+    expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('6');
+  });
+
+  it('a server-off puzzles mode wins over the landing session', () => {
+    setModes({ state: 'off', size: 0, remaining: 0, pending: 0 }, {});
+    renderHarness({ puzzlesLanding: { state: 'pending', left: 6, pointsToday: 0 } });
+
+    expect(screen.getByTestId('train-launcher-row-puzzles').dataset.state).toBe('off');
+    expect(screen.queryByTestId('btn-train-start')).toBeNull();
+  });
+
+  it('puzzlesStartDisabled disables only the puzzles Start', () => {
+    setModes({ remaining: 6, pending: 6 }, { state: 'pending', remaining: 6 });
+    renderHarness({ puzzlesStartDisabled: true });
+
+    expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('btn-train-blunder-check-start').hasAttribute('disabled')).toBe(false);
   });
 });

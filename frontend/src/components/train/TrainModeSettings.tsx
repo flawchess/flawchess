@@ -1,11 +1,14 @@
 /**
- * TrainModeSettings: one collapsed settings row per Train mode (Personalized Puzzles and
- * Blunder Check), under the Today card (sketch 014 variant B, D-08).
+ * TrainModeSettings: one card per Train mode (Personalized Puzzles and Blunder Check) on the
+ * Train landing, the left column on desktop (D-08, merged with the launcher rows after Phase 251).
  *
- * Each row is a Card whose trigger shows the mode name and a one-line summary ("N per
- * session" or "Off"). Opening it reveals the pitch, the session-size slider, for Blunder Check
- * the level picker, then the rationale and the rules under one "Why and how it works" heading
- * (Phase 251 UAT: the rules are no longer a collapsible).
+ * Each card stacks the mode's launcher row (`TrainModeLauncherRow`: name, the red count badge, the
+ * status line and Start / Resume / Turn on), the one-sentence pitch (always visible), and a
+ * collapsed "Settings" footer with the summary ("N per session" or "Off"). Opening it reveals the
+ * session-size slider, for Blunder Check the level picker, then the rationale and the rules under
+ * one "Why and how it works" heading (Phase 251 UAT: the rules are no longer a collapsible). The
+ * Blunder Check launch notice (`BlunderCheckNotice`) sits above the cards. Until the progress has
+ * loaded a card shows the mode name in place of the launcher row.
  *
  * - D-04: each slider runs from 0 (shown as Off) in steps of 3.
  * - D-05: the slider of the last active mode stops at 3 and shows a hint to untick days for a
@@ -23,6 +26,12 @@
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { BlunderCheckNotice } from '@/components/train/BlunderCheckNotice';
+import { TRAIN_LANDING_CARD_MIN_H_CLASS } from '@/components/train/landingStyles';
+import { TrainModeLauncherRow } from '@/components/train/TrainModeLauncherRow';
+import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
+import { puzzlesRowProgress } from '@/components/train/puzzlesLanding';
+import type { PuzzlesLanding } from '@/components/train/puzzlesLanding';
 import { Card } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { ToggleChipButton } from '@/components/ui/toggle-chip-button';
@@ -65,6 +74,7 @@ const BREAK_HINT = 'To take a break, untick days in the schedule.';
 const BLUNDER_CHECK_VIDEO_URL = 'https://www.youtube.com/watch?v=K9vKzNJAp3U&t=1s';
 /** One heading over a mode's rationale paragraph and its rules. */
 const RATIONALE_TITLE = 'Why and how it works';
+const SETTINGS_TOGGLE_LABEL = 'Settings';
 const LEVEL_LABEL = 'Your level (sets how hard the blunders are)';
 
 type ModeSlug = 'puzzles' | 'blunder-check';
@@ -288,6 +298,8 @@ interface ModeRowProps {
   onSizeChange: (size: number) => void;
   /** Extra controls between the slider and the rationale (the level picker). */
   extra?: ReactNode;
+  /** The mode's launcher row, or null while the progress has not loaded (the name shows instead). */
+  launcher: ReactNode;
 }
 
 function summaryText(size: number | null): string | null {
@@ -302,30 +314,39 @@ function ModeRow({
   disabled,
   onSizeChange,
   extra,
+  launcher,
 }: ModeRowProps): ReactElement {
   const [open, setOpen] = useState(false);
   const summary = summaryText(size);
   return (
-    <Card as="section" className="w-full" data-testid={`train-mode-settings-${config.slug}`}>
+    // Same desktop minimum as the streak card; the spare height goes above the settings footer.
+    <Card
+      as="section"
+      className={cn('flex w-full flex-col', TRAIN_LANDING_CARD_MIN_H_CLASS)}
+      data-testid={`train-mode-settings-${config.slug}`}
+    >
+      <div className="flex w-full flex-col gap-2 px-4 pt-4">
+        {launcher ?? <span className="text-sm font-semibold">{config.title}</span>}
+        <p className="text-sm text-muted-foreground" data-testid={`train-mode-pitch-${config.slug}`}>
+          {config.pitch}
+        </p>
+      </div>
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm"
+        className="mt-auto flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
         aria-expanded={open}
         data-testid={`btn-train-mode-settings-${config.slug}`}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span className="flex-1 font-semibold">{config.title}</span>
-        {summary !== null && <span className="text-muted-foreground">{summary}</span>}
+        <span className="flex-1">{summary}</span>
+        {SETTINGS_TOGGLE_LABEL}
         <ChevronDown
-          className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')}
+          className={cn('size-4 shrink-0 transition-transform', open && 'rotate-180')}
           aria-hidden="true"
         />
       </button>
       {open && (
         <div className="flex w-full flex-col gap-4 px-4 pb-4">
-          <p className="text-sm text-muted-foreground" data-testid={`train-mode-pitch-${config.slug}`}>
-            {config.pitch}
-          </p>
           <SizeSlider
             config={config}
             size={size}
@@ -344,6 +365,14 @@ function ModeRow({
 export interface TrainModeSettingsProps {
   /** The one shared settings draft (`useTrainSettingsDraft`, owned by `TrainStartScreen`). */
   settingsDraft: TrainSettingsDraftApi;
+  /** Today's puzzle session as the landing knows it; overrides the server's puzzles estimate. */
+  puzzlesLanding?: PuzzlesLanding;
+  /** Disables the puzzles Start / Resume (the session is loading or has no puzzles). */
+  puzzlesStartDisabled?: boolean;
+  /** Puts the feature-route dot on the puzzles Start / Resume button. */
+  showRouteDot?: boolean;
+  /** Called by an off mode's Turn on button; no button renders without it. */
+  onTurnOn?: (mode: TrainLauncherMode) => void;
 }
 
 /** True when `size` is a real 0 (the mode is off); null while settings load. */
@@ -355,7 +384,13 @@ function sizeOf(draft: EditableTrainSettings | null, config: ModeConfig): number
   return draft === null ? null : draft[config.sizeKey];
 }
 
-export function TrainModeSettings({ settingsDraft }: TrainModeSettingsProps): ReactElement {
+export function TrainModeSettings({
+  settingsDraft,
+  puzzlesLanding,
+  puzzlesStartDisabled = false,
+  showRouteDot = false,
+  onTurnOn,
+}: TrainModeSettingsProps): ReactElement {
   const { draft, update, isPending } = settingsDraft;
   const progress = useTrainProgress();
   const modes = progress.data?.modes;
@@ -377,10 +412,31 @@ export function TrainModeSettings({ settingsDraft }: TrainModeSettingsProps): Re
       <LevelPicker level={draft?.blunderCheckLevel} disabled={disabled} onLevelChange={handleLevelChange} />
     ) : null;
 
+  const puzzlesLauncher = modes && (
+    <TrainModeLauncherRow
+      mode="puzzles"
+      progress={puzzlesRowProgress(modes.puzzles, puzzlesLanding)}
+      pointsToday={puzzlesLanding?.pointsToday ?? 0}
+      disabled={puzzlesStartDisabled}
+      showRouteDot={showRouteDot}
+      onTurnOn={onTurnOn}
+    />
+  );
+  const blunderCheckLauncher = modes && (
+    <TrainModeLauncherRow
+      mode="blunder_check"
+      progress={modes.blunder_check}
+      pointsToday={modes.blunder_check.points_today}
+      onTurnOn={onTurnOn}
+    />
+  );
+
   return (
     <div className="flex w-full flex-col gap-4" data-testid="train-mode-settings">
+      <BlunderCheckNotice />
       <ModeRow
         config={PUZZLES_CONFIG}
+        launcher={puzzlesLauncher}
         size={puzzlesSize}
         isLastActive={isOff(blunderCheckSize)}
         disabled={disabled}
@@ -393,6 +449,7 @@ export function TrainModeSettings({ settingsDraft }: TrainModeSettingsProps): Re
         disabled={disabled}
         onSizeChange={(size) => update({ blunderCheckPerSession: size })}
         extra={levelPicker}
+        launcher={blunderCheckLauncher}
       />
     </div>
   );

@@ -6,9 +6,10 @@
  * debounces into exactly one `PUT /train/settings`, with an inline
  * "Saved"/"Couldn't save. Try again." indicator.
  *
- * Renders below the Today card and the mode rows, deliberately quiet, `text-sm` labels.
- * It is boxed in the standard `Card`/`CardHeader` ("Train schedule"),
- * always open, and the completed state's
+ * Renders under the streak card (right column on desktop, last on phones), deliberately
+ * quiet, `text-sm` labels. It is boxed in a `Card` with a bold inline "Train schedule" title,
+ * like the streak and mode cards beside it (no banded `CardHeader`, so the landing's cards
+ * share one look), always open, and the completed state's
  * "Next session" line lives in here: it describes the schedule, so it
  * belongs with the pickers that determine it rather than floating above
  * them as loose page text.
@@ -66,7 +67,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Check, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardBody, CardHeader } from '@/components/ui/card';
+import { Card, CardBody } from '@/components/ui/card';
 import { ToggleChipButton } from '@/components/ui/toggle-chip-button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -138,12 +139,11 @@ export interface TrainScheduleSettingsProps {
  * The card shell, shared by the error and populated bodies so a failed
  * settings fetch still reads as the same "Train schedule" box.
  *
- * The save indicator lives in the header's right slot (the `RightControls`
- * composition the `Card` docstring sanctions), not at the bottom of the card
- * body: down there it would need a permanently reserved `min-h-5` slot plus
- * the wrapper's own `gap-4`, ~36px of dead space under the last picker in the
- * idle state. In the header it costs no vertical space at all and still
- * can't shift the layout when it appears.
+ * The save indicator lives on the right of the title row, not at the bottom of
+ * the card body: down there it would need a permanently reserved `min-h-5` slot
+ * plus the wrapper's own `gap-4`, ~36px of dead space under the last picker in
+ * the idle state. On the title row it costs no vertical space and can't shift the
+ * layout when it appears.
  */
 interface ScheduleCardShellProps {
   indicator: SettingsSaveIndicator;
@@ -182,11 +182,13 @@ function SaveIndicator({ indicator }: { indicator: SettingsSaveIndicator }): Rea
 function ScheduleCardShell({ indicator, children }: ScheduleCardShellProps): ReactElement {
   return (
     <Card as="section" className="w-full" data-testid="train-schedule-settings">
-      <CardHeader size="compact">
-        Train schedule
-        <SaveIndicator indicator={indicator} />
-      </CardHeader>
-      <CardBody className="flex w-full flex-col gap-4">{children}</CardBody>
+      <CardBody className="flex w-full flex-col gap-2">
+        <div className="flex min-h-5 items-center gap-2">
+          <h3 className="text-sm font-semibold">Train schedule</h3>
+          <SaveIndicator indicator={indicator} />
+        </div>
+        <div className="flex w-full flex-col gap-4">{children}</div>
+      </CardBody>
     </Card>
   );
 }

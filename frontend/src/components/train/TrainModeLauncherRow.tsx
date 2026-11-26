@@ -1,5 +1,6 @@
 /**
- * TrainModeLauncherRow: one mode's row on the Today card (sketch 014 variant B, D-08 / D-09).
+ * TrainModeLauncherRow: the top row of a mode card on the Train landing (D-08 / D-09). The mode
+ * cards (`TrainModeSettings`) put the pitch and the settings toggle under it.
  *
  * The rows are the streak checklist: name, a red badge with the count left, a status line only
  * when there is something to say beyond the badge, and the action, vertically centered on the
@@ -14,8 +15,8 @@
  * tap and the card never receives the session loop through a prop chain. The puzzles Start
  * keeps `btn-train-start` / `btn-train-resume` and the feature-route dot; the Blunder Check
  * Start keeps `btn-train-blunder-check-start` and has no route dot (Phase 251 UAT: the
- * pending-puzzles badge already points at Train). The row carries no pitch line: the "New:"
- * pitch moved into the dismissable launch notice above the rows (Phase 251 UAT).
+ * pending-puzzles badge already points at Train). The mode's pitch sits under the row, on the
+ * mode card, not in the row itself.
  */
 import type { ReactElement } from 'react';
 import { Check } from 'lucide-react';

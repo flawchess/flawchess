@@ -8,12 +8,13 @@
  * not scattered inline ternaries — the states are mutually exclusive and
  * exactly one always matches.
  *
- * Every state renders the same Today card (`TrainStreakCard`, with one launcher
- * row per mode), with the settings column beside it (desktop) or below it (phones):
- * one collapsed settings row per mode (`TrainModeSettings`), then the schedule card.
- * All of them edit ONE settings draft (`useTrainSettingsDraft`) owned here, which a
- * launcher row's "Turn on" writes to as well. The session state drives the
- * puzzles row (Start, Resume or done with today's Points). The weekly
+ * Every state renders the same three blocks (`LandingGrid`): the streak card
+ * (`TrainStreakCard`), one card per mode (`TrainModeSettings`: launcher row, pitch and a
+ * collapsed settings footer) and the schedule card. Desktop puts the mode cards on the
+ * left and the streak card above the schedule on the right; phones stack streak, modes,
+ * schedule. All of them edit ONE settings draft (`useTrainSettingsDraft`) owned here, which
+ * a mode card's "Turn on" writes to as well. The session state drives the
+ * puzzles card's launcher row (Start, Resume or done with today's Points). The weekly
  * leaderboard lives on its own tab, not here (the card's rank line links to it).
  *
  * The medal dialog is not rendered here: the Train page layout owns
@@ -29,7 +30,7 @@
  * switch.
  */
 
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -43,9 +44,9 @@ import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { DEFAULT_MODE_SIZE, TrainModeSettings } from '@/components/train/TrainModeSettings';
 import type { TrainLauncherMode } from '@/components/train/TrainModeLauncherRow';
+import type { PuzzlesLanding } from '@/components/train/puzzlesLanding';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
-import type { PuzzlesLanding } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainSettingsDraft } from '@/hooks/useTrainSettingsDraft';
@@ -115,8 +116,8 @@ export interface TrainStartScreenProps {
  * settings chips stretch edge-to-edge on a wide window while the text sits
  * flush against the left gutter. Text stays left-aligned inside the column.
  *
- * The column widens from lg so the Today card and the settings column fit side by
- * side. Only the landing states use this — `TrainSolveScreen` is a two-column lg
+ * The column widens from lg so the mode cards and the streak/schedule column fit side
+ * by side. Only the landing states use this — `TrainSolveScreen` is a two-column lg
  * layout that must keep the full page width.
  *
  * There is no top padding: the Today panel's `mt-4` supplies the gap under the
@@ -125,9 +126,36 @@ export interface TrainStartScreenProps {
 const LANDING_CONTAINER_CLASS =
   'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 pb-6 text-left md:pb-8 lg:max-w-4xl';
 
-/** One column on phones (host bubble, Today card, mode rows, schedule row); from lg the Today
- * card sits on the left and the settings column on the right. */
-const LANDING_GRID_CLASS = 'grid w-full grid-cols-1 items-start gap-4 lg:grid-cols-2';
+/** One column on phones (streak card, mode cards, schedule card, in DOM order). From lg the
+ * mode cards span both rows of the left column, and the streak card sits above the schedule on
+ * the right. The second row takes the leftover height (`1fr`), so when the mode cards are the
+ * taller side the spare space lands under the schedule, never between it and the streak card. */
+const LANDING_GRID_CLASS =
+  'grid w-full grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:grid-rows-[auto_1fr]';
+const LANDING_STREAK_CELL_CLASS = 'min-w-0 lg:col-start-2 lg:row-start-1';
+const LANDING_MODES_CELL_CLASS = 'min-w-0 lg:col-start-1 lg:row-span-2 lg:row-start-1';
+const LANDING_SCHEDULE_CELL_CLASS = 'min-w-0 lg:col-start-2 lg:row-start-2';
+
+/** The landing's three blocks. The cells are always rendered (the streak cell stays empty while
+ * the panel is hidden), so the schedule card keeps its tree position and its pending debounced
+ * save across a tab switch. */
+function LandingGrid({
+  todayCard,
+  modes,
+  schedule,
+}: {
+  todayCard: ReactNode;
+  modes: ReactElement;
+  schedule: ReactElement;
+}): ReactElement {
+  return (
+    <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">
+      <div className={LANDING_STREAK_CELL_CLASS}>{todayCard}</div>
+      <div className={LANDING_MODES_CELL_CLASS}>{modes}</div>
+      <div className={LANDING_SCHEDULE_CELL_CLASS}>{schedule}</div>
+    </div>
+  );
+}
 
 
 type LandingState =
@@ -454,11 +482,13 @@ export function TrainStartScreen({
     );
   }
 
-  // The Today card (flame, freezes and one launcher row per mode) renders in every landing
-  // state, so both modes stay reachable. A re-fetch after a schedule save may replace the
-  // session, so the puzzles Start is disabled while loading, and while there is no session.
-  const todayCard = isVisible && (
-    <TrainStreakCard
+  // The streak card and the mode cards render in every landing state, so both modes stay
+  // reachable. A re-fetch after a schedule save may replace the session, so the puzzles Start
+  // is disabled while loading, and while there is no session.
+  const todayCard = isVisible && <TrainStreakCard />;
+  const modeCards = (
+    <TrainModeSettings
+      settingsDraft={settingsDraft}
       puzzlesLanding={puzzlesLandingFor(state)}
       puzzlesStartDisabled={isLoading || state.kind === 'empty'}
       showRouteDot={showRouteDot}
@@ -469,18 +499,16 @@ export function TrainStartScreen({
 
   if (state.kind === 'empty') {
     // With puzzles off, "no puzzles available" copy would be wrong (the user chose zero);
-    // the mode rows and schedule beside the card are where they turn the mode back on.
+    // the mode cards are where they turn the mode back on.
     const puzzlesOff = progress.data?.modes.puzzles.state === 'off';
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">
-          {todayCard}
-          <div className="flex min-w-0 flex-col gap-4">
-            <TrainModeSettings settingsDraft={settingsDraft} />
-            <TrainScheduleSettings settingsDraft={settingsDraft} isGuest={isGuest} />
-          </div>
-        </div>
+        <LandingGrid
+          todayCard={todayCard}
+          modes={modeCards}
+          schedule={<TrainScheduleSettings settingsDraft={settingsDraft} isGuest={isGuest} />}
+        />
         {!puzzlesOff && <TrainEmptyBody progress={progress} />}
       </div>
     );
@@ -499,17 +527,17 @@ export function TrainStartScreen({
           showNoOwnDue={showNoOwnDue}
         />
       )}
-      <div className={LANDING_GRID_CLASS} data-testid="train-landing-grid">
-        {todayCard}
-        <div className="flex min-w-0 flex-col gap-4">
-          <TrainModeSettings settingsDraft={settingsDraft} />
+      <LandingGrid
+        todayCard={todayCard}
+        modes={modeCards}
+        schedule={
           <TrainScheduleSettings
             settingsDraft={settingsDraft}
             nextSessionDate={state.kind === 'completed' ? state.nextSessionDate : undefined}
             isGuest={isGuest}
           />
-        </div>
-      </div>
+        }
+      />
     </div>
   );
 }
