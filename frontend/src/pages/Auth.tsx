@@ -39,7 +39,7 @@ export function AuthPage() {
         <img src="/icons/logo-256.png" alt="FlawChess logo" className="h-20 w-20 shrink-0 sm:landscape:h-32 sm:landscape:w-32" />
         <div>
           <h1 className="text-4xl tracking-tight text-foreground font-brand">FlawChess</h1>
-          <p className="mt-2 text-muted-foreground">Analyze your opening positions</p>
+          <p className="mt-2 text-muted-foreground">Find and fix your chess flaws</p>
         </div>
       </Link>
 
