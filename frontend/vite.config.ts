@@ -152,7 +152,7 @@ export default defineConfig({
       manifest: {
         name: 'FlawChess',
         short_name: 'FlawChess',
-        description: 'Find and fix the flaws in your game. Free full-game analysis of every chess.com and lichess game: tactics, openings, endgames, and time management.',
+        description: 'Find and fix your chess flaws. Free analysis of every chess.com and lichess game, personalized training, and human-like bots.',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',
