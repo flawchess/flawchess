@@ -85,7 +85,12 @@ export function GemMoveBadge({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <InfoPopover ariaLabel={copy.ariaLabel} testId={copy.testId} triggerContent={<Icon className={className} />}>
+      <InfoPopover
+        ariaLabel={copy.ariaLabel}
+        testId={copy.testId}
+        triggerContent={<Icon className={className} />}
+        closeOnScroll
+      >
         <div className="space-y-1">
           <p className="font-semibold">{copy.heading(byOpponent)}</p>
           <p>{copy.rule}</p>

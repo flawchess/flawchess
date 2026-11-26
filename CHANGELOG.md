@@ -14,6 +14,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Sign In and Register: in landscape (tablets, unfolded foldables, laptops) the logo moves into its own column beside the form, so the form is no longer cut off at the bottom. In portrait the logo sits beside the FlawChess title, so the Log In button fits on small phones without scrolling.
 - Train: each training mode now has one card with its Start button, a one-sentence description that is always visible, and its settings behind a Settings toggle (they used to be split between the streak card and separate settings rows). On desktop the mode cards sit on the left, the session streak above the training schedule on the right.
 
+### Fixed
+
+- Analysis on mobile: a blunder, gem or great-move tooltip opened from the move list now closes when you scroll the move list, instead of sliding up over the chessboard.
+
 ## [v2.32] Foldable & Tablet Layouts — 2026-11-26
 
 Phase 263 plus the foldable and tablet layout work, deployed to production throughout (releases #507–#515). Phones, foldables and tablets below 1024px get layouts of their own on Train, Analysis, Openings, Library, Endgames and bot games, with the bottom tab bar and a More menu replacing the top header, and short personalized-puzzle sessions are now filled with blunders of similarly rated players instead of a fixed set of lichess puzzles (SEED-261120-jnw).

@@ -36,6 +36,7 @@ export function FacepalmGlyphBadge({ score, type, byOpponent = false, className 
         ariaLabel={`${facepalmScoreLabel(score, type)}, what the score means`}
         testId="facepalm-glyph-popover"
         triggerContent={<Icon className={className} />}
+        closeOnScroll
       >
         <div className="space-y-1">
           <FacepalmExplanation score={score} type={type} audience={byOpponent ? 'opponent' : 'self'} />
