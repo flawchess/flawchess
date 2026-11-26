@@ -1658,7 +1658,7 @@ describe('Gem moves', () => {
     // own move), the rule line, plus the ELO + probability.
     // (getByText/findByText throw when absent, so a non-throwing return IS the assertion.)
     expect(await screen.findByText(/Nice, you found a gem move!/i)).toBeTruthy();
-    expect(screen.getByText(/almost never find/i)).toBeTruthy();
+    expect(screen.getByText(/rarely find/i)).toBeTruthy();
     expect(screen.getByText(/At 1500 ELO/)).toBeTruthy();
     expect(screen.getByText(/1% chance of being played/)).toBeTruthy();
   });

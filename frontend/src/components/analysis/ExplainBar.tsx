@@ -25,7 +25,8 @@ import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { FacepalmGlyphBadge } from '@/components/analysis/FacepalmGlyphBadge';
-import type { MoveInfo, MoveInfoQuality } from '@/lib/moveInfo';
+import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
+import type { MoveInfo, MoveInfoQuality, MoveRarity } from '@/lib/moveInfo';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type {
   ExplainBarState,
@@ -269,8 +270,46 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
   );
 }
 
+/**
+ * Rarity in words after a gem's / great move's label. Deliberately vague: the Maia probability is
+ * an estimate (realistic for blitz only), so the number stays in the badge popover.
+ */
+const RARITY_PHRASE: Record<MoveRarity['tier'], string> = {
+  gem: 'rarely found',
+  great: 'often missed',
+};
+
+/** The words after the badge: the label, plus the rarity at the detection ELO for a gem / great. */
+function moveInfoLabel(quality: MoveInfoQuality, rarity: MoveRarity | undefined): string {
+  const label = MOVE_INFO_LABEL[quality];
+  if (rarity === undefined || rarity.elo === null) return label;
+  return `${label}, ${RARITY_PHRASE[rarity.tier]} at ${rarity.elo} ELO`;
+}
+
 /** The badge for a move without Best / Punish lines, the same glyph the board draws. */
-function MoveInfoBadge({ quality, facepalm }: { quality: MoveInfoQuality; facepalm: boolean }): ReactElement {
+function MoveInfoBadge({
+  quality,
+  facepalm,
+  rarity,
+}: {
+  quality: MoveInfoQuality;
+  facepalm: boolean;
+  rarity: MoveRarity | undefined;
+}): ReactElement {
+  // A gem / great with detection data opens the same popover as its move-list badge.
+  if (rarity !== undefined) {
+    return (
+      <GemMoveBadge
+        className={HEADLINE_BADGE_CLASS}
+        maiaProbability={rarity.maiaProbability}
+        elo={rarity.elo}
+        byOpponent={rarity.byOpponent}
+        tier={rarity.tier}
+        testId={`analysis-move-info-${rarity.tier}-popover`}
+        alignClassName="align-text-bottom"
+      />
+    );
+  }
   if (quality === 'book') return <BookIcon className={HEADLINE_BADGE_CLASS} />;
   if (quality === 'blunder' && facepalm) return <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />;
   return <MoveQualityIcon quality={quality} className={HEADLINE_BADGE_CLASS} />;
@@ -286,10 +325,10 @@ function MoveInfoHeadline({ info }: { info: Extract<MoveInfo, { kind: 'quality' 
     >
       <span className="whitespace-nowrap">
         <span className="font-mono font-bold text-foreground">{info.san}</span>
-        {info.quality !== null && <MoveInfoBadge quality={info.quality} facepalm={info.facepalm} />}
+        {info.quality !== null && <MoveInfoBadge quality={info.quality} facepalm={info.facepalm} rarity={info.rarity} />}
         {info.quality !== null && ':'}
       </span>
-      {info.quality !== null && <span className="text-foreground"> {MOVE_INFO_LABEL[info.quality]}</span>}
+      {info.quality !== null && <span className="text-foreground"> {moveInfoLabel(info.quality, info.rarity)}</span>}
     </span>
   );
 }

@@ -1668,8 +1668,19 @@ export default function Analysis() {
         landingPly: currentMainlinePly,
         flawMarkers: gameData?.flaw_markers,
         lastMoveMarker: lastMove ? boardSquareMarkers.find((m) => m.square === lastMove.to) : undefined,
+        moveListMarker: currentNodeId !== null ? moveListMarkers.get(currentNodeId) : undefined,
       }),
-    [isGameMode, fastForwardRunning, currentNodeId, nodes, currentMainlinePly, gameData?.flaw_markers, lastMove, boardSquareMarkers],
+    [
+      isGameMode,
+      fastForwardRunning,
+      currentNodeId,
+      nodes,
+      currentMainlinePly,
+      gameData?.flaw_markers,
+      lastMove,
+      boardSquareMarkers,
+      moveListMarkers,
+    ],
   );
 
   // ── Handlers ──────────────────────────────────────────────────────────────────

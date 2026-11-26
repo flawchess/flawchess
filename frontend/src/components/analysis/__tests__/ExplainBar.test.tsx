@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ExplainBar } from '../ExplainBar';
 import type { ExplainBarState } from '@/lib/explainBar';
+import type { MoveInfo } from '@/lib/moveInfo';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import { FACEPALM_HIGH_CUTOFF, toFacepalmPct } from '@/lib/facepalm';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
@@ -311,6 +312,39 @@ describe('ExplainBar placements', () => {
 });
 
 describe('ExplainBar move info (no Best / Punish lines)', () => {
+  const renderInfo = (moveInfo: MoveInfo) =>
+    render(
+      <ExplainBar
+        state={{ kind: 'hidden' }}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="mid"
+        moveInfo={moveInfo}
+      />,
+    );
+
+  it('words a gem and a great move vaguely, never the Maia number, and opens the popover', async () => {
+    const rarity = { maiaProbability: 0.04, elo: 1614, byOpponent: false };
+    renderInfo({ kind: 'quality', san: 'Bxe4', quality: 'gem', facepalm: false, rarity: { tier: 'gem', ...rarity } });
+    const headline = screen.getByTestId('analysis-move-info-headline');
+    expect(headline.textContent).toBe('Bxe4Gem move: Gem, rarely found at 1614 ELO');
+    fireEvent.click(screen.getByTestId('analysis-move-info-gem-popover'));
+    // The number lives in the popover only.
+    expect(await screen.findByText(/4% chance of being played/)).toBeTruthy();
+    cleanup();
+
+    renderInfo({ kind: 'quality', san: 'Nf3', quality: 'great', facepalm: false, rarity: { tier: 'great', ...rarity } });
+    expect(screen.getByTestId('analysis-move-info-headline').textContent).toBe('Nf3Great move: Great move, often missed at 1614 ELO');
+    expect(screen.getByTestId('analysis-move-info-great-popover')).toBeTruthy();
+  });
+
+  it('a gem without detection data keeps the bare label and a plain badge', () => {
+    renderInfo({ kind: 'quality', san: 'Bxe4', quality: 'gem', facepalm: false });
+    expect(screen.getByTestId('analysis-move-info-headline').textContent).toBe('Bxe4Gem move: Gem');
+    expect(screen.queryByTestId('analysis-move-info-gem-popover')).toBeNull();
+  });
+
   it('renders nothing when hidden and no move info is passed', () => {
     render(
       <ExplainBar
