@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react';
 import {
   BAND_BAR_BOARD_GUTTER_PX,
-  PORTRAIT_FOLDABLE_QUERY,
+  PORTRAIT_SM_BAND_QUERY,
   SHORT_SIDE_BOARD_GUTTER_PX,
   SHORT_VIEWPORT_QUERY,
   TRAIN_BAND_BAR_MIN_HEIGHT_PX,
@@ -106,6 +106,15 @@ export function useIsTrainBandBar(): boolean {
   return isSideBand && !isTooShort;
 }
 
+/** True when the Train side column scrolls inside a frame as tall as the board column
+ * (SIDE_SCROLL_FRAME_CLASS): on short screens, and in the landscape band where the solution uses
+ * the bottom bar. Elsewhere the side column is in the page flow. */
+export function useIsTrainFramedSide(): boolean {
+  const isShortSide = useIsTrainShortSide();
+  const isBandBar = useIsTrainBandBar();
+  return isShortSide || isBandBar;
+}
+
 /** The bottom gutter of the Train drills' height fit (`useFitBoardToViewport`), given the
  * drill's own default. */
 export function useTrainBoardGutter(defaultPx: number): number {
@@ -117,6 +126,6 @@ export function useTrainBoardGutter(defaultPx: number): number {
 
 /** True on a portrait foldable or small tablet (640-767px wide, portrait), which reads like a
  * phone: the Train bot bubble uses its compact layout there. */
-export function useIsPortraitFoldable(): boolean {
-  return useMediaQuery(PORTRAIT_FOLDABLE_QUERY);
+export function useIsPortraitSmBand(): boolean {
+  return useMediaQuery(PORTRAIT_SM_BAND_QUERY);
 }

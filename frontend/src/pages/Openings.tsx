@@ -60,6 +60,7 @@ import { OpeningsMobileDrawers } from './openings/OpeningsMobileDrawers';
 import { useOpeningsChartData } from './openings/useOpeningsChartData';
 import { ChessboardInfoCopy } from './openings/ChessboardInfoCopy';
 import { OpeningsMobileBoardPanel, OpeningsMobileOpeningLine } from './openings/OpeningsMobileBoardPanel';
+import { useIsOpeningLineBesideBoard } from './openings/useIsOpeningLineBesideBoard';
 import { ExplorerTab } from './openings/ExplorerTab';
 import { GamesTab } from './openings/GamesTab';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
@@ -538,6 +539,20 @@ export function OpeningsPage() {
     </span>
   ) : null;
 
+  // Opening name and move list: beside the board on portrait screens from sm, else under it
+  // (portrait phones) or at the top of the content column (landscape side layout).
+  const openingLineBesideBoard = useIsOpeningLineBesideBoard();
+  const mobileOpeningLine = (
+    <OpeningsMobileOpeningLine
+      activeTab={activeTab}
+      opening={chess.opening}
+      moveHistory={chess.moveHistory}
+      currentPly={chess.currentPly}
+      onMoveClick={chess.goToMove}
+      besideBoard={openingLineBesideBoard}
+    />
+  );
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (needsRedirect) {
@@ -670,16 +685,56 @@ export function OpeningsPage() {
           </OpeningsDesktopSidebar>
         </Tabs>
 
-        {/* Mobile (below lg): stacked in portrait; in landscape the board column sits on the
-            left and the content column (subnav, opening name, move list, tab content) on the
-            right. See lib/openingsBoardLayout.ts. */}
+        {/* Mobile (below lg): the subnav on top, then stacked in portrait; in landscape the board
+            column sits on the left and the content column (opening name, move list, tab
+            content) on the right. See lib/openingsBoardLayout.ts. */}
         <div className="lg:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
+          {/* Full-width, non-sticky sub-navigation (like the Library page), above both columns
+              in portrait and landscape (owner, 2026-11-26: it used to top the right column in
+              landscape). The filter affordance lives in the board settings column on
+              Moves/Games, and as a sticky Filters button on Stats. */}
+          <div
+            className="flex items-center gap-2 h-[40px] rounded-md"
+            data-testid="openings-mobile-subnav"
+          >
+            <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
+              <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                Moves
+                {activeTab === 'explorer' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info-mobile" side="bottom">
+                      {TAB_INFO.explorer.text}
+                    </InfoPopover>
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Swords className="mr-1.5 h-4 w-4" />
+                Games
+                {activeTab === 'games' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
+                      {TAB_INFO.games.text}
+                    </InfoPopover>
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
+                <BarChart2 className="mr-1.5 h-4 w-4" />
+                Stats
+                {showStatsTabDot && (
+                  <RouteDot testid="openings-stats-notification-dot-mobile" variant="corner" />
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </div>
           <div className={OPENINGS_MOBILE_ROW_CLASS} data-testid="openings-mobile-layout">
             {/* Board column — only on the Moves + Games subtabs. First in the DOM so it is the
-                left column in landscape; in portrait the subnav and the Stats row move above
-                it with `order` (OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS). */}
+                left column in landscape; in portrait the Stats row moves above it with
+                `order` (OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS). */}
             <OpeningsMobileBoardPanel
               activeTab={activeTab}
               mobileBoardRef={mobileBoardRef}
@@ -711,49 +766,10 @@ export function OpeningsPage() {
               onOpenBookmarkDrawer={openBookmarkDrawer}
               showAnalyzeButton={showAnalyzeButton}
               onAnalyzePosition={handleAnalyzePosition}
+              besideBoard={openingLineBesideBoard ? mobileOpeningLine : undefined}
             />
 
             <div className={OPENINGS_MOBILE_CONTENT_COLUMN_CLASS} data-testid="openings-mobile-content-column">
-              {/* Full-width, non-sticky sub-navigation (like the Library page). The filter
-                  affordance lives in the board settings column on Moves/Games, and as a
-                  sticky Filters button on Stats (rendered just below). */}
-              <div
-                className={`flex items-center gap-2 h-[40px] rounded-md ${OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS}`}
-                data-testid="openings-mobile-subnav"
-              >
-                <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
-                  <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
-                    <ArrowRightLeft className="mr-1.5 h-4 w-4" />
-                    Moves
-                    {activeTab === 'explorer' && (
-                      <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                        <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info-mobile" side="bottom">
-                          {TAB_INFO.explorer.text}
-                        </InfoPopover>
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
-                    <Swords className="mr-1.5 h-4 w-4" />
-                    Games
-                    {activeTab === 'games' && (
-                      <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                        <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
-                          {TAB_INFO.games.text}
-                        </InfoPopover>
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
-                    <BarChart2 className="mr-1.5 h-4 w-4" />
-                    Stats
-                    {showStatsTabDot && (
-                      <RouteDot testid="openings-stats-notification-dot-mobile" variant="corner" />
-                    )}
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
               {/* Sticky row on the non-board Stats subtab, styled like the Library page. The
                   colour switch shares it with the Filters button so there is one sticky row,
                   not two overlapping top-0 ones. On Moves/Games the filter button lives in the
@@ -787,13 +803,7 @@ export function OpeningsPage() {
                 </div>
               )}
 
-              <OpeningsMobileOpeningLine
-                activeTab={activeTab}
-                opening={chess.opening}
-                moveHistory={chess.moveHistory}
-                currentPly={chess.currentPly}
-                onMoveClick={chess.goToMove}
-              />
+              {!openingLineBesideBoard && mobileOpeningLine}
 
               <OpeningsMobileDrawers
                 filterDrawerOpen={sidebar.filterDrawerOpen}

@@ -281,3 +281,74 @@ describe('ExplainBar placements', () => {
     expect(bar.className).not.toContain('charcoal-texture');
   });
 });
+
+describe('ExplainBar move info (no Best / Punish lines)', () => {
+  it('renders nothing when hidden and no move info is passed', () => {
+    render(
+      <ExplainBar
+        state={{ kind: 'hidden' }}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="mid"
+        moveInfo={null}
+      />,
+    );
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+
+  it('shows the move, its badge word and no buttons', () => {
+    render(
+      <ExplainBar
+        state={{ kind: 'hidden' }}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="mid"
+        moveInfo={{ kind: 'quality', san: 'Nf3', quality: 'best', facepalm: false }}
+      />,
+    );
+    const bar = screen.getByTestId('analysis-explain-bar');
+    expect(bar.dataset.state).toBe('info');
+    const headline = within(bar).getByTestId('analysis-move-info-headline');
+    expect(headline.dataset.quality).toBe('best');
+    expect(headline.textContent).toContain('Nf3');
+    expect(headline.textContent).toContain('Best move');
+    expect(within(bar).queryByTestId('btn-analysis-explain-best')).toBeNull();
+    expect(within(bar).queryByTestId('btn-analysis-explain-punish')).toBeNull();
+  });
+
+  it('shows the flaw headline for a flaw move info', () => {
+    render(
+      <ExplainBar
+        state={{ kind: 'hidden' }}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="desktop"
+        moveInfo={{
+          kind: 'flaw',
+          headline: { san: 'Qh5', severity: 'blunder', tactics: [{ orientation: 'allowed', text: 'allowed fork' }] },
+        }}
+      />,
+    );
+    const bar = screen.getByTestId('analysis-explain-bar');
+    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toContain('allowed fork');
+    expect(within(bar).queryByTestId('btn-analysis-explain-best')).toBeNull();
+  });
+
+  it('keeps the Best / Punish row when the state offers it, whatever the move info', () => {
+    render(
+      <ExplainBar
+        state={EXPLAIN_BLUNDER}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="mid"
+        moveInfo={{ kind: 'quality', san: 'Nf3', quality: 'best', facepalm: false }}
+      />,
+    );
+    expect(screen.getByTestId('analysis-explain-bar').dataset.state).toBe('explain');
+    expect(screen.getByTestId('btn-analysis-explain-best')).not.toBeNull();
+  });
+});

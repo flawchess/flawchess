@@ -10,8 +10,8 @@
  * bubble with a left-pointing tail. On phones, the avatar is floated top-left INSIDE the
  * bubble (no name row, no tail), so the bubble costs far less height. The landscape band
  * (`useIsTrainSideBand`: 640-1023px wide in landscape) uses the same compact layout, since
- * the Train side column there is narrow and the screen is short, and so does a portrait
- * foldable (`useIsPortraitFoldable`: 640-767px wide in portrait). A CSS-only single node
+ * the Train side column there is narrow and the screen is short, and so does the portrait
+ * band (`useIsPortraitSmBand`: 640-767px wide, unfolded foldables and small tablets). A CSS-only single node
  * is not clean here: on phones the avatar must sit inside the bubble's border, while from
  * `sm` up it lives in a column whose width comes from the name and which sets the row's
  * minimum height; absolute positioning on `sm+` would lose both.
@@ -22,7 +22,7 @@
  */
 
 import type { ReactElement, ReactNode } from 'react';
-import { useIsPortraitFoldable, useIsSmUp, useIsTrainSideBand } from '@/hooks/useIsDesktop';
+import { useIsPortraitSmBand, useIsSmUp, useIsTrainSideBand } from '@/hooks/useIsDesktop';
 import { cn } from '@/lib/utils';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -131,8 +131,8 @@ export function TrainBotBubble({
   // band (640-1023px wide in landscape), where the Train side column is narrow and
   // an avatar + name column beside the bubble wrapped short copy onto four lines.
   // And a portrait foldable (640-767px wide in portrait), which reads like a phone.
-  const isPortraitFoldable = useIsPortraitFoldable();
-  const compact = !sideBySide && (!isSmUp || isSideBand || isPortraitFoldable);
+  const isPortraitSmBand = useIsPortraitSmBand();
+  const compact = !sideBySide && (!isSmUp || isSideBand || isPortraitSmBand);
   const isNudge = state === 'drop-nudge';
   // `resolveBubbleState` ranks `intro` above `drop-nudge`, so a piece dropped
   // while Hilda's guess step is up keeps the intro copy: a nudge must not

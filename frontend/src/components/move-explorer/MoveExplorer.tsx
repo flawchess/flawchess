@@ -186,6 +186,11 @@ export function MoveExplorer({
           </p>
         </div>
       ) : (
+        // Games and Score are 4.25rem each (were 5.5rem and 4.5rem): in the landscape side
+        // column of an unfolded foldable (816x528) the table is 273px wide, and the wider
+        // columns left the Results bar 23px short of its 80px minimum, so it was cut off.
+        // 4.25rem still holds "100%" plus its icon, and a 5-digit count plus the
+        // transposition icon, at the phone text size.
         <table data-testid="move-explorer-table" className="w-full text-sm table-fixed">
           <thead>
             <tr>
@@ -204,9 +209,9 @@ export function MoveExplorer({
                   </InfoPopover>
                 </span>
               </th>
-              <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
+              <th className="w-[4.25rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th
-                className="w-[4.5rem] text-center text-xs text-muted-foreground font-normal pb-1"
+                className="w-[4.25rem] text-center text-xs text-muted-foreground font-normal pb-1"
                 data-testid="move-explorer-th-score"
               >
                 Score

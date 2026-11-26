@@ -1115,7 +1115,7 @@ describe('/bots active state + mobile header title', () => {
     expect(link.className).toMatch(/bg-white\/10/);
   });
 
-  it('mobile header shows the title "Bots" on /bots', () => {
+  it('mobile header shows the title "Admin" on /admin', () => {
     profileState = {
       email: 'full@example.com',
       is_superuser: false,
@@ -1126,12 +1126,12 @@ describe('/bots active state + mobile header title', () => {
     } as Partial<UserProfile>;
     tier1State = true;
 
-    renderMobileHeader('/bots');
-    expect(screen.getByTestId('mobile-header-page-title').textContent).toBe('Bots');
+    renderMobileHeader('/admin');
+    expect(screen.getByTestId('mobile-header-page-title').textContent).toBe('Admin');
   });
 });
 
-describe('MobileTopBar: no phone header on Library and Endgames', () => {
+describe('MobileTopBar: no phone header on Library, Endgames, Train and Bots', () => {
   const IMPERSONATION = { admin_id: 1, target_email: 'target@example.com' };
 
   function renderTopBar(path: string, impersonating: boolean) {
@@ -1152,7 +1152,7 @@ describe('MobileTopBar: no phone header on Library and Endgames', () => {
     );
   }
 
-  it.each(['/library/import', '/library/flaws', '/endgames/stats', '/endgames/games'])(
+  it.each(['/library/import', '/library/flaws', '/endgames/stats', '/endgames/games', '/train', '/train/archive', '/bots'])(
     '%s: only the notch inset, hidden on desktop',
     (path) => {
       renderTopBar(path, false);
@@ -1163,14 +1163,14 @@ describe('MobileTopBar: no phone header on Library and Endgames', () => {
     },
   );
 
-  it.each(['/library/flaws', '/endgames/games'])('%s: impersonating keeps the pill and its ×', (path) => {
+  it.each(['/library/flaws', '/endgames/games', '/train', '/bots'])('%s: impersonating keeps the pill and its ×', (path) => {
     renderTopBar(path, true);
     expect(screen.queryByTestId('mobile-header')).toBeNull();
     expect(screen.getByTestId('impersonation-pill').textContent).toContain('target@example.com');
     expect(screen.getByTestId('btn-impersonation-pill-logout')).toBeTruthy();
   });
 
-  it.each(['/train', '/bots', '/admin'])('%s keeps the header, with the pill once', (path) => {
+  it.each(['/admin', '/activity'])('%s keeps the header, with the pill once', (path) => {
     renderTopBar(path, true);
     expect(screen.getByTestId('mobile-header')).toBeTruthy();
     expect(screen.queryByTestId('mobile-headerless-top')).toBeNull();

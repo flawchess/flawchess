@@ -58,6 +58,7 @@ import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import {
   useIsTrainBandBar,
   useIsTrainShortSide,
+  useIsTrainFramedSide,
   useIsTrainSideLayout,
   useTrainBoardGutter,
 } from '@/hooks/useIsDesktop';
@@ -140,7 +141,7 @@ import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade
 import { shouldRecheck } from '@/lib/trainRecheck';
 import {
   SHORT_SIDE_FOOTER_RESET_CLASS,
-  SHORT_SIDE_FRAME_CLASS,
+  SIDE_SCROLL_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
   SHORT_SIDE_TOP_RESET_CLASS,
   STACKED_BOARD_ROW_CAP_CLASS,
@@ -992,6 +993,7 @@ export function TrainSolveScreen({
     if (tourActive) puzzleTelemetry.markTourActive();
   }, [tourActive, puzzleTelemetry]);
   const isShortSide = useIsTrainShortSide();
+  const isFramedSide = useIsTrainFramedSide();
   const actionsInSide = isSideLayout && !isBandBar;
   const gutterPx = useTrainBoardGutter(TRAIN_BOARD_BOTTOM_GUTTER_PX);
   const boardMaxWidthPx = useFitBoardToViewport({
@@ -1962,7 +1964,7 @@ export function TrainSolveScreen({
         // `min-w-0`: the board sizes from this column's width, so the column must be able to
         // shrink below the board's current size. Bug fix (near-square foldables, e.g. 820x791): with
         // the default `min-width: auto` the board kept its height-fitted size and the row
-        // overflowed by up to 44px next to the side column's 272px floor.
+        // overflowed by up to 44px next to the side column's floor (then 272px).
         className="contents trainside:flex trainside:w-full trainside:min-w-0 trainside:flex-col trainside:items-center trainside:gap-3"
         style={{ maxWidth: boardMaxWidthPx }}
       >
@@ -2084,9 +2086,11 @@ export function TrainSolveScreen({
         </div>
       )}
       {showReveal &&
-        (isShortSide ? (
-          // Short side layout: the reveal column scrolls inside a frame as tall as the board.
-          <div className={SHORT_SIDE_FRAME_CLASS} data-testid="train-reveal-short-frame">
+        (isFramedSide ? (
+          // Short side layout and the landscape band: the reveal column scrolls inside a frame
+          // as tall as the board, so a long verdict or the "Flaw fixed!" banner never makes the
+          // page scroll the board away.
+          <div className={SIDE_SCROLL_FRAME_CLASS} data-testid="train-reveal-side-frame">
             {revealNode}
           </div>
         ) : (

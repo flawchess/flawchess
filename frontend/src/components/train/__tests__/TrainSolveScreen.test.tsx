@@ -27,7 +27,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import {
-  PORTRAIT_FOLDABLE_QUERY,
+  PORTRAIT_SM_BAND_QUERY,
   SHORT_VIEWPORT_QUERY, TRAIN_BAND_BAR_MIN_HEIGHT_PX,
   TRAIN_SIDE_LAYOUT_QUERY,
 } from '@/lib/trainSideLayout';
@@ -107,7 +107,7 @@ function mediaMatches(query: string): boolean {
   if (query === SHORT_VIEWPORT_QUERY) return shortViewport;
   if (query === TOO_SHORT_FOR_BAND_BAR_QUERY) return tooShortForBandBar;
   // No test here models a portrait foldable; TrainBotBubble.test covers its compact bubble.
-  if (query === PORTRAIT_FOLDABLE_QUERY) return false;
+  if (query === PORTRAIT_SM_BAND_QUERY) return false;
   if (query === SM_UP_QUERY) return smUpMatches;
   if (query === TRAIN_SIDE_LAYOUT_QUERY && !smUpMatches) return false;
   if (sideLayoutOnly) return query === TRAIN_SIDE_LAYOUT_QUERY;
@@ -3932,7 +3932,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         });
         await screen.findByTestId('train-verdict-card');
         // The reveal column scrolls inside a frame as tall as the board and leads with the row.
-        const frame = screen.getByTestId('train-reveal-short-frame');
+        const frame = screen.getByTestId('train-reveal-side-frame');
         expect(within(frame).getByTestId('train-progress')).not.toBeNull();
         expect(within(frame).getByTestId('btn-train-next')).not.toBeNull();
       });

@@ -5,9 +5,11 @@ interface MoveListProps {
   moveHistory: string[];
   currentPly: number;
   onMoveClick: (ply: number) => void;
+  /** Tailwind height classes for the scroll box (HorizontalMoveList's default when omitted). */
+  heightClass?: string;
 }
 
-export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps) {
+export function MoveList({ moveHistory, currentPly, onMoveClick, heightClass }: MoveListProps) {
   // Flat item list: white moves carry the "N." number label, black moves none
   // (the shared list wraps freely). Preserves the prior `move-${ply}` testids
   // and aria-labels so existing selectors keep working.
@@ -26,5 +28,5 @@ export function MoveList({ moveHistory, currentPly, onMoveClick }: MoveListProps
     };
   });
 
-  return <HorizontalMoveList items={items} onMoveClick={onMoveClick} />;
+  return <HorizontalMoveList items={items} onMoveClick={onMoveClick} heightClass={heightClass} />;
 }

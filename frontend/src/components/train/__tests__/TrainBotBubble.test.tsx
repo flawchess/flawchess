@@ -15,14 +15,14 @@ import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 
-import { PORTRAIT_FOLDABLE_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
+import { PORTRAIT_SM_BAND_QUERY, TRAIN_SIDE_LAYOUT_QUERY } from '@/lib/trainSideLayout';
 
 const SM_UP_QUERY = '(min-width: 640px)';
 let smUp = false;
 /** The Train side-layout query; with `lg` (1024px) answering false this is the landscape band. */
 let trainSide = false;
 /** The portrait foldable query (640-767px wide, portrait). */
-let portraitFoldable = false;
+let portraitSmBand = false;
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
@@ -31,8 +31,8 @@ Object.defineProperty(window, 'matchMedia', {
         ? smUp
         : query === TRAIN_SIDE_LAYOUT_QUERY
           ? trainSide
-          : query === PORTRAIT_FOLDABLE_QUERY
-            ? portraitFoldable
+          : query === PORTRAIT_SM_BAND_QUERY
+            ? portraitSmBand
             : false,
     media: query,
     onchange: null,
@@ -48,7 +48,7 @@ afterEach(() => {
   cleanup();
   smUp = false;
   trainSide = false;
-  portraitFoldable = false;
+  portraitSmBand = false;
 });
 
 const PERSONA = PERSONA_REGISTRY['wall-1800']; // Hilda — has curated art
@@ -143,7 +143,7 @@ describe('TrainBotBubble', () => {
   describe('portrait foldable (640-767px wide, portrait)', () => {
     it('uses the compact floated avatar like a phone', () => {
       smUp = true;
-      portraitFoldable = true;
+      portraitSmBand = true;
       render(
         <TrainBotBubble persona={PERSONA} state="prompt">
           copy
