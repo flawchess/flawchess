@@ -86,6 +86,17 @@ describe('resolveMoveInfo', () => {
     expect(info).toEqual({ kind: 'quality', san: 'Qh5', quality: 'mistake', facepalm: false });
   });
 
+  it('uses the flaw headline for an ordinary blunder that carries a facepalm score', () => {
+    const info = resolveMoveInfo(
+      inputs({
+        san: 'Qh5',
+        flawMarkers: [marker({ ply: 10, severity: 'blunder', facepalm_score: 0.4 })],
+        lastMoveMarker: { square: 'h5', severity: 'blunder' },
+      }),
+    );
+    expect(info).toMatchObject({ kind: 'flaw', headline: { san: 'Qh5', facepalmPct: 40 } });
+  });
+
   it('reads a sideline move from its board badge (no main-line ply)', () => {
     const info = resolveMoveInfo(
       inputs({

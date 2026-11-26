@@ -12,10 +12,12 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Home page: Personalized Training is now the first feature shown, followed by Game and Tactic Analysis, the FlawChess Engine and the bots. The training description is shorter, and the FAQ order follows the new layout.
 - Sign In and Register: in landscape (tablets, unfolded foldables, laptops) the logo moves into its own column beside the form, so the form is no longer cut off at the bottom. In portrait the logo sits beside the FlawChess title, so the Log In button fits on small phones without scrolling.
+- Analysis: the move info strip under the move list shows a blunder's tactic instead of squeezing it in after the Facepalm score, which used to cut the tactic off. A blunder without a tactic now shows its Facepalm score, ordinary "??" blunders included, and tapping its "??" / "???" badge opens the same Facepalm explanation as in the move list.
 - Train: each training mode now has one card with its Start button, a one-sentence description that is always visible, and its settings behind a Settings toggle (they used to be split between the streak card and separate settings rows). On desktop the mode cards sit on the left, the session streak above the training schedule on the right.
 
 ### Fixed
 
+- Analysis: the move quality badge in the move info strip sat a couple of pixels too low next to the move.
 - Analysis on mobile: a blunder, gem or great-move tooltip opened from the move list now closes when you scroll the move list, instead of sliding up over the chessboard.
 
 ## [v2.32] Foldable & Tablet Layouts — 2026-11-26
