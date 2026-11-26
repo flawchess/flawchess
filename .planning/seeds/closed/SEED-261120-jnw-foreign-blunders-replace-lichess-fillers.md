@@ -1,6 +1,6 @@
 ---
 id: SEED-261120-jnw
-status: closed
+status: closed. Milestone v2.32.
 closed: 2026-11-24
 closed_reason: shipped as Phase 263 (squash-merge b4c91bc60, release #508 on 2026-11-24)
 promoted_to: Phase 263 (2026-11-23)

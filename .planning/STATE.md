@@ -1,12 +1,12 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.29
-current_phase: 263
-status: completed
-stopped_at: Phase 263 complete — all phases complete
-last_updated: "2026-11-24T22:20:51.887Z"
-last_activity: 2026-11-24
-last_activity_desc: Phase 263 complete
+milestone: v2.32
+current_phase: 252
+status: executing
+stopped_at: v2.30–v2.32 closed; Phase 252 plans 07–10 remain
+last_updated: "2026-11-26T12:00:00.000Z"
+last_activity: 2026-11-26
+last_activity_desc: Closed v2.30, v2.31 and v2.32 (phases 247–263 except 252)
 state_head: fe116ce55b17b9f7786cf24626962c55acfe0700
 progress:
   total_phases: 17
@@ -14,19 +14,19 @@ progress:
   total_plans: 154
   completed_plans: 150
   percent: 97
-milestone_name: Train Spacing & Archive, Analysis Explain
+milestone_name: Foldable & Tablet Layouts
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 263
-Plan: Not started
+Phase: 252 (Short Engine Line Repair Backfill, standalone, 6/10)
+Plan: 252-07 (prod re-walk feed, benchmark line repair alongside, prod retag) and 252-10 (node-0 second-move pass)
 
-Status: All phases complete
+Status: v2.30, v2.31 and v2.32 closed 2026-11-26; Phase 252 still executing
 
-Last activity: 2026-11-25 - Completed quick task 261125-v4k: Foldables, bot game bottom bar and two columns, Analysis landscape fit
+Last activity: 2026-11-26 - Closed v2.30 Blunder Check & Facepalm Score (247–251, 253–256), v2.31 Facepalm Refits & Move Quality (257–262) and v2.32 Foldable & Tablet Layouts (263), each tagged on a production forward-port with a GitHub release
 
 Open threads carried forward (not blockers):
 
@@ -57,6 +57,10 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-11-22 after Phase 259)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **v2.30, v2.31 and v2.32 closed 2026-11-26**; phases 247–263 except 252 regrouped into v2.30 Blunder Check & Facepalm Score (247–251, 253–256, releases #464–#491), v2.31 Facepalm Refits & Move Quality (257–262, #492–#506) and v2.32 Foldable & Tablet Layouts (263 + layout quick tasks, #507–#515), each tagged with a GitHub release on a production forward-port. No open milestone. Phase 252 (SEED-261112-s4v) stays active: plans 07–10 (prod re-walk and retag, node-0 pass, benchmark repair, §5 zone refresh) remain, and it closes into whichever milestone is open when it finishes.
+
+### Superseded: focus after Phase 259
+
 Current focus: **Phase 259 (Facepalm Score Refit on First Principles, SEED-261121-tau) complete 2026-11-22**, all three releases live on prod (#497 R1 dual-write, #498 switch, #499 array drop; server `59e1edcb`, schema `f3a7b9c1e259`): verified 18/18 decisions, threats_open 0, Nyquist-compliant, code review 0 critical / 3 warnings (2 fixed, WR-03 dead-code cleanup and IN-01 stale docstrings open). Owner cuts: `FACEPALM_SCORE_MIN` 0.70, `FACEPALM_STATS_MIN` 0.70. No phase is queued on this roadmap; follow-ups live as seeds (SEED-261122-s0j promotions as material, SEED-261122-j9p facepalm as a move quality, SEED-261121-t50).
 
 ### Superseded: focus before Phase 259
@@ -1280,8 +1284,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-23T22:20:27.440Z
-**Stopped at:** Phase 263 complete — all phases complete
+**Last session:** 2026-11-26T12:00:00.000Z
+**Stopped at:** v2.30–v2.32 closed; Phase 252 plans 07–10 remain
 **Resume file:** None
 
 Previous session note (Phase 227):

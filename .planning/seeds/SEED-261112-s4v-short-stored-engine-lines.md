@@ -1,6 +1,8 @@
 ---
 id: SEED-261112-s4v
-status: dormant
+status: promoted
+promoted_to: Phase 252
+promoted: 2026-11-12
 planted: 2026-11-12
 refined: 2026-11-12 (second investigation: root cause re-verified, dependency map, worker protocol, benchmark lane, sizing)
 planted_during: Phase 250 context (facepalm-blunder rule reads the stored refutation line; set-6 label #176 exposed a 1-ply line)

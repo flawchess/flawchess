@@ -1,6 +1,6 @@
 ---
 id: SEED-261121-3ou
-status: closed
+status: closed. Milestone v2.31.
 closed: 2026-11-22
 closed_reason: shipped as Phase 258 (recent 1000 games per TC within 36 months for the three comparison endpoints, basis line; release #497)
 promoted_to: Phase 258 (2026-11-21)

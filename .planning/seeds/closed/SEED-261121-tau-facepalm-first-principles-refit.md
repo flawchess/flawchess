@@ -1,6 +1,6 @@
 ---
 id: SEED-261121-tau
-status: closed
+status: closed. Milestone v2.31.
 closed: 2026-11-22
 closed_reason: shipped as Phase 259 (quiet-point material rule, reply probability on losing rows, refit; releases #497, #498, #499; drill cut 0.70). Successor: SEED-261122-s0j (promotions as material)
 promoted_to: Phase 259 (2026-11-21)

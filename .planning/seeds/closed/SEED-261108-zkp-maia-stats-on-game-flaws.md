@@ -1,6 +1,6 @@
 ---
 id: SEED-261108-zkp
-status: closed
+status: closed. Milestone v2.30.
 closed: 2026-11-13
 closed_reason: shipped as Phase 247 (Maia stats on game_flaws); nine of its ten columns are retired by Phase 250 (250-CONTEXT D-11), `maia_played_prob` stays. Successor: SEED-261110-p7k
 planted: 2026-11-08
