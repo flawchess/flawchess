@@ -126,7 +126,28 @@ Background async tasks (not blocking the API). chess.com fetches monthly archive
 
 ## Project Management
 
-This project is managed with [Open GSD](https://github.com/open-gsd). All work is planned through GSD phases and roadmap. Do not add unplanned features, refactors, or improvements outside the current phase scope. If something seems needed but isn't in the plan, flag it rather than implementing it.
+Vanilla Claude Code with a written record in `.planning/` (SEED-261122-v4c, on trial since 2026-11-26). Open GSD was uninstalled on 2026-11-26; its artifacts up to Phase 263 stay in `.planning/` as history.
+**Record** (what was done and why):
+
+- **Seeds** live in `.planning/seeds/` with the existing frontmatter. Refine a seed in place (`/grill-me`); never start a second document for the same idea.
+- **Promotion**: a promoted seed gets `.planning/phases/NNN-slug/` (numbering continues from 264), an entry in `ROADMAP.md`, a "Promoted" line in the seed, and a `phase/NNN-slug` branch.
+- **`CONTEXT.md` before code**: locked decisions with their reasons, what is deferred, and numbered **acceptance criteria**: observable outcomes, each mapped to a test or a named manual check. Write it to disk before any `/clear`.
+- **One plan per phase, executed inline** in the main session. Save the plan in the phase folder only when the phase spans sessions. Subagents only for independent parallel work. `RESEARCH.md` only for real unknowns (a new library, an algorithm choice). No PATTERNS, VALIDATION or per-plan PLAN files.
+- **`SUMMARY.md` at the end**: what shipped, each acceptance criterion with its evidence (a test name, a command and its output, a query result, a screenshot; "implemented" is not evidence), deviations from CONTEXT with the reason, what was learned, what is deferred. A separate `UAT.md` only for owner or device legs that stay open after merge.
+- **`STATE.md`** is kept by hand: current position and open threads carried forward, updated together with `SUMMARY.md`.
+- **Long phases checkpoint to disk**: decisions and progress go into the phase folder before a `/clear` or a session end.
+- **Milestones** are not planned up front. A milestone is a label over a range of releases, written into `MILESTONES.md` after the fact.
+- **Small work** (a fix, a tweak, a tooling change) is a direct commit on `main` or a short branch. The commit message and the changelog bullet are the record.
+
+**Quality**:
+
+- **Run the real thing**: exercise user-facing changes in the running app (browser UAT run by Claude), not only through unit tests. Hardware legs and the deploy call stay with the owner.
+- **Prove bug fixes by reverting**: revert the fix, watch the new test fail, restore.
+- **One independent review before the squash-merge**: `/code-review` for ordinary phases; higher effort, or a fresh reviewer given named claims to attack, for migrations, eval and scoring logic, and anything that writes prod data.
+- **Owner spot-check for judgement outputs**: labels, tags, scores and copy get a human sample before merge.
+- **A phase does not merge without** its `SUMMARY.md` (criteria with evidence), the independent review, a `CHANGELOG.md` bullet, and the pre-merge gate.
+
+**Scope**: do not add unplanned features, refactors, or improvements outside the current phase. If something seems needed but isn't planned, flag it or capture a seed.
 
 ## User Context
 
@@ -158,7 +179,7 @@ Apply to both stacks. Frontend-only rules: `frontend/CLAUDE.md`.
   - Soft guidance, not gated, reviewed by humans and `/simplify`: about 100 logic lines per function (excluding a returned JSX tree, large literal config/lookup tables, docstrings) and cognitive complexity <= 15. Report-only tools: `uv run complexipy app/ --max-complexity-allowed 15 --failed` and `npm run lint:cognitive` (from `frontend/`).
   - Real seams when splitting: pipeline stages (`_fetch`/`_classify`/`_rank`); a `useXyzData` hook for React data shaping; separate desktop/mobile renderers; thin routers with logic in services; early `continue`/`return` instead of nested loops.
   - Don't split just to satisfy a metric: if the split needs a context object threading state between helpers that always run together, the original was cohesive — leave it or split along a different seam.
-- **Refactor bloated code on sight** — when editing a function clearly past this guidance, refactor it as part of the task. Outside a GSD phase plan, flag it instead of refactoring unscoped; for `/gsd-quick`/`/gsd-fast` work, leave a follow-up note rather than an unscoped refactor.
+- **Refactor bloated code on sight** — when editing a function clearly past this guidance, refactor it as part of the task. Outside a phase, flag it instead of refactoring unscoped; for small direct-commit work, leave a follow-up note rather than an unscoped refactor.
 
 ## Error Handling & Sentry (backend)
 

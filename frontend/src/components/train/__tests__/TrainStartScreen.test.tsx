@@ -1190,7 +1190,7 @@ describe('TrainStartScreen: mode settings rows, Turn on and the two-column layou
     });
   }
 
-  it('renders both collapsed mode rows between the Today card and the schedule card', () => {
+  it('renders both collapsed mode cards between the streak card and the schedule card', () => {
     renderScreen();
     const card = screen.getByTestId('train-streak-card');
     const puzzlesRow = screen.getByTestId('train-mode-settings-puzzles');
@@ -1248,15 +1248,27 @@ describe('TrainStartScreen: mode settings rows, Turn on and the two-column layou
     expect(body?.weekdayMask).toBe(127 ^ (1 << 4));
   });
 
-  it('lays the landing out as a grid: one column on phones, the Today card and the settings side by side from lg', () => {
+  it('lays the landing out as a grid: streak, modes, schedule on phones; from lg the mode cards left, streak above schedule right', () => {
     renderScreen();
     const grid = screen.getByTestId('train-landing-grid');
     expect(grid.className).toContain('grid-cols-1');
     expect(grid.className).toContain('lg:grid-cols-2');
-    // Today card on the left, the settings rows on the right (DOM order in the grid).
-    expect(grid.contains(screen.getByTestId('train-streak-card'))).toBe(true);
-    expect(grid.contains(screen.getByTestId('train-mode-settings-puzzles'))).toBe(true);
-    expect(grid.contains(screen.getByTestId('train-schedule-settings'))).toBe(true);
+    const cellOf = (testId: string): HTMLElement => {
+      const cell = screen.getByTestId(testId).closest('[data-testid="train-landing-grid"] > div');
+      if (!(cell instanceof HTMLElement)) throw new Error(`no grid cell for ${testId}`);
+      return cell;
+    };
+    const streakCell = cellOf('train-streak-card');
+    const modesCell = cellOf('train-mode-settings-puzzles');
+    const scheduleCell = cellOf('train-schedule-settings');
+    // Phone order is DOM order.
+    expect([...grid.children]).toEqual([streakCell, modesCell, scheduleCell]);
+    expect(modesCell.className).toContain('lg:col-start-1');
+    expect(modesCell.className).toContain('lg:row-span-2');
+    expect(streakCell.className).toContain('lg:col-start-2');
+    expect(streakCell.className).toContain('lg:row-start-1');
+    expect(scheduleCell.className).toContain('lg:col-start-2');
+    expect(scheduleCell.className).toContain('lg:row-start-2');
     // The host bubble stays above the grid, full width.
     expect(grid.contains(screen.getByTestId('train-landing-host'))).toBe(false);
   });

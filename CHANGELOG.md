@@ -12,6 +12,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Home page: Personalized Training is now the first feature shown, followed by Game and Tactic Analysis, the FlawChess Engine and the bots. The training description is shorter, and the FAQ order follows the new layout.
 - Sign In and Register: in landscape (tablets, unfolded foldables, laptops) the logo moves into its own column beside the form, so the form is no longer cut off at the bottom. In portrait the logo sits beside the FlawChess title, so the Log In button fits on small phones without scrolling.
+- Train: each training mode now has one card with its Start button, a one-sentence description that is always visible, and its settings behind a Settings toggle (they used to be split between the streak card and separate settings rows). On desktop the mode cards sit on the left, the session streak above the training schedule on the right.
 
 ## [v2.32] Foldable & Tablet Layouts — 2026-11-26
 

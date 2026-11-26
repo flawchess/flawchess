@@ -4,9 +4,9 @@ Rules for the public data-story site (`stories/`, deployed to https://stories.fl
 
 The blog is named **Chess Data Stories** (not "FlawChess Data Stories"): use that name in page `<title>`s, the header label, and bylines.
 
-## Workflow (no GSD)
+## Workflow (no phases)
 
-Data-story work is exempt from GSD phase planning: no roadmap phase, no PLAN.md, no executor agents. Work directly on a long-lived `study/<slug>` branch (e.g. `study/game-review-study`) covering the whole study — EDA notebook, generation scripts, report, and story — and squash-merge it to `main` when the story ships. Seeds under `.planning/seeds/` may still track story ideas and findings; they just don't spawn phases.
+Data-story work is exempt from phase planning: no roadmap phase, no phase folder. Work directly on a long-lived `study/<slug>` branch (e.g. `study/game-review-study`) covering the whole study — EDA notebook, generation scripts, report, and story — and squash-merge it to `main` when the story ships. Seeds under `.planning/seeds/` may still track story ideas and findings; they just don't spawn phases.
 
 **Landing on `main` does not publish.** `.github/workflows/pages.yml` deploys only the story directories listed in `stories/published.txt` (via `stories/stage.sh`), and the deploy fails if `stories/index.html` or `stories/sitemap.xml` links to an unlisted slug. Publishing a story is one explicit commit: add the slug to `published.txt`, add the landing-page card and the sitemap entry. Never add a slug to `published.txt` without the user's explicit go-ahead. Preview what `main` would deploy with `bash stories/stage.sh stories /tmp/site`.
 

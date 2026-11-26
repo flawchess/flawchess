@@ -2,17 +2,16 @@
 /**
  * TrainStreakCard.test.tsx — the Train landing's streak hero:
  * the streak inside a 3-layer flame, the 0-7 buffer as snowflake freezes, the
- * weekly tally, the two launcher rows (one per mode), and the one-shot arrival
+ * weekly tally, the rank line, and the one-shot arrival
  * animations driven by the per-device last-seen snapshot.
  * Mocks `@/api/client` the way `useReadiness.test.tsx` does, wrapped in a
  * QueryClientProvider with `retry: false`.
  */
-import type { ComponentProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
-import { TrainTodayActionsContext } from '@/components/train/trainTodayActions';
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
@@ -22,7 +21,6 @@ vi.mock('@/api/client', async () => {
       ...actual.trainApi,
       getProgress: vi.fn(),
       getLeaderboard: vi.fn(),
-      dismissBlunderCheckNotice: vi.fn(),
     },
   };
 });
@@ -43,16 +41,10 @@ import { FREEZE_CAP, readStreakLastSeen, writeStreakLastSeen } from '@/lib/strea
 import type {
   LeaderboardViewer,
   LeaderboardVisibility,
-  TrainBlunderCheckModeProgress,
-  TrainModeProgress,
   TrainLeaderboardResponse,
   TrainProgressResponse,
 } from '@/types/train';
-import {
-  BLUNDER_CHECK_MODE,
-  PHASE_251_PROGRESS_FIELDS,
-  PUZZLES_MODE,
-} from '@/components/train/__tests__/trainProgressFixtures';
+import { PHASE_251_PROGRESS_FIELDS } from '@/components/train/__tests__/trainProgressFixtures';
 
 const OWNER = 'user@example.com';
 
@@ -72,10 +64,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(trainApi.getProgress).mockReset();
   vi.mocked(trainApi.getLeaderboard).mockReset();
-  vi.mocked(trainApi.dismissBlunderCheckNotice).mockReset();
   vi.mocked(trackFeature).mockReset();
-  startBlunderCheck.mockReset();
-  startPuzzles.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -83,24 +72,19 @@ function LocationProbe(): ReactNode {
   return <span data-testid="location-probe">{useLocation().pathname}</span>;
 }
 
-const startBlunderCheck = vi.fn();
-const startPuzzles = vi.fn();
-
-function renderWithClient(props: Partial<ComponentProps<typeof TrainStreakCard>> = {}): void {
+function renderWithClient(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={['/train']}>
-          <TrainTodayActionsContext.Provider value={{ startPuzzles, startBlunderCheck }}>
-            {children}
-          </TrainTodayActionsContext.Provider>
+          {children}
           <LocationProbe />
         </MemoryRouter>
       </QueryClientProvider>
     );
   }
-  render(<TrainStreakCard {...props} />, { wrapper: Wrapper });
+  render(<TrainStreakCard />, { wrapper: Wrapper });
 }
 
 const BASE: TrainProgressResponse = {
@@ -118,12 +102,9 @@ const BASE: TrainProgressResponse = {
   ...PHASE_251_PROGRESS_FIELDS,
 };
 
-async function renderPopulated(
-  overrides: Partial<TrainProgressResponse> = {},
-  props: Partial<ComponentProps<typeof TrainStreakCard>> = {},
-): Promise<void> {
+async function renderPopulated(overrides: Partial<TrainProgressResponse> = {}): Promise<void> {
   vi.mocked(trainApi.getProgress).mockResolvedValue({ ...BASE, ...overrides });
-  renderWithClient(props);
+  renderWithClient();
   await waitFor(() => expect(screen.getByTestId('train-streak-flame')).not.toBeNull());
 }
 
@@ -294,55 +275,6 @@ describe('TrainStreakCard', () => {
     });
   });
 
-  describe('blunder-check launch notice (Phase 251 D-21)', () => {
-    const NOTICE_COPY =
-      'New: Blunder Check. Call each move of a real game before it is played: good or blunder? It now counts toward your streak, and you can set the amount or turn it off in the Blunder Check settings.';
-
-    it('shows the D-21 sentence above the launcher rows while the server reports the notice', async () => {
-      await renderPopulated({ blunder_check_notice: true });
-
-      const notice = screen.getByTestId('train-blunder-check-notice');
-      expect(notice.textContent).toContain(NOTICE_COPY);
-      const rows = screen.getByTestId('train-launcher-rows');
-      expect(notice.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(
-        screen.getByTestId('btn-train-blunder-check-notice-dismiss').getAttribute('aria-label'),
-      ).toBe('Dismiss');
-    });
-
-    it('shows no notice when the server flag is false (new user, guest, expired, dismissed)', async () => {
-      await renderPopulated({ blunder_check_notice: false });
-
-      expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull();
-    });
-
-    it('dismiss hides the notice at once, tells the server, tracks it and refreshes progress', async () => {
-      // The server call never settles: the notice must go away optimistically.
-      vi.mocked(trainApi.dismissBlunderCheckNotice).mockReturnValue(new Promise(() => undefined));
-      await renderPopulated({ blunder_check_notice: true });
-
-      fireEvent.click(screen.getByTestId('btn-train-blunder-check-notice-dismiss'));
-
-      await waitFor(() => expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull());
-      expect(trainApi.dismissBlunderCheckNotice).toHaveBeenCalledTimes(1);
-      expect(trackFeature).toHaveBeenCalledWith('action', {
-        target: 'train-blunder-check-notice-dismiss',
-      });
-    });
-
-    it('invalidates the progress query once the dismissal settles', async () => {
-      vi.mocked(trainApi.dismissBlunderCheckNotice).mockResolvedValue(undefined);
-      await renderPopulated({ blunder_check_notice: true });
-      expect(trainApi.getProgress).toHaveBeenCalledTimes(1);
-      vi.mocked(trainApi.getProgress).mockResolvedValue({ ...BASE, blunder_check_notice: false });
-
-      fireEvent.click(screen.getByTestId('btn-train-blunder-check-notice-dismiss'));
-
-      await waitFor(() => expect(trainApi.getProgress).toHaveBeenCalledTimes(2));
-      expect(screen.queryByTestId('train-blunder-check-notice')).toBeNull();
-    });
-  });
-
   describe('explainer popover', () => {
     it('stays out of the card body until the trigger is opened, then states the freeze rules', async () => {
       await renderPopulated();
@@ -448,120 +380,6 @@ describe('TrainStreakCard', () => {
 
       expect(screen.queryByTestId('train-streak-extinguish')).toBeNull();
       expect(screen.getByTestId('train-streak-count').textContent).toBe('0');
-    });
-  });
-
-  describe('launcher rows (Phase 251 D-08, D-09)', () => {
-    async function renderWithModes(
-      puzzles: Partial<TrainModeProgress>,
-      blunderCheck: Partial<TrainBlunderCheckModeProgress>,
-      props: Partial<ComponentProps<typeof TrainStreakCard>> = {},
-    ): Promise<void> {
-      await renderPopulated(
-        {
-          modes: {
-            puzzles: { ...PUZZLES_MODE, ...puzzles },
-            blunder_check: { ...BLUNDER_CHECK_MODE, ...blunderCheck },
-          },
-        },
-        props,
-      );
-    }
-
-    it('renders both rows, puzzles first, inside the card under the flame and freeze meter', async () => {
-      await renderWithModes({ remaining: 6, pending: 6 }, {});
-
-      const card = screen.getByTestId('train-streak-card');
-      const puzzles = screen.getByTestId('train-launcher-row-puzzles');
-      const blunderCheck = screen.getByTestId('train-launcher-row-blunder-check');
-      expect(card.contains(puzzles)).toBe(true);
-      expect(card.contains(blunderCheck)).toBe(true);
-      expect(puzzles.compareDocumentPosition(blunderCheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      const shield = screen.getByTestId('train-shield-row');
-      expect(shield.compareDocumentPosition(puzzles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    });
-
-    it('Blunder Check Start calls startBlunderCheck, puzzles Start calls startPuzzles', async () => {
-      await renderWithModes({ remaining: 6, pending: 6 }, { state: 'pending', remaining: 6 });
-
-      fireEvent.click(screen.getByTestId('btn-train-blunder-check-start'));
-      expect(startBlunderCheck).toHaveBeenCalledTimes(1);
-      expect(startPuzzles).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByTestId('btn-train-start'));
-      expect(startPuzzles).toHaveBeenCalledTimes(1);
-    });
-
-    it('Blunder Check in progress shows Resume with the remaining count', async () => {
-      await renderWithModes({}, { state: 'in_progress', remaining: 4 });
-
-      expect(screen.getByTestId('btn-train-blunder-check-start').textContent).toBe('Resume');
-      expect(screen.getByTestId('train-launcher-badge-blunder-check').textContent).toBe('4');
-    });
-
-    it('Blunder Check done shows the points recap and no button', async () => {
-      await renderWithModes({}, { state: 'done', remaining: 0, pending: 0, points_today: 17 });
-
-      expect(screen.getByTestId('train-launcher-done-blunder-check').textContent).toBe('Done today, 17 points');
-      expect(screen.queryByTestId('btn-train-blunder-check-start')).toBeNull();
-    });
-
-    it('a mode that is off stays on the card as a muted Off row (no Turn on without a handler)', async () => {
-      await renderWithModes({}, { state: 'off', size: 0, remaining: 0, pending: 0 });
-
-      expect(screen.getByTestId('train-launcher-row-blunder-check').dataset.state).toBe('off');
-      expect(screen.getByTestId('train-launcher-status-blunder-check').textContent).toBe('Off');
-      expect(screen.queryByTestId('btn-train-launcher-turn-on-blunder-check')).toBeNull();
-    });
-
-    it('passes onTurnOn through to an off row', async () => {
-      const onTurnOn = vi.fn();
-      await renderWithModes({ state: 'off', size: 0, remaining: 0, pending: 0 }, {}, { onTurnOn });
-
-      fireEvent.click(screen.getByTestId('btn-train-launcher-turn-on-puzzles'));
-      expect(onTurnOn).toHaveBeenCalledWith('puzzles');
-    });
-
-    it('the landing session overrides the puzzles row: resume, done with its points, left count', async () => {
-      await renderWithModes(
-        { remaining: 40, pending: 40 },
-        {},
-        { puzzlesLanding: { state: 'in_progress', left: 8, pointsToday: 0 } },
-      );
-      expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
-      expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('8');
-      cleanup();
-
-      await renderWithModes({}, {}, { puzzlesLanding: { state: 'done', left: 0, pointsToday: 9 } });
-      expect(screen.getByTestId('train-launcher-done-puzzles').textContent).toBe('Done today, 9 points');
-      expect(screen.queryByTestId('btn-train-start')).toBeNull();
-    });
-
-    it('without a landing session the puzzles count is the waiting estimate capped at the session size', async () => {
-      await renderWithModes({ size: 6, remaining: 40, pending: 40 }, {});
-
-      expect(screen.getByTestId('train-launcher-badge-puzzles').textContent).toBe('6');
-    });
-
-    it('a server-off puzzles mode wins over the landing session', async () => {
-      await renderWithModes(
-        { state: 'off', size: 0, remaining: 0, pending: 0 },
-        {},
-        { puzzlesLanding: { state: 'pending', left: 6, pointsToday: 0 } },
-      );
-
-      expect(screen.getByTestId('train-launcher-row-puzzles').dataset.state).toBe('off');
-      expect(screen.queryByTestId('btn-train-start')).toBeNull();
-    });
-
-    it('puzzlesStartDisabled disables only the puzzles Start', async () => {
-      await renderWithModes(
-        { remaining: 6, pending: 6 },
-        { state: 'pending', remaining: 6 },
-        { puzzlesStartDisabled: true },
-      );
-
-      expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
-      expect(screen.getByTestId('btn-train-blunder-check-start').hasAttribute('disabled')).toBe(false);
     });
   });
 });
