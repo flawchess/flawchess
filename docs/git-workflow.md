@@ -38,14 +38,14 @@ Releases are cut at the **milestone** boundary, not per phase. Changes accumulat
 
 ### Per-phase (when a phase merges to `main`)
 
-Append bullets under `## [Unreleased]`, grouped into `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Security` / `### Tests`. Reference the phase number. Keep the tone terse and user-facing (what changed, not how). Skip for `/gsd-quick` / `/gsd-fast` tasks that don't meaningfully change behavior (pure refactors, tooling tweaks, internal cleanup).
+Append bullets under `## [Unreleased]`, grouped into `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Security` / `### Tests`. Reference the phase number. Keep the tone terse and user-facing (what changed, not how). Skip for small direct-commit work that doesn't meaningfully change behavior (pure refactors, tooling tweaks, internal cleanup).
 
-### Per-milestone (at milestone close)
+### Per-milestone (when a milestone label is written)
 
-When a milestone ships (e.g. via `/gsd-complete-milestone`), **all of the following are mandatory — none are optional**:
+Milestones are not planned up front; a milestone is a label over a range of releases, written after the fact (see `CLAUDE.md` "Project Management"). When one is written, **all of the following are mandatory**:
 
 1. In `CHANGELOG.md`, rename `## [Unreleased]` → `## [vX.Y] Milestone Title — YYYY-MM-DD`, reset `[Unreleased]` to empty, and update the compare links at the bottom.
-2. **Archive the milestone's phase directories**: `git mv .planning/phases/<phase-dir> .planning/milestones/vX.Y-phases/` for every phase in the milestone (create the target dir if absent), so `.planning/phases/` holds only the next milestone's active work. This is separate from the milestone-doc archival — `/gsd-complete-milestone` archives MILESTONES/ROADMAP/RETROSPECTIVE/REQUIREMENTS but does NOT move the phase working dirs.
+2. Add the milestone to `.planning/MILESTONES.md` and the `ROADMAP.md` milestone list, naming its phases and release range. Phase directories stay in `.planning/phases/`; milestones up to v2.32 were archived under `.planning/milestones/vX.Y-phases/` and stay there as history.
 3. Tag and push: `git tag vX.Y && git push origin vX.Y`.
 4. **`gh release create vX.Y`** using the `CHANGELOG.md` section as the body — the tag alone is not a release. Verify with `gh release list` that vX.Y shows up; a lingering tag with no GitHub release means this step was skipped.
 

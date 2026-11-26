@@ -1,11 +1,11 @@
 ---
 name: parallel-worktree
-description: Create a git worktree and spin up a second Vite dev server for a parallel Claude Code session on FlawChess. Use when the user wants an isolated working copy (side branch, UI tweaks, small frontend fixes) while another Claude session is busy with a long-running task such as a GSD phase. Frontend-only — deliberately does NOT start a second backend, because `bin/run_local.sh` would kill the primary session's processes.
+description: Create a git worktree and spin up a second Vite dev server for a parallel Claude Code session on FlawChess. Use when the user wants an isolated working copy (side branch, UI tweaks, small frontend fixes) while another Claude session is busy with a long-running task such as a phase. Frontend-only — deliberately does NOT start a second backend, because `bin/run_local.sh` would kill the primary session's processes.
 ---
 
 # Parallel Worktree
 
-Set up a second working copy of FlawChess in a git worktree and run a second Vite dev server alongside the primary session. Useful when one Claude session is running a long task (e.g., a GSD phase) and you want an independent session on a separate branch to work on UI tweaks or small fixes without disturbing it.
+Set up a second working copy of FlawChess in a git worktree and run a second Vite dev server alongside the primary session. Useful when one Claude session is running a long task (e.g., a phase) and you want an independent session on a separate branch to work on UI tweaks or small fixes without disturbing it.
 
 ## When to use
 

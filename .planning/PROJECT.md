@@ -1,5 +1,7 @@
 # FlawChess
 
+> **Frozen 2026-11-26.** This file is history from the GSD workflow and is no longer updated. It is accurate up to Phase 221 (2026-09-13); the `/gsd-*` commands it names no longer exist. Current position: `STATE.md`. Planned and active phases: `ROADMAP.md`. Shipped milestones: `MILESTONES.md`. Workflow rules: the "Project Management" section of the root `CLAUDE.md`.
+
 ## What This Is
 
 FlawChess — a free, open-source chess analysis platform at flawchess.com. Tagline: "Engines are flawless, humans play FlawChess." Users import their games from chess.com and lichess and analyze where they actually win and lose. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.

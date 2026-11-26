@@ -1,6 +1,6 @@
 ---
 id: SEED-261122-v4c
-status: dormant
+status: active
 planted: 2026-11-22
 planted_during: Phase 261 planning (blunder-check exploration arm), a workflow review session with the owner
 trigger_when: after Phase 261 is merged to main and no phase is mid-flight. Do not switch workflows in the middle of a phase
@@ -151,18 +151,62 @@ and a `CHANGELOG.md` bullet.
    history. Stop producing PATTERNS, VALIDATION and per-plan PLAN files going forward.
 5. **Prune memory.** Drop the GSD-machinery notes once the tooling is gone.
 
-## Open for the Discuss Step
+## Settled Decisions (2026-11-26)
 
-- Keep `STATE.md` and `state.json`, or let `ROADMAP.md` plus git carry the state? Both exist
-  for GSD's tooling; a hand-kept `STATE.md` may drift.
-- Milestones: keep the milestone grouping and `MILESTONES.md` by hand, or drop to phases plus
-  release tags and the changelog?
-- Phase numbering and branch naming (`branching_strategy: phase` today) without the helpers.
-- What replaces `/gsd-quick` and `/gsd-fast` for small work: nothing (a direct commit on
-  `main`), or a one-line log in `.planning/quick/`?
-- `VERIFICATION.md` and `UAT.md`: fold into SUMMARY, or keep as separate files when a phase has
-  real UAT?
-- Whether the trial should include one phase run fully through GSD as a comparison arm.
+Settled with the owner after v2.30–v2.32 closed. These replace the open questions and override
+"Migration steps" 1 where they differ.
+
+1. **State.** Delete `state.json` and the progress counters. Keep `STATE.md` by hand, cut down
+   to the current position and the "open threads carried forward" list, updated in the same step
+   as `SUMMARY.md`.
+2. **Milestones.** No up-front milestone planning. A milestone is a label over a range of
+   releases, written into `MILESTONES.md` after the fact when wanted. Phase folders stay in
+   `.planning/phases/`; no per-milestone archiving.
+3. **Numbering and branches.** Continue at 264 with `phase/NNN-slug` branches, created by hand.
+   Seed IDs unchanged.
+4. **Small work.** A direct commit on `main` or a short branch. No log file; the commit message
+   and the changelog bullet are the record.
+5. **`VERIFICATION.md` / `UAT.md`.** Folded into `SUMMARY.md`. A separate `UAT.md` only when a
+   phase has owner or device legs that stay open after merge.
+6. **No GSD comparison arm.** The baseline below covers it.
+7. **Trial shape: vanilla directly,** not "GSD configured down". Configured-down GSD still runs
+   the planner, executor and state tooling, which is where the friction is. The `CLAUDE.md` rewrite is
+   one `git revert` away. GSD was uninstalled the same day on the owner's call (global
+   uninstall with the official installer, `gsd-core --claude --global --uninstall`, v1.22.0);
+   reinstalling is one command: `npx -y --package=@opengsd/gsd-core@latest -- gsd-core --claude --global`.
+8. **Phase 252** (plans 07–10, operator runs) finishes on its existing PLAN files, inline, and
+   is closed by hand. It does not block the switch.
+
+Also considered 2026-11-26: Claude Ship (Code Review, PR Steward, Claude Approvals). It covers
+only the stage after a pull request exists, needs GitHub PRs and a Team or Enterprise plan for
+the per-repo agents, and its approval policy solves a team problem. Phases here merge by local
+squash without a PR. No change; the independent review in rule 7 is the part that applies.
+
+## Baseline: escaped defects, GSD-run phases 244–251
+
+Taken 2026-11-26. Method: every `fix` commit on `main` since 2026-11-02 (57, dependency bumps
+excluded), attributed by `git blame` of the lines it changed to the phase commit that wrote
+them, then read by subject for defect versus copy or rule tweak. Sentry: issues first seen since
+2026-11-02. Observation windows are short (one to three and a half weeks), the attribution was
+not checked diff by diff, and most `fix` commits in the range touch code from no phase at all
+(quick tasks and direct commits).
+
+| Phase | Merged | Defect fixes after merge | Sentry |
+|---|---|---|---|
+| 244 Train SR ladder | 11-02 | 0 | 0 |
+| 245 Analysis Explain bar | 11-05 | 1 (`be74c3f20`, partly 245 lines) | 0 |
+| 246 Train subnav, Archive | 11-07 | 1 (`fe20a248c`) | 1, unverified (FLAWCHESS-D4/D5, `points_needed`) |
+| 247 Maia stats on flaws | 11-08 | 0 | possibly the 11-09 connection exhaustion (D8–DC), unverified |
+| 248 Refutation stats | 11-10 | 0 | 0 |
+| 249 Blunder-check MVP | 11-13 | 4 (`54247f3d7`, `e65507a19`, quick 261119-x7t, `4fe7eccfc`) | 0 |
+| 250 Facepalm selection | 11-13 | 2 (`0a250a3dd`, `5db6b09f2` found by the 259 review) | 0 |
+| 251 Blunder check for everyone | 11-19 | 1 (`13a785741`) | 1 (FLAWCHESS-DJ, 409 on `/train`) |
+
+Total: 9 defect fixes over 8 phases (about 1.1 per phase), 2 Sentry issues. Four of the nine sit
+in Phase 249, the one phase that shipped a new interactive flow. Not counted as defects: the
+scoring rule change `925119733`, copy fixes, and the four same-day label fixes after Phase 260.
+Compare trial phases of similar kind (a new interactive flow against 249, a data or scoring
+phase against 247, 248 and 250).
 
 ## When to Surface
 
