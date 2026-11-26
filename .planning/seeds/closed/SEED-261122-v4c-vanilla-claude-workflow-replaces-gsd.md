@@ -1,6 +1,8 @@
 ---
 id: SEED-261122-v4c
-status: active
+status: closed
+closed: 2026-11-26
+closed_reason: implemented by commit 1cc31ce8a on main (2026-11-26, no phase). GSD uninstalled, CLAUDE.md "Project Management" rewritten, /explore, /grill-me, grilling and /close-phase added, STATE.md kept by hand. Left open, carried in STATE.md: judging the trial after two or three vanilla phases against the escaped-defect baseline in this file
 planted: 2026-11-22
 planted_during: Phase 261 planning (blunder-check exploration arm), a workflow review session with the owner
 trigger_when: after Phase 261 is merged to main and no phase is mid-flight. Do not switch workflows in the middle of a phase

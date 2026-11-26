@@ -18,6 +18,8 @@ Last activity: 2026-11-26 - Closed v2.30 Blunder Check & Facepalm Score (247–2
 
 Open threads carried forward (not blockers):
 
+- Workflow trial (SEED-261122-v4c, closed): after two or three vanilla phases (264 onward), judge the trial on wall-clock time per phase, rework found by the review, and escaped defects per phase against the GSD baseline (phases 244–251, about 1.1 defect fixes per phase) in `seeds/closed/SEED-261122-v4c-...md`. Compare like with like (a new interactive flow against 249, a data or scoring phase against 247, 248 and 250). Then drop "on trial" from `CLAUDE.md`, or reinstall GSD with the command in the seed.
+
 - Phase 263 accepted as is: WR-03 score bubble on an exhausted day, out-of-band picks at level about 1000 and 2300+ (263-UAT.md). Band draw at LIMIT 200 runs at 492 ms of a 500 ms budget on prod.
 
 - Phase 261 share acceptance: about a week after the release, run `uv run python scripts/blunder_check/caught_rate.py --db prod --since <release date>` over the prod tunnel; accept when the verdict is accept (n >= 500, 95% interval overlapping [0.18, 0.26]); a fail below 0.18 points to an arm dropped somewhere (Pitfall 1).
