@@ -3380,10 +3380,16 @@ describe('Explain bar', () => {
     expect(within(screen.getByTestId('variation-tree-desktop')).queryAllByText('Bc4')).toHaveLength(0);
   });
 
-  it('shows no bar while the tactic lines have not resolved (no flash)', () => {
+  it('shows no Best / Punish buttons while the tactic lines have not resolved (no flash)', () => {
     libraryGameState.data = buildExplainGame();
     renderAnalysis('/analysis?game_id=1&ply=2');
-    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+    // Since the strip always describes the move (lib/moveInfo.ts), a button-less info row may
+    // show here; what must not flash is the Best / Punish offer.
+    expect(screen.queryByTestId('btn-analysis-explain-best')).toBeNull();
+    expect(screen.queryByTestId('btn-analysis-explain-punish')).toBeNull();
+    for (const bar of screen.queryAllByTestId('analysis-explain-bar')) {
+      expect(bar.dataset.state).toBe('info');
+    }
   });
 });
 
@@ -3448,6 +3454,24 @@ describe('Explain bar placement', () => {
     expect(bar.getAttribute('data-state')).toBe('got-it');
   });
 
+  it('move info: mid describes a move without lines, mobile keeps the flaw-only bar', () => {
+    // ply=1 (1. e4) has no flaw, so there is no Best / Punish offer.
+    stubMatchMedia((q) => /max-width:\s*1199px/.test(q));
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    const midBar = screen.getByTestId('analysis-explain-bar');
+    expect(midBar.getAttribute('data-placement')).toBe('mid');
+    expect(midBar.getAttribute('data-state')).toBe('info');
+    expect(within(midBar).getByTestId('analysis-move-info-headline')).toBeTruthy();
+    cleanup();
+
+    stubMatchMedia((q) => /max-width/.test(q));
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+
   it('mid (768-1199px): one bar, placed under the board controls, no MovesCard', () => {
     stubMatchMedia((q) => /max-width:\s*1199px/.test(q));
     seedOwnerBlunderLines();
@@ -3499,7 +3523,7 @@ describe('Explain bar placement', () => {
     expect(screen.getByTestId('analysis-btn-paste')).toBeTruthy();
   });
 
-  it('D-08: an inaccuracy ply shows no bar even with usable tactic-line data', () => {
+  it('D-08: an inaccuracy ply offers no Best / Punish even with usable tactic-line data', () => {
     const base = buildExplainGame();
     libraryGameState.data = {
       ...base,
@@ -3510,7 +3534,11 @@ describe('Explain bar placement', () => {
       tacticLinesFixture({ allowed_moves: ['e5', 'Nf3'], flaw_move_san: 'e5', flaw_ply: 1 }),
     );
     renderAnalysis('/analysis?game_id=1&ply=1');
-    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+    // The strip may describe the move (an info row), but never offers the lines.
+    expect(screen.queryByTestId('btn-analysis-explain-best')).toBeNull();
+    for (const bar of screen.queryAllByTestId('analysis-explain-bar')) {
+      expect(bar.dataset.state).toBe('info');
+    }
   });
 
   it('free play shows no bar', () => {

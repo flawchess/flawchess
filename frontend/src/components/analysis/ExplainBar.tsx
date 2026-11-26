@@ -23,6 +23,8 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
+import { BookIcon } from '@/components/icons/BookIcon';
+import type { MoveInfo, MoveInfoQuality } from '@/lib/moveInfo';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type {
   ExplainBarState,
@@ -87,6 +89,24 @@ type ExplainBarProps = {
   onGotIt: () => void;
   stepper: ExplainLineStepper;
   placement: ExplainBarPlacement;
+  /**
+   * What to show when there are no Best / Punish lines for the current move (lib/moveInfo.ts):
+   * the move and its badge, no buttons. Passed by the mid and desktop placements only; phones
+   * keep the flaw-only bar.
+   */
+  moveInfo?: MoveInfo | null;
+};
+
+/** The word after the badge on a move without Best / Punish lines. */
+const MOVE_INFO_LABEL: Record<MoveInfoQuality, string> = {
+  blunder: 'Blunder',
+  mistake: 'Mistake',
+  inaccuracy: 'Inaccuracy',
+  gem: 'Gem',
+  great: 'Great move',
+  best: 'Best move',
+  good: 'Good move',
+  book: 'Book move',
 };
 
 function LineButton({
@@ -149,7 +169,7 @@ function LineStepper({ stepper }: { stepper: ExplainLineStepper }): ReactElement
 }
 
 type BarShellProps = {
-  state: 'explain' | 'got-it';
+  state: 'explain' | 'got-it' | 'info';
   orientation?: ExplainOrientation;
   placement: ExplainBarPlacement;
   children: ReactNode;
@@ -224,14 +244,51 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
   );
 }
 
+/** The badge for a move without Best / Punish lines, the same glyph the board draws. */
+function MoveInfoBadge({ quality, facepalm }: { quality: MoveInfoQuality; facepalm: boolean }): ReactElement {
+  if (quality === 'book') return <BookIcon className={HEADLINE_BADGE_CLASS} />;
+  if (quality === 'blunder' && facepalm) return <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />;
+  return <MoveQualityIcon quality={quality} className={HEADLINE_BADGE_CLASS} />;
+}
+
+/** Headline of a move without Best / Punish lines: move, badge and what the badge means. */
+function MoveInfoHeadline({ info }: { info: Extract<MoveInfo, { kind: 'quality' }> }): ReactElement {
+  return (
+    <span
+      data-testid="analysis-move-info-headline"
+      data-quality={info.quality ?? undefined}
+      className="line-clamp-2 max-h-10 min-w-0 flex-1 text-sm leading-tight!"
+    >
+      <span className="whitespace-nowrap">
+        <span className="font-mono font-bold text-foreground">{info.san}</span>
+        {info.quality !== null && <MoveInfoBadge quality={info.quality} facepalm={info.facepalm} />}
+        {info.quality !== null && ':'}
+      </span>
+      {info.quality !== null && <span className="text-foreground"> {MOVE_INFO_LABEL[info.quality]}</span>}
+    </span>
+  );
+}
+
 export function ExplainBar({
   state,
   onOpenLine,
   onGotIt,
   stepper,
   placement,
+  moveInfo = null,
 }: ExplainBarProps): ReactElement | null {
-  if (state.kind === 'hidden') return null;
+  if (state.kind === 'hidden') {
+    if (moveInfo === null) return null;
+    return (
+      <BarShell state="info" placement={placement}>
+        {/* min-h-9: the lg buttons' height (36px), so the button-less row is as tall as the Best /
+            Punish row and the strip keeps its height from move to move. */}
+        <span className="flex min-h-9 min-w-0 flex-1 items-center">
+          {moveInfo.kind === 'flaw' ? <Headline headline={moveInfo.headline} /> : <MoveInfoHeadline info={moveInfo} />}
+        </span>
+      </BarShell>
+    );
+  }
   if (state.kind === 'got-it') {
     return (
       <BarShell state="got-it" orientation={state.line.orientation} placement={placement}>

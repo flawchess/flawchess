@@ -46,6 +46,7 @@ import { useExplainBar } from '@/hooks/analysis/useExplainBar';
 import { useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
 import { AnalysisMoreMenu } from '@/components/analysis/AnalysisMoreMenu';
 import { ExplainBar } from '@/components/analysis/ExplainBar';
+import { resolveMoveInfo } from '@/lib/moveInfo';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
@@ -1656,6 +1657,21 @@ export default function Analysis() {
       storedBestGoodByPly,
     });
 
+  // The strip's move info on moves without Best / Punish lines (mid and desktop only; phones
+  // keep the flaw-only strip). Reads the same badge the board draws on the move's target square.
+  const moveInfo = useMemo(
+    () =>
+      resolveMoveInfo({
+        isGameMode,
+        fastForwardRunning,
+        san: currentNodeId !== null ? (nodes.get(currentNodeId)?.san ?? null) : null,
+        landingPly: currentMainlinePly,
+        flawMarkers: gameData?.flaw_markers,
+        lastMoveMarker: lastMove ? boardSquareMarkers.find((m) => m.square === lastMove.to) : undefined,
+      }),
+    [isGameMode, fastForwardRunning, currentNodeId, nodes, currentMainlinePly, gameData?.flaw_markers, lastMove, boardSquareMarkers],
+  );
+
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   // Game mode Reset → clear every sideline, reset multi-line state, navigate to entry ply.
@@ -2121,7 +2137,7 @@ export default function Analysis() {
       setTagsHighlightedPlies,
     },
     // Rendered only in the mid layout (DesktopBoardStage ignores it elsewhere).
-    explainBar: <ExplainBar placement="mid" {...explainBarControls} />,
+    explainBar: <ExplainBar placement="mid" {...explainBarControls} moveInfo={moveInfo} />,
     reserveExplainBarSlot: isMid && hasPhoneFooter && isGameMode,
   };
 
@@ -2741,7 +2757,7 @@ export default function Analysis() {
               fen={position}
               getPgn={getPgn}
               variationTreeProps={movesCardVariationTreeProps}
-              footer={<ExplainBar placement="desktop" {...explainBarControls} />}
+              footer={<ExplainBar placement="desktop" {...explainBarControls} moveInfo={moveInfo} />}
             />
             </div>
 

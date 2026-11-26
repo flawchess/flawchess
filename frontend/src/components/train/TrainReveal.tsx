@@ -41,7 +41,7 @@ import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVer
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
 import {
-  SHORT_SIDE_SCROLLER_CLASS,
+  SIDE_SCROLLER_CLASS,
   SHORT_SIDE_TOP_RESET_CLASS,
   TRAIN_SIDE_COLUMN_WIDTH_CLASS,
 } from '@/lib/trainSideLayout';
@@ -363,8 +363,9 @@ export function TrainReveal({
       className={cn(
         'flex w-full flex-col gap-4 trainside:mt-8 trainside:self-stretch',
         SHORT_SIDE_TOP_RESET_CLASS,
-        // Short side layout: TrainSolveScreen frames the column, which scrolls inside it.
-        SHORT_SIDE_SCROLLER_CLASS,
+        // Short side layout and the landscape band: TrainSolveScreen frames the column, which
+        // scrolls inside it.
+        SIDE_SCROLLER_CLASS,
         TRAIN_SIDE_COLUMN_WIDTH_CLASS,
       )}
       data-testid="train-reveal"

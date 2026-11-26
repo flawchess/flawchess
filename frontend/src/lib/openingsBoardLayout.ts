@@ -28,7 +28,9 @@ export function getBoardContainerClassName(activeTab: OpeningsTab): string {
  * wide, width greater than height: unfolded foldables such as the Galaxy Z Fold8 at 941x710
  * or 816x616, phones held sideways at 852x393 or 667x375) that column left the right half of
  * the screen empty and pushed the move list, games and stats below the fold. There the board
- * now sits in a height-fitted column on the left and everything else in a column on the right.
+ * now sits in a height-fitted column on the left and everything else in a column on the right,
+ * under the full-width subnav (from 600px in portrait the opening line also moves beside the
+ * board, see pages/openings/useIsOpeningLineBesideBoard.ts).
  *
  * The gate is the `trainside:` variant (TRAIN_SIDE_LAYOUT_QUERY in lib/trainSideLayout.ts), so
  * Openings switches at the same point as the Train drills. Inside the `lg:hidden` branch it
@@ -64,13 +66,18 @@ export const OPENINGS_MOBILE_ROW_CLASS =
 export const OPENINGS_MOBILE_BOARD_COLUMN_CLASS =
   'flex min-w-0 items-stretch gap-1 px-1 trainside:sticky trainside:top-2';
 
-/** The content column (subnav, Stats row, opening name, move list, tab content). In portrait it
+/** The content column (Stats row, opening name, move list, tab content). In portrait it
  * is `contents`, so its children stay in the stacked flow. In landscape it takes the width the
- * board leaves (`flex-1 basis-0`), with a 40% floor of the row so the move table and game cards
- * stay readable when the board is height-bound on a near-square or narrow screen. */
+ * board leaves (`flex-1 basis-0`), with a floor of 40% of the row or 19.25rem, whichever is wider,
+ * so the move table and game cards stay readable when the board is height-bound on a
+ * near-square or narrow screen. Bug fix: on landscape windows 640-800px wide, 40% was narrower
+ * than the move table's minimum (272px: Move, Games and Score columns plus the 80px results bar)
+ * and its card padding and border (34px), so the results bars were cut off (63px at 640x500). The board
+ * column shrinks instead. */
 export const OPENINGS_MOBILE_CONTENT_COLUMN_CLASS =
-  'contents trainside:flex trainside:min-w-[40%] trainside:flex-1 trainside:basis-0 trainside:flex-col trainside:gap-2';
+  'contents trainside:flex trainside:min-w-[max(40%,19.25rem)] trainside:flex-1 trainside:basis-0 trainside:flex-col trainside:gap-2';
 
-/** The subnav and the Stats sticky row sit in the content column after the board column in the
- * DOM. In portrait (content column `contents`) they move back above the board with `order`. */
+/** The Stats sticky row sits in the content column after the board column in the DOM. In
+ * portrait (content column `contents`) it moves back above the board with `order`. (The subnav
+ * sits above the whole row, in both orientations.) */
 export const OPENINGS_MOBILE_TOP_ROW_ORDER_CLASS = 'order-first trainside:order-none';

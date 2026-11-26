@@ -10,6 +10,7 @@ import { BoardControls } from '@/components/board/BoardControls';
 import { ChessboardInfoCopy } from './ChessboardInfoCopy';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useIsTrainSideBand } from '@/hooks/useIsDesktop';
+import { cn } from '@/lib/utils';
 import {
   OPENINGS_BOARD_ROW_CHROME_PX,
   OPENINGS_MOBILE_BOARD_COLUMN_CLASS,
@@ -49,6 +50,10 @@ export type OpeningsMobileBoardPanelProps = {
   onOpenBookmarkDrawer: () => void;
   showAnalyzeButton: boolean;
   onAnalyzePosition: () => void;
+  /** Rendered in a column right of the settings column (the opening line on portrait screens
+   * from `sm`, see ./useIsOpeningLineBesideBoard). The board then keeps its width and this column
+   * takes the rest of the row. */
+  besideBoard?: ReactNode;
 };
 
 export type OpeningsMobileOpeningLineProps = {
@@ -58,7 +63,10 @@ export type OpeningsMobileOpeningLineProps = {
   moveHistory: string[];
   currentPly: number;
   onMoveClick: (ply: number) => void;
+  /** Beside the board: the move list fills the column's height instead of its fixed height. */
+  besideBoard?: boolean;
 };
+
 
 function isBoardTab(activeTab: OpeningsTab): boolean {
   return activeTab === 'explorer' || activeTab === 'games';
@@ -99,6 +107,7 @@ export function OpeningsMobileBoardPanel({
   onOpenBookmarkDrawer,
   showAnalyzeButton,
   onAnalyzePosition,
+  besideBoard,
 }: OpeningsMobileBoardPanelProps) {
   const columnRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -136,7 +145,12 @@ export function OpeningsMobileBoardPanel({
           the (capped) board on tablet/narrow-desktop widths below `lg`, so BoardControls
           rendered wider than the board and the settings column was pushed far to the
           right. */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1" style={{ maxWidth: boardMaxPx }}>
+      {/* With a column beside the board, the board starts at its cap (flex-basis) and shrinks
+          only when that column hits its floor; otherwise both would grow and split the row. */}
+      <div
+        className={cn('min-w-0 flex flex-col gap-1', besideBoard ? 'grow-0 shrink' : 'flex-1')}
+        style={{ maxWidth: boardMaxPx, flexBasis: besideBoard ? boardMaxPx : undefined }}
+      >
         {/* Same board-only wheel scoping as the desktop layout above. Both
             layouts stay mounted (one is CSS-hidden), hence a ref each. The outer
             wrapper is the height fit's measured board (a callback ref cannot be). */}
@@ -224,6 +238,11 @@ export function OpeningsMobileBoardPanel({
           </InfoPopover>
         </div>
       </div>
+      {besideBoard && (
+        <div className="flex min-w-45 flex-1 flex-col gap-1" data-testid="openings-mobile-beside-board">
+          {besideBoard}
+        </div>
+      )}
     </div>
   );
 }
@@ -236,6 +255,7 @@ export function OpeningsMobileOpeningLine({
   moveHistory,
   currentPly,
   onMoveClick,
+  besideBoard = false,
 }: OpeningsMobileOpeningLineProps) {
   if (!isBoardTab(activeTab)) return null;
 
@@ -256,6 +276,7 @@ export function OpeningsMobileOpeningLine({
         moveHistory={moveHistory}
         currentPly={currentPly}
         onMoveClick={onMoveClick}
+        heightClass={besideBoard ? 'min-h-0 flex-1' : undefined}
       />
     </>
   );

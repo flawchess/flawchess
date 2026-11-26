@@ -57,7 +57,7 @@ import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
-import { useIsTrainSideLayout } from '@/hooks/useIsDesktop';
+import { useIsTrainBandBar, useIsTrainSideLayout } from '@/hooks/useIsDesktop';
 
 // Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
 // Analysis.tsx uses export default (React.lazy needs a default export), unlike
@@ -133,8 +133,6 @@ const ACTIVITY_NAV_ITEM = { to: '/activity', label: 'Activity', Icon: Activity }
 
 // Titles in the phone header. Pages without it (HEADERLESS_ROUTES) need no entry.
 const ROUTE_TITLES: Record<string, string> = {
-  '/train': 'Train',
-  '/bots': 'Bots',
   '/openings': 'Opening',
   '/admin': 'Admin',
   '/analysis': 'Analysis',
@@ -368,9 +366,11 @@ export function MobileHeader() {
   );
 }
 
-// The scrolling pages without the phone header (owner decision 2026-11-25): the bottom bar
-// already names the section and the More drawer holds Settings.
-const HEADERLESS_ROUTES = ['/library', '/endgames'] as const;
+// The pages without the phone header (owner decisions: Library and Endgames 2026-11-25,
+// Train and the Bots list 2026-11-26): the bottom bar already names the section and the
+// More drawer holds Settings. The bot game and the Train drills hide the whole top bar
+// anyway (`playActive`).
+const HEADERLESS_ROUTES = ['/library', '/endgames', '/train', '/bots'] as const;
 
 /**
  * Top of the phone frame: the phone header, or on the header-less pages only the notch inset.
@@ -583,8 +583,13 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
               {profile?.is_guest ? 'Guest session' : (profile?.email ?? 'Account')}
             </DrawerTitle>
           </DrawerHeader>
-          <div className="px-4 pb-4">
-            <nav className="flex flex-col gap-1">
+          {/* Nav grid (2 columns, 4 in landscape so sideways phones fit it in 2 rows) that
+              scrolls on its own, with Settings/Logout pinned in a footer below it. The
+              old single column had no overflow handling, so under DrawerContent's
+              max-h-[80vh] the tail rows (Logout first) were drawn off-screen on phone
+              and foldable landscape. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4">
+            <nav className="grid grid-cols-2 gap-1 landscape:grid-cols-4">
               {navItems.map(({ to, label, Icon }) => {
                 const locked = isNavLocked(to, navUnlocked);
                 return (
@@ -611,6 +616,8 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
                 );
               })}
             </nav>
+          </div>
+          <div className="mx-4 mt-2 flex shrink-0 items-center justify-between gap-1 border-t border-border pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
             {/* testid deliberately NOT drawer-nav-* (that prefix is collected by
                 the exact-order nav tests and Settings is not in NAV_ITEMS). */}
             {/* Opens the settings sheet in place of this drawer, never navigates (a
@@ -619,17 +626,16 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
               type="button"
               onClick={openSettings}
               data-testid="drawer-settings"
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-foreground"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-base text-foreground"
             >
               <SettingsIcon className="h-4 w-4" aria-hidden="true" />
               Settings
             </button>
-            <div className="my-2 border-t border-border" />
             <DrawerClose asChild>
               <button
                 onClick={logout}
                 data-testid="drawer-logout"
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+                className="flex items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
               >
                 <LogOutIcon className="h-4 w-4" aria-hidden="true" />
                 Logout
@@ -669,13 +675,18 @@ function ProtectedLayout() {
   // phone frame (phone header + bottom tab bar) applies at any orientation. A Train drill in
   // the side layout (a foldable, tablet or phone in landscape) also drops the bottom tab bar;
   // the drill shows its own settings cog, as phones do with their header suppressed during
-  // play. Its solutions publish their controls to the bar, which shows then (the drills keep
-  // the bar's height free, see BAND_BAR_BOARD_GUTTER_PX).
+  // play. Its solutions publish their controls to the bar, which shows then.
+  // Bug fix (owner, 2026-11-26): where the solutions use the bar (`useIsTrainBandBar`, 450px
+  // tall and up below lg) the drills keep its height free anyway (BAND_BAR_BOARD_GUTTER_PX),
+  // so the tab bar stays during the drill instead of leaving that strip empty. Only phones
+  // held sideways drop it, where the board needs the height.
   const isTrainSideLayout = useIsTrainSideLayout();
+  const isTrainBandBar = useIsTrainBandBar();
   const boardControlsActive = useMobileBoardControls() != null;
   const hideBottomBar =
     playActive &&
     isTrainSideLayout &&
+    !isTrainBandBar &&
     !boardControlsActive &&
     location.pathname.startsWith('/train');
   const refreshedRef = useRef(false);

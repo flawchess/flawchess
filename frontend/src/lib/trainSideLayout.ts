@@ -32,17 +32,24 @@ export const TRAIN_SIDE_LAYOUT_QUERY = `(min-width: ${SIDE_LAYOUT_ANY_ORIENTATIO
 /**
  * Width of the side column. Desktop (lg and up) keeps its 384px column. In the 640-1023px
  * landscape band (and on a phone in landscape) the column takes the width the board leaves:
- * `flex-1 basis-0` with a 272px floor and a 448px cap. Its flex base size is 0, so when the
- * row is too narrow only the board column shrinks to make room for the 272px floor (816x616:
- * board about 450px), and when the board is height-bound the column grows into the spare
- * width instead of leaving empty margins. Bug fix (Galaxy Z Fold8 landscape, about 941x710):
- * the fixed 272px column left about 75px empty on each side of the row.
+ * `flex-1 basis-0` with a 392px floor and a 448px cap. Its flex base size is 0, so when the
+ * row is too narrow only the board column shrinks to make room for the floor, and when the
+ * board is height-bound the column grows into the spare width instead of leaving empty
+ * margins. Bug fix (Galaxy Z Fold8 landscape, about 941x710): the fixed 272px column left
+ * about 75px empty on each side of the row.
+ *
+ * The 336px floor fits the solution's three line chips (Move, Best, Game) with a 4-character
+ * move such as Rac8 on one line (about 105px each at the phone text size, plus two 8px gaps);
+ * a longer move wraps under its eval (TrainLineChips). Bug fix (owner, 2026-11-26): the floor
+ * was 272px, and at 816x528 (a 288px column) even Rac8 was cut off. A 392px floor (6-character
+ * moves on one line) cost the board too much (816x528 436 to 332px), so it is 336px plus the
+ * wrap.
  *
  * The two conditions are disjoint on purpose: custom-variant utilities are emitted after the
  * built-in breakpoints, so a plain `trainside:max-w-md` would override desktop's `lg:max-w-sm`.
  */
 export const TRAIN_SIDE_COLUMN_WIDTH_CLASS =
-  'lg:max-w-sm trainside:max-lg:max-w-md trainside:max-lg:min-w-68 trainside:max-lg:flex-1 trainside:max-lg:basis-0';
+  'lg:max-w-sm trainside:max-lg:max-w-md trainside:max-lg:min-w-84 trainside:max-lg:flex-1 trainside:max-lg:basis-0';
 
 /** Gap between the board column and the side column: 32px on desktop, 16px in the landscape
  * band, where every pixel of the short, narrow screen goes to the board. Disjoint conditions,
@@ -59,10 +66,12 @@ export const SHORT_VIEWPORT_QUERY = '(max-height: 559.98px)';
 export const SHORT_SIDE_BOARD_GUTTER_PX = 12;
 
 /** The shortest landscape-band screen whose Train solutions use the app's bottom bar, as on
- * phones in portrait (`useIsTrainBandBar`). Between phones held sideways (about 440px at most),
- * where the bar would take a fifth of the board's height, and a foldable with a larger display
- * zoom (816x528 inside the OS bars). */
-export const TRAIN_BAND_BAR_MIN_HEIGHT_PX = 500;
+ * phones in portrait (`useIsTrainBandBar`), and whose drills keep the bottom tab bar (App.tsx).
+ * Between phones held sideways (about 440px at most), where the bar would take a fifth of the
+ * board's height, and a foldable with a larger display zoom (816x528 inside the OS bars).
+ * Bug fix (owner, 2026-11-26): it was 500px, so a 761x472 window dropped the tab bar although
+ * its board was width-bound and left the bar's height empty. */
+export const TRAIN_BAND_BAR_MIN_HEIGHT_PX = 450;
 
 /** Bottom gutter of the Train drills' height fit where the solutions use the bottom bar: the bar
  * (71px) plus a 9px gap, less the 28px eval-bar slot, which the fit already leaves free (the board
@@ -77,24 +86,31 @@ export const BAND_BAR_BOARD_GUTTER_PX = 52;
 export const SHORT_SIDE_TOP_RESET_CLASS = 'trainside:short:mt-0';
 export const SHORT_SIDE_FOOTER_RESET_CLASS = 'trainside:short:mb-0';
 
+/** Marker class of SIDE_SCROLL_FRAME_CLASS; SIDE_SCROLLER_CLASS only engages as its direct child.
+ * MUST match the literal in SIDE_SCROLLER_CLASS (Tailwind only sees static class strings). */
+const SIDE_SCROLL_FRAME_MARKER = 'train-side-frame';
+
 /**
- * Short side layout: the side column (a reveal's verdict, lines, move list and Analyze / Next)
- * is taller than a phone's landscape height. Bug fix (iPhone 16 landscape, 852x393): the page
- * scrolled about 200px and Next sat below the fold. The column now sits in a frame as tall as
- * the board column and scrolls inside it, with the footer pinned to its bottom edge.
+ * Framed side layout: the side column (a reveal's verdict, lines, move list and Analyze / Next)
+ * sits in a frame as tall as the board column and scrolls inside it. Used on short screens and in
+ * the landscape band where the solution uses the bottom bar (`useIsTrainFramedSide`).
+ * Bug fix (iPhone 16 landscape, 852x393): the page scrolled about 200px and Next sat below the
+ * fold. Bug fix (Fold8 landscape, 933x617): a puzzle solution with the "Flaw fixed!" banner made
+ * the page 71px taller than the screen, so the board scrolled away under the bottom bar.
  */
-export const SHORT_SIDE_FRAME_CLASS = `relative w-full self-stretch ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
-/** The scroller inside SHORT_SIDE_FRAME_CLASS; `short:`-gated so it is inert outside the frame. */
-export const SHORT_SIDE_SCROLLER_CLASS =
-  'trainside:short:absolute trainside:short:inset-0 trainside:short:overflow-y-auto';
+export const SIDE_SCROLL_FRAME_CLASS = `${SIDE_SCROLL_FRAME_MARKER} relative w-full self-stretch ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
+/** The scroller inside SIDE_SCROLL_FRAME_CLASS. Gated on being the frame's direct child, so it is
+ * inert wherever the column is not framed (desktop, portrait). */
+export const SIDE_SCROLLER_CLASS =
+  '[.train-side-frame>&]:absolute [.train-side-frame>&]:inset-0 [.train-side-frame>&]:overflow-y-auto';
 /** The side column's footer (Analyze / Next), pinned to the scroller's bottom edge. */
 export const SHORT_SIDE_STICKY_FOOTER_CLASS =
   'trainside:short:sticky trainside:short:bottom-0 trainside:short:z-10 trainside:short:bg-background trainside:short:pt-2';
 
 /** A portrait foldable or small tablet: past `sm` but below `md`, in portrait (the unfolded
  * Galaxy Z Fold8 is about 704px wide). It reads like a phone, so the Train bot bubble uses
- * its compact phone layout there (`useIsPortraitFoldable`). */
-export const PORTRAIT_FOLDABLE_QUERY = '(min-width: 640px) and (max-width: 767.98px) and (orientation: portrait)';
+ * its compact phone layout there (`useIsPortraitSmBand`). */
+export const PORTRAIT_SM_BAND_QUERY = '(min-width: 640px) and (max-width: 767.98px) and (orientation: portrait)';
 
 /**
  * Stacked layout: caps the board row (board plus its 28px eval-bar slot) so the pinned board

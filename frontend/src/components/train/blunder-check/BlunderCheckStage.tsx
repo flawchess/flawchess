@@ -28,7 +28,7 @@ import { BLUNDER_CHECK_BOARD_MAX_WIDTH_PX } from '@/lib/blunderCheckDrill';
 import type { DrillProgress } from '@/lib/blunderCheckDrill';
 import {
   SHORT_SIDE_FOOTER_RESET_CLASS,
-  SHORT_SIDE_FRAME_CLASS,
+  SIDE_SCROLL_FRAME_CLASS,
   SHORT_SIDE_STICKY_FOOTER_CLASS,
   SHORT_SIDE_TOP_RESET_CLASS,
   STACKED_BOARD_ROW_CAP_CLASS,
@@ -62,8 +62,10 @@ export const BLUNDER_CHECK_SIDE_FOOTER_CLASS = `mt-auto mb-8 ${SHORT_SIDE_FOOTER
 export const BLUNDER_CHECK_SIDE_CLASS = `flex w-full flex-col gap-4 trainside:mt-[34px] trainside:self-stretch ${SHORT_SIDE_TOP_RESET_CLASS} trainside:short:flex-1 ${TRAIN_SIDE_COLUMN_WIDTH_CLASS}`;
 
 /** Short side layout: the scroller that stacks the progress row over the side panel, inside a
- * SHORT_SIDE_FRAME_CLASS frame as tall as the board column. */
-const SHORT_SIDE_STACK_CLASS = 'absolute inset-0 flex flex-col gap-3 overflow-y-auto';
+ * SIDE_SCROLL_FRAME_CLASS frame as tall as the board column. `overflow-x-hidden`: bug fix
+ * (816x528): the settings button (32px, centred in its 20px slot) stuck out 6px past the right
+ * edge and gave the scroller a horizontal scrollbar. Only its transparent tap area is clipped. */
+const SHORT_SIDE_STACK_CLASS = 'absolute inset-0 flex flex-col gap-3 overflow-y-auto overflow-x-hidden';
 
 /**
  * The compact progress row: "n of m", the bar, the pot at risk and the banked points
@@ -216,7 +218,7 @@ export function BlunderCheckStage({
         // `min-w-0`: the board sizes from this column's width, so the column must be able to
         // shrink below the board's current size. Bug fix (near-square foldables, e.g. 820x791): with
         // the default `min-width: auto` the board kept its height-fitted size and the row
-        // overflowed by up to 44px next to the side column's 272px floor.
+        // overflowed by up to 44px next to the side column's floor (then 272px).
         className="contents trainside:flex trainside:w-full trainside:min-w-0 trainside:flex-col trainside:items-center trainside:gap-3"
         style={{ maxWidth: columnMaxWidthPx }}
       >
@@ -252,7 +254,7 @@ export function BlunderCheckStage({
         {!bubbleInSide && children}
       </div>
       {isShortSide ? (
-        <div className={SHORT_SIDE_FRAME_CLASS} data-testid="blunder-check-short-side">
+        <div className={SIDE_SCROLL_FRAME_CLASS} data-testid="blunder-check-short-side">
           <div className={SHORT_SIDE_STACK_CLASS}>
             {progressRow}
             {sidePanel}

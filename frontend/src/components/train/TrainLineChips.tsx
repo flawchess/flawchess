@@ -120,8 +120,10 @@ function LineChip({
           data-testid={`${testid}-arrow`}
         />
       </span>
-      {/* Eval before the move, like the Stockfish lines. */}
-      <span className="flex min-w-0 items-center gap-1.5">
+      {/* Eval before the move, like the Stockfish lines. `flex-wrap`: in a chip narrower than
+          eval plus move (a 5-character or longer move in the 336px landscape side column), the
+          move wraps under the eval instead of being cut off. */}
+      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <ChipEval chip={chip} testid={testid} />
         <span className="font-mono" data-testid={`${testid}-san`}>
           {chip.san}

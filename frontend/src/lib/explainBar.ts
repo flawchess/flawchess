@@ -134,7 +134,7 @@ function explainTactics(marker: FlawMarker): ExplainTactic[] {
 }
 
 /** The headline for the mistake/blunder at `ply`, or null when there is none. */
-function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, ply: number): ExplainHeadline | null {
+export function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, ply: number): ExplainHeadline | null {
   const marker = eligibleExplainMarker(flawMarkers, ply);
   if (marker === null || !isExplainSeverity(marker.severity)) return null;
   return {
