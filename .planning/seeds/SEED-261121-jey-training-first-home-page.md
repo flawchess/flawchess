@@ -4,7 +4,8 @@ status: dormant
 planted: 2026-11-21
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)
 trigger_when: when the owner decides to push training in outbound content (Reddit, lichess blog, data stories); or when Blunder Check has about 4 weeks of usage and retention data (from about 2026-12-17); or at the next milestone planning that touches the home page or marketing
-scope: small to medium, one phase (hero and feature-order rework in Home.tsx, new copy, new screenshots, a Blunder Check section). Home page and messaging only.
+scope: small to medium, one phase (hero and feature-order rework in Home.tsx, new copy, new screenshots). Home page and messaging only.
+updated: 2026-11-26 (Blunder Check and the training tagline shipped; hero reorder still open)
 ---
 
 # SEED-261121-jey: Training-first home page
@@ -12,6 +13,23 @@ scope: small to medium, one phase (hero and feature-order rework in Home.tsx, ne
 Reposition the home page around the training loop (import your games, find your flaws, train on
 exactly those) instead of leading with the FlawChess Engine. Add Blunder Check, which is missing
 from the home page entirely.
+
+## Progress (2026-11-26)
+
+Done in `57d3fe2db`, `493edeefd` and `8a6f265bf` (copy only, no layout change):
+
+- The hero tagline and the meta/og descriptions now name training: "Find and fix your chess flaws.
+  Analyze your chess.com and lichess games for free, train on puzzles built from your own
+  blunders, and play human-like bots." The Sign In page uses the same opening sentence.
+- Blunder Check is on the home page: the "Personalized Puzzle Training" section became
+  "Personalized Training" with a Blunder Check bullet, and the "How can I improve" FAQ answer
+  mentions it. New screenshot `personalized-puzzle.png`.
+- The analysis section gained a facepalm-blunder bullet.
+
+Still open, the core of this seed: the hero feature (`FEATURES[0]`) is still the FlawChess Engine
+("Your Best Practical Move"), and training is still the third section after Game and Tactic
+Analysis. There is no separate Blunder Check section. The open question below (outbound content)
+still decides whether to reorder.
 
 ## Why This Matters
 
