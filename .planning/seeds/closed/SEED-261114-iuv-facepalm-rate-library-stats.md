@@ -1,6 +1,6 @@
 ---
 id: SEED-261114-iuv
-status: closed
+status: closed. Milestone v2.31.
 closed: 2026-11-22
 closed_reason: shipped as Phase 257 (facepalm share timeline, you vs opponents rows, chip tinted by type; release #496). Deferred benchmark part lives on in SEED-261120-bzq
 promoted_to: Phase 257 (2026-11-20)

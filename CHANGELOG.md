@@ -8,24 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- Analysis: a new fast forward setting makes the fast forward button stop only at your own mistakes, blunders, gem and great moves, skipping your opponent's. It is off by default.
-- Blunder check: after a caught or missed blunder, the solution now shows a short line when the engine line shows the blunder gave away material or checkmate, or missed a material win or checkmate, and a note when the blunder was hard to catch.
-- Train: a facepalm blunder (a facepalm score of 70% or more) is marked "???" instead of "??" on the board and on the Game line, on the blunder check solution and on the personalized-puzzle solution.
-- Navigation: new accounts are guided through FlawChess one feature at a time by a single red dot: Import, Train, Bots, Openings with its Played as and Filters controls and its Stats tab, Endgames, and Library Stats. The dot sits on the menu item first and moves onto the tab or button once you are in that section. A feature you leave alone for three active days is skipped, and your progress follows you across devices.
-- Blunder check for everyone, guests included: short sequences from real games ask, before each move is played, whether it is a good move or a blunder, with a 12-second timer, a points pot you lose when the timer runs out on a blunder, a better-move follow-up after a caught or missed blunder, and a solution screen with the engine lines. Start it from the Train Today page. Guests play on other players' games.
-- Blunder check leaderboards: weekly Points and Score % boards with medals, behind a Puzzles / Blunder check switch on the Train leaderboard. The card remembers the side you looked at last, and the blunder check score screen links straight to its boards.
-- Blunder check level: if you have no rated games yet, your first Start asks once for a level (Beginner, Intermediate or Advanced), which you can change later in the Blunder check settings.
-- Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
-- Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
-- Analysis data: each of your blunders now records how many replies your opponent had to choose from and how much material the engine's punishing line wins, the inputs to the blunder-check selection.
-- Analysis data: your opponents' blunders now record the same Maia measurements as your own (how many replies were available and how likely the best move was at their rating), the groundwork for comparing your careless blunders with your opponents'.
-- Analysis data: your opponents' blunders now also record how much material the engine's punishing line wins, so they can be scored the same way as your own. The blunder-check drill and the library keep showing only your own blunders.
-- Library: a Facepalm Score filter in the Tags panel on the Games and Flaws tabs narrows your blunders by how obvious they were for a player at your level (Low, Mid, High, or any range on the slider), and each scored blunder carries its Facepalm score in a short explanation on hover or tap.
-- Library Stats: the Flaws Timeline splits the Blunders area into a darker band of facepalm blunders (a facepalm score of 70% or more) and the rest, per 100 of your moves, with the share of your blunders they make up in the tooltip. A Facepalm legend entry turns the split off. Mistakes, like inaccuracies, are now hidden by default.
-- Library Stats: a Facepalm blunders tile next to the Blunders tile replaces the Mistakes tile, with your facepalm blunders per 100 moves next to your opponents' and a short explanation on hover or tap.
-- Library Stats: a Facepalm blunders card in You vs. your opponents puts your facepalm blunders per 100 of your moves next to your opponents' in the same games, in total and as missed wins and allowed losses. These rows have no typical range yet. It loads on its own, so the rest of the section no longer waits for it.
+- Sign In and Register: in landscape (tablets, unfolded foldables, laptops) the logo moves into its own column beside the form, so the form is no longer cut off at the bottom. In portrait the logo sits beside the FlawChess title, so the Log In button fits on small phones without scrolling.
+
+## [v2.32] Foldable & Tablet Layouts — 2026-11-26
+
+Phase 263 plus the foldable and tablet layout work, deployed to production throughout (releases #507–#515). Phones, foldables and tablets below 1024px get layouts of their own on Train, Analysis, Openings, Library, Endgames and bot games, with the bottom tab bar and a More menu replacing the top header, and short personalized-puzzle sessions are now filled with blunders of similarly rated players instead of a fixed set of lichess puzzles (SEED-261120-jnw).
 
 ### Changed
 
@@ -62,9 +51,36 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Phones, foldables and tablets below 1024px wide use the bottom tab bar (icon and label) in both orientations instead of the desktop top menu, which did not fit there. On short landscape screens the slim top header is dropped, and Train drills on phones held sideways hide the bottom bar so the board gets the full height. Foldables and tablets in landscape keep it during the drills.
 - Blunder check: a blunder is no longer served when the player was already losing by more than 2 before it (it was 3). From there the better move was losing too, so it was not worth finding. Blunders that throw away an advantage of up to 3 stay in, and so do missed chances.
 - Train: when a personalized-puzzle session is short of your own puzzles, it is now filled with blunders from games of similarly rated players instead of a fixed set of lichess puzzles. They are graded like your own puzzles, never come back, and the reveal shows the move played in that game with its time control, the player's rating and the date, never a name. The intro, start screen and score screen now say where such a session's puzzles came from.
-- Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
 - Blunder check wording: the host now says that a hard-to-catch blunder was mixed in on purpose, names what the blunder did more plainly ("loses material", "misses a chance to win material"), tells you which side moves next before a sequence starts, and gives friendlier feedback on your better move.
 - Blunder check: banking a sequence now plays one coin per point you collected instead of always three.
+
+### Removed
+
+- Train: the warm-up label and the fixed set of lichess filler puzzles are retired. Puzzles you already solved from that set keep their points and streak days, and the Activity dashboard lists them as retired.
+
+### Fixed
+
+- Navigation: Logout in the More menu was drawn below the screen edge in landscape (most visible with the extra admin links), so it could not be reached.
+- Openings on foldables in landscape with a larger display zoom (816px wide) and on landscape windows 640 to 800px wide: the move table no longer overflows its column.
+- Blunder check on foldables in landscape with a larger display zoom: the settings button no longer adds a sideways scrollbar to the side column.
+- Train: a dropped connection while loading the training session or saving a puzzle result is now retried automatically, and the training session load error has a Retry button.
+
+## [v2.31] Facepalm Refits & Move Quality — 2026-11-23
+
+Phases 257–262, deployed to production throughout (releases #492–#506). The facepalm score grows up: a facepalm rate in Library Stats (SEED-261114-iuv) on a recent-games sample (SEED-261121-3ou), a refit on what a human reads from the lines (SEED-261121-tau), facepalm as its own move quality with a ??? marker (SEED-261122-j9p), promotions counted as material (SEED-261122-s0j), and a blunder check exploration arm (SEED-261121-t50).
+
+### Added
+
+- Analysis: a new fast forward setting makes the fast forward button stop only at your own mistakes, blunders, gem and great moves, skipping your opponent's. It is off by default.
+- Blunder check: after a caught or missed blunder, the solution now shows a short line when the engine line shows the blunder gave away material or checkmate, or missed a material win or checkmate, and a note when the blunder was hard to catch.
+- Train: a facepalm blunder (a facepalm score of 70% or more) is marked "???" instead of "??" on the board and on the Game line, on the blunder check solution and on the personalized-puzzle solution.
+- Library Stats: the Flaws Timeline splits the Blunders area into a darker band of facepalm blunders (a facepalm score of 70% or more) and the rest, per 100 of your moves, with the share of your blunders they make up in the tooltip. A Facepalm legend entry turns the split off. Mistakes, like inaccuracies, are now hidden by default.
+- Library Stats: a Facepalm blunders tile next to the Blunders tile replaces the Mistakes tile, with your facepalm blunders per 100 moves next to your opponents' and a short explanation on hover or tap.
+- Library Stats: a Facepalm blunders card in You vs. your opponents puts your facepalm blunders per 100 of your moves next to your opponents' in the same games, in total and as missed wins and allowed losses. These rows have no typical range yet. It loads on its own, so the rest of the section no longer waits for it.
+
+### Changed
+
+- Blunder check scoring: a correct Good call earns 1 point, catching the blunder 2 and finding a better move 1, so your Score % now reflects all three skills rather than mostly the catch rate. Missing a blunder no longer costs the points the sequence has collected (running out of time on it still does), and you now get to find a better move after a missed blunder too. Point totals are smaller from this release on.
 - Facepalm score: the chips, the Explain bar and the facepalm explanation now read "Facepalm score x%", and the Library eval chart tooltip shows it on its own line.
 - Internal: removed the old per-depth material columns of the facepalm score; the score reads the stored material inputs.
 - Facepalm score: refitted on how a player reads the lines. An even trade in the engine's line no longer counts as a missed win, and how likely a player at your level was to see the punishing reply now enters the score. Facepalm chips, the Facepalm tag, the Facepalm rate in Library Stats and the blunder check drill pool change for every player.
@@ -73,28 +89,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Activity dashboard: a new Blunder Check card compares red herrings with blunder sequences, and own games with foreign games, as outcome shares over the selected range, so it is visible which kind is easier to get right.
 - Activity dashboard: a new Personalized Puzzles card compares own flaws, red herrings and sharp fillers as move-quality shares over the selected range, so it is visible which puzzle source is easier to get right.
 - Activity dashboard: the "How long until the first import?" card is removed.
-- Train: the red dot now clears when you start a training session, not when you open Train.
-- Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
-- Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.
-- Openings: the sidebar no longer shows a red dot on Bookmarks. Existing accounts start with the new route already complete.
-- Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
-- Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
-- Library filters: the Tags panel now starts with Best Moves, followed by Flaws and the Facepalm Score.
 - Blunders are described by one chip or icon: a Flaws card shows "?? Blunder" or "??? Facepalm" next to the tactic chips, the analysis move list shows the ?? or ??? icon next to the tactic chip, and the separate facepalm score chips and their teal and crimson tint are gone. Hover or tap the chip or icon for the facepalm score and whether the blunder missed a win or allowed a loss. The line under the analysis move list names the score of a facepalm, for example "Qf6+ ???: Facepalm 76% · missed checkmate in 7".
 - Eval chart tooltip: the verdict and the facepalm score share one line (for example "??? You · Facepalm 95%"), the text is larger on a less transparent background, and colour is on the icons only. The selected Facepalm tag and the Facepalm chip are now solid dark red with a light label.
 - Library filters: the divider in the Tags panel now sits below Flaws, so Best Moves and Flaws, which combine with OR, read as one group apart from the tactic filters.
-- Blunder check: running out of time on a good move now costs one point from the sequence's pot instead of the whole pot (a gray +0 when the pot is empty). Running out of time on the blunder still counts as missing it.
-- Blunder check: blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
-- Blunder check: the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
-- Facepalm score: computed on the fly from the stored facts, so the blunder check and the library always use the current model (no visible change yet).
-- Facepalm score now also takes missed wins of material into account, mainly through how likely a player at your level is to find the winning move. The blunder check was re-tuned with new labels and now also serves somewhat less obvious blunders.
-- Facepalm score: refitted on more of your labelled blunders. It now weighs the material a blunder loses or misses over the whole engine line, earlier moves counting most, instead of at one point three moves in, so missed wins count for more. Scores change for every blunder (the library chip, the Facepalm tag and the blunder-check selection all follow), and a blunder that loses no material and whose best move's likelihood is unknown no longer gets a score.
-- Internal: removed the stored facepalm score and the old line-loss columns; the score is computed from the stored facts.
-- Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
-- Blunder check: every sequence now opens paused on its starting position with the last played move highlighted, and the host tells you which side you play and whose turn it is. Press Ready when you have looked at the position: the opponent's move and the 12-second timer only start then. Your very first sequence also explains there how the drill runs.
-- Train: the Today page now shows Puzzles and Blunder check as two rows on one card, and your session streak needs every mode that is switched on. Each mode has its own session size (6 for blunder check by default); set a mode to 0 to turn it off, but never both. A mistake you met in one mode rests for 7 days before it can appear in the other.
-- Train: the Blunder check tab is gone, it lives on the Today page now, and the drill still runs full screen and returns you to Today. After you finish one mode, the main button on the score screen continues with the other if it is still due.
-- Train: the weekly medal window now groups all your medals by week instead of showing one window per board.
 - Facepalm explanation: it names the type of the blunder, a missed win (the best move won material that was not taken) or an allowed loss (the move gave away material), on the Flaws tab, in the analysis move list and in the eval chart tooltip.
 - Library Stats: the Flaw Stats tiles, You vs. your opponents and Tactic motifs now describe how you play now. They use your most recent 1,000 games per time control from the last 36 months (or from the period you pick under Recency), and a line above the tiles says which games they are based on. The Flaws Timeline still shows all your games, and a time control without games in the last 36 months keeps its timeline with a note on how to include older games.
 - Library Stats: the Facepalm blunders tile and the rows of the Facepalm blunders card now show the typical gap among FlawChess players and turn green or red when you are clearly better or worse than typical. (quick 261121-ha7)
@@ -107,15 +104,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Removed
 
-- Train: the warm-up label and the fixed set of lichess filler puzzles are retired. Puzzles you already solved from that set keep their points and streak days, and the Activity dashboard lists them as retired.
 - Library filters: the Facepalm Score filter (slider and Low, Mid, High presets) is gone from the Tags panel on the Games and Flaws tabs. The Facepalm tag in the Flaws filter replaces it.
 
 ### Fixed
 
-- Navigation: Logout in the More menu was drawn below the screen edge in landscape (most visible with the extra admin links), so it could not be reached.
-- Openings on foldables in landscape with a larger display zoom (816px wide) and on landscape windows 640 to 800px wide: the move table no longer overflows its column.
-- Blunder check on foldables in landscape with a larger display zoom: the settings button no longer adds a sideways scrollbar to the side column.
-- Train: a dropped connection while loading the training session or saving a puzzle result is now retried automatically, and the training session load error has a Retry button.
 - Library: the eval chart tooltip background is translucent again, and the move-quality icons in the mobile move stats row are the same size as in the full table.
 - Tactic tags: a blunder that allows (or misses) a forced checkmate no longer loses its checkmate tag when two moves mate equally fast somewhere along the line. Existing games pick the tag up after the next re-tagging run. (quick 261122-jsf)
 - Tactic tags: long forced checkmates (about seven moves or more) are now tagged as checkmate reliably. Before, the tag depended on what the opponent happened to play next, and a missed long mate was usually not tagged at all. A mate in one is also no longer left untagged in some opening positions. Existing games pick the tags up after the next re-tagging run. (quick 261122-kos)
@@ -123,13 +115,55 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Endgames: the Stats tab no longer takes up to two minutes to load for some accounts. The endgame statistics now load in about a second for every account. (quick 261120-li5)
 - Blunder check: continuing a session on a second device no longer ends in an error on the first one. The device that fell behind now jumps to the sequence that is actually next, or returns to the Today page if the session was finished elsewhere. (quick 261120-j5f)
 - Activity dashboard: Train sessions whose window has passed now show as Abandoned instead of still open, and opening the Train page without starting a session no longer counts as one. (quick 261120-c1x)
+- Blunder check: coming back to a sequence you left in the middle of a move no longer drops you onto a clock that has already run out. Once the move's time is up it counts as a timeout, as it would have if you had stayed, and the sequence waits on the Ready gate with the position so far, so the next move's clock starts only when you press Ready. If the timed-out move was the blunder or the sequence's last move, the sequence's solution opens instead.
+- Train: "Continue with Blunder Check" and the Blunder Check Start button no longer bounce back to the Today page when the tab still remembered a solution from an earlier, already finished blunder check session.
+
+## [v2.30] Blunder Check & Facepalm Score — 2026-11-19
+
+Phases 247–251 and 253–256, deployed to production throughout (releases #464–#491). Blunder check, a new Train mode for everyone, asks before each move whether it is good or a blunder, picked by a facepalm score that rates how avoidable a blunder was at your level, with a shared streak and weekly leaderboards (SEED-261108-zkp, SEED-261108-dk0, SEED-261110-p7k, SEED-261114-mg7, SEED-261115-agg). The facepalm score shows in the Library (SEED-261114-0ke), new accounts follow one red dot through the features (SEED-261115-d0t), and the short-Stockfish-line fix and its repair code shipped (SEED-261112-s4v; the backfill continues as Phase 252).
+
+### Added
+
+- Navigation: new accounts are guided through FlawChess one feature at a time by a single red dot: Import, Train, Bots, Openings with its Played as and Filters controls and its Stats tab, Endgames, and Library Stats. The dot sits on the menu item first and moves onto the tab or button once you are in that section. A feature you leave alone for three active days is skipped, and your progress follows you across devices.
+- Blunder check for everyone, guests included: short sequences from real games ask, before each move is played, whether it is a good move or a blunder, with a 12-second timer, a points pot you lose when the timer runs out on a blunder, a better-move follow-up after a caught or missed blunder, and a solution screen with the engine lines. Start it from the Train Today page. Guests play on other players' games.
+- Blunder check leaderboards: weekly Points and Score % boards with medals, behind a Puzzles / Blunder check switch on the Train leaderboard. The card remembers the side you looked at last, and the blunder check score screen links straight to its boards.
+- Blunder check level: if you have no rated games yet, your first Start asks once for a level (Beginner, Intermediate or Advanced), which you can change later in the Blunder check settings.
+- Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
+- Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
+- Analysis data: each of your blunders now records how many replies your opponent had to choose from and how much material the engine's punishing line wins, the inputs to the blunder-check selection.
+- Analysis data: your opponents' blunders now record the same Maia measurements as your own (how many replies were available and how likely the best move was at their rating), the groundwork for comparing your careless blunders with your opponents'.
+- Analysis data: your opponents' blunders now also record how much material the engine's punishing line wins, so they can be scored the same way as your own. The blunder-check drill and the library keep showing only your own blunders.
+- Library: a Facepalm Score filter in the Tags panel on the Games and Flaws tabs narrows your blunders by how obvious they were for a player at your level (Low, Mid, High, or any range on the slider), and each scored blunder carries its Facepalm score in a short explanation on hover or tap.
+
+### Changed
+
+- Train: the red dot now clears when you start a training session, not when you open Train.
+- Analysis: opening a game at a move that has a tactic tag no longer opens the tag's line by itself. The board lands on the move that was played, so Back and Forward step through the game. Click the tag or use the Explain bar to open the line.
+- Library: the red dot for Import now stays until your first game is imported, instead of clearing when you open the Import tab. If you have nothing to import, it moves on after three active days.
+- Openings: the sidebar no longer shows a red dot on Bookmarks. Existing accounts start with the new route already complete.
+- Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
+- Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
+- Library filters: the Tags panel now starts with Best Moves, followed by Flaws and the Facepalm Score.
+- Blunder check: running out of time on a good move now costs one point from the sequence's pot instead of the whole pot (a gray +0 when the pot is empty). Running out of time on the blunder still counts as missing it.
+- Blunder check: blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
+- Blunder check: the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
+- Facepalm score: computed on the fly from the stored facts, so the blunder check and the library always use the current model (no visible change yet).
+- Facepalm score now also takes missed wins of material into account, mainly through how likely a player at your level is to find the winning move. The blunder check was re-tuned with new labels and now also serves somewhat less obvious blunders.
+- Facepalm score: refitted on more of your labelled blunders. It now weighs the material a blunder loses or misses over the whole engine line, earlier moves counting most, instead of at one point three moves in, so missed wins count for more. Scores change for every blunder (the library chip, the Facepalm tag and the blunder-check selection all follow), and a blunder that loses no material and whose best move's likelihood is unknown no longer gets a score.
+- Internal: removed the stored facepalm score and the old line-loss columns; the score is computed from the stored facts.
+- Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
+- Blunder check: every sequence now opens paused on its starting position with the last played move highlighted, and the host tells you which side you play and whose turn it is. Press Ready when you have looked at the position: the opponent's move and the 12-second timer only start then. Your very first sequence also explains there how the drill runs.
+- Train: the Today page now shows Puzzles and Blunder check as two rows on one card, and your session streak needs every mode that is switched on. Each mode has its own session size (6 for blunder check by default); set a mode to 0 to turn it off, but never both. A mistake you met in one mode rests for 7 days before it can appear in the other.
+- Train: the Blunder check tab is gone, it lives on the Today page now, and the drill still runs full screen and returns you to Today. After you finish one mode, the main button on the score screen continues with the other if it is still due.
+- Train: the weekly medal window now groups all your medals by week instead of showing one window per board.
+
+### Fixed
+
 - Analysis: forced mates now rank above any other engine line in the Stockfish card, shortest mate first, so a mate in one gets the best-move star and the solid arrow instead of sitting below a large winning eval.
 - Engine analysis: the Stockfish line saved behind each mistake and blunder (which also drives puzzle solutions and tactic tags) is no longer cut off after one or two moves for newly analyzed games, which happened in about a quarter of positions.
 - Engine analysis: opening positions whose saved Stockfish line had been cut short are now re-analyzed and repaired the next time they come up, instead of passing the short line on to newly analyzed games.
 - Analysis board and puzzle and blunder-check solutions: the Stockfish lines no longer shrink to one or two moves, or show the same move twice, when a search ends. They keep the last complete line, and the analysis board's move grades and gem badges no longer take their evaluation from a cut-off search.
 - Engine analysis: Stockfish lines that were saved cut to one or two moves in older games are being re-searched in the background, so puzzle solutions and tactic tags fill in for those games too (Phase 252).
-- Blunder check: coming back to a sequence you left in the middle of a move no longer drops you onto a clock that has already run out. Once the move's time is up it counts as a timeout, as it would have if you had stayed, and the sequence waits on the Ready gate with the position so far, so the next move's clock starts only when you press Ready. If the timed-out move was the blunder or the sequence's last move, the sequence's solution opens instead.
-- Train: "Continue with Blunder Check" and the Blunder Check Start button no longer bounce back to the Today page when the tab still remembered a solution from an earlier, already finished blunder check session.
 
 ## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
 
@@ -1853,7 +1887,10 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.29...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.32...HEAD
+[v2.32]: https://github.com/flawchess/flawchess/compare/v2.31...v2.32
+[v2.31]: https://github.com/flawchess/flawchess/compare/v2.30...v2.31
+[v2.30]: https://github.com/flawchess/flawchess/compare/v2.29...v2.30
 [v2.29]: https://github.com/flawchess/flawchess/compare/v2.28...v2.29
 [v2.28]: https://github.com/flawchess/flawchess/compare/v2.27...v2.28
 [v2.27]: https://github.com/flawchess/flawchess/compare/v2.26...v2.27

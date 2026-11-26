@@ -94,7 +94,8 @@ Last updated: 2026-11-26
 
 ## Not checked yet
 
-- [ ] Home, Welcome, Auth, Privacy
+- [x] Auth (/login) in landscape (2026-11-26): logo and tagline move into a left column beside the Sign In / Register card from 640px wide (`sm:landscape:`). The stacked page was ~780px tall, so the card ran past the fold on landscape tablets, the Fold and 1280x800. Now no page scroll at 933x617, 1024x700, 1180x740, 1280x800; 816x528 and 852x360 scroll 28px (only the "Create one" line). Portrait: 80px logo beside the title and tagline instead of above them; 375x647 no longer scrolls (was 780px tall), and at 375x553 (Safari) the Log In button ends at 548px, above the fold
+- [ ] Home, Welcome, Privacy; Forgot/Reset password pages (same stacked logo, smaller card)
 - [ ] Filter drawers, settings sheet, dialogs on small heights
 - [ ] Activity and Admin (superuser only, low priority)
 

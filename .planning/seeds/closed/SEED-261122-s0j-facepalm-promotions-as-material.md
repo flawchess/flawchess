@@ -1,6 +1,6 @@
 ---
 id: SEED-261122-s0j
-status: closed
+status: closed. Milestone v2.31.
 closed: 2026-11-23
 closed_reason: shipped as Phase 262 (promotions as material, key-move gate on the type rule, refit; release #506; prod promotion pass 124,216 rows). The benchmark DB pass stays with SEED-261120-bzq
 promoted_to: Phase 262 (2026-11-23)

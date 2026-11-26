@@ -1,6 +1,6 @@
 ---
 id: SEED-261115-d0t
-status: closed. Resolved by Phase 255 (squash-merge 6fd0ff2f2 on main, 2026-11-15; unreleased). Completion is stored server-side on users.prompt_state.feature_route. Owner decision D-23 added during planning: a locked step pauses the route. Left open: review Info items IN-01..IN-05 (255-REVIEW-DISPOSITION.md) and a multi-day lock without a games delete keeping the old current stamp.
+status: closed. Resolved by Phase 255 (squash-merge 6fd0ff2f2 on main, 2026-11-15, release #484). Completion is stored server-side on users.prompt_state.feature_route. Owner decision D-23 added during planning: a locked step pauses the route. Left open: review Info items IN-01..IN-05 (255-REVIEW-DISPOSITION.md) and a multi-day lock without a games delete keeping the old current stamp. Milestone v2.30.
 promoted_to: Phase 255 (2026-11-15, owner: build now while Phases 252 and 254 wait; completion stored server-side)
 promoted: 2026-11-15
 planted: 2026-11-15

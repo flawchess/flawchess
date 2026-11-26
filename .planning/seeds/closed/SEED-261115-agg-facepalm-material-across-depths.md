@@ -1,6 +1,6 @@
 ---
 id: SEED-261115-agg
-status: closed
+status: closed. Milestone v2.30.
 closed: 2026-11-18
 closed_reason: shipped as Phase 256 (refit on the decaying mean over odd depths, squash-merge b2a66e3b7, release #486). Successor: SEED-261117-hfb (validation against Lichess puzzle ratings)
 promoted_to: Phase 256 (2026-11-16)

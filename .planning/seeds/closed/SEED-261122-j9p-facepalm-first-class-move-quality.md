@@ -1,6 +1,6 @@
 ---
 id: SEED-261122-j9p
-status: closed
+status: closed. Milestone v2.31.
 closed: 2026-11-22
 closed_reason: implemented as Phase 260 (8th Facepalm row in MoveStats, dark red eval-chart dot, Facepalm/Blunder/Mistake Flaws tags, range filter removed); merged to main 2026-11-22, not yet released
 promoted_to: Phase 260 (2026-11-22)

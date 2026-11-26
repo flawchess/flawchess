@@ -1,6 +1,6 @@
 ---
 id: SEED-261108-dk0
-status: closed. Resolved by Phases 248 (release #469), 249 and 250 (release #475) and 251 (squash e79efcf69 on main, 2026-11-19, release #491).
+status: closed. Resolved by Phases 248 (release #469), 249 and 250 (release #475) and 251 (squash e79efcf69 on main, 2026-11-19, release #491). Milestone v2.30.
 planted: 2026-11-08
 planted_during: v2.27, phase 246 (training-features research session)
 trigger_when: after the Maia-stats-on-game_flaws phase (see Breadcrumbs) lands; that phase opens the next milestone, and blunder check follows it

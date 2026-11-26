@@ -1,6 +1,6 @@
 ---
 id: SEED-261110-p7k
-status: closed
+status: closed. Milestone v2.30.
 closed: 2026-11-15
 closed_reason: shipped as Phase 250 (facepalm-blunder selection); plan 250-10 (refit on repaired lines) is superseded by Phase 254 (254-CONTEXT D-11). Successor: SEED-261114-mg7
 planted: 2026-11-10

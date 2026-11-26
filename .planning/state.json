@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.29",
+  "milestone": "v2.32",
   "phases": [
     {
       "number": "1",
@@ -317,12 +317,32 @@
       "number": "244",
       "name": "246. v2.29 phases",
       "status": "complete"
+    },
+    {
+      "number": "247",
+      "name": "251, 253-256. v2.30 phases",
+      "status": "complete"
+    },
+    {
+      "number": "257",
+      "name": "262. v2.31 phases",
+      "status": "complete"
+    },
+    {
+      "number": "263",
+      "name": "v2.32 phase",
+      "status": "complete"
+    },
+    {
+      "number": "252",
+      "name": "Short Engine Line Repair Backfill (standalone, 6/10)",
+      "status": "in_progress"
     }
   ],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd-execute-phase 252",
+    "label": "Continue Phase 252",
+    "reason": "v2.30-v2.32 closed; Phase 252 plans 07-10 (prod re-walk, benchmark repair, zone refresh) remain"
   },
-  "updated_at": "2026-11-24T04:07:50.278Z"
+  "updated_at": "2026-11-26T12:00:00.000Z"
 }

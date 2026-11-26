@@ -19,7 +19,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
   <img alt="Python" src="https://img.shields.io/badge/python-3.14-blue" />
   <img alt="React" src="https://img.shields.io/badge/react-19-blue" />
-  <img alt="FastAPI" src="https://img.shields.io/badge/fastapi-0.115-green" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/fastapi-0.141-green" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/postgresql-18-blue" />
 </p>
 
@@ -32,8 +32,10 @@ A free, open-source chess analysis platform. Import your games from chess.com an
 ## Features
 
 - **FlawChess Engine**: an in-browser engine that ranks your moves by expected practical score: the best move you'll actually pull off against an opponent who defends like a real player at your level. Fuses Stockfish's objective evaluation with Maia's human move-prediction (expectimax inside an MCTS budget allocator), and surfaces the traps and swindles a conventional engine ignores.
-- **Game & tactic analysis**: Stockfish over your entire game history, with every mistake tagged by the tactic behind it (fork, pin, skewer, and 20+ motifs), blunder-rate trends over time, and gem-move detection for the only good move most players at your rating would miss, plus an Explain bar on every mistake and blunder that plays the better move (Best) or the refutation (Punish) right on the board.
-- **Personalized puzzle training**: a spaced-repetition drill built from your own blunders rather than a generic puzzle set. Each session mixes real blunders with quiet positions where several moves are fine, so you commit to "one critical move or several fine moves?" before playing; positions you miss come back a few days later and ones you solve after ten days, until solved twice in a row and retired. Mastered and parked puzzles stay browsable in an Archive tab.
+- **Game & tactic analysis**: Stockfish over your entire game history, with every mistake tagged by the tactic behind it (fork, pin, skewer, and 20+ motifs), blunder-rate trends over time, facepalm blunders (the ones that should have been easy to see at your level), and gem-move detection for the only good move most players at your rating would miss, plus an Explain bar on every mistake and blunder that plays the better move (Best) or the refutation (Punish) right on the board.
+- **Personalized training**: two modes on a schedule of training days you pick, with a session streak.
+  - **Personalized Puzzles**: a spaced-repetition drill built from your own blunders rather than a generic puzzle set. Each session mixes real blunders with quiet positions where several moves are fine, so you commit to "one critical move or several fine moves?" before playing; positions you miss come back after 4 days and ones you solve after 10, until solved twice in a row and retired. Mastered and parked puzzles stay browsable in an Archive tab.
+  - **Blunder Check**: not deep calculation, just a quick sanity check. Move sequences from real games are replayed, and you call each move good or blunder before it's played, then find a better move. The blunders are facepalm blunders matched to your level, so the drill builds the habit of a fast last look before committing to a move.
 - **Human-like bots**: 24 named opponents driven by the FlawChess Engine, spanning four playing styles (Attacker, Trickster, Grinder, Wall) across six approximate rating rungs from 800 to 1800, each a fully pinned personality with its own opening book, resign and draw-offer policy, and bio. Clocked play, and every finished game lands in your library as an analyzable game like any other.
 - **Endgame analytics**: WDL by endgame type (rook, minor piece, pawn, queen, mixed), conversion rates when up material and recovery rates when down, Endgame ELO timeline per platform/time control, and LLM-narrated personalized feedback explaining what your stats mean.
 - **Opening explorer & insights**: step through any position and see your WDL per candidate move; an automatic 16-half-move scan surfaces opening strengths and weaknesses with deep-links into the explorer; works for scouting opponents too.
@@ -49,7 +51,7 @@ A free, open-source chess analysis platform. Import your games from chess.com an
 | Layer | Technology |
 |-------|------------|
 | Backend | FastAPI, Python 3.14, SQLAlchemy 2.x, Alembic |
-| Frontend | React 19, TypeScript, Vite 5, Tailwind CSS |
+| Frontend | React 19, TypeScript, Vite 8, Tailwind CSS |
 | Database | PostgreSQL 18 |
 | Chess | python-chess (Zobrist hashing), chess.js, react-chessboard |
 | Auth | FastAPI-Users (JWT + Google OAuth) |

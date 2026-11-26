@@ -51,25 +51,25 @@ const FEATURES: {
     heading: 'Game and Tactic Analysis',
     desc: [
         'Run Stockfish over your entire chess.com and lichess history.',
-        'Understand, replay, and learn from your blunders: mistakes are tagged with the tactic behind them (fork, pin, skewer, and 20+ motifs).',
+        'Every mistake is tagged with the tactic behind it (fork, pin, skewer, and 20+ motifs), and you can filter your whole history by tactic, depth, and severity.',
+        'Spot your facepalm blunders: the ones that should have been easy to see at your level.',
         'Track your blunder rate over time, and see how often you fall for each tactic versus your opponents.',
         'Discover gem moves: the only good move in a position that most players at your rating would miss.',
-        'Filter your whole game history by tactic, depth, and severity.',
     ],
-    screenshot: { src: '/screenshots/game-card.png', alt: 'Library game card showing Stockfish eval chart, board with best-move and move-played arrows, and missed/allowed tactic chips (fork, pin)' },
+    screenshot: { src: '/screenshots/game-card-2.png', alt: 'Library game card showing a facepalm blunder on the board, the Stockfish eval chart, move-quality counts, and allowed tactic and context chips' },
     imagePosition: 'left',
   },
   {
     slug: 'train',
     icon: Puzzle,
-    heading: 'Personalized Puzzle Training',
+    heading: 'Personalized Training',
     desc: [
-        'Every puzzle is built from your own blunders, not a generic puzzle set.',
-        'Is there only one good move, or several? Commit before you play. Quiet positions are mixed in, so there isn\'t always a tactic waiting.',
-        'Spaced repetition brings a missed position back a few days later and a solved one after ten days, until you\'ve solved it twice in a row.',
+        'Personalized Puzzles: every puzzle comes from your own blunders. Decide whether there\'s one good move or several before you play, and expect quiet positions without a tactic.',
+        'Spaced repetition brings a missed puzzle back after 4 days and a solved one after 10, until you\'ve solved it twice in a row.',
+        'Blunder Check: not deep calculation, just a quick sanity check. Replay a move sequence from a real game and call each move good or blunder before it\'s played, to build the habit that catches facepalm blunders.',
         'Pick your training days and build a session streak.',
     ],
-    screenshot: { src: '/screenshots/train.png', alt: 'Train session reveal screen showing the guess verdict, the move played, the best move, and the blunder from the original game' },
+    screenshot: { src: '/screenshots/personalized-puzzle.png', alt: 'Personalized puzzle solved: the best move arrow on the board, the coach verdict with points earned, the original game blunder, and the engine line' },
     imagePosition: 'right',
   },
   {
@@ -147,7 +147,7 @@ const FAQ_ITEMS: {
     value: 'improve',
     question: 'How can I improve my chess with FlawChess?',
     answer:
-      'In three ways. First, analysis finds the flaws: Stockfish runs over your whole chess.com and lichess history and tags mistakes with missed and allowed tactics. Second, training helps you fix them: your own blunders come back as puzzles on a spaced-repetition schedule, mixed with quiet positions where several moves are fine, until the patterns stick. Third, you can practise against human-like bots powered by the FlawChess Engine: 24 named opponents with different ELO ratings and playing style. Every game you finish becomes an analyzable game in your library like any other.',
+      'In three ways. First, analysis finds the flaws: Stockfish runs over your whole chess.com and lichess history and tags mistakes with missed and allowed tactics. Second, training helps you fix them: your own blunders come back as puzzles on a spaced-repetition schedule, mixed with quiet positions where several moves are fine, until the patterns stick, and Blunder Check replays move sequences from real games and has you call each move good or blunder before it is played, building the habit that prevents easy-to-see blunders. Third, you can practise against human-like bots powered by the FlawChess Engine: 24 named opponents with different ELO ratings and playing style. Every game you finish becomes an analyzable game in your library like any other.',
   },
   {
     value: 'flawchess-engine',
@@ -332,7 +332,7 @@ export function HomePageContent() {
               <div className="absolute left-1/2 top-1/2 h-10 w-72 -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.35),transparent_70%)] blur-md" />
             </div>
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              Find and fix the flaws in your game. Free full-game analysis of every chess.com and lichess game: tactics, openings, endgames, and time management.
+              Find and fix your chess flaws. Analyze your chess.com and lichess games for free, train on puzzles built from your own blunders, and play human-like bots.
             </p>
             <div className="mt-8 flex flex-row items-center justify-center gap-3">
               <Button

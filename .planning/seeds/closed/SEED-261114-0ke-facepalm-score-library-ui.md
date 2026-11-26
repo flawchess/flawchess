@@ -1,6 +1,6 @@
 ---
 id: SEED-261114-0ke
-status: closed
+status: closed. Milestone v2.30.
 closed: 2026-11-15
 closed_reason: shipped as Phase 253 (facepalm score in the library UI), released in #478
 promoted_to: Phase 253 (2026-11-14, owner: build now, while Phase 250 waits for the Phase 252 backfill; overrides the trigger below)
