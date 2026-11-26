@@ -1,11 +1,13 @@
 ---
 id: SEED-261121-jey
-status: dormant
+status: closed
+closed: 2026-11-26
+closed_reason: shipped as a direct home page change (no phase). Personalized Training is the hero feature; the owner settled the open question by deciding to post about facepalm blunders and Blunder Check
 planted: 2026-11-21
 planted_during: /gsd-explore session after the 2026-11-20 release (no active phase)
 trigger_when: when the owner decides to push training in outbound content (Reddit, lichess blog, data stories); or when Blunder Check has about 4 weeks of usage and retention data (from about 2026-12-17); or at the next milestone planning that touches the home page or marketing
 scope: small to medium, one phase (hero and feature-order rework in Home.tsx, new copy, new screenshots). Home page and messaging only.
-updated: 2026-11-26 (Blunder Check and the training tagline shipped; hero reorder still open)
+updated: 2026-11-26 (closed: hero reorder shipped)
 ---
 
 # SEED-261121-jey: Training-first home page
@@ -14,7 +16,32 @@ Reposition the home page around the training loop (import your games, find your 
 exactly those) instead of leading with the FlawChess Engine. Add Blunder Check, which is missing
 from the home page entirely.
 
-## Progress (2026-11-26)
+## Closed (2026-11-26)
+
+The owner decided to push training in outbound content (planned Reddit or lichess blog posts about
+facepalm blunders and Blunder Check), which settled the open question. Shipped the same day:
+
+- Section order in `Home.tsx`: Personalized Training (hero), Game and Tactic Analysis, FlawChess
+  Engine, Bots, Openings, Endgames, Time Management. Analysis is second, not the engine as
+  recommended below: readers of a facepalm post find the facepalm bullet right under the hero, and
+  the engine now sits directly above the bots it drives.
+- The engine section lost its gold accent and looks like every other section.
+- Hero bullets trimmed from four to three (streak bullet dropped, repetition intervals removed).
+- FAQ: the engine question moved from second to fourth.
+- `README.md` intro, top screenshot and feature order follow the same order.
+- A schema.org `WebApplication` block on the home page; GitHub repo description, homepage and
+  topics updated.
+
+Not done, left to the owner:
+
+- No separate Blunder Check section and no Blunder Check screenshot. It is the third hero bullet.
+- `frontend/public/og-image.jpg` still says "Free Chess Analytics" over endgame gauges. It is the
+  link preview for any post that links flawchess.com.
+- The hero heading is still "Personalized Training".
+- The cohort numbers below were not re-run. The decision was made on the positioning argument,
+  not on new data.
+
+## Progress (2026-11-26, before the reorder)
 
 Done in `57d3fe2db`, `493edeefd` and `8a6f265bf` (copy only, no layout change):
 
