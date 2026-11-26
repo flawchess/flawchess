@@ -15,7 +15,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
-import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { trackEvent } from '@/lib/analytics';
 import { hasImportedGames } from '@/hooks/useUserProfile';
 import { peekReturnTo } from '@/lib/returnTo';
@@ -25,6 +24,8 @@ import type { LucideIcon } from 'lucide-react';
 // Feature sections — the first entry is rendered in the hero (desktop right column +
 // mobile standalone section); the rest alternate image left/right below.
 // All screenshots are landscape orientation with a 2fr/3fr text/image ratio.
+// Order follows the pitch: training (the payoff) in the hero, then the analysis that
+// feeds it, then the engine and the bots it drives, then the statistics pages.
 const FEATURES: {
   slug: string;
   icon: LucideIcon;
@@ -34,15 +35,15 @@ const FEATURES: {
   imagePosition: 'left' | 'right';
 }[] = [
   {
-    slug: 'flawchess-engine',
-    icon: ChessKnight,
-    heading: 'Your Best Practical Move',
+    slug: 'train',
+    icon: Puzzle,
+    heading: 'Personalized Training',
     desc: [
-        'The FlawChess Engine shows your best practical move, not just the objective one: every move is scored by how likely you are to find and execute it, including the follow-ups.',
-        'Judged against a typical human opponent, not perfect defense: each move is scored against the replies a player at their level would realistically pick, so the practical best can differ from the Stockfish best.',
-        'Tuned to your level: powered by Stockfish + Maia, with a “Play style” dial that shifts from human-realistic to engine-precise.',
+        'Personalized Puzzles: every puzzle comes from one of your own blunders, and a missed one comes back on a spaced-repetition schedule until it sticks.',
+        'Not every position hides a tactic: quiet positions are mixed in, and you decide whether there\'s one good move or several before you play.',
+        'Blunder Check: replay a move sequence from a real game and call each move good or blunder before it\'s played, to build the habit that catches facepalm blunders.',
     ],
-    screenshot: { src: '/screenshots/flawchess-engine.png', alt: 'FlawChess Engine board view showing the practical score and objective Stockfish evaluation for each candidate move' },
+    screenshot: { src: '/screenshots/personalized-puzzle.png', alt: 'Personalized puzzle solved: the best move arrow on the board, the coach verdict with points earned, the original game blunder, and the engine line' },
     imagePosition: 'right',
   },
   {
@@ -60,16 +61,15 @@ const FEATURES: {
     imagePosition: 'left',
   },
   {
-    slug: 'train',
-    icon: Puzzle,
-    heading: 'Personalized Training',
+    slug: 'flawchess-engine',
+    icon: ChessKnight,
+    heading: 'Your Best Practical Move',
     desc: [
-        'Personalized Puzzles: every puzzle comes from your own blunders. Decide whether there\'s one good move or several before you play, and expect quiet positions without a tactic.',
-        'Spaced repetition brings a missed puzzle back after 4 days and a solved one after 10, until you\'ve solved it twice in a row.',
-        'Blunder Check: not deep calculation, just a quick sanity check. Replay a move sequence from a real game and call each move good or blunder before it\'s played, to build the habit that catches facepalm blunders.',
-        'Pick your training days and build a session streak.',
+        'The FlawChess Engine shows your best practical move, not just the objective one: every move is scored by how likely you are to find and execute it, including the follow-ups.',
+        'Judged against a typical human opponent, not perfect defense: each move is scored against the replies a player at their level would realistically pick, so the practical best can differ from the Stockfish best.',
+        'Tuned to your level: powered by Stockfish + Maia, with a “Play style” dial that shifts from human-realistic to engine-precise.',
     ],
-    screenshot: { src: '/screenshots/personalized-puzzle.png', alt: 'Personalized puzzle solved: the best move arrow on the board, the coach verdict with points earned, the original game blunder, and the engine line' },
+    screenshot: { src: '/screenshots/flawchess-engine.png', alt: 'FlawChess Engine board view showing the practical score and objective Stockfish evaluation for each candidate move' },
     imagePosition: 'right',
   },
   {
@@ -150,6 +150,17 @@ const FAQ_ITEMS: {
       'In three ways. First, analysis finds the flaws: Stockfish runs over your whole chess.com and lichess history and tags mistakes with missed and allowed tactics. Second, training helps you fix them: your own blunders come back as puzzles on a spaced-repetition schedule, mixed with quiet positions where several moves are fine, until the patterns stick, and Blunder Check replays move sequences from real games and has you call each move good or blunder before it is played, building the habit that prevents easy-to-see blunders. Third, you can practise against human-like bots powered by the FlawChess Engine: 24 named opponents with different ELO ratings and playing style. Every game you finish becomes an analyzable game in your library like any other.',
   },
   {
+    value: 'data',
+    question: 'What data do you access from my chess.com or lichess account?',
+    answer:
+      'Only your games — no passwords or personal information. Your games are publicly accessible via their APIs, and FlawChess reads them just like any other analysis tool.',
+  },
+  {
+    value: 'free',
+    question: 'Is it free?',
+    answer: 'Yes, FlawChess is completely free to use.',
+  },
+  {
     value: 'flawchess-engine',
     question: 'How does the FlawChess Engine work?',
     answer:
@@ -171,17 +182,6 @@ const FAQ_ITEMS: {
         .
       </>
     ),
-  },
-  {
-    value: 'data',
-    question: 'What data do you access from my chess.com or lichess account?',
-    answer:
-      'Only your games — no passwords or personal information. Your games are publicly accessible via their APIs, and FlawChess reads them just like any other analysis tool.',
-  },
-  {
-    value: 'free',
-    question: 'Is it free?',
-    answer: 'Yes, FlawChess is completely free to use.',
   },
   {
     value: 'mobile',
@@ -259,6 +259,28 @@ const FAQ_JSON_LD = JSON.stringify({
   })),
 }).replace(/</g, '\\u003c');
 
+// schema.org WebApplication: tells crawlers what FlawChess is (a free web app) rather
+// than leaving them to infer it from the copy. `description` mirrors the meta
+// description in index.html; keep the two in sync. `featureList` is derived from
+// FEATURES so it follows the page order. Not eligible for Google's software rich
+// result (that needs a rating or review), but still read as entity data.
+const WEB_APP_JSON_LD = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'FlawChess',
+  url: 'https://flawchess.com/',
+  description:
+    'Find and fix your chess flaws. Analyze your chess.com and lichess games for free, train on puzzles built from your own blunders, and play human-like bots.',
+  applicationCategory: 'GameApplication',
+  operatingSystem: 'Any',
+  browserRequirements: 'Requires JavaScript and a modern browser.',
+  isAccessibleForFree: true,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  featureList: FEATURES.map(({ heading }) => heading),
+  license: 'https://www.gnu.org/licenses/agpl-3.0.html',
+  sameAs: ['https://github.com/flawchess/flawchess'],
+}).replace(/</g, '\\u003c');
+
 // ─── Homepage content (unauthenticated) ───────────────────────────────────────
 
 // Hero shows the first feature in its right column (desktop) and as a standalone
@@ -268,21 +290,6 @@ const heroFeature = FEATURES[0]!;
 const featureSections = FEATURES.slice(1);
 const HeroIcon = heroFeature.icon;
 const heroDescItems = Array.isArray(heroFeature.desc) ? heroFeature.desc : [heroFeature.desc];
-
-// Highlight the product name "FlawChess Engine" in gold wherever it appears in a hero
-// bullet (only the first hero bullet contains it), matching the gold hero title/icon.
-const ENGINE_NAME = 'FlawChess Engine';
-function renderHeroBullet(item: string) {
-  const idx = item.indexOf(ENGINE_NAME);
-  if (idx === -1) return item;
-  return (
-    <>
-      {item.slice(0, idx)}
-      <span style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{ENGINE_NAME}</span>
-      {item.slice(idx + ENGINE_NAME.length)}
-    </>
-  );
-}
 
 export function HomePageContent() {
   const { loginAsGuest, isLoading } = useAuth();
@@ -301,6 +308,7 @@ export function HomePageContent() {
   return (
     <>
       <PublicHeader />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: WEB_APP_JSON_LD }} />
 
       {/* Hero — radial bronze glow is centered on just the hero content (not the
           stacked mobile hero-feature section below, which has its own charcoal section) */}
@@ -387,8 +395,8 @@ export function HomePageContent() {
               Below lg the preview renders as a standalone charcoal section further down. */}
           <div data-testid="hero-feature-preview" className="hidden lg:block">
             <div className="flex items-center gap-4 mb-4">
-              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
-              <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
+              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
             </div>
             <img
               src={heroFeature.screenshot.src}
@@ -396,7 +404,7 @@ export function HomePageContent() {
               className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-              {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
+              {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </div>
         </div>
@@ -412,8 +420,8 @@ export function HomePageContent() {
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 shrink-0" strokeWidth={1.5} style={{ color: FLAWCHESS_ENGINE_ACCENT }} />
-            <h2 className="text-xl lg:text-2xl font-bold" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>{heroFeature.heading}</h2>
+            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
           </div>
           <img
             src={heroFeature.screenshot.src}
@@ -421,7 +429,7 @@ export function HomePageContent() {
             className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-            {heroDescItems.map((item, i) => <li key={i}>{renderHeroBullet(item)}</li>)}
+            {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
           </ul>
         </div>
       </section>
