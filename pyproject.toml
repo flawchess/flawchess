@@ -99,11 +99,14 @@ line-length = 100
 # .planning/research/perf-profiling-* holds throwaway profiling scripts kept for re-measurement.
 # .planning/sketches/ holds throwaway sketch analysis scripts (sketch 013 broke `ruff check .` on main).
 # .planning/phases/*/spike/ holds throwaway spike scripts (phase 259's spike broke `ruff check .` on its branch).
+# .planning/milestones/*-phases/*/spike/ is the same spikes after milestone close archives the phase
+# (the v2.31 close moved phase 259's spike there and broke `ruff check .` on main).
 extend-exclude = [
     "analysis/tilt_study/probes",
     ".planning/research/perf-profiling-*",
     ".planning/sketches",
     ".planning/phases/*/spike",
+    ".planning/milestones/*-phases/*/spike",
 ]
 
 [tool.ruff.lint]
