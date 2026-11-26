@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ExplainBar } from '../ExplainBar';
 import type { ExplainBarState } from '@/lib/explainBar';
+import type { MoveInfo } from '@/lib/moveInfo';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import { FACEPALM_HIGH_CUTOFF, toFacepalmPct } from '@/lib/facepalm';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
@@ -26,6 +27,9 @@ afterEach(() => {
 
 /** A facepalm score at the cut, in whole percent. */
 const FACEPALM_PCT = toFacepalmPct(FACEPALM_HIGH_CUTOFF / 100);
+const ORDINARY_BLUNDER_SCORE = (FACEPALM_HIGH_CUTOFF - 30) / 100;
+const ORDINARY_BLUNDER_PCT = toFacepalmPct(ORDINARY_BLUNDER_SCORE);
+const FACEPALM_BADGE = { score: FACEPALM_HIGH_CUTOFF / 100, type: 'missed_win', byOpponent: false } as const;
 
 const EXPLAIN_BLUNDER: ExplainBarState = {
   kind: 'explain',
@@ -127,29 +131,55 @@ describe('ExplainBar explain state', () => {
     expect(within(tactics).queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('a facepalm names its score before the tactics, in neutral text', () => {
+  it('a facepalm with tactics shows the tactics, not the score (no room for both)', () => {
     renderBar({
       ...EXPLAIN_BLUNDER,
       san: 'Qf6+',
       facepalmPct: FACEPALM_PCT,
+      facepalmBadge: FACEPALM_BADGE,
       tactics: [{ orientation: 'missed', text: 'missed checkmate in 7' }],
     });
-    const headline = screen.getByTestId('analysis-explain-headline');
-    expect(headline.textContent).toBe(`Qf6+???: Facepalm score ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`);
-    const score = screen.getByTestId('analysis-explain-facepalm');
-    expect(score.textContent).toBe(`Facepalm score ${FACEPALM_PCT}%`);
-    expect(score.getAttribute('style')).toBeNull();
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qf6+???: missed checkmate in 7');
+    expect(screen.queryByTestId('analysis-explain-facepalm')).toBeNull();
     const tactic = screen.getByTestId('analysis-explain-tactics').querySelector<HTMLElement>('[data-orientation="missed"]');
     expect(tactic?.style.color).not.toBe('');
   });
 
-  it('a facepalm without tactics shows the score only', () => {
-    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: FACEPALM_PCT });
+  it('a facepalm without tactics names its score, in neutral text', () => {
+    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: FACEPALM_PCT, facepalmBadge: FACEPALM_BADGE });
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(`Qf6+???: Facepalm score ${FACEPALM_PCT}%`);
+    const score = screen.getByTestId('analysis-explain-facepalm');
+    expect(score.getAttribute('style')).toBeNull();
     expect(screen.queryByTestId('analysis-explain-tactics')).toBeNull();
   });
 
-  it('an ordinary blunder has no score text', () => {
+  it('an ordinary blunder without tactics names its score under the plain blunder badge', () => {
+    renderBar({
+      ...EXPLAIN_BLUNDER,
+      san: 'Qf6+',
+      facepalmPct: ORDINARY_BLUNDER_PCT,
+      facepalmBadge: { score: ORDINARY_BLUNDER_SCORE, type: 'allowed_loss', byOpponent: false },
+    });
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
+      `Qf6+??: Facepalm score ${ORDINARY_BLUNDER_PCT}%`,
+    );
+  });
+
+  it('the badge of a scored blunder opens the facepalm explanation, like the move list', async () => {
+    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: FACEPALM_PCT, facepalmBadge: FACEPALM_BADGE });
+    fireEvent.click(screen.getByTestId('analysis-explain-facepalm-popover'));
+    expect(await screen.findByTestId('facepalm-explanation-type')).toBeTruthy();
+  });
+
+  it('a blunder without a popover badge keeps the plain glyph', () => {
+    renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', facepalmPct: ORDINARY_BLUNDER_PCT });
+    expect(screen.queryByTestId('analysis-explain-facepalm-popover')).toBeNull();
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
+      `Qf6+??: Facepalm score ${ORDINARY_BLUNDER_PCT}%`,
+    );
+  });
+
+  it('an ordinary blunder with tactics has no score text', () => {
     renderBar({ ...EXPLAIN_BLUNDER, san: 'Qf6+', tactics: [{ orientation: 'missed', text: 'missed fork in 2' }] });
     expect(screen.queryByTestId('analysis-explain-facepalm')).toBeNull();
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qf6+??: missed fork in 2');
@@ -203,19 +233,18 @@ describe('ExplainBar got-it state', () => {
     ]);
   });
 
-  it('shows the facepalm score in the got-it headline too', () => {
+  it('the got-it headline follows the same rule: tactics win over the facepalm score', () => {
     renderBar({
       ...GOT_IT_MISSED,
       headline: {
         san: 'Qf6+',
         severity: 'blunder',
         facepalmPct: FACEPALM_PCT,
+        facepalmBadge: FACEPALM_BADGE,
         tactics: [{ orientation: 'missed', text: 'missed checkmate in 7' }],
       },
     });
-    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
-      `Qf6+???: Facepalm score ${FACEPALM_PCT}% \u00B7 missed checkmate in 7`,
-    );
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qf6+???: missed checkmate in 7');
   });
 
   it('without a headline shows only the line stepper and Got it, no line buttons', () => {
@@ -283,6 +312,39 @@ describe('ExplainBar placements', () => {
 });
 
 describe('ExplainBar move info (no Best / Punish lines)', () => {
+  const renderInfo = (moveInfo: MoveInfo) =>
+    render(
+      <ExplainBar
+        state={{ kind: 'hidden' }}
+        onOpenLine={vi.fn()}
+        onGotIt={vi.fn()}
+        stepper={makeStepper()}
+        placement="mid"
+        moveInfo={moveInfo}
+      />,
+    );
+
+  it('words a gem and a great move vaguely, never the Maia number, and opens the popover', async () => {
+    const rarity = { maiaProbability: 0.04, elo: 1614, byOpponent: false };
+    renderInfo({ kind: 'quality', san: 'Bxe4', quality: 'gem', facepalm: false, rarity: { tier: 'gem', ...rarity } });
+    const headline = screen.getByTestId('analysis-move-info-headline');
+    expect(headline.textContent).toBe('Bxe4Gem move: Gem, rarely found at 1614 ELO');
+    fireEvent.click(screen.getByTestId('analysis-move-info-gem-popover'));
+    // The number lives in the popover only.
+    expect(await screen.findByText(/4% chance of being played/)).toBeTruthy();
+    cleanup();
+
+    renderInfo({ kind: 'quality', san: 'Nf3', quality: 'great', facepalm: false, rarity: { tier: 'great', ...rarity } });
+    expect(screen.getByTestId('analysis-move-info-headline').textContent).toBe('Nf3Great move: Great move, often missed at 1614 ELO');
+    expect(screen.getByTestId('analysis-move-info-great-popover')).toBeTruthy();
+  });
+
+  it('a gem without detection data keeps the bare label and a plain badge', () => {
+    renderInfo({ kind: 'quality', san: 'Bxe4', quality: 'gem', facepalm: false });
+    expect(screen.getByTestId('analysis-move-info-headline').textContent).toBe('Bxe4Gem move: Gem');
+    expect(screen.queryByTestId('analysis-move-info-gem-popover')).toBeNull();
+  });
+
   it('renders nothing when hidden and no move info is passed', () => {
     render(
       <ExplainBar

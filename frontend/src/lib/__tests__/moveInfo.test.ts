@@ -57,6 +57,52 @@ describe('resolveMoveInfo', () => {
     }
   });
 
+  it('carries the move-list detection data for a gem and a great move', () => {
+    const gem = resolveMoveInfo(
+      inputs({
+        lastMoveMarker: { square: 'f3', gem: true },
+        moveListMarker: {
+          missedMotif: null,
+          allowedMotif: null,
+          missedDepth: null,
+          allowedDepth: null,
+          ply: 10,
+          gem: true,
+          gemMaiaProbability: 0.04,
+          gemElo: 1614,
+          gemByOpponent: true,
+        },
+      }),
+    );
+    expect(gem).toMatchObject({ quality: 'gem', rarity: { tier: 'gem', maiaProbability: 0.04, elo: 1614, byOpponent: true } });
+    const great = resolveMoveInfo(
+      inputs({
+        lastMoveMarker: { square: 'f3', great: true },
+        moveListMarker: {
+          missedMotif: null,
+          allowedMotif: null,
+          missedDepth: null,
+          allowedDepth: null,
+          ply: 10,
+          great: true,
+          greatMaiaProbability: 0.5,
+          greatElo: 1500,
+        },
+      }),
+    );
+    expect(great).toMatchObject({ quality: 'great', rarity: { tier: 'great', maiaProbability: 0.5, elo: 1500, byOpponent: false } });
+  });
+
+  it('has no rarity when the move-list entry disagrees with the board badge', () => {
+    const info = resolveMoveInfo(
+      inputs({
+        lastMoveMarker: { square: 'f3', gem: true },
+        moveListMarker: { missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, ply: 10 },
+      }),
+    );
+    expect(info).not.toHaveProperty('rarity');
+  });
+
   it('has no quality when the board shows no badge', () => {
     expect(resolveMoveInfo(inputs())).toEqual({ kind: 'quality', san: 'Nf3', quality: null, facepalm: false });
   });
@@ -84,6 +130,17 @@ describe('resolveMoveInfo', () => {
       }),
     );
     expect(info).toEqual({ kind: 'quality', san: 'Qh5', quality: 'mistake', facepalm: false });
+  });
+
+  it('uses the flaw headline for an ordinary blunder that carries a facepalm score', () => {
+    const info = resolveMoveInfo(
+      inputs({
+        san: 'Qh5',
+        flawMarkers: [marker({ ply: 10, severity: 'blunder', facepalm_score: 0.4 })],
+        lastMoveMarker: { square: 'h5', severity: 'blunder' },
+      }),
+    );
+    expect(info).toMatchObject({ kind: 'flaw', headline: { san: 'Qh5', facepalmPct: 40 } });
   });
 
   it('reads a sideline move from its board badge (no main-line ply)', () => {

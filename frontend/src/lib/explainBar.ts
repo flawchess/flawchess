@@ -8,10 +8,9 @@
  * eslint `max-depth` (4) well clear.
  */
 
-import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
+import type { FacepalmType, FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
 import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
-import { flawMoveCategory } from '@/lib/moveStatsCounts';
 import { toFacepalmPct } from '@/lib/facepalm';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
@@ -61,6 +60,13 @@ export interface ExplainTactic {
   text: string;
 }
 
+/** What the headline's facepalm popover needs: the raw 0..1 score, the type and whose blunder. */
+export interface ExplainFacepalmBadge {
+  score: number;
+  type: FacepalmType;
+  byOpponent: boolean;
+}
+
 /** The flaw the bar is about: its move, severity badge and tactics as text. */
 export interface ExplainHeadline {
   san: string | null;
@@ -68,10 +74,16 @@ export interface ExplainHeadline {
   /** Every visible tactic on this flaw (missed first, then allowed); empty: none. */
   tactics: ExplainTactic[];
   /**
-   * Set on a facepalm blunder only: the whole-percent facepalm score (toFacepalmPct). The badge
-   * reads "???" and the headline names the score.
+   * Set on a scored blunder (facepalm or not): the whole-percent facepalm score (toFacepalmPct).
+   * The headline names it when the flaw has no tactics.
    */
   facepalmPct?: number;
+  /**
+   * Set on a blunder that carries both score and type: its "??" / "???" badge opens the facepalm
+   * explanation popover, as in the move list (FacepalmGlyphBadge picks the glyph from the raw
+   * score). Without it the badge is a plain severity glyph, again matching the move list.
+   */
+  facepalmBadge?: ExplainFacepalmBadge;
 }
 
 export type ExplainBarState =
@@ -133,6 +145,19 @@ function explainTactics(marker: FlawMarker): ExplainTactic[] {
   });
 }
 
+/** The facepalm fields of a blunder's headline; empty for a mistake or an unscored blunder. */
+function facepalmFields(marker: FlawMarker): Pick<ExplainHeadline, 'facepalmPct' | 'facepalmBadge'> {
+  const score = marker.facepalm_score;
+  if (marker.severity !== 'blunder' || score == null) return {};
+  const type = marker.facepalm_type;
+  return {
+    facepalmPct: toFacepalmPct(score),
+    // Same gate as the move list (useAnalysisGemMarkers): the popover names the type, so score and
+    // type travel together. Either color: the popover switches its wording for the opponent.
+    ...(type != null ? { facepalmBadge: { score, type, byOpponent: !marker.is_user } } : {}),
+  };
+}
+
 /** The headline for the mistake/blunder at `ply`, or null when there is none. */
 export function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, ply: number): ExplainHeadline | null {
   const marker = eligibleExplainMarker(flawMarkers, ply);
@@ -141,9 +166,7 @@ export function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, pl
     san: marker.move_san,
     severity: marker.severity,
     tactics: explainTactics(marker),
-    ...(flawMoveCategory(marker) === 'facepalm' && marker.facepalm_score != null
-      ? { facepalmPct: toFacepalmPct(marker.facepalm_score) }
-      : {}),
+    ...facepalmFields(marker),
   };
 }
 

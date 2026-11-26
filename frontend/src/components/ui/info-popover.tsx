@@ -18,11 +18,37 @@ interface InfoPopoverProps {
    * trigger drops the default brown tint so the glyph keeps its own color.
    */
   triggerContent?: React.ReactNode
+  /**
+   * Close when a container holding the trigger scrolls. For badges inside a
+   * scrolling list (the analysis move list), where the anchored popover would
+   * otherwise ride over neighbouring UI. Leave off for long-text popovers that
+   * the user scrolls the page to read.
+   */
+  closeOnScroll?: boolean
 }
 
-function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle, triggerContent }: InfoPopoverProps) {
+function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle, triggerContent, closeOnScroll = false }: InfoPopoverProps) {
   const [open, setOpen] = useTrackedPopoverOpen(testId)
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const triggerRef = React.useRef<HTMLSpanElement>(null)
+
+  // BUG FIX: Radix Popover keeps the open content anchored to its trigger while an
+  // ancestor scrolls, so a badge popover opened by a tap in the mobile move list
+  // rode along over the chessboard when the user then dragged the list. Opt-in only:
+  // long-text popovers (e.g. the game card accuracy info) must keep scrolling with
+  // the page so the user can read them. With closeOnScroll, any scroll of a container
+  // holding the trigger closes it (what Radix Tooltip does); scrolling inside the
+  // popover content itself does not contain the trigger and is ignored.
+  React.useEffect(() => {
+    if (!open || !closeOnScroll) return
+    const handleScroll = (event: Event) => {
+      const target = event.target
+      const trigger = triggerRef.current
+      if (trigger && target instanceof Node && target.contains(trigger)) setOpen(false)
+    }
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true })
+    return () => window.removeEventListener("scroll", handleScroll, { capture: true })
+  }, [open, closeOnScroll, setOpen])
 
   const handleMouseEnter = () => {
     hoverTimeout.current = setTimeout(() => setOpen(true), 100)
@@ -38,6 +64,7 @@ function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = H
       <PopoverPrimitive.Trigger asChild>
         {/* Use span instead of button to avoid nested <button> when inside CollapsibleTrigger */}
         <span
+          ref={triggerRef}
           role="button"
           tabIndex={0}
           className={cn(

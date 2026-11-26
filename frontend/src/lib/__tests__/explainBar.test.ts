@@ -121,16 +121,39 @@ describe('resolveExplainBarState', () => {
   });
 
   it('carries the whole-percent score on a facepalm blunder at the cut', () => {
+    const score = FACEPALM_HIGH_CUTOFF / PCT_SCALE;
     const state = resolveExplainBarState(
-      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: FACEPALM_HIGH_CUTOFF / PCT_SCALE })] }),
+      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: score, facepalm_type: 'missed_win' })] }),
     );
-    expect(state).toMatchObject({ kind: 'explain', facepalmPct: toFacepalmPct(FACEPALM_HIGH_CUTOFF / PCT_SCALE) });
+    expect(state).toMatchObject({
+      kind: 'explain',
+      facepalmPct: toFacepalmPct(score),
+      facepalmBadge: { score, type: 'missed_win', byOpponent: false },
+    });
   });
 
-  it('has no facepalmPct just below the cut', () => {
+  it('carries score and popover badge on an ordinary blunder too, and flags the opponent', () => {
+    const score = (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE;
     const state = resolveExplainBarState(
-      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: (FACEPALM_HIGH_CUTOFF - 1) / PCT_SCALE })] }),
+      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: score, facepalm_type: 'allowed_loss', is_user: false })] }),
     );
+    expect(state).toMatchObject({
+      kind: 'explain',
+      facepalmPct: toFacepalmPct(score),
+      facepalmBadge: { score, type: 'allowed_loss', byOpponent: true },
+    });
+  });
+
+  it('has a score but no popover badge without a facepalm type (move-list parity)', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: 0.5, facepalm_type: null })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', facepalmPct: 50 });
+    expect(state).not.toHaveProperty('facepalmBadge');
+  });
+
+  it('has no facepalmPct on an unscored blunder', () => {
+    const state = resolveExplainBarState(inputs({ flawMarkers: [marker({ ply: 10, facepalm_score: null })] }));
     expect(state).toMatchObject({ kind: 'explain' });
     expect(state).not.toHaveProperty('facepalmPct');
   });

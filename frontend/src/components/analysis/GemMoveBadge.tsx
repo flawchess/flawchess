@@ -5,7 +5,7 @@
  * two near-identical badges.
  *
  * A gem is a played move that is BOTH the only good move in the position AND
- * one a human at the selected rating almost never finds (Maia policy
+ * one a human at the selected rating rarely finds (Maia policy
  * probability ≤ GEM_MAIA_MAX_PROB). A great move is the same only-good-move
  * rule but a step less rare (Maia probability in (GEM_MAIA_MAX_PROB,
  * GREAT_MAIA_MAX_PROB]). The popover restates the relevant rule and cites the
@@ -26,6 +26,7 @@
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { cn } from '@/lib/utils';
 
 /** Maia probability (0..1) as a percent — one decimal below 1% so a sub-percent
  *  gem (common: gems are ≤5%) never reads as a misleading "0%". */
@@ -39,14 +40,14 @@ const TIER_COPY = {
   gem: {
     heading: (byOpponent: boolean) =>
       byOpponent ? 'Your opponent found a gem move!' : 'Nice, you found a gem move!',
-    rule: 'The only good move here — and one players at this level almost never find.',
+    rule: 'The only good move here — and one players at this level rarely find.',
     ariaLabel: 'Gem move — why this move is a gem',
     testId: 'gem-move-popover',
   },
   great: {
     heading: (byOpponent: boolean) =>
       byOpponent ? 'Your opponent found a great move!' : 'Nice, you found a great move!',
-    rule: 'The only good move here — and one players at this level rarely find.',
+    rule: 'The only good move here — and one players at this level often miss.',
     ariaLabel: 'Great move — why this move is great',
     testId: 'great-move-popover',
   },
@@ -64,6 +65,10 @@ export interface GemMoveBadgeProps {
   byOpponent?: boolean;
   /** Which badge/copy set to render. Defaults to 'gem' so existing call sites are unchanged. */
   tier?: 'gem' | 'great';
+  /** Popover testId, also its Umami popover-open target; defaults to the tier's move-list id. */
+  testId?: string;
+  /** Vertical alignment of the wrapper in its line; the Explain bar matches its plain glyphs. */
+  alignClassName?: string;
 }
 
 export function GemMoveBadge({
@@ -72,20 +77,27 @@ export function GemMoveBadge({
   elo,
   byOpponent = false,
   tier = 'gem',
+  testId,
+  alignClassName,
 }: GemMoveBadgeProps) {
   const showStat = maiaProbability != null && elo != null;
   const copy = TIER_COPY[tier];
   const Icon = tier === 'great' ? GreatMoveIcon : GemIcon;
   return (
     <span
-      className="inline-flex"
+      className={cn('inline-flex', alignClassName)}
       // Stop the tap/click from bubbling to the enclosing move chip button on
       // mobile (HorizontalMoveList) so tapping the badge opens the popover
       // instead of navigating. Harmless on desktop (badge is a sibling there).
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <InfoPopover ariaLabel={copy.ariaLabel} testId={copy.testId} triggerContent={<Icon className={className} />}>
+      <InfoPopover
+        ariaLabel={copy.ariaLabel}
+        testId={testId ?? copy.testId}
+        triggerContent={<Icon className={className} />}
+        closeOnScroll
+      >
         <div className="space-y-1">
           <p className="font-semibold">{copy.heading(byOpponent)}</p>
           <p>{copy.rule}</p>

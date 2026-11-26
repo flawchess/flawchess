@@ -78,7 +78,7 @@ export function UnifiedMovePopover({
                 {/* "this rating", not "your rating": the Maia
                     probability is evaluated at the draggable ELO slider's value,
                     which may sit far from the user's own rating. */}
-                Gem — players at this rating almost never find this.
+                Gem — players at this rating rarely find this.
               </span>
             </td>
           </tr>
@@ -89,7 +89,7 @@ export function UnifiedMovePopover({
               <span className="flex items-center gap-1.5">
                 <GreatMoveIcon className={ICON_CLASS} aria-hidden="true" />
                 {/* Same "this rating" phrasing as the gem line. */}
-                Great — players at this rating rarely find this.
+                Great — players at this rating often miss this.
               </span>
             </td>
           </tr>

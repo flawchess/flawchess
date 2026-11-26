@@ -10,6 +10,7 @@
  */
 
 import { InfoPopover } from '@/components/ui/info-popover';
+import { cn } from '@/lib/utils';
 import { FacepalmExplanation } from '@/components/library/FacepalmExplanation';
 import { BlunderIcon, FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { facepalmScoreLabel, isFacepalmBlunder } from '@/lib/facepalm';
@@ -24,18 +25,30 @@ interface FacepalmGlyphBadgeProps {
   byOpponent?: boolean;
   /** Size class of the move list's marker glyph. */
   className: string;
+  /** Popover testId, also its Umami popover-open target; the Explain bar passes its own. */
+  testId?: string;
+  /** Vertical alignment of the wrapper in its line; the Explain bar matches its plain glyphs. */
+  alignClassName?: string;
 }
 
 /** The "??" / "???" glyph of a scored blunder as the trigger of the facepalm score popover. */
-export function FacepalmGlyphBadge({ score, type, byOpponent = false, className }: FacepalmGlyphBadgeProps) {
+export function FacepalmGlyphBadge({
+  score,
+  type,
+  byOpponent = false,
+  className,
+  testId = 'facepalm-glyph-popover',
+  alignClassName = 'align-middle',
+}: FacepalmGlyphBadgeProps) {
   // Same predicate as the move list's plain-glyph choice (severityIcon), so the two never disagree.
   const Icon = isFacepalmBlunder(score) ? FacepalmBlunderIcon : BlunderIcon;
   return (
-    <span className="inline-flex align-middle" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+    <span className={cn('inline-flex', alignClassName)} onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
       <InfoPopover
         ariaLabel={`${facepalmScoreLabel(score, type)}, what the score means`}
-        testId="facepalm-glyph-popover"
+        testId={testId}
         triggerContent={<Icon className={className} />}
+        closeOnScroll
       >
         <div className="space-y-1">
           <FacepalmExplanation score={score} type={type} audience={byOpponent ? 'opponent' : 'self'} />

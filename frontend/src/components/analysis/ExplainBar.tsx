@@ -6,9 +6,9 @@
  * Phase 245 UAT replaced the single Explain button with two named lines:
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
- * One row: the headline (move, severity badge, the facepalm score when the move is a facepalm and
- * the tactics as colored text, e.g. "c3 [blunder badge]: missed discovered-attack in 2" or
- * "Qf6+ [facepalm badge]: Facepalm score 76% · missed checkmate in 7", up to two lines) then both buttons. Inside a
+ * One row: the headline (move, severity badge and the tactics as colored text, e.g.
+ * "c3 [blunder badge]: missed discovered-attack in 2"; a blunder without tactics names its facepalm
+ * score instead, "Qf6+ [facepalm badge]: Facepalm score 76%", up to two lines) then both buttons. Inside a
  * line the headline stays and the buttons become a line stepper then Got it (the other
  * line's button is hidden there).
  * Clickable tactic chips live in the move list only.
@@ -24,7 +24,9 @@ import { cn } from '@/lib/utils';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { FacepalmBlunderIcon } from '@/components/icons/SeverityGlyphIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
-import type { MoveInfo, MoveInfoQuality } from '@/lib/moveInfo';
+import { FacepalmGlyphBadge } from '@/components/analysis/FacepalmGlyphBadge';
+import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
+import type { MoveInfo, MoveInfoQuality, MoveRarity } from '@/lib/moveInfo';
 import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type {
   ExplainBarState,
@@ -193,15 +195,44 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
   );
 }
 
-const HEADLINE_BADGE_CLASS = 'ml-1.5 inline-block size-4 align-text-bottom';
-/** Space, middle dot, space: between the facepalm score and the tactics that follow it. */
-const HEADLINE_SCORE_SEPARATOR = ' \u00B7 ';
+// relative -top-0.5: align-text-bottom alone sat the 16px badge 2px low against the move's
+// capitals. A vertical-align offset would raise it past the tight line box and grow the row (a
+// height change between moves resizes the fitted board), and only the 2px above it are free
+// before the line-clamp overflow clips it; relative positioning moves it without touching layout.
+const HEADLINE_BADGE_CLASS = 'relative -top-0.5 ml-1.5 inline-block size-4 align-text-bottom';
+
+/** Testid (and Umami popover-open target) of the headline badge's facepalm popover. */
+const HEADLINE_FACEPALM_POPOVER_TESTID = 'analysis-explain-facepalm-popover';
+
+/**
+ * The headline's severity badge. A blunder with score and type opens the facepalm explanation,
+ * like its glyph in the move list (FacepalmGlyphBadge picks "??" or "???"); anything else is a
+ * plain severity glyph.
+ */
+function HeadlineBadge({ headline }: { headline: ExplainHeadline }): ReactElement {
+  const badge = headline.facepalmBadge;
+  if (badge === undefined) return <MoveQualityIcon quality={headline.severity} className={HEADLINE_BADGE_CLASS} />;
+  return (
+    <FacepalmGlyphBadge
+      score={badge.score}
+      type={badge.type}
+      byOpponent={badge.byOpponent}
+      className={HEADLINE_BADGE_CLASS}
+      testId={HEADLINE_FACEPALM_POPOVER_TESTID}
+      // Same line placement as the plain glyph (HEADLINE_BADGE_CLASS), so the popover badge sits
+      // at the same height and stays inside the line-clamp box.
+      alignClassName="align-text-bottom"
+    />
+  );
+}
 
 /**
  * Same headline in both states, so it stays put when a line opens or closes.
  *
- * One inline text flow: move, badge and colon, then the facepalm score (facepalm only) and the
- * tactics on the same first line, wrapping under the move. The score is neutral text, never tinted. At most two lines; normal wrapping only breaks at spaces and
+ * One inline text flow: move, badge and colon, then the tactics on the same first line, wrapping
+ * under the move. A blunder (facepalm "???" or plain "??") names its facepalm score only when it has
+ * no tactics: the two together overflowed the two lines next to the buttons and clipped the tactic.
+ * The score is neutral text, never tinted. At most two lines; normal wrapping only breaks at spaces and
  * after hyphens ("discovered-|attack"), and line-clamp ellipsizes the rest.
  * leading-tight!: the unlayered mobile .text-sm bump in index.css (line-height 1.5rem)
  * otherwise beats the utility, and two 24px lines outgrow the button row. max-h-10: the
@@ -209,8 +240,8 @@ const HEADLINE_SCORE_SEPARATOR = ' \u00B7 ';
  * than the button height.
  */
 function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
-  const isFacepalm = headline.facepalmPct != null;
   const hasTactics = headline.tactics.length > 0;
+  const showScore = headline.facepalmPct != null && !hasTactics;
   return (
     <span
       data-testid="analysis-explain-headline"
@@ -225,27 +256,60 @@ function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
         >
           {headline.san ?? SEVERITY_NOUN[headline.severity]}
         </span>
-        {isFacepalm ? (
-          <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />
-        ) : (
-          <MoveQualityIcon quality={headline.severity} className={HEADLINE_BADGE_CLASS} />
-        )}
-        {(isFacepalm || hasTactics) && ':'}
+        <HeadlineBadge headline={headline} />
+        {(showScore || hasTactics) && ':'}
       </span>
-      {(isFacepalm || hasTactics) && ' '}
-      {isFacepalm && (
+      {(showScore || hasTactics) && ' '}
+      {showScore && (
         <span data-testid="analysis-explain-facepalm" className="whitespace-nowrap text-foreground">
           Facepalm score {headline.facepalmPct}%
         </span>
       )}
-      {isFacepalm && hasTactics && HEADLINE_SCORE_SEPARATOR}
       <TacticText tactics={headline.tactics} />
     </span>
   );
 }
 
+/**
+ * Rarity in words after a gem's / great move's label. Deliberately vague: the Maia probability is
+ * an estimate (realistic for blitz only), so the number stays in the badge popover.
+ */
+const RARITY_PHRASE: Record<MoveRarity['tier'], string> = {
+  gem: 'rarely found',
+  great: 'often missed',
+};
+
+/** The words after the badge: the label, plus the rarity at the detection ELO for a gem / great. */
+function moveInfoLabel(quality: MoveInfoQuality, rarity: MoveRarity | undefined): string {
+  const label = MOVE_INFO_LABEL[quality];
+  if (rarity === undefined || rarity.elo === null) return label;
+  return `${label}, ${RARITY_PHRASE[rarity.tier]} at ${rarity.elo} ELO`;
+}
+
 /** The badge for a move without Best / Punish lines, the same glyph the board draws. */
-function MoveInfoBadge({ quality, facepalm }: { quality: MoveInfoQuality; facepalm: boolean }): ReactElement {
+function MoveInfoBadge({
+  quality,
+  facepalm,
+  rarity,
+}: {
+  quality: MoveInfoQuality;
+  facepalm: boolean;
+  rarity: MoveRarity | undefined;
+}): ReactElement {
+  // A gem / great with detection data opens the same popover as its move-list badge.
+  if (rarity !== undefined) {
+    return (
+      <GemMoveBadge
+        className={HEADLINE_BADGE_CLASS}
+        maiaProbability={rarity.maiaProbability}
+        elo={rarity.elo}
+        byOpponent={rarity.byOpponent}
+        tier={rarity.tier}
+        testId={`analysis-move-info-${rarity.tier}-popover`}
+        alignClassName="align-text-bottom"
+      />
+    );
+  }
   if (quality === 'book') return <BookIcon className={HEADLINE_BADGE_CLASS} />;
   if (quality === 'blunder' && facepalm) return <FacepalmBlunderIcon className={HEADLINE_BADGE_CLASS} />;
   return <MoveQualityIcon quality={quality} className={HEADLINE_BADGE_CLASS} />;
@@ -261,10 +325,10 @@ function MoveInfoHeadline({ info }: { info: Extract<MoveInfo, { kind: 'quality' 
     >
       <span className="whitespace-nowrap">
         <span className="font-mono font-bold text-foreground">{info.san}</span>
-        {info.quality !== null && <MoveInfoBadge quality={info.quality} facepalm={info.facepalm} />}
+        {info.quality !== null && <MoveInfoBadge quality={info.quality} facepalm={info.facepalm} rarity={info.rarity} />}
         {info.quality !== null && ':'}
       </span>
-      {info.quality !== null && <span className="text-foreground"> {MOVE_INFO_LABEL[info.quality]}</span>}
+      {info.quality !== null && <span className="text-foreground"> {moveInfoLabel(info.quality, info.rarity)}</span>}
     </span>
   );
 }
