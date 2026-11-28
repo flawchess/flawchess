@@ -53,6 +53,7 @@ from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
 from app.repositories import blunder_check_repository
 from app.repositories.game_flaws_repository import _SEVERITY_INT
+from app.repositories.library_repository import VisibleTacticSlot, visible_tactic_slots
 from app.schemas.normalization import Platform, TimeControlBucket
 from app.schemas.train import (
     ArchiveList,
@@ -63,8 +64,14 @@ from app.schemas.train import (
     SolveRecheck,
 )
 from app.services.best_move_candidates import mover_color_for_ply
-from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
-from app.services.facepalm_score import facepalm_expr
+from app.services.blunder_check_feedback import TypeLine, stored_type_line
+from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA
+from app.services.facepalm_score import (
+    FacepalmType,
+    facepalm_expr,
+    facepalm_type_expr,
+    facepalm_type_from_sql,
+)
 from app.services.flaws_service import classify_severity
 from app.services import train_foreign
 from app.services.blunder_check_selection import (
@@ -4792,6 +4799,24 @@ RevealNotAttempted = Literal["not_attempted"]
 
 
 @dataclass(frozen=True)
+class RevealedFlaw:
+    """The game move of a personalized puzzle as a flaw, for the avatar's "Game move:" line.
+
+    `facepalm_score` (raw 0..1) and `facepalm_type` drive the badge and its score popover, and
+    the score is the line's text only when it would otherwise be empty (264 D-23); both None
+    for a mistake or an unscored blunder. `type_line` and the two tactic slots are already
+    gated: a slot that is None is not shown (264 D-01, D-02). Nothing here identifies a game or
+    its owner, so a foreign puzzle carries the block too.
+    """
+
+    facepalm_score: float | None
+    facepalm_type: FacepalmType | None
+    type_line: TypeLine | None
+    allowed_tactic: VisibleTacticSlot | None
+    missed_tactic: VisibleTacticSlot | None
+
+
+@dataclass(frozen=True)
 class RevealedPuzzle:
     """Internal dataclass returned by `reveal_for_puzzle` on a solved puzzle.
 
@@ -4813,36 +4838,110 @@ class RevealedPuzzle:
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: DrillSourceWire
     has_tactic_lines: bool
-    # The game move is a facepalm blunder: the reveal badges it "???" instead of "??".
-    game_move_facepalm: bool
+    # What is known about the game move as a flaw (Phase 264); None for a herring, whose game
+    # move is good.
+    flaw: RevealedFlaw | None
     game_info: blunder_check_repository.GameInfoRow | None = None
 
 
-async def _game_move_is_facepalm(
+async def _game_move_facepalm(
     session: AsyncSession, *, flaw_owner_id: int, game_id: int, ply: int
-) -> bool:
-    """True when the blunder at `ply` is a facepalm blunder (the "???" badge).
+) -> tuple[float | None, FacepalmType | None]:
+    """The facepalm score and type of the blunder at `ply`, for the line's "??" / "???" badge.
 
     `flaw_owner_id` is the game's owner: the solver for an own puzzle, the stranger for a
     foreign blunder. The badge reflects the blunder's own facepalm score, whoever played it.
 
-    The same cut as the library: a blunder whose query-time
-    `facepalm_expr(FACEPALM_LIBRARY_LAMBDA)` reaches FACEPALM_STATS_MIN. A mistake, an unscored
-    row (NULL score) and a missing row are all False. Only the boolean leaves the server, and
-    only behind the reveal's post-attempt gate.
+    The library's live score (`facepalm_expr(FACEPALM_LIBRARY_LAMBDA)`, raw 0..1) and type
+    (`facepalm_type_expr`), so the badge and its popover agree with the analysis move strip
+    (264 D-23). The client derives "???" with `isFacepalmBlunder`, the same 70% cut as
+    FACEPALM_STATS_MIN. A mistake, an unscored row and a missing row give (None, None); the
+    type is nulled with the score, as every library reader does. Only sent behind the reveal's
+    post-attempt gate.
     """
-    score = facepalm_expr(FACEPALM_LIBRARY_LAMBDA)
-    value = (
+    row = (
         await session.execute(
-            select(score).where(
+            select(facepalm_expr(FACEPALM_LIBRARY_LAMBDA), facepalm_type_expr()).where(
                 GameFlaw.user_id == flaw_owner_id,
                 GameFlaw.game_id == game_id,
                 GameFlaw.ply == ply,
                 GameFlaw.severity == _SEVERITY_INT["blunder"],
             )
         )
-    ).scalar_one_or_none()
-    return value is not None and float(value) >= FACEPALM_STATS_MIN
+    ).one_or_none()
+    if row is None or row[0] is None:
+        return None, None
+    return float(row[0]), facepalm_type_from_sql(row[1])
+
+
+# The game_positions rows the flaw block reads, as ply offsets from the flaw ply: the pre-move
+# eval (decided-lost gate), the best line at the flaw ply, the refutation line after it.
+_FLAW_BLOCK_PLY_OFFSETS: Final = (-1, 0, 1)
+
+
+async def _revealed_flaw(
+    session: AsyncSession, *, game: Game, flaw_row: GameFlaw | None, flaw_owner_id: int, ply: int
+) -> RevealedFlaw:
+    """The flaw block of a personalized puzzle's game move (Phase 264 D-01, D-02, D-07).
+
+    One extra query: the stored lines and the pre-move eval, three `game_positions` rows by
+    primary key. The type line is replayed from the stored Stockfish lines by the function
+    blunder check uses (`stored_type_line`), never read off the stored decaying means. A missing
+    flaw row gives an empty block.
+    """
+    facepalm_score, facepalm_type = await _game_move_facepalm(
+        session, flaw_owner_id=flaw_owner_id, game_id=game.id, ply=ply
+    )
+    if flaw_row is None:
+        return RevealedFlaw(
+            facepalm_score=facepalm_score,
+            facepalm_type=facepalm_type,
+            type_line=None,
+            allowed_tactic=None,
+            missed_tactic=None,
+        )
+    rows = (
+        await session.execute(
+            select(
+                GamePosition.ply,
+                GamePosition.pv,
+                GamePosition.best_move,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(
+                GamePosition.user_id == game.user_id,
+                GamePosition.game_id == game.id,
+                GamePosition.ply.in_([ply + offset for offset in _FLAW_BLOCK_PLY_OFFSETS]),
+            )
+        )
+    ).all()
+    by_ply = {row.ply: row for row in rows}
+    before, at, after = by_ply.get(ply - 1), by_ply.get(ply), by_ply.get(ply + 1)
+    slots = visible_tactic_slots(
+        flaw_row,
+        eval_cp_before=before.eval_cp if before is not None else None,
+        eval_mate_before=before.eval_mate if before is not None else None,
+    )
+    # No row at the flaw ply: no facts, the same as blunder check's composer.
+    type_line = (
+        None
+        if at is None
+        else stored_type_line(
+            game.pgn,
+            ply,
+            loss=flaw_row.material_loss,
+            missed=flaw_row.material_missed,
+            refutation_pv=after.pv if after is not None else None,
+            best_line=at.pv or at.best_move,
+        )
+    )
+    return RevealedFlaw(
+        facepalm_score=facepalm_score,
+        facepalm_type=facepalm_type,
+        type_line=type_line,
+        allowed_tactic=slots.allowed,
+        missed_tactic=slots.missed,
+    )
 
 
 async def _owner_move_san(
@@ -4912,7 +5011,7 @@ async def reveal_for_puzzle(
     A `FOREIGN_BLUNDER` reveal is built from the game owner's rows (the game is
     a stranger's): the played move is the owner's `game_positions.move_san`
     (D-20; the client labels it neutrally, never as the solver's), the puzzle
-    type and facepalm flag come from the owner's `game_flaws` row, and
+    type and the flaw block come from the owner's `game_flaws` row, and
     `game_info` carries only time control, bucket, date and the mover's rating
     (D-21: no username, email or user id, and `game_id` is None). The herring /
     own-puzzle ownership gate on "played in game" below is NOT loosened for this:
@@ -5025,7 +5124,7 @@ async def reveal_for_puzzle(
 
     # Only a personalized puzzle (own or foreign) replays a flaw; a herring's game move is
     # good.
-    game_move_facepalm = False
+    flaw: RevealedFlaw | None = None
     game_info: blunder_check_repository.GameInfoRow | None = None
     if solve.source == DrillSource.RED_HERRING:
         puzzle_type: Literal["sharp", "soft", "herring"] = "herring"
@@ -5063,8 +5162,8 @@ async def reveal_for_puzzle(
                 or flaw_row.allowed_tactic_motif is not None
             )
         )
-        game_move_facepalm = await _game_move_is_facepalm(
-            session, flaw_owner_id=flaw_owner_id, game_id=game.id, ply=solve.ply
+        flaw = await _revealed_flaw(
+            session, game=game, flaw_row=flaw_row, flaw_owner_id=flaw_owner_id, ply=solve.ply
         )
         if foreign:
             game_info = _foreign_game_info(game)
@@ -5080,7 +5179,7 @@ async def reveal_for_puzzle(
         # would fail silently (no exception) for the third source.
         source=_wire_source(solve.source),
         has_tactic_lines=has_tactic_lines,
-        game_move_facepalm=game_move_facepalm,
+        flaw=flaw,
         game_info=game_info,
     )
 
@@ -5090,6 +5189,7 @@ __all__ = [
     "ComposedSession",
     "ProgressSnapshot",
     "RecordedSolve",
+    "RevealedFlaw",
     "RevealedPuzzle",
     "TrainSettingsRow",
     "apply_day_completion",

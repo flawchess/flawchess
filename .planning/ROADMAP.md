@@ -140,6 +140,7 @@
 | 257-262. v2.31 phases | 50/50 | Complete | 2026-11-23 |
 | 263. v2.32 phase | 10/10 | Complete | 2026-11-24 |
 | 252. standalone | 6/10 | In progress (prod re-walk, benchmark repair, §5 zones) | - |
+| 264. standalone | 1/1 | Complete (merged to main, not deployed) | 2026-11-28 |
 
 ## Active Phases
 
@@ -193,6 +194,17 @@ Plans:
 
 Numbering note: 251 is taken on the phase-249 branch (schedule phase, renumbered there), so this phase is 252 on
 both lines.
+
+### Phase 264: The avatar comments on the game blunder (SEED-261126-g8b)
+
+**Goal**: After a personalized puzzle or a blunder-check window, the avatar says what the game blunder was: the
+tactic it allowed or missed (same visibility rule as the analysis move strip) and whether it gave away material or
+missed winning material (the Phase 261 type-line rule). One shared sentence for both surfaces; the puzzle reveal
+gets a small flaw block that replaces `game_move_facepalm`. Vanilla workflow: decisions and acceptance criteria in
+`phases/264-avatar-game-blunder-sentence/CONTEXT.md`.
+
+**Depends on**: nothing. Phase 252's retag will improve tag quality later; this phase does not wait for it.
+**Status**: Done, merged to `main` 2026-11-28 (D-01 to D-25; owner spot-check approved). Not yet deployed.
 
 ## Backlog
 

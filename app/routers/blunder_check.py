@@ -25,6 +25,7 @@ from app.models.blunder_check import WindowOutcome
 from app.models.user import User
 from app.repositories import blunder_check_repository
 from app.repositories.blunder_check_repository import GameInfoRow, SessionProgress
+from app.repositories.library_repository import VisibleTacticSlot
 from app.schemas.blunder_check import (
     AnsweredMove,
     AnswerRequest,
@@ -47,7 +48,7 @@ from app.schemas.blunder_check import (
     WindowStartResponse,
     WindowState,
 )
-from app.schemas.train import ServerGradedMove, TimeControlBucketWire
+from app.schemas.train import ServerGradedMove, TacticSlot, TimeControlBucketWire
 from app.services import blunder_check_service
 from app.services.blunder_check_feedback import BlunderFeedbackData
 from app.services.blunder_check_grading import MOVE_TIMER_SECONDS
@@ -396,11 +397,18 @@ def _game_info_schema(info: GameInfoRow | None) -> GameInfo | None:
     )
 
 
+def _tactic_slot_schema(slot: VisibleTacticSlot | None) -> TacticSlot | None:
+    return None if slot is None else TacticSlot(motif=slot.motif, depth=slot.depth)
+
+
 def _feedback_schema(data: BlunderFeedbackData | None) -> BlunderFeedback | None:
     if data is None:
         return None
     return BlunderFeedback(
-        score=data.score, type_line=data.type_line, hard_to_catch=data.hard_to_catch
+        score=data.score,
+        facepalm_type=data.facepalm_type,
+        type_line=data.type_line,
+        hard_to_catch=data.hard_to_catch,
     )
 
 
@@ -426,6 +434,9 @@ def _blunder_solution_schema(data: blunder_check_service.BlunderSolutionData) ->
         blunder_points=data.blunder_points,
         better_move_points=data.better_move_points,
         feedback=_feedback_schema(data.feedback),
+        allowed_tactic=_tactic_slot_schema(data.tactics.allowed),
+        missed_tactic=_tactic_slot_schema(data.tactics.missed),
+        timed_out=data.timed_out,
     )
 
 

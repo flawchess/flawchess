@@ -6,6 +6,8 @@ import {
   solutionCopy,
   solutionLineUcis,
 } from '@/lib/blunderCheckSolution';
+import { gameBlunderSentence } from '@/lib/gameBlunderSentence';
+import { sanFromUci } from '@/lib/trainRevealLines';
 import type { TrainEngineLine } from '@/hooks/useTrainGradingEngine';
 import type {
   BlunderFeedback,
@@ -293,13 +295,13 @@ describe('solutionCopy', () => {
         window_points: 3,
       }),
     );
-    expect(copy).toBe('Nf3 was a blunder. You called it +3 and played a mistake, Nc3 +0. Best was d4.');
+    expect(copy).toBe('Your call was right +3 and you played a mistake, Nc3 +0. Best was d4.');
   });
 
   it('does not repeat the best move when the user found it, and adds the earlier calls', () => {
     const copy = sentence(solution({ safe_points: 2, window_points: 7 }));
     expect(copy).toBe(
-      'Nf3 was a blunder. You called it +3 and found the best move, d4 +2. Your earlier calls earned +2.',
+      'Your call was right +3 and you found the best move, d4 +2. Your earlier calls earned +2.',
     );
   });
 
@@ -314,28 +316,44 @@ describe('solutionCopy', () => {
         window_points: 0,
       }),
     );
-    expect(copy).toBe('Nf3 was a blunder. You missed it +0. Best was d4.');
+    expect(copy).toBe('Your call was wrong +0. Best was d4.');
   });
 });
 
 describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
   function feedbackOf(overrides: Partial<BlunderFeedback>): BlunderFeedback {
-    return { score: 0.5, type_line: null, hard_to_catch: false, ...overrides };
+    return { score: 0.5, facepalm_type: 'allowed_loss', type_line: null, hard_to_catch: false, ...overrides };
   }
 
+  // Phase 264 D-16: the four type sentences left this paragraph for the shared "Game move:"
+  // line below the divider; only the hard-to-catch line is still feedback.
   it.each<[BlunderFeedback['type_line'] & string, string]>([
-    ['allowed_material', 'The blunder loses material.'],
-    ['allowed_mate', 'The blunder allows checkmate.'],
-    ['missed_material', 'The blunder misses a chance to win material.'],
-    ['missed_mate', 'The blunder misses checkmate.'],
-  ])('type line %s reads "%s"', (typeLine, sentence) => {
+    // D-25: the snapshot score (0.5 here) follows as its own sentence.
+    ['allowed_material', 'Game move: loses material. Fairly easy to spot (facepalm score 50%).'],
+    ['allowed_mate', 'Game move: allows checkmate. Fairly easy to spot (facepalm score 50%).'],
+    ['missed_material', 'Game move: missed a chance to win material. Fairly easy to spot (facepalm score 50%).'],
+    ['missed_mate', 'Game move: missed checkmate. Fairly easy to spot (facepalm score 50%).'],
+  ])('type line %s is the game-move line "%s", not a feedback sentence', (typeLine, sentence) => {
     const copy = solutionCopy(solution({ feedback: feedbackOf({ type_line: typeLine }) }));
-    expect(copy.feedback?.lines).toEqual([sentence]);
+    expect(copy.feedback).toBeNull();
+    expect(gameBlunderSentence(copy.gameMove)).toBe(sentence);
   });
 
-  it('a null type line with no hard-to-catch line gives no paragraph at all', () => {
-    const copy = solutionCopy(solution({ feedback: feedbackOf({ type_line: null }) }));
+  it('a null type line with no tag and no hard-to-catch line: no paragraph, the line says the score (D-23)', () => {
+    const copy = solutionCopy(solution({ feedback: feedbackOf({ score: 0.237, type_line: null }) }));
     expect(copy.feedback).toBeNull();
+    expect(gameBlunderSentence(copy.gameMove)).toBe('Game move: hard to spot (facepalm score 23%).');
+    // With the hard-to-catch line above the divider the band word is not said twice.
+    const hard = solutionCopy(solution({ feedback: feedbackOf({ score: 0.237, type_line: null, hard_to_catch: true }) }));
+    expect(hard.feedback?.lines).toHaveLength(1);
+    expect(gameBlunderSentence(hard.gameMove)).toBe('Game move: facepalm score 23%.');
+    // A pre-phase window has no snapshot, so no score: nothing known, no line.
+    expect(solutionCopy(solution({ feedback: null })).gameMove).toEqual([]);
+  });
+
+  it('after a tag or a type part the snapshot score follows as its own sentence (D-25)', () => {
+    const typed = solutionCopy(solution({ feedback: feedbackOf({ score: 0.237, type_line: 'allowed_material' }) }));
+    expect(gameBlunderSentence(typed.gameMove)).toBe('Game move: loses material. Hard to spot (facepalm score 23%).');
   });
 
   it('the hard-to-catch line differs after a catch and after a miss, and is absent when false', () => {
@@ -346,12 +364,10 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
     expect(solutionCopy(solution({ outcome: 'missed', feedback: hard })).feedback?.lines).toEqual([
       'This one was hard to catch. We mix in a few tough ones on purpose.',
     ]);
-    expect(
-      solutionCopy(solution({ feedback: feedbackOf({ type_line: 'allowed_mate' }) })).feedback?.lines,
-    ).toEqual(['The blunder allows checkmate.']);
+    expect(solutionCopy(solution({ feedback: feedbackOf({ type_line: 'allowed_mate' }) })).feedback).toBeNull();
   });
 
-  it('puts the type line before the hard-to-catch line and carries no score (UAT: chip dropped)', () => {
+  it('keeps the hard-to-catch line in the paragraph next to a type line, and carries no score', () => {
     const copy = solutionCopy(
       solution({
         outcome: 'missed',
@@ -359,8 +375,59 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
       }),
     );
     expect(copy.feedback).toEqual({
-      lines: ['The blunder misses checkmate.', 'This one was hard to catch. We mix in a few tough ones on purpose.'],
+      lines: ['This one was hard to catch. We mix in a few tough ones on purpose.'],
     });
+    // Hard to catch: the band word is not said twice.
+    expect(gameBlunderSentence(copy.gameMove)).toBe('Game move: missed checkmate. Facepalm score 43%.');
+  });
+
+  it('the game-move line carries the solution\'s tags before the type part (C12, C13)', () => {
+    const tagged = { allowed_tactic: { motif: 'fork', depth: 1 }, missed_tactic: null };
+    const withType = solutionCopy(solution({ ...tagged, feedback: feedbackOf({ type_line: 'allowed_material' }) }));
+    expect(gameBlunderSentence(withType.gameMove)).toBe(
+      'Game move: allowed fork in 2, loses material. Fairly easy to spot (facepalm score 50%).',
+    );
+    // A pre-phase window has no feedback, and still gets its tag.
+    const tagOnly = solutionCopy(solution({ ...tagged, feedback: null }));
+    expect(gameBlunderSentence(tagOnly.gameMove)).toBe('Game move: allowed fork in 2.');
+  });
+
+  it('the line\'s subject is the blunder\'s SAN with "??", or "???" from a 70% score', () => {
+    const plain = solutionCopy(solution({ feedback: feedbackOf({ score: 0.5, type_line: 'allowed_material' }) }));
+    expect(plain.gameMoveHead).toEqual({
+      san: sanFromUci(FEN, BLUNDER),
+      quality: 'blunder',
+      facepalmScore: 0.5,
+      facepalmType: 'allowed_loss',
+      byOther: false,
+    });
+    const foreign = solutionCopy(solution({ is_own: false, feedback: feedbackOf({ score: 0.7, facepalm_type: 'missed_win' }) }));
+    expect(foreign.gameMoveHead).toMatchObject({ facepalmScore: 0.7, facepalmType: 'missed_win', byOther: true });
+    // A solution cached before facepalm_type existed: the score alone, so a plain glyph.
+    const cached = solutionCopy(solution({ feedback: { score: 0.7, type_line: null, hard_to_catch: false } }));
+    expect(cached.gameMoveHead).toMatchObject({ facepalmScore: 0.7, facepalmType: null });
+    expect(gameBlunderSentence(plain.gameMove, plain.gameMoveHead.san)).toBe(
+      `${sanFromUci(FEN, BLUNDER)}: loses material. Fairly easy to spot (facepalm score 50%).`,
+    );
+  });
+
+  it('a timed-out blunder is not called a wrong call (review fix)', () => {
+    const base = { outcome: 'missed', blunder_points: 0, better_move_uci: null, better_move_tier: null, better_move_points: null } as const;
+    const text = (s: BlunderSolution): string =>
+      solutionCopy(s).parts.map((part) => (typeof part === 'string' ? part : `+${part.points}`)).join('');
+    expect(text(solution({ ...base, timed_out: true }))).toContain('Time ran out before your call +0.');
+    expect(text(solution({ ...base, timed_out: false }))).toContain('Your call was wrong +0.');
+    // A solution cached before the release has no such field: the plain wording.
+    expect(text(solution(base))).toContain('Your call was wrong +0.');
+  });
+
+  it('a solution cached before the release (no tag fields) gets its type part alone', () => {
+    const legacy: Partial<BlunderSolution> = solution({ feedback: feedbackOf({ type_line: 'allowed_material' }) });
+    delete legacy.allowed_tactic;
+    delete legacy.missed_tactic;
+    expect(gameBlunderSentence(solutionCopy(legacy as BlunderSolution).gameMove)).toBe(
+      'Game move: loses material. Fairly easy to spot (facepalm score 50%).',
+    );
   });
 
   it('gives no feedback for a null feedback or a cached solution with no feedback field', () => {
@@ -405,5 +472,8 @@ describe('solutionCopy feedback (Phase 261 D-03 to D-09)', () => {
     };
     expect(solutionCopy(falseAlarm).feedback).toBeNull();
     expect(solutionCopy(herring).feedback).toBeNull();
+    // D-16: neither gets a "Game move:" line.
+    expect(solutionCopy(falseAlarm).gameMove).toEqual([]);
+    expect(solutionCopy(herring).gameMove).toEqual([]);
   });
 });

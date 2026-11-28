@@ -8,7 +8,7 @@ Coverage:
 - test_reveal_foreign_played_at_is_date_only      : game_info.played_at is the date, no time of day
 - test_reveal_foreign_deleted_game_404_and_outcome_kept : the stranger deleting the game makes the
                                                     reveal 404 while the solve's outcome stays (D-09)
-- test_reveal_foreign_facepalm_reads_owner_flaw   : the "???" flag reads the stranger's flaw row
+- test_reveal_foreign_facepalm_reads_owner_flaw   : the facepalm score and type read the stranger's flaw row
 
 Data isolation: the foreign draw samples every other user's games across the database, so each test
 requests `real_foreign_band_draw` (the band step alone: the nearest-first step has no distance cap
@@ -60,6 +60,10 @@ _STRANGER_RATING = 2700
 _SOLVER_RATED_GAMES = 3
 # A facepalm score far above the 0.7 cut.
 _FACEPALM_HIGH_SCORE = 0.95
+# A fork tag at the display gate's confidence floor.
+_TAG_FORK = 1
+_TAG_CONFIDENCE = 70
+_TAG_DEPTH = 1
 _FORBIDDEN_OWNER_KEYS = ("user", "name", "email", "platform_game_id", "url")
 # A start time with every time-of-day part non-zero, and the UTC midnight of its date.
 _PLAYED_AT_WITH_TIME = datetime.datetime(2026, 6, 1, 17, 42, 13, 250_000, tzinfo=datetime.UTC)
@@ -241,7 +245,7 @@ async def test_reveal_foreign_game_info_names_nobody(test_engine) -> None:
             "puzzle_type",
             "source",
             "has_tactic_lines",
-            "game_move_facepalm",
+            "flaw",
             "game_info",
         }
     finally:
@@ -298,6 +302,43 @@ async def test_reveal_foreign_deleted_game_404_and_outcome_kept(test_engine) -> 
 
 
 @pytest.mark.usefixtures("real_foreign_band_draw")
+async def test_reveal_foreign_carries_the_flaw_block_without_the_game(test_engine) -> None:
+    """264 AC-8: a foreign puzzle gets the flaw block (the owner's tags), the game stays withheld
+    and the tactic-lines pointer stays off although the flaw is tagged."""
+    scene = await _seed_scene(test_engine)
+    try:
+        maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with maker() as session, session.begin():
+            await session.execute(
+                update(GameFlaw)
+                .where(GameFlaw.game_id == scene.foreign_game_id)
+                .values(
+                    allowed_tactic_motif=_TAG_FORK,
+                    allowed_tactic_confidence=_TAG_CONFIDENCE,
+                    allowed_tactic_depth=_TAG_DEPTH,
+                )
+            )
+        await _compose_and_solve(scene)
+
+        resp = await _reveal(scene.token, scene.session_ids[-1], 0)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["flaw"] == {
+            "facepalm_score": None,
+            "facepalm_type": None,
+            "type_line": None,
+            "allowed_tactic": {"motif": "fork", "depth": _TAG_DEPTH},
+            "missed_tactic": None,
+        }
+        assert body["game_id"] is None
+        assert body["has_tactic_lines"] is False
+        _assert_no_owner_identity(body)
+    finally:
+        await _cleanup(test_engine, scene)
+
+
+@pytest.mark.usefixtures("real_foreign_band_draw")
 async def test_reveal_foreign_facepalm_reads_owner_flaw(test_engine) -> None:
     scene = await _seed_scene(test_engine)
     try:
@@ -313,6 +354,9 @@ async def test_reveal_foreign_facepalm_reads_owner_flaw(test_engine) -> None:
         resp = await _reveal(scene.token, scene.session_ids[-1], 0)
 
         assert resp.status_code == 200
-        assert resp.json()["game_move_facepalm"] is True
+        flaw = resp.json()["flaw"]
+        # The stranger's row, not the solver's: its score and its type (264 D-23).
+        assert flaw["facepalm_score"] == pytest.approx(_FACEPALM_HIGH_SCORE, abs=1e-4)
+        assert flaw["facepalm_type"] == "allowed_loss"
     finally:
         await _cleanup(test_engine, scene)

@@ -1,6 +1,7 @@
 ---
 id: SEED-261126-g8b
-status: dormant
+status: promoted
+promoted_to: Phase 264 (2026-11-26)
 planted: 2026-11-26
 planted_during: ad-hoc design discussion after the 2026-11-26 release (no active phase)
 trigger_when: next round of Train feedback work, or when the Phase 252 line repair finishes (the tag coverage below should be re-measured then)
@@ -13,6 +14,9 @@ After a personalized puzzle or a blunder-check window, the avatar should say wha
 the game actually was, when we know: the tactic it allowed or missed, and whether it gave away
 material or passed up winning material. The analysis board's move strip already shows this for a
 flaw (`frontend/src/lib/moveInfo.ts`, `frontend/src/lib/explainBar.ts`).
+
+**Promoted 2026-11-26 to Phase 264** (`.planning/ROADMAP.md`, Active Phases; decisions in
+`.planning/phases/264-avatar-game-blunder-sentence/CONTEXT.md`).
 
 ## Why This Matters
 
@@ -67,6 +71,142 @@ Per surface:
   score); it would replace `game_move_facepalm`. Blunder check snapshots the type-line facts when
   the window is served; the puzzle reveal would compute them for its one row at reveal time by
   walking the stored lines.
+
+## Possible Sentences And Their Conditions (Phase 264, confirmed by the owner 2026-11-26)
+
+> Amended 2026-11-26 (Phase 264 D-19): the shipped line starts with the move and its quality
+> icon instead of the label, "Ne7 ???: allowed fork in 2." Read every "Game move:" below that
+> way; the label remains only as the fallback without a SAN.
+> Amended 2026-11-28 (D-21): a hanging-piece tag suppresses the material type part on the same
+> side, like the checkmate rule ("allowed hanging-piece in 1." alone).
+> Amended 2026-11-28 (D-22): "missed a chance to win material" and "missed checkmate" (past
+> tense) replace "misses ..." below.
+
+This list reflects the decisions taken on 2026-11-26 during promotion and supersedes "Proposed
+Shape" above where the two differ (neutral subject, tags in the strip's form, no facepalm wording,
+one swing rule for both surfaces). `CONTEXT.md` of the phase holds the decisions (D-01 to D-18); this list is the reference for the
+copy.
+
+The comment is one line of additional info in the avatar's speech bubble, set off from the
+verdict by a horizontal divider (owner, 2026-11-26). It starts with the label "Game move:" and
+lists up to two parts, separated by commas: a **tag part** and a **type part**. Either can be
+absent. With both absent there is no divider and no line.
+
+### Below the divider (personalized puzzle)
+
+In this order, each line only when it exists; the divider shows when any of them does:
+
+1. the "Game move:" line (this seed);
+2. "Also fine, e.g. Nf3, Qe2" (existing);
+3. the return tail, moved down from under the verdict, wording unchanged: "Back next session." /
+   "Back in 4 days." / "Two in a row, so this one is retired." / "This one keeps slipping, so it
+   is parked for now." / "A red herring, so it won't come back." / "From a similarly rated
+   player's game, so it won't come back."
+
+### Label
+
+| Surface | Label | Condition |
+|---|---|---|
+| Personalized puzzle | Game move: | own or foreign puzzle (never "your") |
+| Blunder check | Game move: | a caught or missed blunder window (same line and divider as the puzzle) |
+| either | no line | red herring; blunder-check false alarm or "all good" window |
+
+### Tag part
+
+Form: `Game move: <tag>[, <tag>].` Each tag is written as on the analysis move strip:
+`missed|allowed <motif>[ in <N>]`.
+
+A tag is shown when all of these hold:
+
+1. the flaw row has a motif on that side (`missed_tactic_*` or `allowed_tactic_*`);
+2. its confidence is at least 70;
+3. the position before the move was not already decided lost for the mover;
+4. the motif belongs to a visible family (the strip's rule);
+5. the depth shown is 5 or less, or the motif is a checkmate (any depth).
+
+With both sides visible, both are shown, missed first.
+
+| # | Condition | Sentence |
+|---|---|---|
+| T1 | only an allowed tag | Game move: allowed fork in 2. |
+| T2 | only a missed tag | Game move: missed fork in 2. |
+| T3 | both tags | Game move: missed fork in 2, allowed pin in 3. |
+| T4 | tag without a stored depth | Game move: allowed fork. |
+| T5 | allowed checkmate at depth 7 (kept by rule 5) | Game move: allowed checkmate in 7. |
+| T6 | allowed fork at depth 6 (dropped by rule 5) | no tag part |
+
+Motif words, exactly as the strip shows them: fork, pin, skewer, hanging-piece, checkmate (every
+named mate reads "checkmate"), double-check, discovered-check, discovered-attack, trapped-piece,
+x-ray, deflection, intermezzo, interference, capturing-defender, attraction, sacrifice,
+en-passant, under-promotion, promotion. Each can follow "missed" or "allowed".
+
+### Type part (one rule for both surfaces)
+
+Conditions, the rule blunder check shipped with in Phase 261:
+
+- **side**: allowed loss when `material_loss > 0` and `material_loss >= material_missed`,
+  otherwise missed win;
+- **mate**: the stored Stockfish line on that side reaches a mate (the line after the blunder
+  for an allowed loss, the best line for a missed win);
+- **swing**: else the material change at the deepest settled point of that line is at least 2
+  points (replayed under the quiet rule, no decay).
+
+Blunder check takes these facts when the window is served and stores them. The puzzle computes
+them with the same server code when the reveal is requested.
+
+| # | Side | Condition | Sentence |
+|---|---|---|---|
+| P1 | allowed loss | swing >= 2, no mate | Game move: loses material. |
+| P2 | allowed loss | mate reached | Game move: allows checkmate. |
+| P3 | missed win | swing >= 2, no mate | Game move: misses a chance to win material. |
+| P4 | missed win | mate reached | Game move: misses checkmate. |
+| P5 | either | neither | no type part |
+| P6 | unknown (`material_loss` is NULL) | | no type part |
+
+On blunder check this line replaces the four type sentences of its feedback paragraph ("The
+blunder loses material." and the others). The hard-to-catch line stays in that paragraph, above
+the divider, blunder check only: "Well spotted! This was one of the
+tough ones we mix in on purpose." (caught) / "This one was hard to catch. We mix in a few tough
+ones on purpose." (missed), when the snapshotted score is below 50%.
+
+### Both parts together
+
+The type part follows the tags after a comma, as one more item of the list.
+
+| # | Condition | Sentence |
+|---|---|---|
+| C1 | allowed tag + P1 | Game move: allowed fork in 2, loses material. |
+| C2 | allowed tag + P2 | Game move: allowed fork in 2, allows checkmate. |
+| C3 | missed tag + P3 | Game move: missed fork in 2, misses a chance to win material. |
+| C4 | missed tag + P4 | Game move: missed fork in 2, misses checkmate. |
+| C5 | missed tag + P1 (sides differ) | Game move: missed fork in 2, loses material. |
+| C6 | allowed tag + P3 (sides differ) | Game move: allowed fork in 2, misses a chance to win material. |
+| C7 | both tags + P1 | Game move: missed fork in 2, allowed pin in 3, loses material. |
+| C8 | allowed checkmate tag + P2 (checkmate rule) | Game move: allowed checkmate in 2. |
+| C9 | missed checkmate tag + P4 (checkmate rule) | Game move: missed checkmate in 3. |
+| C10 | allowed checkmate tag + P1 (checkmate rule) | Game move: allowed checkmate in 4. |
+| C10b | missed checkmate tag + P1 (sides differ, both shown) | Game move: missed checkmate in 3, loses material. |
+| C11 | tag dropped by depth + P1 | Game move: loses material. |
+| C12 | blunder check, allowed tag + P1 | Game move: allowed fork in 2, loses material. |
+| C13 | blunder check, allowed tag, no type part | Game move: allowed fork in 2. |
+| C14 | no tag part, no type part | (the avatar adds nothing) |
+
+Score part (Phase 264 D-23, owner 2026-11-28): C14 is no longer empty for a scored blunder.
+With no tag and no type part the line says how hard the blunder was to spot, with its score:
+"Ne7 ??: hard to spot (facepalm score 23%)." below 50%, "fairly easy to spot (...)" from 50% to
+69%, "Ne7 ???: easy to spot (facepalm score 84%)." from 70%. Blunder check drops the band word
+when its "hard to catch" line is shown: "Ne7 ??: facepalm score 23%." Only an unscored blunder
+with nothing else known still gets no line. A tap on the icon opens the facepalm popover. D-25
+(owner, same day): the band and the score close every scored line, as their own sentence after
+a tag or a type part: "e6 ??: allowed fork in 1, loses material. Hard to spot (facepalm score
+14%)." The resolver's test table carries these rows.
+
+Checkmate rule: a checkmate tag suppresses the type part on the same side (allowed checkmate
+with an allowed-loss type part, missed checkmate with a missed-win type part), so checkmate is
+never said twice and never paired with "loses material" for the same side.
+
+When the line is present on a puzzle it replaces "Step through the lines to see why." in the
+verdict paragraph.
 
 ## Coverage (prod, 2026-11-26)
 

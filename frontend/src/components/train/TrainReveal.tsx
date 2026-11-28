@@ -37,6 +37,9 @@ import { TrainFlawFixedBanner } from '@/components/train/TrainFlawFixedBanner';
 import { TrainLineChips } from '@/components/train/TrainLineChips';
 import { TrainRevealGameFooter } from '@/components/train/TrainRevealGameFooter';
 import { TrainVerdictDetails } from '@/components/train/TrainVerdictDetails';
+import { isFacepalmBlunder } from '@/lib/facepalm';
+import { gameBlunderParts } from '@/lib/gameBlunderSentence';
+import type { GameMoveHead } from '@/lib/gameBlunderSentence';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
@@ -231,7 +234,9 @@ export function TrainReveal({
   }, [gameMoveUci, onGameMoveUciChange]);
 
   // The same report for the facepalm flag of that move (the "???" badge), reset the same way.
-  const gameMoveFacepalm = revealQuery.data?.game_move_facepalm === true;
+  // The flag is derived from the score with the shared cut (isFacepalmBlunder, 264 D-23).
+  const gameMoveFacepalmScore = revealQuery.data?.flaw?.facepalm_score ?? null;
+  const gameMoveFacepalm = isFacepalmBlunder(gameMoveFacepalmScore);
   useEffect(() => {
     onGameMoveFacepalmChange?.(gameMoveFacepalm);
     return () => {
@@ -339,6 +344,51 @@ export function TrainReveal({
     .filter((san): san is string => san !== null)
     .join(', ');
 
+  // The "Game move:" line (Phase 264): what the game blunder was, from the reveal's flaw block.
+  // A herring has no block and a pre-deploy cache entry no field: both give no line.
+  const flaw = revealQuery.data?.flaw ?? null;
+  // The line's subject: the move with the Game chip's own quality glyph (null until the
+  // reveal-time search has graded the move), so line, chip and board badge always agree.
+  // Review fix: when that grade can never arrive (the search failed, or the move has no UCI
+  // and so no chip), the glyph falls back to the stored severity. The puzzle pool is blunders,
+  // so the line never keeps an empty icon box.
+  const gameChip = chips.find((chip) => chip.roles.includes('game'));
+  const gradeUnavailable = gameChip === undefined ? gameMoveUci === null : gameChip.pending === 'failed';
+  const gameMoveHead: GameMoveHead = {
+    san: gameMoveSan,
+    quality: gameChip?.quality ?? (gradeUnavailable ? 'blunder' : null),
+    facepalmScore: gameMoveFacepalmScore,
+    facepalmType: flaw?.facepalm_type ?? null,
+    byOther: verdict.source === 'foreign_blunder',
+  };
+  // Review fix (D-23): the score part speaks about a blunder, so it follows the glyph. When the
+  // Game chip grades the move other than a blunder, the badge is the plain "?" glyph and the line
+  // read "Ne7 ?: easy to spot (facepalm score 84%)."; the score is then left out of the text.
+  const spokenScore = gameMoveHead.quality === 'blunder' ? gameMoveFacepalmScore : null;
+  // Review fix (D-25): a scored line waits for that grade, so it appears once and complete.
+  // Shown while the grade was pending, the score sentence vanished again when the grade landed
+  // as "?" (~3 s later). The grade always settles: a failed search or a missing chip falls back
+  // to the stored severity above.
+  const gameMoveGradePending = flaw !== null && gameMoveFacepalmScore !== null && gameMoveHead.quality === null;
+  const gameMove =
+    flaw === null
+      ? []
+      : gameBlunderParts({
+          allowedTactic: flaw.allowed_tactic,
+          missedTactic: flaw.missed_tactic,
+          typeLine: flaw.type_line,
+          facepalmScore: spokenScore,
+        });
+  // Only a personalized puzzle can get the line, and `verdict.source` says so before the reveal
+  // lands (the same synchronous-timing reason as the clause input above). Review fix: a reveal
+  // that has already failed once is no longer waited for (TanStack keeps `isLoading` through
+  // its retry), so the look-closer sentence is not held back for the whole backoff.
+  const gameMovePending =
+    (revealQuery.isLoading &&
+      revealQuery.failureCount === 0 &&
+      (verdict.source === 'sr_item' || verdict.source === 'foreign_blunder')) ||
+    gameMoveGradePending;
+
   const renderVerdictDetails = (leading?: ReactNode): ReactNode =>
     verdictOpening !== null ? (
       <TrainVerdictDetails
@@ -349,6 +399,9 @@ export function TrainReveal({
         sessionDate={sessionDate}
         expiresOn={expiresOn}
         alsoFineSanList={alsoFineSanList}
+        gameMove={gameMove}
+        gameMoveHead={gameMoveHead}
+        gameMovePending={gameMovePending}
       />
     ) : null;
 

@@ -33,6 +33,32 @@ Two things read the position wrong:
 - The played-move term adds score for an unlikely move. In an only-move position every wrong move
   is individually unlikely while a wrong move overall is likely.
 
+### Second example: the loss term alone (added 2026-11-27)
+
+Prod game 2052898, ply 47 (https://flawchess.com/analysis?game_id=2052898&ply=47): Black (1680,
+classical 900+15) is about +2.3 when White plays `24.Rd7`, a double attack on `Ne7` and `Bb7`. Black
+plays `24...Kf6`, which guards the knight and drops the bishop to `25.Rxb7`. The facepalm score is 79%.
+
+Stockfish depth 20 over all 29 legal moves (Black's view): `Bxg2` +2.81 is the only move that keeps
+the advantage (a counterattack that ignores the threat), `Rab8` and `Be4` are about 0.00, `Bc6` is
+-0.64, and `Kf6` (-3.78) and the other 24 moves are between -3.1 and -5.7. Maia gives `Kf6` 54% and
+`Bxg2` 32%.
+
+| Term | Contribution to z |
+|---|---|
+| Intercept | -1.79 |
+| Played prob 0.536 | +0.38 |
+| Material loss 3.19 | +2.84 |
+| Missed 1.0 (lambda 1) | +0.40 |
+| Reply prob 0.558 (allowed loss, so the reply is the key move) | -0.46 |
+| z | +1.37, score 0.797 |
+
+Unlike the first example, the played-move term is not to blame: `Kf6` is Maia's top choice, so the
+term is near its floor. The whole excess is the loss term, for a threat that existed before the move
+and that most peers fail to meet. `maia_best_prob` (0.32) is not read on an allowed loss. The
+relative form below ("Maia mass on moves as bad or worse than the played one") is high here, so it
+would pull the score down.
+
 No stored column holds the Maia mass on losing moves. `maia_pre_spread` was tested on 2026-11-15
 and dropped. Reading `maia_best_prob` on allowed-loss rows does not help either (it gives about
 86% here, and its coefficient on allowed-loss label rows fits near zero).

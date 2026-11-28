@@ -36,6 +36,8 @@ from pydantic import (
 )
 
 from app.schemas.normalization import TimeControlBucket
+from app.services.facepalm_score import FacepalmType
+from app.services.tactic_detector import TacticMotif
 from app.services.train_scheduler import (
     BLUNDER_CHECK_PER_SESSION_MAX,
     PUZZLES_PER_SESSION_MAX,
@@ -64,6 +66,39 @@ class GameInfo(BaseModel):
     time_control_bucket: TimeControlBucketWire | None
     played_at: datetime | None
     mover_rating: int | None
+
+
+# What a blunder allowed or missed, in words (Phase 261 D-09): the type part of the avatar's
+# "Game move:" line on both drills (Phase 264 D-01).
+BlunderTypeLineWire = Literal["allowed_material", "allowed_mate", "missed_material", "missed_mate"]
+
+
+class TacticSlot(BaseModel):
+    """One visible tactic tag of a flaw: the motif name and its stored 0-based depth.
+
+    Only sent for a slot that passed the server's display gate (confidence floor, decided-lost
+    suppression), the same gate as the analysis move strip (Phase 264 D-02).
+    """
+
+    motif: TacticMotif
+    depth: int | None
+
+
+class GameMoveFlaw(BaseModel):
+    """The game move of a personalized puzzle as a flaw (Phase 264 D-07).
+
+    `facepalm_score` (raw 0..1, the library's live score) and `facepalm_type` make the line's
+    "??" / "???" badge open the facepalm popover, as in the analysis move strip; the client
+    derives "???" from the score (264 D-23). Both None for a mistake or an unscored blunder.
+    `type_line` and the tactic slots feed the rest of the line. Motif, depth, type line and
+    score identify nobody, so a foreign puzzle carries the block too.
+    """
+
+    facepalm_score: float | None
+    facepalm_type: FacepalmType | None
+    type_line: BlunderTypeLineWire | None
+    allowed_tactic: TacticSlot | None
+    missed_tactic: TacticSlot | None
 
 
 class ServerGradedMove(BaseModel):
@@ -713,10 +748,9 @@ class PuzzleRevealResponse(BaseModel):
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: DrillSourceWire
     has_tactic_lines: bool
-    # The in-game move is a facepalm blunder (facepalm score >= 70%): the reveal badges it
-    # "???" instead of "??". A boolean on purpose, the score itself stays server-side. Always
-    # False for a herring.
-    game_move_facepalm: bool = False
+    # The game move as a flaw (Phase 264): the facepalm score and type for the badge, plus the
+    # type line and the visible tactic tags for the avatar's game-move line. None for a herring.
+    flaw: GameMoveFlaw | None = None
     # Neutral facts of a stranger's game, foreign puzzles only (D-21): time control, date, the
     # mover's rating; no usernames, emails or user ids. None for every other source.
     game_info: GameInfo | None = None

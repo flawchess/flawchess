@@ -14,7 +14,8 @@ interpolation of user input.
 
 import datetime
 from collections.abc import Sequence
-from typing import Any, Literal, NamedTuple
+from dataclasses import dataclass
+from typing import Any, Final, Literal, NamedTuple, Protocol
 
 import chess
 from sqlalchemy import Select, Subquery, and_, case, exists, func, not_, or_, select, text, true
@@ -36,6 +37,7 @@ from app.repositories.query_utils import (
     apply_game_filters,
     game_ids_any_predicate,
     is_opponent_expr,
+    mover_is_white_at_ply,
     player_only_gate,
 )
 from app.services.blunder_check_rules import FACEPALM_LIBRARY_LAMBDA, FACEPALM_STATS_MIN
@@ -64,6 +66,7 @@ from app.services.flaws_service import (
 from app.services.normalization import is_correspondence_time_control, parse_base_and_increment
 from app.services.openings_service import derive_user_result
 from app.services.tactic_detector import (
+    TacticMotif,
     TacticMotifInt,
     _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF,
     _parse_pv,
@@ -544,6 +547,98 @@ def is_decided_lost(
         if eval_cp_before is not None and eval_cp_before >= MATE_LADDER_LOPSIDED_CP:
             return True
     return False
+
+
+class TacticSlotColumns(Protocol):
+    """The game_flaws columns `visible_tactic_slots` reads (a GameFlaw or a selected Row)."""
+
+    @property
+    def ply(self) -> int: ...
+    @property
+    def allowed_tactic_motif(self) -> int | None: ...
+    @property
+    def allowed_tactic_confidence(self) -> int | None: ...
+    @property
+    def allowed_tactic_depth(self) -> int | None: ...
+    @property
+    def missed_tactic_motif(self) -> int | None: ...
+    @property
+    def missed_tactic_confidence(self) -> int | None: ...
+    @property
+    def missed_tactic_depth(self) -> int | None: ...
+
+
+@dataclass(frozen=True)
+class VisibleTacticSlot:
+    """One tactic slot that passed the display gate: motif name and stored 0-based depth."""
+
+    motif: TacticMotif
+    depth: int | None
+
+
+@dataclass(frozen=True)
+class VisibleTacticSlots:
+    """Both tactic slots of one flaw after the display gate, None where nothing is shown."""
+
+    allowed: VisibleTacticSlot | None
+    missed: VisibleTacticSlot | None
+
+
+NO_TACTIC_SLOTS: Final = VisibleTacticSlots(allowed=None, missed=None)
+
+
+def visible_tactic_slots(
+    flaw: TacticSlotColumns,
+    *,
+    eval_cp_before: int | None,
+    eval_mate_before: int | None,
+) -> VisibleTacticSlots:
+    """Both tactic slots of one flaw under the analysis move strip's gate, no filters (264 D-02).
+
+    The gate is `tactic_slot_visible` with filter-neutral arguments, exactly as the library
+    card's per-ply tactic map calls it (library_service._build_tactic_by_ply_entry): confidence
+    floor plus decided-lost suppression. `eval_*_before` is the eval of the pre-move position
+    (the `game_positions` row at ply - 1); both None fails open. Used by the Train reveal and the
+    blunder-check solution for the avatar's "Game move:" line.
+    """
+    decided_lost = is_decided_lost(
+        eval_cp_before, eval_mate_before, mover_is_white=mover_is_white_at_ply(flaw.ply)
+    )
+
+    def gated(
+        kind: Literal["missed", "allowed"],
+        motif: int | None,
+        confidence: int | None,
+        depth: int | None,
+    ) -> VisibleTacticSlot | None:
+        visible = tactic_slot_visible(
+            motif,
+            confidence,
+            depth,
+            orientation_kind=kind,
+            tactic_families=(),
+            tactic_orientation="either",
+            min_tactic_depth=None,
+            max_tactic_depth=None,
+            decided_lost=decided_lost,
+        )
+        name = _TACTIC_INT_TO_MOTIF.get(motif) if visible and motif is not None else None
+        return None if name is None else VisibleTacticSlot(motif=name, depth=depth)
+
+    return VisibleTacticSlots(
+        allowed=gated(
+            "allowed",
+            flaw.allowed_tactic_motif,
+            flaw.allowed_tactic_confidence,
+            flaw.allowed_tactic_depth,
+        ),
+        missed=gated(
+            "missed",
+            flaw.missed_tactic_motif,
+            flaw.missed_tactic_confidence,
+            flaw.missed_tactic_depth,
+        ),
+    )
 
 
 def decided_lost_sql(

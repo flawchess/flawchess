@@ -27,6 +27,7 @@ from app.models.blunder_check import (
 from app.models.drill_solve import DrillMoveQuality
 from app.repositories import blunder_check_repository, train_repository
 from app.repositories.blunder_check_repository import GameInfoRow, SessionProgress
+from app.repositories.library_repository import VisibleTacticSlots
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services import blunder_check_selection
 from app.services.blunder_check_feedback import BlunderFeedbackData, blunder_feedback
@@ -1067,6 +1068,12 @@ class BlunderSolutionData:
     better_move_points: int | None
     # Phase 261 D-04: built from the window's serve-time snapshot, None for a pre-phase window.
     feedback: BlunderFeedbackData | None
+    # Phase 264 D-03: the blunder's visible tactic tags, read live from game_flaws (not
+    # snapshotted: a retag or a deleted game changes or empties them).
+    tactics: VisibleTacticSlots
+    # Phase 264 D-20: a missed window whose blunder move timed out. The verdict then says the
+    # time ran out, not "Your call was wrong": no call was made.
+    timed_out: bool
 
 
 @dataclass(frozen=True)
@@ -1185,6 +1192,10 @@ async def _blunder_solution(
             type_swing=window.type_swing,
             type_mate=window.type_mate,
         ),
+        tactics=await blunder_check_repository.visible_tactic_slots_at(
+            session, game_id=window.game_id, ply=blunder_ply
+        ),
+        timed_out=any(row.result == int(AnswerResult.TIMEOUT_BLUNDER) for row in answer_rows),
     )
 
 

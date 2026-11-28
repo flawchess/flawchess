@@ -8,7 +8,8 @@
 
 import type { TrainMoveTier } from '@/lib/trainScore';
 import type { TimeControlBucket } from '@/types/endgames';
-import type { ServerGradedMove } from '@/types/train';
+import type { FacepalmType } from '@/types/library';
+import type { ServerGradedMove, TacticSlot } from '@/types/train';
 
 export type WindowOutcome = 'cleared' | 'caught' | 'missed' | 'false_alarm';
 export type WindowState = 'pending' | 'active' | 'ended';
@@ -175,6 +176,11 @@ export type BlunderTypeLine =
 export interface BlunderFeedback {
   /** The Facepalm score snapshotted when the window was served (D-04), raw 0..1. */
   score: number;
+  /**
+   * The blunder's facepalm type from the same snapshot (264 D-23): with the score, the line's
+   * badge opens the facepalm popover. Absent on a solution cached before the field existed.
+   */
+  facepalm_type?: FacepalmType | null;
   type_line: BlunderTypeLine | null;
   /** True for a subtle blunder: shown as the "hard to catch" line (D-07). */
   hard_to_catch: boolean;
@@ -205,6 +211,14 @@ export interface BlunderSolution {
   better_move_points: number | null;
   /** Null for a window served before Phase 261 (and a solution cached before the release). */
   feedback: BlunderFeedback | null;
+  /**
+   * The blunder's visible tactic tags (Phase 264), already gated by the server. OPTIONAL: a
+   * solution cached before the release has neither field.
+   */
+  allowed_tactic?: TacticSlot | null;
+  missed_tactic?: TacticSlot | null;
+  /** The window was missed because the blunder move's timer ran out: no call was made. Optional as above. */
+  timed_out?: boolean;
 }
 
 /** Solution of a cleared herring window: every judged move was fine. */

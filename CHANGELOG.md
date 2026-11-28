@@ -8,8 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Train: after a personalized puzzle or a blunder-check sequence, the avatar says what the blunder in the game was, on one line below a divider that starts with the move and its "??" / "???" badge, for example "Ne7 ???: allowed fork in 2, loses material." It names the tactic the move allowed or missed (the same tags as the analysis move strip) and whether it loses material, allows checkmate, or misses a chance to win material or to mate. Tap the badge to see the move's facepalm score and what it means, as in the analysis move list. The line ends with how hard the blunder was to spot, with its score: "e6 ??: allowed fork in 1, loses material. Hard to spot (facepalm score 14%)." Only an unscored blunder with nothing else known gets no line. On a personalized puzzle, "Also fine, e.g. ..." is now part of the avatar's verdict instead of a line below it.
+
 ### Changed
 
+- Blunder Check: the solution's verdict now reads "Your call was right" or "Your call was wrong" with its points (or "Time ran out before your call"), instead of "Qe5 was a blunder. You missed it", since the blunder is named on the new line below.
+- Train: on the puzzle verdict, "Back in 4 days." and the other return notes moved below the divider, next to "Also fine, e.g. ...".
 - Home page: Personalized Training is now the first feature shown, followed by Game and Tactic Analysis, the FlawChess Engine and the bots. The training description is shorter, and the FAQ order follows the new layout.
 - Sign In and Register: in landscape (tablets, unfolded foldables, laptops) the logo moves into its own column beside the form, so the form is no longer cut off at the bottom. In portrait the logo sits beside the FlawChess title, so the Log In button fits on small phones without scrolling.
 - Analysis: the move info strip under the move list shows a blunder's tactic instead of squeezing it in after the Facepalm score, which used to cut the tactic off. A blunder without a tactic now shows its Facepalm score, ordinary "??" blunders included, and tapping its "??" / "???" badge opens the same Facepalm explanation as in the move list.
