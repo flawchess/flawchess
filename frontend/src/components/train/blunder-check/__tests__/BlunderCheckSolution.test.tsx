@@ -427,7 +427,7 @@ describe('own copy and actions', () => {
     // The better move is named apart from the game's blunder, with its own quality, and
     // every scored part carries its point badge (Phase 249 UAT).
     expect(screen.getByTestId('blunder-check-solution-summary').textContent).toBe(
-      'Nf3 was a blunder. You called it +3 and played a good move, Nc3 +2. Best was d4.',
+      'Your call was right +3 and you played a good move, Nc3 +2. Best was d4.',
     );
     expect(screen.getByTestId('blunder-check-pill-call').textContent).toBe('+3');
     expect(screen.getByTestId('blunder-check-pill-move').textContent).toBe('+2');
@@ -448,7 +448,7 @@ describe('verdict strip below desktop (Phase 251 UAT)', () => {
 
     fireEvent.click(screen.getByTestId('train-verdict-strip'));
     expect(screen.getByTestId('blunder-check-solution-summary').textContent).toBe(
-      'Nf3 was a blunder. You called it +3 and played a good move, Nc3 +2. Best was d4. Your earlier calls earned +2.',
+      'Your call was right +3 and you played a good move, Nc3 +2. Best was d4. Your earlier calls earned +2.',
     );
   });
 
@@ -476,14 +476,16 @@ describe('foldable in landscape: the actions are in the bottom bar', () => {
 });
 
 describe('avatar feedback paragraph (Phase 261 D-03)', () => {
-  it('follows the verdict sentence with the type and hard-to-catch lines, and no Facepalm chip', () => {
+  it('keeps the hard-to-catch line under the verdict and puts the "Game move:" line below a divider (264 D-16)', () => {
     renderSolution(
       blunderSolution({
         outcome: 'missed',
         better_move_uci: null,
         better_move_tier: null,
         better_move_points: null,
-        feedback: { score: 0.437, type_line: 'allowed_material', hard_to_catch: true },
+        feedback: { score: 0.437, facepalm_type: 'allowed_loss', type_line: 'allowed_material', hard_to_catch: true },
+        allowed_tactic: { motif: 'fork', depth: 1 },
+        missed_tactic: null,
       }),
       scriptedEngine(),
     );
@@ -491,9 +493,33 @@ describe('avatar feedback paragraph (Phase 261 D-03)', () => {
     const summary = screen.getByTestId('blunder-check-solution-summary');
     const feedback = screen.getByTestId('blunder-check-solution-feedback');
     expect(summary.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // UAT: the score chip is gone; the paragraph is the two lines only.
+    // UAT: the score chip is gone. The type sentence left the paragraph for the line below.
     expect(screen.queryByTestId('blunder-check-facepalm-badge')).toBeNull();
-    expect(feedback.textContent).toBe('The blunder loses material. This one was hard to catch. We mix in a few tough ones on purpose.');
+    expect(feedback.textContent).toBe('This one was hard to catch. We mix in a few tough ones on purpose.');
+    const extras = screen.getByTestId('blunder-check-solution-extras');
+    expect(feedback.compareDocumentPosition(extras) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const line = within(extras).getByTestId('game-move-line');
+    // The line starts with the blunder itself and its glyph ("??" here: the score is below 70%).
+    expect(within(line).getByTestId('game-move-san').textContent).toBe('Nf3');
+    expect(within(line).getByTestId('game-move-quality').getAttribute('data-quality')).toBe('blunder');
+    expect(within(line).getByTestId('game-move-quality').getAttribute('data-facepalm')).toBeNull();
+    // D-25: the score closes the line; hard to catch, so without the band word.
+    expect(line.textContent?.endsWith(': allowed fork in 2, loses material. Facepalm score 43%.')).toBe(true);
+    expect(line.textContent).not.toContain('your');
+    // 264 D-23: with score and type the glyph opens the facepalm popover.
+    const trigger = within(line).getByTestId('train-game-move-facepalm-popover');
+    fireEvent.click(trigger);
+    expect(document.querySelector('[data-radix-popper-content-wrapper]')?.textContent).toContain('Facepalm score 43%');
+  });
+
+  it('keeps a plain glyph when the snapshot has no facepalm type (a solution cached before D-23)', () => {
+    renderSolution(
+      blunderSolution({ feedback: { score: 0.8, type_line: 'missed_mate', hard_to_catch: false } }),
+      scriptedEngine(),
+    );
+    const line = screen.getByTestId('game-move-line');
+    expect(within(line).queryByTestId('train-game-move-facepalm-popover')).toBeNull();
+    expect(within(line).getByTestId('game-move-quality').getAttribute('aria-hidden')).toBe('true');
   });
 
   it('shows on the phone and tablet strip after unfolding, below the summary', () => {
@@ -502,13 +528,18 @@ describe('avatar feedback paragraph (Phase 261 D-03)', () => {
       blunderSolution({ feedback: { score: 0.8, type_line: 'missed_mate', hard_to_catch: false } }),
       scriptedEngine(),
     );
-    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
 
     fireEvent.click(screen.getByTestId('train-verdict-strip'));
     const summary = screen.getByTestId('blunder-check-solution-summary');
-    const feedback = screen.getByTestId('blunder-check-solution-feedback');
-    expect(summary.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(feedback.textContent).toContain('The blunder misses checkmate.');
+    const line = screen.getByTestId('game-move-line');
+    expect(summary.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(line).getByTestId('game-move-san').textContent).toBe('Nf3');
+    // Score 0.8: a facepalm blunder, so the line carries "???" like the Game chip.
+    expect(within(line).getByTestId('game-move-quality').getAttribute('data-facepalm')).toBe('true');
+    expect(line.textContent?.endsWith(': missed checkmate. Easy to spot (facepalm score 80%).')).toBe(true);
+    // Not hard to catch: no feedback paragraph.
+    expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
   });
 
   it('shows for a caught blunder too, with the well-spotted line (D-04)', () => {
@@ -533,17 +564,28 @@ describe('avatar feedback paragraph (Phase 261 D-03)', () => {
   it('never shows on a false alarm or a herring (D-05)', () => {
     renderSolution(falseAlarmSolution(), scriptedEngine());
     expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    expect(screen.queryByTestId('blunder-check-solution-extras')).toBeNull();
     cleanup();
     renderSolution(herringSolution(), scriptedEngine());
     expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    expect(screen.queryByTestId('blunder-check-solution-extras')).toBeNull();
   });
 
-  it('shows no paragraph for a blunder with neither line', () => {
+  it('a scored blunder with no tag and no type line says its score below the divider (D-23)', () => {
     renderSolution(
-      blunderSolution({ feedback: { score: 0.6, type_line: null, hard_to_catch: false } }),
+      blunderSolution({ feedback: { score: 0.6, facepalm_type: 'missed_win', type_line: null, hard_to_catch: false } }),
       scriptedEngine(),
     );
     expect(screen.queryByTestId('blunder-check-solution-feedback')).toBeNull();
+    const line = within(screen.getByTestId('blunder-check-solution-extras')).getByTestId('game-move-line');
+    expect(line.textContent?.endsWith(': fairly easy to spot (facepalm score 60%).')).toBe(true);
+    expect(within(line).getByTestId('train-game-move-facepalm-popover')).toBeTruthy();
+  });
+
+  it('shows no divider and no line for an unscored blunder with nothing known', () => {
+    renderSolution(blunderSolution({ feedback: null }), scriptedEngine());
+    expect(screen.queryByTestId('blunder-check-solution-extras')).toBeNull();
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
   });
 
   it('draws "???" on the board and the Game chip for a facepalm blunder (score >= 70%)', () => {
@@ -668,7 +710,7 @@ describe('foreign blunder solution (D-09)', () => {
     renderSolution(foreign(), scriptedEngine());
 
     expect(screen.getByTestId('blunder-check-solution-summary').textContent).toBe(
-      'Nf3 was a blunder. You called it +3 and played a good move, Nc3 +2. Best was d4.',
+      'Your call was right +3 and you played a good move, Nc3 +2. Best was d4.',
     );
     expect(screen.getByTestId('blunder-check-game-footer').textContent).toBe(
       `Game: Rapid 10+0 · player rated 1650 · ${formatDateWithYear('2026-02-10T09:30:00Z')}`,
@@ -676,11 +718,15 @@ describe('foreign blunder solution (D-09)', () => {
     expect(libraryGame.useLibraryGame).not.toHaveBeenCalled();
   });
 
-  it('never claims the move was the user\'s: no "You played" and no "your move" anywhere', () => {
+  it('never claims the game move was the user\'s: no "You played Nf3" and no "your move" anywhere', () => {
     renderSolution(foreign(), scriptedEngine());
 
-    expect(renderedText()).not.toContain('you played');
+    // Phase 264: the verdict now says "and you played a good move, Nc3" about the user's own
+    // better move, which is theirs. What must never appear is that claim about the game move.
+    expect(renderedText()).toContain('and you played a good move, nc3');
+    expect(renderedText()).not.toContain('you played nf3');
     expect(renderedText()).not.toContain('your move');
+    expect(renderedText()).not.toContain('your blunder');
   });
 
   it('a foreign window whose game is gone shows no footer line at all', () => {

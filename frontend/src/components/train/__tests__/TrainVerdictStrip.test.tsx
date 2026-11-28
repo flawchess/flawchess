@@ -68,6 +68,9 @@ function renderStrip(onExpand?: () => void): void {
         sessionDate="2026-07-27"
         expiresOn={undefined}
         alsoFineSanList=""
+        gameMove={[]}
+        gameMoveHead={{ san: null, quality: null, facepalm: false }}
+        gameMovePending={false}
       />
     </TrainVerdictStrip>,
   );

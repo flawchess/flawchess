@@ -126,12 +126,14 @@ import asyncio
 import datetime
 import uuid
 from collections.abc import Sequence
+from typing import Any, Literal
 
 import httpx
 import pytest
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.services.blunder_check_rules import FACEPALM_STATS_MIN
 from app.core.config import settings as config_settings
 from app.core.dev_clock import DEV_CLOCK_OFFSET_HEADER
 from app.main import app
@@ -2399,14 +2401,21 @@ async def test_reveal_key_set_excludes_stored_answer_key_fields(test_engine) -> 
             "puzzle_type",
             "source",
             "has_tactic_lines",
-            # A boolean off the stored flaw facts (the "???" badge), not an engine line or eval.
-            "game_move_facepalm",
+            # The flaw block (Phase 264): the "???" flag, the type line and the gated tags, never
+            # an engine line or eval. Null for a herring.
+            "flaw",
             # Neutral facts of a stranger's game: null for every source but a foreign blunder.
             "game_info",
         }
         assert resp.json()["game_info"] is None
-        # Neither an unscored flaw row nor a herring is ever a facepalm blunder.
-        assert resp.json()["game_move_facepalm"] is False
+        # An unscored flaw row with no tags and no stored lines: an empty block, never null.
+        assert resp.json()["flaw"] == {
+            "facepalm_score": None,
+            "facepalm_type": None,
+            "type_line": None,
+            "allowed_tactic": None,
+            "missed_tactic": None,
+        }
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -2517,14 +2526,15 @@ async def test_reveal_cross_user_herring_hides_game_move_and_no_owner_scope_leak
             "puzzle_type",
             "source",
             "has_tactic_lines",
-            # A boolean off the stored flaw facts (the "???" badge), not an engine line or eval.
-            "game_move_facepalm",
+            # The flaw block (Phase 264): the "???" flag, the type line and the gated tags, never
+            # an engine line or eval. Null for a herring.
+            "flaw",
             # Neutral facts of a stranger's game: null for every source but a foreign blunder.
             "game_info",
         }
         assert resp.json()["game_info"] is None
-        # Neither an unscored flaw row nor a herring is ever a facepalm blunder.
-        assert resp.json()["game_move_facepalm"] is False
+        # A herring's game move is good: no flaw block at all.
+        assert resp.json()["flaw"] is None
     finally:
         await _delete_herring_pool_rows(test_engine, [pool_id])
         await _delete_games(test_engine, [game_id_b])
@@ -2707,16 +2717,27 @@ _FACEPALM_LOW_FACTS: dict[str, float] = {
 _SEVERITY_MISTAKE = 1
 
 
+# What the flaw block's facepalm fields should read: None (no score), or the score's side of
+# the 70% cut plus the type.
+_FacepalmExpectation = tuple[Literal["high", "low"], Literal["allowed_loss", "missed_win"]] | None
+
+
 @pytest.mark.asyncio
-async def test_reveal_game_move_facepalm_flag(test_engine) -> None:
-    """game_move_facepalm is True only for a blunder scoring at or above the facepalm cut:
-    not for a low-scoring blunder, and not for a mistake whatever its facts."""
+async def test_reveal_game_move_facepalm_score_and_type(test_engine) -> None:
+    """flaw.facepalm_score / facepalm_type (264 D-23): the library's live score and type for a
+    scored blunder, either side of the 70% cut; both None for a mistake whatever its facts and
+    for an unscored blunder."""
     email = f"train-reveal-facepalm-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
-    cases: list[tuple[dict[str, float | int], bool]] = [
-        (dict(_FACEPALM_HIGH_FACTS), True),
-        (dict(_FACEPALM_LOW_FACTS), False),
-        ({**_FACEPALM_HIGH_FACTS, "severity": _SEVERITY_MISTAKE}, False),
+    cases: list[tuple[dict[str, float | int | None], _FacepalmExpectation]] = [
+        (dict(_FACEPALM_HIGH_FACTS), ("high", "allowed_loss")),
+        (dict(_FACEPALM_LOW_FACTS), ("low", "allowed_loss")),
+        (
+            {**_FACEPALM_HIGH_FACTS, "material_loss": 0.0, "material_missed": 9.0},
+            ("high", "missed_win"),
+        ),
+        ({**_FACEPALM_HIGH_FACTS, "severity": _SEVERITY_MISTAKE}, None),
+        ({**_FACEPALM_HIGH_FACTS, "maia_played_prob": None}, None),
     ]
     game_ids: list[int] = []
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -2738,9 +2759,145 @@ async def test_reveal_game_move_facepalm_flag(test_engine) -> None:
 
             resp = await _reveal(token, session_id, 0)
             assert resp.status_code == 200
-            assert resp.json()["game_move_facepalm"] is expected
+            flaw = resp.json()["flaw"]
+            assert "facepalm" not in flaw
+            if expected is None:
+                assert (flaw["facepalm_score"], flaw["facepalm_type"]) == (None, None), values
+                continue
+            side, facepalm_type = expected
+            score = flaw["facepalm_score"]
+            assert isinstance(score, float) and 0.0 <= score <= 1.0, values
+            assert (score >= FACEPALM_STATS_MIN) is (side == "high"), (values, score)
+            assert flaw["facepalm_type"] == facepalm_type, values
     finally:
         await _delete_games(test_engine, game_ids)
+
+
+# ---------------------------------------------------------------------------
+# Phase 264: the reveal's flaw block (type line and gated tactic tags)
+# ---------------------------------------------------------------------------
+
+# Stored refutation lines after 4.Ba4 (the flaw at _FLAW_PLY_WHITE). Black wins the bishop for a
+# pawn (swing 2 at the deepest settled depth), or wins a pawn only (swing 1).
+_REFUTATION_SWING_TWO_PV = "b7b5 b1c3 b5a4 c3a4 g8f6 d2d3 f8e7 e1g1"
+_REFUTATION_SWING_ONE_PV = "g8f6 d2d3 f6e4 e1g1 e4f6 b1c3 f8e7 h2h3"
+_TAG_FORK = 1
+_TAG_PIN = 3
+_TAG_FORK_DEPTH = 1
+_TAG_PIN_DEPTH = 2
+_CONFIDENCE_FLOOR = 70
+# Below -MATE_LADDER_LOPSIDED_CP for White: the pre-move position is already decided lost.
+_DECIDED_LOST_CP = -900
+
+
+async def _reveal_flaw_block(
+    test_engine,
+    *,
+    label: str,
+    flaw_values: dict[str, float | int | None],
+    refutation_pv: str | None = None,
+    prior_eval_cp: int = _WINNABLE_CP,
+) -> dict[str, Any]:
+    """Seed one own puzzle with the given flaw columns and stored line, solve it, reveal it."""
+    email = f"train-reveal-{label}-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    game_id = await _seed_game_with_blunder(test_engine, user_id, prior_eval_cp=prior_eval_cp)
+    try:
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session, session.begin():
+            if flaw_values:
+                await session.execute(
+                    update(GameFlaw).where(GameFlaw.game_id == game_id).values(**flaw_values)
+                )
+        await _seed_position_meta(
+            test_engine, user_id, game_id, _FLAW_PLY_WHITE, best_move="b5a4", move_san="Ba4"
+        )
+        if refutation_pv is not None:
+            await _seed_position_meta(
+                test_engine,
+                user_id,
+                game_id,
+                _FLAW_PLY_WHITE + 1,
+                best_move=refutation_pv.split()[0],
+                move_san="Nf6",
+                pv=refutation_pv,
+            )
+        await _seed_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
+        session_id = await _seed_session(
+            test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
+        )
+        solved = await _solve(token, session_id, 0, move_quality="good")
+        assert solved.status_code == 200
+        resp = await _reveal(token, session_id, 0)
+        assert resp.status_code == 200
+        flaw: dict[str, Any] = resp.json()["flaw"]
+        return flaw
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pv", "material", "expected"),
+    [
+        (_REFUTATION_SWING_TWO_PV, (3.0, 0.0), "allowed_material"),
+        (_REFUTATION_SWING_ONE_PV, (3.0, 0.0), None),
+        # A row without material_loss has no side and no line, whatever the stored line shows.
+        (_REFUTATION_SWING_TWO_PV, (None, None), None),
+        # No stored line at ply + 1: nothing settles.
+        (None, (3.0, 0.0), None),
+    ],
+    ids=["swing-2", "swing-1", "no-material-loss", "no-stored-line"],
+)
+async def test_reveal_type_line_follows_the_swing_rule(
+    test_engine, pv: str | None, material: tuple[float | None, float | None], expected: str | None
+) -> None:
+    """AC-5: the reveal replays the stored line. The seeded row carries no Maia columns, so it is
+    unscored, and still gets its line when material_loss is known."""
+    flaw = await _reveal_flaw_block(
+        test_engine,
+        label="type",
+        flaw_values={"material_loss": material[0], "material_missed": material[1]},
+        refutation_pv=pv,
+    )
+    assert flaw["type_line"] == expected
+    # Unscored: no score and no type for the badge's popover (264 D-23).
+    assert (flaw["facepalm_score"], flaw["facepalm_type"]) == (None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("confidence", "prior_eval_cp", "visible"),
+    [
+        (_CONFIDENCE_FLOOR - 1, _WINNABLE_CP, False),
+        (_CONFIDENCE_FLOOR, _WINNABLE_CP, True),
+        (_CONFIDENCE_FLOOR, _DECIDED_LOST_CP, False),
+    ],
+    ids=["confidence-69", "confidence-70", "decided-lost"],
+)
+async def test_reveal_tactic_slots_pass_the_strip_gate(
+    test_engine, confidence: int, prior_eval_cp: int, visible: bool
+) -> None:
+    """AC-7: confidence 69 is nulled, 70 passes, a decided-lost pre-move position nulls both."""
+    flaw = await _reveal_flaw_block(
+        test_engine,
+        label="tags",
+        flaw_values={
+            "allowed_tactic_motif": _TAG_FORK,
+            "allowed_tactic_confidence": confidence,
+            "allowed_tactic_depth": _TAG_FORK_DEPTH,
+            "missed_tactic_motif": _TAG_PIN,
+            "missed_tactic_confidence": confidence,
+            "missed_tactic_depth": _TAG_PIN_DEPTH,
+        },
+        prior_eval_cp=prior_eval_cp,
+    )
+    if visible:
+        assert flaw["allowed_tactic"] == {"motif": "fork", "depth": _TAG_FORK_DEPTH}
+        assert flaw["missed_tactic"] == {"motif": "pin", "depth": _TAG_PIN_DEPTH}
+    else:
+        assert flaw["allowed_tactic"] is None
+        assert flaw["missed_tactic"] is None
 
 
 @pytest.mark.asyncio

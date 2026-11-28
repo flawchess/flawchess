@@ -206,3 +206,94 @@ def test_hard_to_catch_is_a_score_below_the_cut(score: float, hard: bool) -> Non
     assert data is not None
     assert data.hard_to_catch is hard
     assert data.score == score
+
+
+# ---------------------------------------------------------------------------
+# Phase 264: the type line without a score, and the one replay step of both surfaces (AC-5)
+# ---------------------------------------------------------------------------
+
+# Ruy Lopez; white's 4.Ba4 at ply 6 stands in for the blunder.
+_RUY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 *"
+_RUY_PLY = 6
+# Black wins the bishop for a pawn: swing 2 at the deepest settled depth.
+_RUY_SWING_TWO_PV = "b7b5 b1c3 b5a4 c3a4 g8f6 d2d3 f8e7 e1g1"
+# Black wins a pawn and keeps it: swing 1.
+_RUY_SWING_ONE_PV = "g8f6 d2d3 f6e4 e1g1 e4f6 b1c3 f8e7 h2h3"
+# Scholar's mate: black's 3...Nf6 at ply 5 allows Qxf7#.
+_SCHOLARS_PGN = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 *"
+_SCHOLARS_PLY = 5
+_SCHOLARS_MATE_PV = "h5f7"
+
+
+def _stored(pv: str | None, *, loss: float | None = 3.0, pgn: str = _RUY_PGN) -> str | None:
+    return feedback.stored_type_line(
+        pgn,
+        _RUY_PLY if pgn == _RUY_PGN else _SCHOLARS_PLY,
+        loss=loss,
+        missed=None if loss is None else 0.0,
+        refutation_pv=pv,
+        best_line=None,
+    )
+
+
+def test_stored_line_swing_of_one_gives_no_line_and_two_the_material_line() -> None:
+    assert _stored(_RUY_SWING_ONE_PV) is None
+    assert _stored(_RUY_SWING_TWO_PV) == "allowed_material"
+
+
+def test_stored_line_reaching_mate_gives_the_mate_line() -> None:
+    assert _stored(_SCHOLARS_MATE_PV, pgn=_SCHOLARS_PGN) == "allowed_mate"
+
+
+def test_stored_line_needs_a_known_loss_and_a_usable_line() -> None:
+    # P6: an unknown loss has no side, whatever the stored line shows.
+    assert _stored(_RUY_SWING_TWO_PV, loss=None) is None
+    # No stored line: nothing settles.
+    assert _stored(None) is None
+    # An unparseable PGN gives no facts instead of raising.
+    assert (
+        feedback.stored_type_line(
+            "not a pgn",
+            _RUY_PLY,
+            loss=3.0,
+            missed=0.0,
+            refutation_pv=_RUY_SWING_TWO_PV,
+            best_line=None,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("swing", "mate", "expected"),
+    [(1, False, None), (2, False, "allowed_material"), (0, True, "allowed_mate")],
+)
+def test_type_line_of_needs_no_score(swing: int, mate: bool, expected: str | None) -> None:
+    """An unscored row with a known loss gets its line: the decision takes no facepalm score."""
+    assert feedback.type_line_of(loss=3.0, missed=0.0, type_swing=swing, type_mate=mate) == expected
+    assert feedback.type_line_of(loss=None, missed=None, type_swing=9, type_mate=True) is None
+
+
+@pytest.mark.parametrize(
+    ("pgn", "ply", "pv"),
+    [
+        (_RUY_PGN, _RUY_PLY, _RUY_SWING_TWO_PV),
+        (_RUY_PGN, _RUY_PLY, _RUY_SWING_ONE_PV),
+        (_SCHOLARS_PGN, _SCHOLARS_PLY, _SCHOLARS_MATE_PV),
+    ],
+    ids=["material", "below-floor", "mate"],
+)
+def test_reveal_and_blunder_check_give_the_same_type_line(pgn: str, ply: int, pv: str) -> None:
+    """The puzzle reveal (`stored_type_line`) and a blunder-check window (facts snapshotted at
+    serve time, `blunder_feedback` at read time) agree on the same blunder."""
+    facts = feedback.stored_type_line_facts(
+        pgn, ply, refutation_pv=pv, best_line=None, facepalm_type="allowed_loss"
+    )
+    window = feedback.blunder_feedback(
+        score=0.9, loss=3.0, missed=0.0, type_swing=facts.swing, type_mate=facts.mate
+    )
+    assert window is not None
+    reveal = feedback.stored_type_line(
+        pgn, ply, loss=3.0, missed=0.0, refutation_pv=pv, best_line=None
+    )
+    assert reveal == window.type_line

@@ -14,7 +14,8 @@
 
 import type { TrainMoveTier } from '@/lib/trainScore';
 import type { TrainPuzzleType } from '@/lib/trainArrows';
-import type { GameInfo } from '@/types/blunderCheck';
+import type { BlunderTypeLine, GameInfo } from '@/types/blunderCheck';
+import type { FacepalmType } from '@/types/library';
 
 export interface TrainPuzzle {
   position: number;
@@ -329,6 +330,28 @@ export interface SolveResponse {
  * the solving user. A null `game_id` degrades the reveal's game footer to
  * nothing and hides the Analyze deep-link rather than disabling it.
  */
+/** One visible tactic tag of a flaw: the motif name and its stored 0-based depth. Only sent
+ * for a slot that passed the server's display gate (the analysis move strip's). */
+export interface TacticSlot {
+  motif: string;
+  depth: number | null;
+}
+
+/**
+ * The game move of a personalized puzzle as a flaw (Phase 264). `facepalm_score` (raw 0..1, the
+ * library's live score) and `facepalm_type` make the line's "??" / "???" badge open the facepalm
+ * popover; "???" is `isFacepalmBlunder(facepalm_score)` (264 D-23). Both null for a mistake or
+ * an unscored blunder. `type_line` and the two tag slots feed the rest of the avatar's line
+ * (lib/gameBlunderSentence.ts).
+ */
+export interface GameMoveFlaw {
+  facepalm_score: number | null;
+  facepalm_type: FacepalmType | null;
+  type_line: BlunderTypeLine | null;
+  allowed_tactic: TacticSlot | null;
+  missed_tactic: TacticSlot | null;
+}
+
 export interface PuzzleRevealResponse {
   game_id: number | null;
   ply: number;
@@ -339,10 +362,10 @@ export interface PuzzleRevealResponse {
   source: 'sr_item' | 'red_herring' | 'foreign_blunder' | 'sharp_filler';
   has_tactic_lines: boolean;
   /**
-   * The in-game move is a facepalm blunder (facepalm score of 70% or more): the reveal badges
-   * it "???" instead of "??". OPTIONAL: a stale server or an old reveal-cache entry omits it.
+   * The game move as a flaw (Phase 264); null for a herring, whose game move is good.
+   * OPTIONAL: a stale server or an old reveal-cache entry omits it.
    */
-  game_move_facepalm?: boolean;
+  flaw?: GameMoveFlaw | null;
   /**
    * Neutral facts of a stranger's game for a foreign puzzle only (D-21): time control, the
    * mover's rating, date; no usernames or ids. Optional because a pre-deploy server omits it.

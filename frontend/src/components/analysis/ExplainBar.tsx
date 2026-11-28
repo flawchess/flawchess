@@ -27,7 +27,7 @@ import { BookIcon } from '@/components/icons/BookIcon';
 import { FacepalmGlyphBadge } from '@/components/analysis/FacepalmGlyphBadge';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
 import type { MoveInfo, MoveInfoQuality, MoveRarity } from '@/lib/moveInfo';
-import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import { TACTIC_COLOR } from '@/lib/explainBar';
 import type {
   ExplainBarState,
   ExplainHeadline,
@@ -67,7 +67,6 @@ const GOT_IT_LABEL = 'Done';
  *  shorter, icon-less Done button frees up. */
 const STEPPER_BUTTON_CLASS = 'w-11';
 
-const TACTIC_COLOR: Record<ExplainOrientation, string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
 const TACTIC_SEPARATOR = ', ';
 
 /** Inline text (not a flex item), so it continues the headline's first line and wraps under the move. */

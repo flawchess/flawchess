@@ -20,12 +20,13 @@ import type {
   TrainMoveQuality,
   TrainRevealOverlay,
 } from '@/lib/trainArrows';
+import { NO_GAME_MOVE_HEAD, gameBlunderParts } from '@/lib/gameBlunderSentence';
+import type { GameBlunderPart, GameMoveHead } from '@/lib/gameBlunderSentence';
 import { CANONICAL_ROLE_ORDER, ROLE_SHORT_LABELS, sanFromUci } from '@/lib/trainRevealLines';
 import type { ChipGroup, GameMoveLineState, RoleKey } from '@/lib/trainRevealLines';
 import type {
   BetterMoveTier,
   BlunderSolution,
-  BlunderTypeLine,
   FalseAlarmSolution,
   HerringSolution,
   LinesSolution,
@@ -205,10 +206,17 @@ export interface SolutionCopy {
   heading: string;
   parts: SolutionCopyPart[];
   /**
-   * The second paragraph (Phase 261 D-03); null for false alarms, herrings, pre-phase windows
-   * and a blunder with neither a type line nor the hard-to-catch line.
+   * The second paragraph (Phase 261 D-03), the hard-to-catch line; null for false alarms,
+   * herrings, pre-phase windows and a blunder that was not hard to catch.
    */
   feedback: SolutionFeedback | null;
+  /**
+   * The "Game move:" line below the divider (Phase 264 D-16), as parts; empty for false
+   * alarms, herrings and a blunder with no visible tag and no type line.
+   */
+  gameMove: GameBlunderPart[];
+  /** That line's subject: the blunder's SAN and its "??" / "???" glyph. */
+  gameMoveHead: GameMoveHead;
 }
 
 /** The window's total: the sum of the verdict's point badges (the phone strip's pill). */
@@ -230,46 +238,63 @@ function earlierCallsParts(points: number): SolutionCopyPart[] {
   return points > 0 ? [' Your earlier calls earned ', { name: 'earlier', points }, '.'] : [];
 }
 
-/** What the blunder allowed or missed (Phase 261 D-09), as one sentence. */
-const TYPE_LINE_COPY: Record<BlunderTypeLine, string> = {
-  allowed_material: 'The blunder loses material.',
-  allowed_mate: 'The blunder allows checkmate.',
-  missed_material: 'The blunder misses a chance to win material.',
-  missed_mate: 'The blunder misses checkmate.',
-};
-
 /** The fairness line for a subtle blunder (D-07), by whether the user called it. */
 const HARD_TO_CATCH_COPY: Record<'caught' | 'missed', string> = {
   caught: 'Well spotted! This was one of the tough ones we mix in on purpose.',
   missed: 'This one was hard to catch. We mix in a few tough ones on purpose.',
 };
 
-/** The feedback paragraph of a blunder solution: type line, then the hard-to-catch line. */
+/**
+ * The feedback paragraph of a blunder solution: the hard-to-catch line. The type line moved to
+ * the shared "Game move:" line below the divider (Phase 264 D-16).
+ */
 function feedbackCopy(solution: BlunderSolution): SolutionFeedback | null {
   // A solution cached in sessionStorage before the release has no `feedback` field at all.
   const feedback = solution.feedback ?? null;
   if (feedback === null) return null;
-  const lines: string[] = [];
-  if (feedback.type_line !== null) lines.push(TYPE_LINE_COPY[feedback.type_line]);
-  if (feedback.hard_to_catch) lines.push(HARD_TO_CATCH_COPY[solution.outcome]);
-  // The score is no longer shown as a chip (Phase 261 UAT): it only picks the "???" badge.
-  return lines.length > 0 ? { lines } : null;
+  // The score is no chip (Phase 261 UAT): it sits behind the line's badge and closes the
+  // game-move line as its own sentence (264 D-23, D-25), not this paragraph.
+  return feedback.hard_to_catch ? { lines: [HARD_TO_CATCH_COPY[solution.outcome]] } : null;
+}
+
+/** The "Game move:" line of a caught or missed blunder: its tags and the snapshotted type line. */
+function gameMoveParts(solution: BlunderSolution): GameBlunderPart[] {
+  return gameBlunderParts({
+    // A solution cached in sessionStorage before the release has neither tag field.
+    allowedTactic: solution.allowed_tactic ?? null,
+    missedTactic: solution.missed_tactic ?? null,
+    typeLine: solution.feedback?.type_line ?? null,
+    // The serve-time snapshot, as the badge's popover: blunder check shows the score the window
+    // was served with, the puzzle and analysis the live score (264 D-23, accepted drift).
+    facepalmScore: solution.feedback?.score ?? null,
+    // The hard-to-catch line above the divider already says it (same 50% cut): no band word.
+    difficultySaid: solution.feedback?.hard_to_catch === true,
+  });
+}
+
+/** How the user's call on the blunder went: right, wrong, or never made (the timer ran out). */
+function callClause(solution: BlunderSolution): string {
+  if (solution.outcome === 'caught') return 'Your call was right ';
+  // Bug fix (Phase 264 review): a timeout also ends as "missed", and "Your call was wrong"
+  // was false for it, since no call was made.
+  return solution.timed_out === true ? 'Time ran out before your call ' : 'Your call was wrong ';
 }
 
 /**
- * The verdict of a caught or missed blunder. The game move is named as the blunder and the
- * user's better move separately, with its own quality: without that, "X was a blunder" read
- * as a verdict on the better move the user had just played (Phase 249 UAT). A blunder is
- * never said to "lose to" a reply: many miss a chance or are positional.
+ * The verdict of a caught or missed blunder: the user's call, then their better move with its
+ * own quality. The blunder itself is no longer named here (owner, 2026-11-26, Phase 264): the
+ * line below the divider starts with it ("Qe5 ???: loses material."), and next to that line
+ * "Qe5 was a blunder. You missed it" read as if "it" were something other than the call. So
+ * the clause says "Your call was right / wrong". A blunder is never said to "lose to" a reply:
+ * many miss a chance or are positional.
  */
 function blunderCopy(solution: BlunderSolution): SolutionCopy {
   const caught = solution.outcome === 'caught';
   const heading = caught ? 'Blunder caught' : 'Missed blunder';
-  const playedSan = sanFromUci(solution.fen, solution.blunder_uci) ?? 'That move';
   const bestSan = sanFromUci(solution.fen, solution.key_uci);
   const bestText = bestSan === null ? '' : ` Best was ${bestSan}.`;
   const parts: SolutionCopyPart[] = [
-    `${playedSan} was a blunder. You ${caught ? 'called' : 'missed'} it `,
+    callClause(solution),
     { name: 'call', points: solution.blunder_points },
   ];
   const better = betterMoveOverlay(solution);
@@ -278,7 +303,7 @@ function blunderCopy(solution: BlunderSolution): SolutionCopy {
     parts.push(`.${bestText}`);
   } else {
     parts.push(
-      ` and ${BETTER_MOVE_PHRASE[better.quality]}, ${betterSan} `,
+      ` and you ${BETTER_MOVE_PHRASE[better.quality]}, ${betterSan} `,
       { name: 'move', points: solution.better_move_points },
       // The best move is not repeated when the user found it.
       better.quality === 'best' ? '.' : `.${bestText}`,
@@ -288,6 +313,14 @@ function blunderCopy(solution: BlunderSolution): SolutionCopy {
     heading,
     parts: [...parts, ...earlierCallsParts(solution.safe_points)],
     feedback: feedbackCopy(solution),
+    gameMove: gameMoveParts(solution),
+    gameMoveHead: {
+      san: sanFromUci(solution.fen, solution.blunder_uci),
+      quality: 'blunder',
+      facepalmScore: solution.feedback?.score ?? null,
+      facepalmType: solution.feedback?.facepalm_type ?? null,
+      byOther: !solution.is_own,
+    },
   };
 }
 
@@ -304,6 +337,8 @@ function falseAlarmCopy(solution: FalseAlarmSolution): SolutionCopy {
     ],
     // D-05: a false alarm never reveals the blunder the user did not reach (249 D-10).
     feedback: null,
+    gameMove: [],
+    gameMoveHead: NO_GAME_MOVE_HEAD,
   };
 }
 
@@ -316,6 +351,8 @@ function herringCopy(solution: HerringSolution): SolutionCopy {
       '.',
     ],
     feedback: null,
+    gameMove: [],
+    gameMoveHead: NO_GAME_MOVE_HEAD,
   };
 }
 

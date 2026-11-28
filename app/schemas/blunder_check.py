@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 
 # `GameInfo` lives in `app.schemas.train` (the Train reveal also carries it, and this module
 # already imports from there); re-exported here for the existing importers.
-from app.schemas.train import GameInfo, ServerGradedMove
+from app.schemas.train import BlunderTypeLineWire, GameInfo, ServerGradedMove, TacticSlot
 from app.services.blunder_check_rules import MAX_BLUNDER_POSITION
+from app.services.facepalm_score import FacepalmType
 
 WindowOutcomeWire = Literal["cleared", "caught", "missed", "false_alarm"]
 WindowState = Literal["pending", "active", "ended"]
@@ -166,7 +167,6 @@ class SessionResultResponse(BaseModel):
 
 MoveTierWire = Literal["good", "inaccuracy", "wrong"]
 WindowCaseWire = Literal["allowed", "pure_miss", "mixed"]
-BlunderTypeLineWire = Literal["allowed_material", "allowed_mate", "missed_material", "missed_mate"]
 
 
 class BetterMoveRequest(BaseModel):
@@ -189,10 +189,12 @@ class BetterMoveResponse(BaseModel):
 
 
 class BlunderFeedback(BaseModel):
-    """Phase 261 avatar feedback: the serve-time facepalm score snapshot, the type line and the
-    hard-to-catch flag. Only sent once the window has ended, and never on a false alarm (D-05)."""
+    """Phase 261 avatar feedback: the serve-time facepalm score snapshot, its facepalm type
+    (264 D-23, for the badge's score popover), the type line and the hard-to-catch flag. Only
+    sent once the window has ended, and never on a false alarm (D-05)."""
 
     score: float
+    facepalm_type: FacepalmType | None
     type_line: BlunderTypeLineWire | None
     hard_to_catch: bool
 
@@ -220,6 +222,12 @@ class BlunderSolution(BaseModel):
     better_move_points: int | None
     # None for a window served before Phase 261 (no snapshot).
     feedback: BlunderFeedback | None
+    # The blunder's visible tactic tags (Phase 264 D-03), read live from game_flaws under the
+    # analysis move strip's gate; None when hidden, absent, or the game is gone.
+    allowed_tactic: TacticSlot | None = None
+    missed_tactic: TacticSlot | None = None
+    # True when the window was missed because the blunder move's timer ran out (no call made).
+    timed_out: bool = False
 
 
 class HerringSolution(BaseModel):

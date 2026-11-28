@@ -216,6 +216,9 @@ _BLUNDER_KEYS = {
     "blunder_points",
     "better_move_points",
     "feedback",
+    "allowed_tactic",
+    "missed_tactic",
+    "timed_out",
 }
 _HERRING_KEYS = {
     "kind",
@@ -823,7 +826,7 @@ async def test_solution_missed_window_carries_the_graded_alternatives(test_engin
 # ---------------------------------------------------------------------------
 
 _SNAPSHOT_PLAYED_PROB = 0.05
-_FEEDBACK_KEYS = {"score", "type_line", "hard_to_catch"}
+_FEEDBACK_KEYS = {"score", "facepalm_type", "type_line", "hard_to_catch"}
 
 
 def _record(
@@ -897,6 +900,8 @@ async def test_solution_missed_and_caught_carry_the_snapshot_feedback(test_engin
         assert feedback["score"] == pytest.approx(0.95, abs=1e-6)
         assert feedback["type_line"] == "allowed_material"
         assert feedback["hard_to_catch"] is False
+        # 264 D-23: the snapshot's type, for the badge's score popover.
+        assert feedback["facepalm_type"] == "allowed_loss"
 
 
 @pytest.mark.asyncio
@@ -909,6 +914,7 @@ async def test_solution_feedback_mate_and_hard_to_catch(test_engine, clock) -> N
     assert data["feedback"]["type_line"] == "missed_mate"
     assert data["feedback"]["hard_to_catch"] is True
     assert data["feedback"]["score"] == pytest.approx(0.42, abs=1e-6)
+    assert data["feedback"]["facepalm_type"] == "missed_win"
 
 
 @pytest.mark.asyncio
@@ -923,7 +929,13 @@ async def test_solution_false_alarm_of_a_low_score_window_has_no_feedback(
         assert alarm["outcome"] == "false_alarm"
         data = (await _solution(s.token, s.session_id, 0)).json()
     assert set(data) == _FALSE_ALARM_KEYS
-    assert not _all_keys(data) & {"feedback", "type_line", "hard_to_catch", "facepalm_score"}
+    assert not _all_keys(data) & {
+        "feedback",
+        "type_line",
+        "hard_to_catch",
+        "facepalm_score",
+        "facepalm_type",
+    }
 
 
 @pytest.mark.asyncio
@@ -939,3 +951,90 @@ async def test_solution_feedback_survives_the_game_delete(test_engine, clock) ->
     assert after["feedback"] == before["feedback"]
     assert after["feedback"]["type_line"] == "allowed_material"
     assert after["feedback"]["hard_to_catch"] is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 264: the blunder's tactic tags on the solution, read live under the strip's gate
+# ---------------------------------------------------------------------------
+
+_TAG_FORK = 1
+_TAG_PIN = 3
+_TAG_CONFIDENCE_FLOOR = 70
+_TAG_DEPTH = 1
+
+
+async def _tag_blunder(test_engine, game_id: int, *, allowed_conf: int, missed_conf: int) -> None:
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with maker() as session, session.begin():
+        await session.execute(
+            update(GameFlaw)
+            .where(GameFlaw.game_id == game_id, GameFlaw.ply == _BLUNDER_PLY)
+            .values(
+                allowed_tactic_motif=_TAG_FORK,
+                allowed_tactic_confidence=allowed_conf,
+                allowed_tactic_depth=_TAG_DEPTH,
+                missed_tactic_motif=_TAG_PIN,
+                missed_tactic_confidence=missed_conf,
+                missed_tactic_depth=_TAG_DEPTH,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_solution_carries_the_gated_tactic_slots(test_engine, clock) -> None:
+    """AC-9: confidence 70 passes and 69 is nulled, the same gate as the analysis strip."""
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _tag_blunder(
+            test_engine,
+            s.game_ids[0],
+            allowed_conf=_TAG_CONFIDENCE_FLOOR,
+            missed_conf=_TAG_CONFIDENCE_FLOOR - 1,
+        )
+        await _caught_at_one(s)
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert data["allowed_tactic"] == {"motif": "fork", "depth": _TAG_DEPTH}
+    assert data["missed_tactic"] is None
+
+
+@pytest.mark.asyncio
+async def test_solution_tactic_slots_are_live_not_snapshotted(test_engine, clock) -> None:
+    """Untagged rows give nulls, and the tags go with the game: nothing is kept on the window."""
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _caught_at_one(s)
+        untagged = (await _solution(s.token, s.session_id, 0)).json()
+        await _tag_blunder(
+            test_engine,
+            s.game_ids[0],
+            allowed_conf=_TAG_CONFIDENCE_FLOOR,
+            missed_conf=_TAG_CONFIDENCE_FLOOR,
+        )
+        tagged = (await _solution(s.token, s.session_id, 0)).json()
+        await delete_games(test_engine, s.game_ids)
+        gone = (await _solution(s.token, s.session_id, 0)).json()
+    assert (untagged["allowed_tactic"], untagged["missed_tactic"]) == (None, None)
+    assert tagged["missed_tactic"] == {"motif": "pin", "depth": _TAG_DEPTH}
+    assert (gone["allowed_tactic"], gone["missed_tactic"]) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_solution_herring_and_false_alarm_carry_no_tactic_slots(test_engine, clock) -> None:
+    """D-16: only a caught or missed blunder window gets the "Game move:" line's inputs."""
+    async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
+        await _started(s)
+        await _ok(s, 1, "blunder")  # a false alarm
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert not _all_keys(data) & {"allowed_tactic", "missed_tactic"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("answer", "timed_out"), [("safe", False), ("timeout", True)])
+async def test_solution_says_whether_the_blunder_timed_out(
+    test_engine, clock, answer: str, timed_out: bool
+) -> None:
+    """D-20: both end as "missed", but only a wrong "Good" call is a wrong call."""
+    async with _setup(test_engine, [_BLUNDER_AT_ONE]) as s:
+        await _started(s)
+        await _ok(s, 1, answer)
+        data = (await _solution(s.token, s.session_id, 0)).json()
+    assert data["outcome"] == "missed"
+    assert data["timed_out"] is timed_out

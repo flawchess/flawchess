@@ -27,6 +27,13 @@ export const FACEPALM_PCT_MAX = 100;
 export const FACEPALM_HIGH_CUTOFF = 70;
 
 /**
+ * Below this whole percent a blunder is "hard to spot" in the avatar's game-move line (264
+ * D-23). The backend HARD_TO_CATCH_SCORE_BELOW (blunder check's "hard to catch" line) is pinned
+ * to the same 50% by test, so the two never disagree in one bubble.
+ */
+export const FACEPALM_HARD_TO_SPOT_BELOW = 50;
+
+/**
  * 257 D-20: the info popovers of the Facepalm blunders card and the Flaws Timeline facepalm
  * band. What a facepalm blunder is, plus the training pointer ("trains you to spot them", not a
  * promise to reduce them: no training effect is measured). No link, since a hover popover cannot

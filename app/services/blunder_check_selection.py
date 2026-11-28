@@ -31,7 +31,6 @@ All awaits on the one AsyncSession are sequential (CLAUDE.md: never gather on a 
 
 from __future__ import annotations
 
-import io
 import random
 import statistics
 from collections import Counter
@@ -65,7 +64,11 @@ from app.services.blunder_check_candidates import (
     lead_in_start,
     points_possible,
 )
-from app.services.blunder_check_feedback import TypeLineFacts, type_line_facts
+from app.services.blunder_check_feedback import (
+    TypeLineFacts,
+    mainline,
+    stored_type_line_facts,
+)
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
     FACEPALM_SCORE_MIN,
@@ -237,23 +240,12 @@ class WindowSnapshot:
     prior_uci: str | None
 
 
-def _mainline(pgn: str) -> tuple[chess.Board, list[chess.Move]] | None:
-    """Start board and mainline moves, None for an unparseable PGN."""
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn))
-        if game is None:
-            return None
-        return game.board(), list(game.mainline_moves())
-    except ValueError, IndexError, AttributeError, UnicodeDecodeError:
-        return None
-
-
 def build_snapshot(pgn: str, first_ply: int, last_ply: int) -> WindowSnapshot | None:
     """Snapshot from the lead-in start through the reply after `last_ply` (when it exists).
 
     None when the PGN is unparseable or the window runs past the end of the game.
     """
-    parsed = _mainline(pgn)
+    parsed = mainline(pgn)
     if parsed is None:
         return None
     board, moves = parsed
@@ -275,7 +267,7 @@ def legal_key_plies(
     pgn: str, positions: Sequence[GamePosition], flaw_plies: AbstractSet[int]
 ) -> set[int]:
     """Flaw plies whose stored best_move is set and legal on the board before that ply."""
-    parsed = _mainline(pgn)
+    parsed = mainline(pgn)
     if parsed is None:
         return set()
     board, moves = parsed
@@ -837,19 +829,6 @@ def _refutation_uci(positions: Sequence[GamePosition], blunder_ply: int) -> str 
     return row.pv.split(_PV_SEPARATOR)[0] if row.pv else None
 
 
-def _board_before_ply(pgn: str, ply: int) -> tuple[chess.Board, chess.Move] | None:
-    """The board before `ply` and the move played there; None for a bad PGN or a short mainline."""
-    parsed = _mainline(pgn)
-    if parsed is None:
-        return None
-    board, moves = parsed
-    if ply >= len(moves):
-        return None
-    for move in moves[:ply]:
-        board.push(move)
-    return board, moves[ply]
-
-
 def _type_line_facts_for(
     batch: _Batch, blunder_ply: int, facepalm_type: FacepalmType
 ) -> TypeLineFacts:
@@ -858,14 +837,18 @@ def _type_line_facts_for(
     The refutation line is the pv at ply + 1, the best line the pv at the flaw ply, else its
     best_move (the write-time hook's convention). No usable replay gives no facts.
     """
-    replay = _board_before_ply(batch.game.pgn, blunder_ply)
-    if replay is None or blunder_ply >= len(batch.positions):
+    if blunder_ply >= len(batch.positions):
         return TypeLineFacts(None, False)
-    board, played = replay
     positions = batch.positions
     refutation_pv = positions[blunder_ply + 1].pv if blunder_ply + 1 < len(positions) else None
     best_line = positions[blunder_ply].pv or positions[blunder_ply].best_move
-    return type_line_facts(board, played.uci(), refutation_pv, best_line, facepalm_type)
+    return stored_type_line_facts(
+        batch.game.pgn,
+        blunder_ply,
+        refutation_pv=refutation_pv,
+        best_line=best_line,
+        facepalm_type=facepalm_type,
+    )
 
 
 def _selection_record(item: _Filled, blunder_ply: int) -> WindowSelectionRecord | None:

@@ -28,7 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import aliased, load_only
 from sqlalchemy.sql.expression import SQLColumnExpression
 
 from app.models.blunder_check import (
@@ -49,6 +49,11 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories.game_flaws_repository import _SEVERITY_INT
+from app.repositories.library_repository import (
+    NO_TACTIC_SLOTS,
+    VisibleTacticSlots,
+    visible_tactic_slots,
+)
 from app.repositories.query_utils import (
     ANALYTICS_INCLUDED_PLATFORMS,
     apply_game_filters,
@@ -1023,6 +1028,47 @@ async def missed_pv_lines_at(
         .limit(1)
     )
     return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def visible_tactic_slots_at(
+    session: AsyncSession, *, game_id: int | None, ply: int
+) -> VisibleTacticSlots:
+    """The visible tactic tags of the flaw at `ply`, read live (Phase 264 D-03).
+
+    The analysis move strip's gate (`visible_tactic_slots`): confidence floor plus decided-lost
+    suppression from the pre-move eval, the `game_positions` row at ply - 1. Nothing for a
+    deleted game or a missing flaw row.
+    """
+    if game_id is None:
+        return NO_TACTIC_SLOTS
+    before = aliased(GamePosition)
+    stmt = (
+        select(
+            GameFlaw.ply,
+            GameFlaw.allowed_tactic_motif,
+            GameFlaw.allowed_tactic_confidence,
+            GameFlaw.allowed_tactic_depth,
+            GameFlaw.missed_tactic_motif,
+            GameFlaw.missed_tactic_confidence,
+            GameFlaw.missed_tactic_depth,
+            before.eval_cp,
+            before.eval_mate,
+        )
+        .outerjoin(
+            before,
+            and_(
+                before.user_id == GameFlaw.user_id,
+                before.game_id == GameFlaw.game_id,
+                before.ply == GameFlaw.ply - 1,
+            ),
+        )
+        .where(GameFlaw.game_id == game_id, GameFlaw.ply == ply)
+        .limit(1)
+    )
+    row = (await session.execute(stmt)).one_or_none()
+    if row is None:
+        return NO_TACTIC_SLOTS
+    return visible_tactic_slots(row, eval_cp_before=row.eval_cp, eval_mate_before=row.eval_mate)
 
 
 async def best_move_at(session: AsyncSession, *, game_id: int | None, ply: int) -> str | None:

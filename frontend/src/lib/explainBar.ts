@@ -12,11 +12,15 @@ import type { FacepalmType, FlawMarker, FlawSeverity, TacticLinesResponse } from
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
 import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
 import { toFacepalmPct } from '@/lib/facepalm';
+import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
 /** A missed line forks at ply-1, so ply 0 would need a fork at the root, which the graft cannot address. */
 const MIN_MISSED_FORK_PLY = 1;
+
+/** The strip's two tag colours, shared with the avatar's "Game move:" line. */
+export const TACTIC_COLOR: Record<'missed' | 'allowed', string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
 
 /** Severities the bar is offered for (D-08: inaccuracies are out of scope). */
 export type ExplainSeverity = Extract<FlawSeverity, 'mistake' | 'blunder'>;
@@ -125,16 +129,27 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
   return openLines.get(flawKey(focusedFlaw)) ?? null;
 }
 
+/** One tactic slot as stored: the motif name and its 0-based depth (null: no depth). */
+export interface TacticSlotInput {
+  motif: string | null;
+  depth: number | null;
+}
+
+const NO_TACTIC_SLOT: TacticSlotInput = { motif: null, depth: null };
+
 /**
- * The flaw's visible tactics as headline text, both orientations. resolveVisibleTactic
+ * Two tactic slots as the strip's text, missed first, then allowed. resolveVisibleTactic
  * applies the family guard (family-less motifs show nothing), the same rule as the
  * move-list chip's depth label and the board depth badges. anchored=false: this is a navigable surface, so the allowed +1
  * decision-anchor offset is dropped (the chip's depth, spelled out).
+ *
+ * Exported for the avatar's "Game move:" line (lib/gameBlunderSentence.ts), which must write
+ * a tag exactly as the strip does.
  */
-function explainTactics(marker: FlawMarker): ExplainTactic[] {
+export function tacticSlotsText(missed: TacticSlotInput | null, allowed: TacticSlotInput | null): ExplainTactic[] {
   const slots = [
-    { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
-    { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
+    { orientation: 'missed', ...(missed ?? NO_TACTIC_SLOT) },
+    { orientation: 'allowed', ...(allowed ?? NO_TACTIC_SLOT) },
   ] as const;
   return slots.flatMap(({ orientation, motif, depth }) => {
     const visible = resolveVisibleTactic(orientation, motif, depth, undefined, false);
@@ -143,6 +158,14 @@ function explainTactics(marker: FlawMarker): ExplainTactic[] {
     const text = depthLabel != null ? `${orientation} ${motifLabel} in ${depthLabel}` : `${orientation} ${motifLabel}`;
     return [{ orientation, text }];
   });
+}
+
+/** The flaw's visible tactics as headline text, both orientations (see `tacticSlotsText`). */
+function explainTactics(marker: FlawMarker): ExplainTactic[] {
+  return tacticSlotsText(
+    { motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
+    { motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
+  );
 }
 
 /** The facepalm fields of a blunder's headline; empty for a mistake or an unscored blunder. */

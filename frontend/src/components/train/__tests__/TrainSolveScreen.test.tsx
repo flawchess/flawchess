@@ -2089,7 +2089,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('train-reveal-also-fine').textContent).toContain('d4, Nf3, c4');
     };
     await expectLiveBoard();
-    fireEvent.pointerEnter(screen.getByTestId('train-verdict-extras'));
+    // D-24: the Also fine list moved into the verdict paragraph; hovering it changes nothing.
+    fireEvent.pointerEnter(screen.getByTestId('train-reveal-also-fine'));
     // Deliberately re-assert after the hover settles.
     await expectLiveBoard();
   });

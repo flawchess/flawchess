@@ -33,11 +33,13 @@ from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.repositories import push_repository, train_repository
 from app.repositories.blunder_check_repository import GameInfoRow
-from app.repositories.train_repository import TrainSettingsRow
+from app.repositories.library_repository import VisibleTacticSlot
+from app.repositories.train_repository import RevealedFlaw, TrainSettingsRow
 from app.schemas.train import (
     ArchiveList,
     ClaimMedalsRequest,
     GameInfo,
+    GameMoveFlaw,
     OnboardingStep,
     PuzzleRevealResponse,
     ReviewRequest,
@@ -45,6 +47,7 @@ from app.schemas.train import (
     SolveRequest,
     SolveResponse,
     SolvedResult,
+    TacticSlot,
     TrainArchiveItem,
     TrainArchiveResponse,
     TrainBlunderCheckModeProgress,
@@ -82,6 +85,23 @@ def _game_info_schema(info: GameInfoRow | None) -> GameInfo | None:
         time_control_bucket=cast(TimeControlBucketWire | None, info.time_control_bucket),
         played_at=info.played_at,
         mover_rating=info.mover_rating,
+    )
+
+
+def _tactic_slot_schema(slot: VisibleTacticSlot | None) -> TacticSlot | None:
+    return None if slot is None else TacticSlot(motif=slot.motif, depth=slot.depth)
+
+
+def _game_move_flaw_schema(flaw: RevealedFlaw | None) -> GameMoveFlaw | None:
+    """Map the reveal's flaw block to the wire schema; None for a herring."""
+    if flaw is None:
+        return None
+    return GameMoveFlaw(
+        facepalm_score=flaw.facepalm_score,
+        facepalm_type=flaw.facepalm_type,
+        type_line=flaw.type_line,
+        allowed_tactic=_tactic_slot_schema(flaw.allowed_tactic),
+        missed_tactic=_tactic_slot_schema(flaw.missed_tactic),
     )
 
 
@@ -335,7 +355,7 @@ async def reveal_puzzle(
         puzzle_type=result.puzzle_type,
         source=result.source,
         has_tactic_lines=result.has_tactic_lines,
-        game_move_facepalm=result.game_move_facepalm,
+        flaw=_game_move_flaw_schema(result.flaw),
         game_info=_game_info_schema(result.game_info),
     )
 

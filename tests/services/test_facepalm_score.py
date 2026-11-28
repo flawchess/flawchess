@@ -777,6 +777,21 @@ def _frontend_facepalm_cutoff_pct() -> int:
     return int(match.group(1))
 
 
+_HARD_TO_SPOT_PATTERN = re.compile(r"export const FACEPALM_HARD_TO_SPOT_BELOW = (\d+);")
+
+
+def test_hard_to_catch_cut_is_the_frontend_hard_to_spot_cut() -> None:
+    """264 D-23: the game-move line's "hard to spot" band and blunder check's "hard to catch"
+    line share one cut, so blunder check can drop the band word exactly when it shows the line."""
+    match = _HARD_TO_SPOT_PATTERN.search(_FACEPALM_TS.read_text())
+    assert match is not None, (
+        "FACEPALM_HARD_TO_SPOT_BELOW declaration not found in frontend/src/lib/facepalm.ts"
+    )
+    hard_to_catch = getattr(blunder_check_rules, "HARD_TO_CATCH_SCORE_BELOW", None)
+    assert hard_to_catch is not None
+    assert hard_to_catch == int(match.group(1)) / _PERCENT_SCALE
+
+
 def test_facepalm_stats_min_is_the_frontend_facepalm_cut() -> None:
     # Read through the module so a missing constant fails this assertion, not the file's import.
     stats_min = getattr(blunder_check_rules, "FACEPALM_STATS_MIN", None)

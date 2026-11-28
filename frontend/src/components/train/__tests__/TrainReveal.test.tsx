@@ -18,6 +18,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatDateWithYear } from '@/lib/utils';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
+import type { TrainMoveQuality } from '@/lib/trainArrows';
 import { verdictCopy } from '@/lib/trainBotCopy';
 import { buildChipGroups } from '@/lib/trainRevealLines';
 import type { BuildChipGroupsInput, ChipGroup } from '@/lib/trainRevealLines';
@@ -1034,14 +1035,14 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
   });
 
-  it('renders the Also fine list in the extras line, listing the SAN of every entry, with no button in it', () => {
+  it('renders the Also fine list in the verdict paragraph (D-24), listing the SAN of every entry, with no button in it', () => {
     renderReveal({
       alsoFineMoves: [
         { uci: 'd2d4', quality: 'good' },
         { uci: 'g1f3', quality: 'inaccuracy' },
       ],
     });
-    const card = screen.getByTestId('train-verdict-extras');
+    const card = screen.getByTestId('train-bot-verdict-line');
     const list = within(card).getByTestId('train-reveal-also-fine');
     expect(list.textContent).toContain('d4');
     expect(list.textContent).toContain('Nf3');
@@ -1171,9 +1172,196 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-bot-verdict-line').contains(tail)).toBe(false);
   });
 
-  it('no Also fine renders no extras line at all', () => {
-    renderReveal({ alsoFineMoves: [] });
-    expect(screen.queryByTestId('train-verdict-extras')).toBeNull();
+  it('no Also fine renders no Also-fine line; the divider block still holds the return tail (264 D-14)', async () => {
+    renderReveal({ alsoFineMoves: [], sessionDate: '2026-07-20', expiresOn: '2026-07-21' });
+    const extras = screen.getByTestId('train-verdict-extras');
+    expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
+    expect(within(extras).getByTestId('train-bot-return-tail').textContent).toBe('Back in 12 days.');
+    // The default reveal has no flaw block: once it lands there is no "Game move:" line.
+    await waitFor(() => expect(screen.queryByTestId('game-move-line-placeholder')).toBeNull());
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
+  });
+
+  // ─── Phase 264: the "Game move:" line from the reveal's flaw block ──
+
+  it('shows the "Game move:" line below the divider once the reveal lands, in place of the look-closer line', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        flaw: {
+          facepalm_score: 0.85,
+          facepalm_type: 'allowed_loss',
+          type_line: 'allowed_material',
+          allowed_tactic: { motif: 'fork', depth: 1 },
+          missed_tactic: null,
+        },
+      }),
+    );
+    renderReveal({
+      verdictOpening: verdictCopy(0, () => 0),
+      alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
+      sessionDate: '2026-07-20',
+      expiresOn: '2026-07-21',
+    });
+    // While the reveal loads the slot is reserved and the look-closer line is not shown yet.
+    expect(screen.getByTestId('game-move-line-placeholder')).not.toBeNull();
+    expect(screen.queryByTestId('train-bot-look-closer')).toBeNull();
+
+    const line = await screen.findByTestId('game-move-line');
+    expect(line.textContent).toBe('Game move: allowed fork in 2, loses material. Easy to spot (facepalm score 85%).');
+    expect(screen.queryByTestId('game-move-line-placeholder')).toBeNull();
+    expect(screen.queryByTestId('train-bot-look-closer')).toBeNull();
+    // Order below the divider: the line, Also fine, the return tail (D-14).
+    const extras = screen.getByTestId('train-verdict-extras');
+    expect(Array.from(extras.children).map((child) => child.getAttribute('data-testid'))).toEqual([
+      'game-move-line',
+      'train-bot-return-tail',
+    ]);
+    // D-24: "Also fine" is part of the verdict paragraph, above the divider.
+    expect(screen.getByTestId('train-bot-verdict-line').contains(screen.getByTestId('train-reveal-also-fine'))).toBe(true);
+  });
+
+  it('the line starts with the game move and the Game chip\'s quality glyph', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        played_in_game_san: 'Nf3',
+        played_in_game_move_uci: 'g1f3',
+        flaw: {
+          facepalm_score: 0.85,
+          facepalm_type: 'allowed_loss',
+          type_line: 'allowed_material',
+          allowed_tactic: null,
+          missed_tactic: null,
+        },
+      }),
+    );
+    renderReveal({
+      chips: [
+        { roles: ['game'], uci: 'g1f3', san: 'Nf3', label: 'Game', line: null, pending: null, quality: 'blunder', facepalm: true },
+      ],
+    });
+    const line = await screen.findByTestId('game-move-line');
+    expect(within(line).getByTestId('game-move-san').textContent).toBe('Nf3');
+    await waitFor(() =>
+      expect(within(line).getByTestId('game-move-quality').getAttribute('data-facepalm')).toBe('true'),
+    );
+    expect(line.textContent?.endsWith(': loses material. Easy to spot (facepalm score 85%).')).toBe(true);
+    expect(line.textContent).not.toContain('Game move');
+    // 264 D-23: the glyph opens the facepalm popover with the reveal's live score and type.
+    expect(within(line).getByTestId('train-game-move-facepalm-popover').getAttribute('aria-label')).toBe(
+      'Facepalm blunder, facepalm score 85%, allowed loss, what the score means',
+    );
+  });
+
+  it.each<[TrainMoveQuality, string | null]>([
+    ['blunder', ': easy to spot (facepalm score 84%).'],
+    // Review fix (D-23): a chip graded other than a blunder shows "?", so the score is not spoken.
+    ['mistake', null],
+  ])('a score-only line follows the Game chip\'s grade: %s', async (quality, ending) => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        played_in_game_san: 'Nf3',
+        played_in_game_move_uci: 'g1f3',
+        flaw: { facepalm_score: 0.84, facepalm_type: 'allowed_loss', type_line: null, allowed_tactic: null, missed_tactic: null },
+      }),
+    );
+    renderReveal({
+      verdictOpening: verdictCopy(0, () => 0),
+      chips: [{ roles: ['game'], uci: 'g1f3', san: 'Nf3', label: 'Game', line: null, pending: null, quality }],
+    });
+    if (ending === null) {
+      expect((await screen.findByTestId('train-bot-look-closer')).textContent).toBe('Step through the lines to see why.');
+      expect(screen.queryByTestId('game-move-line')).toBeNull();
+      return;
+    }
+    const line = await screen.findByTestId('game-move-line');
+    expect(line.textContent?.endsWith(ending)).toBe(true);
+  });
+
+  it('a scored line waits for the Game chip\'s grade and appears once, complete (D-25 review fix)', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        played_in_game_san: 'Nf3',
+        played_in_game_move_uci: 'g1f3',
+        flaw: { facepalm_score: 0.84, facepalm_type: 'allowed_loss', type_line: 'allowed_material', allowed_tactic: null, missed_tactic: null },
+      }),
+    );
+    const gradingChip = { roles: ['game' as const], uci: 'g1f3', san: 'Nf3', label: 'Game', line: null, pending: 'loading' as const };
+    const { rerender, client, props } = renderReveal({ chips: [gradingChip] });
+    await waitFor(() => expect(revealPuzzle).toHaveBeenCalled());
+    // The reveal has landed, the grade has not: the slot stays reserved and no text shows yet.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByTestId('game-move-line-placeholder')).not.toBeNull();
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
+    // The grade lands as "?": the line appears without the score sentence, never with it first.
+    rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <TooltipProvider>
+            <TrainReveal {...props} chips={[{ ...gradingChip, pending: null, quality: 'mistake' }]} />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const line = await screen.findByTestId('game-move-line');
+    expect(line.textContent?.endsWith(': loses material.')).toBe(true);
+  });
+
+  it('without a line the look-closer line shows as before for a 0-point verdict', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        flaw: { facepalm_score: null, facepalm_type: null, type_line: null, allowed_tactic: null, missed_tactic: null },
+      }),
+    );
+    renderReveal({ verdictOpening: verdictCopy(0, () => 0) });
+    expect((await screen.findByTestId('train-bot-look-closer')).textContent).toBe(
+      'Step through the lines to see why.',
+    );
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
+  });
+
+  it('a foreign puzzle gets the same neutral line (AC-8)', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        game_id: null,
+        source: 'foreign_blunder',
+        game_info: FOREIGN_GAME_INFO,
+        flaw: { facepalm_score: null, facepalm_type: null, type_line: 'missed_mate', allowed_tactic: null, missed_tactic: null },
+      }),
+    );
+    renderReveal({ verdict: makeVerdict({ source: 'foreign_blunder', item_status: null, due_date: null, streak: null }) });
+    const line = await screen.findByTestId('game-move-line');
+    expect(line.textContent).toBe('Game move: missed checkmate.');
+    expect(line.textContent?.toLowerCase()).not.toContain('your');
+  });
+
+  it('a herring reserves nothing and shows its tail alone below the divider', async () => {
+    revealPuzzle.mockResolvedValue(makeReveal({ puzzle_type: 'herring', source: 'red_herring', flaw: null }));
+    renderReveal({
+      verdict: makeVerdict({ puzzle_type: 'herring', source: 'red_herring', item_status: null, due_date: null, streak: null }),
+    });
+    expect(screen.queryByTestId('game-move-line-placeholder')).toBeNull();
+    const extras = screen.getByTestId('train-verdict-extras');
+    expect(Array.from(extras.children).map((child) => child.getAttribute('data-testid'))).toEqual(['train-bot-tail']);
+    await waitFor(() => expect(revealPuzzle).toHaveBeenCalled());
+    expect(screen.queryByTestId('game-move-line')).toBeNull();
+  });
+
+  it.each<[number, boolean]>([
+    [0.7, true],
+    [0.699, false],
+  ])('reports "???" to the board owner from the flaw block\'s score (%s -> %s, D-23)', async (score, expected) => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({
+        flaw: { facepalm_score: score, facepalm_type: 'allowed_loss', type_line: null, allowed_tactic: null, missed_tactic: null },
+      }),
+    );
+    const onGameMoveFacepalmChange = vi.fn();
+    renderReveal({ onGameMoveFacepalmChange });
+    await waitFor(() => expect(revealPuzzle).toHaveBeenCalled());
+    await waitFor(() => expect(onGameMoveFacepalmChange).toHaveBeenLastCalledWith(expected));
+    if (expected) return;
+    // The 0.699 case also proves the report flipped from its reset value only when it should.
+    expect(onGameMoveFacepalmChange).not.toHaveBeenCalledWith(true);
   });
 
   // ─── Free play is gone, so nothing on the reveal is ever swapped out ──

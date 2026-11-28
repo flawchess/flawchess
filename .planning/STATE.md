@@ -5,7 +5,7 @@ with a phase's `SUMMARY.md` (see `CLAUDE.md` "Project Management"). The GSD-era 
 with its accumulated decisions, quick-task log and metrics up to the v2.32 close, is archived
 as `milestones/STATE-through-v2.32.md`.
 
-Workflow: vanilla Claude Code on trial since 2026-11-26 (SEED-261122-v4c). Next phase number: 264.
+Workflow: vanilla Claude Code on trial since 2026-11-26 (SEED-261122-v4c). Next phase number: 265.
 
 ## Current Position
 
@@ -13,6 +13,8 @@ Phase: 252 (Short Engine Line Repair Backfill, standalone, 6/10)
 Plan: 252-07 (prod re-walk feed, benchmark line repair alongside, prod retag) and 252-10 (node-0 second-move pass)
 
 Status: v2.30, v2.31 and v2.32 closed 2026-11-26; Phase 252 still executing
+
+Phase 264 (avatar comments on the game blunder, SEED-261126-g8b) is done: squash-merged to `main` 2026-11-28 after the owner approved the spot-check (AC-13), with D-19 to D-25 amended during implementation (move and icon as the subject, facepalm score sentence on every scored line, "Also fine" in the verdict). Not deployed; it ships with the next release (CHANGELOG [Unreleased]).
 
 Last activity: 2026-11-26 - Closed v2.30 Blunder Check & Facepalm Score (247–251, 253–256), v2.31 Facepalm Refits & Move Quality (257–262) and v2.32 Foldable & Tablet Layouts (263), each tagged on a production forward-port with a GitHub release
 

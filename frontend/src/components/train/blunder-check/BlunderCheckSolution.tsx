@@ -34,6 +34,7 @@ import {
 import { TrainLineChips } from '@/components/train/TrainLineChips';
 import { TRAIN_MOVE_TREE_HEIGHT_CLASS, TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
 import { TrainRevealControlsRow, TrainRevealFooter } from '@/components/train/TrainRevealActionBar';
+import { GameMoveLine, VerdictExtras } from '@/components/train/GameMoveLine';
 import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import { useBoardNavigationInput } from '@/hooks/useBoardNavigationInput';
@@ -227,30 +228,40 @@ interface SolutionVerdictProps {
 /** The verdict body: heading and the sentence with its "+N" pills (card and strip share it). */
 function SolutionVerdict({ copy, avatar, showHeading = true }: SolutionVerdictProps): ReactElement {
   return (
-    <div className="flow-root">
-      {avatar}
-      {showHeading && (
-        <h2 className="font-semibold" data-testid="blunder-check-solution-heading">
-          {copy.heading}
-        </h2>
-      )}
-      {/* The same "+N" pills as the personalized-puzzle verdict, so the user can
-          read what each part of the sequence earned after the flash is gone. */}
-      <p data-testid="blunder-check-solution-summary">
-        {copy.parts.map((part) =>
-          typeof part === 'string' ? (
-            part
-          ) : (
-            <TrainScoreChip key={part.name} points={part.points} testid={`blunder-check-pill-${part.name}`} />
-          ),
+    <div className="flex flex-col gap-2">
+      {/* flow-root contains the floated avatar, so the divider block below keeps the full width. */}
+      <div className="flow-root">
+        {avatar}
+        {showHeading && (
+          <h2 className="font-semibold" data-testid="blunder-check-solution-heading">
+            {copy.heading}
+          </h2>
         )}
-      </p>
-      {copy.feedback !== null && (
-        // Phase 261 D-03: the type and hard-to-catch lines. The Facepalm score chip was dropped
-        // in UAT: a facepalm blunder shows as "???" on the board and the Game chip instead.
-        <p className="mt-2" data-testid="blunder-check-solution-feedback">
-          {copy.feedback.lines.join(' ')}
+        {/* The same "+N" pills as the personalized-puzzle verdict, so the user can
+            read what each part of the sequence earned after the flash is gone. */}
+        <p data-testid="blunder-check-solution-summary">
+          {copy.parts.map((part) =>
+            typeof part === 'string' ? (
+              part
+            ) : (
+              <TrainScoreChip key={part.name} points={part.points} testid={`blunder-check-pill-${part.name}`} />
+            ),
+          )}
         </p>
+        {copy.feedback !== null && (
+          // Phase 261 D-03: the hard-to-catch line. The Facepalm score chip was dropped in UAT:
+          // a facepalm blunder shows as "???" on the board and the Game chip instead.
+          <p className="mt-2" data-testid="blunder-check-solution-feedback">
+            {copy.feedback.lines.join(' ')}
+          </p>
+        )}
+      </div>
+      {/* Phase 264 D-16: what the game blunder was, the same line and divider as the puzzle
+          verdict. The solution arrives in one response, so nothing is reserved here. */}
+      {copy.gameMove.length > 0 && (
+        <VerdictExtras testid="blunder-check-solution-extras">
+          <GameMoveLine parts={copy.gameMove} head={copy.gameMoveHead} />
+        </VerdictExtras>
       )}
     </div>
   );
